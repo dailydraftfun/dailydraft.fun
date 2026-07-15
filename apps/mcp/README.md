@@ -2,6 +2,7 @@
 
 Authenticated Model Context Protocol server for non-custodial OpenPacks Duel
 integrations. It supports local stdio and stateless Streamable HTTP at `/mcp`.
+The production endpoint is `https://openpacksduel-mcp.vercel.app/mcp`.
 
 The server wraps the public v1 API contract with agent-safe tools for pack
 discovery, duel status, proof references, and canonical social-card URLs. Its
@@ -93,9 +94,10 @@ Vercel Firewall rate limiting for a deployment-wide limit across instances. The
 in-memory limiter is best-effort defense in depth only; it does not coordinate
 limits across serverless instances or cold starts.
 
-The HTTP server creates a fresh stateless MCP server for each request, uses JSON
-responses instead of long-lived SSE, and preserves standard GET/DELETE method
-behavior. It validates every supplied Origin before authentication.
+The HTTP server creates a fresh stateless MCP server for each request and uses
+JSON responses instead of long-lived SSE. It accepts authenticated `POST` plus
+CORS `OPTIONS`; authenticated `GET` and `DELETE` are explicitly rejected with
+`405`. It validates every supplied Origin before authentication.
 
 `OPENPACKSDUEL_API_URL` has no production default and is required. Prepare scope
 also fails closed unless the server has `OPENPACKSDUEL_API_KEY`; that upstream
