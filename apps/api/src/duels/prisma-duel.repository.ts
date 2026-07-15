@@ -115,20 +115,23 @@ export class PrismaDuelRepository extends DuelRepository {
             expiresAt: input.expiresAt,
             houseOpponent: input.houseOpponent,
             id: input.id,
-            matchedAt: input.opponentJoinedAt,
             mode: toDatabaseMode(input.matchmakingMode),
-            opponentJoinedAt: input.opponentJoinedAt,
-            opponentWallet: input.opponentWallet,
+            ...(input.opponentJoinedAt
+              ? { matchedAt: input.opponentJoinedAt, opponentJoinedAt: input.opponentJoinedAt }
+              : {}),
+            ...(input.opponentWallet ? { opponentWallet: input.opponentWallet } : {}),
             packId: input.pack.id,
             packName: input.pack.name,
             packProvider: input.pack.provider,
             providerMode: toDatabaseProviderMode(input.providerMode),
-            providerPackId: input.pack.providerPackId,
+            ...(input.pack.providerPackId ? { providerPackId: input.pack.providerPackId } : {}),
             stakeAmount: input.pack.price.amount,
             stakeCurrency: input.pack.price.currency,
             stakeDecimals: input.pack.price.decimals,
             status: input.houseOpponent ? DatabaseDuelStatus.MATCHED : DatabaseDuelStatus.WAITING,
-            valuationPolicyHash: input.pack.valuationPolicyHash,
+            ...(input.pack.valuationPolicyHash
+              ? { valuationPolicyHash: input.pack.valuationPolicyHash }
+              : {}),
           },
         });
         await transaction.duelEvent.create({
@@ -388,7 +391,7 @@ export class PrismaDuelRepository extends DuelRepository {
         await transaction.duelEvent.create({
           data: {
             actorWallet: input.actorWallet,
-            data: input.data,
+            ...(input.data ? { data: input.data as Prisma.InputJsonValue } : {}),
             duelId: duel.id,
             fromStatus: duel.status,
             id: createId('evt'),
