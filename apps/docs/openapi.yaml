@@ -1989,7 +1989,7 @@ components:
     PublicDuelReceipt:
       type: object
       additionalProperties: false
-      required: [schemaVersion, duel, pack, participants, result, fees, custody, references, recovery, availability, actions, privacy]
+      required: [schemaVersion, duel, pack, participants, result, fees, custody, references, recovery, availability, cardActions, actions, privacy]
       properties:
         schemaVersion:
           type: string
@@ -2121,6 +2121,8 @@ components:
           properties:
             complete: { type: boolean }
             missing: { type: array, items: { type: string } }
+        cardActions:
+          $ref: '#/components/schemas/PublicPostDuelCardActions'
         actions:
           $ref: '#/components/schemas/PublicActions'
         privacy:
@@ -2201,6 +2203,89 @@ components:
             - type: 'null'
         margin: { $ref: '#/components/schemas/Money' }
         totalValue: { $ref: '#/components/schemas/Money' }
+    PublicPostDuelCardActions:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, availability, reason, receiptHref, cards]
+      properties:
+        schemaVersion:
+          type: string
+          const: openpacksduel.card-actions.v1
+        availability:
+          type: string
+          enum: [available, hidden]
+        reason:
+          type: [string, 'null']
+          enum: [duel-not-settled, mock-assets, ownership-mismatch, ownership-pending, null]
+        receiptHref:
+          type: string
+          description: Stable API path linking every card state to its originating duel receipt.
+        cards:
+          type: array
+          maxItems: 2
+          description: Empty unless exact finalized settlement reconciles canonical ownership.
+          items:
+            $ref: '#/components/schemas/PublicPostDuelCardActionState'
+    PublicPostDuelCardActionState:
+      type: object
+      additionalProperties: false
+      required: [actionStateId, duelId, side, assetReference, providerReference, displayName, insuredValue, owner, ownership, receiptHref, actions]
+      properties:
+        actionStateId:
+          type: string
+          description: Stable projection identifier; repeated reads do not create an action or transaction.
+        duelId: { type: string }
+        side: { type: string, enum: [creator, opponent] }
+        assetReference: { type: string }
+        providerReference: { type: string }
+        displayName: { type: string }
+        insuredValue: { $ref: '#/components/schemas/Money' }
+        owner: { $ref: '#/components/schemas/PublicParticipant' }
+        ownership:
+          type: object
+          additionalProperties: false
+          required: [status, basis, settlementSignature]
+          properties:
+            status: { type: string, const: reconciled }
+            basis: { type: string, const: finalized-settlement-reference }
+            settlementSignature: { type: string }
+        receiptHref: { type: string }
+        actions:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/PublicPostDuelCardAction'
+    PublicPostDuelCardAction:
+      type: object
+      additionalProperties: false
+      required: [action, label, capability, availability, reason, detail, requiresSignature, transaction, alternative]
+      properties:
+        action: { type: string, enum: [keep, list, sell-back, redeem] }
+        label: { type: string }
+        capability:
+          type: string
+          enum: [ownership-receipt, collector-crypt-marketplace-listing, collector-crypt-buyback, collector-crypt-shipping]
+        availability: { type: string, enum: [available, unavailable] }
+        reason:
+          type: [string, 'null']
+          enum: [partner-onboarding-required, null]
+        detail: { type: string }
+        requiresSignature:
+          type: boolean
+          const: false
+          description: No unavailable partner action returns an unsigned or fake transaction.
+        transaction:
+          type: 'null'
+        alternative:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [action, label]
+              properties:
+                action: { type: string, const: keep }
+                label: { type: string, const: Keep card }
+            - type: 'null'
     PublicActions:
       type: object
       additionalProperties: false

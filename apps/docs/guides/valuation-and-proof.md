@@ -71,3 +71,23 @@ the result. Devnet mock receipts explicitly mark provider attestation as
 `mock-not-applicable`. Real provider operation remains disabled while the
 partner field mapping, signature algorithm/key distribution, and correction
 contract are unconfirmed; `not-recorded` is not treated as verification.
+
+## Post-duel card actions
+
+`GET /duels/{duelId}/receipt` exposes `cardActions` only after a non-mock duel is
+settled, the recorded winner agrees with the canonical result, and an exact
+finalized settlement reference exists. Until then the card list is empty and the
+receipt reports why actions are hidden. This prevents API state, a pending
+signature, or mismatched ownership from being presented as custody.
+
+Every reconciled card has its own stable action-state identifier, owner, settlement
+reference, and capability list. A winner receiving both cards gets two independent
+states. `keep` is available as a read-only ownership receipt and performs no
+custodial action. `list`, `sell-back`, and `redeem` are unavailable while Collector
+Crypt onboarding is incomplete; each reports the missing capability and points to
+`keep` instead of returning a dead control or invented transaction.
+
+[Issue #24](https://github.com/openpacksduel/app/issues/24) remains open for the
+authenticated Marketplace transaction builder, current buyback value, eligibility,
+expiry and recipient checks, and the shipping fee, USDC payment, NFT burn, and
+shipment status workflow.

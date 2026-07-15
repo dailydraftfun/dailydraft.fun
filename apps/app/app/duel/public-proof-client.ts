@@ -24,6 +24,40 @@ export type PublicParticipant = {
   role: 'creator' | 'house' | 'opponent';
 };
 
+export type PublicPostDuelCardAction = {
+  action: 'keep' | 'list' | 'redeem' | 'sell-back';
+  alternative: { action: 'keep'; label: 'Keep card' } | null;
+  availability: 'available' | 'unavailable';
+  capability:
+    | 'collector-crypt-buyback'
+    | 'collector-crypt-marketplace-listing'
+    | 'collector-crypt-shipping'
+    | 'ownership-receipt';
+  detail: string;
+  label: string;
+  reason: 'partner-onboarding-required' | null;
+  requiresSignature: false;
+  transaction: null;
+};
+
+export type PublicPostDuelCardActionState = {
+  actionStateId: string;
+  actions: PublicPostDuelCardAction[];
+  assetReference: string;
+  displayName: string;
+  duelId: string;
+  insuredValue: PublicMoney;
+  owner: PublicParticipant;
+  ownership: {
+    basis: 'finalized-settlement-reference';
+    settlementSignature: string;
+    status: 'reconciled';
+  };
+  providerReference: string;
+  receiptHref: string;
+  side: 'creator' | 'opponent';
+};
+
 export type PublicDuelReceipt = {
   actions: {
     primary: { href: string; label: string };
@@ -31,6 +65,13 @@ export type PublicDuelReceipt = {
     share: { href: string; label: string };
   };
   availability: { complete: boolean; missing: string[] };
+  cardActions: {
+    availability: 'available' | 'hidden';
+    cards: PublicPostDuelCardActionState[];
+    reason: 'duel-not-settled' | 'mock-assets' | 'ownership-mismatch' | 'ownership-pending' | null;
+    receiptHref: string;
+    schemaVersion: 'openpacksduel.card-actions.v1';
+  };
   custody: {
     cardAssets: { detail: string; status: string };
     platformFee: { asset: 'WSOL'; escrowAddress: string | null; status: string };

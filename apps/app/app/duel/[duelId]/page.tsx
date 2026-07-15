@@ -7,6 +7,7 @@ import {
   formatPublicMoney,
   type PublicDuelReceipt,
   type PublicDuelStatus,
+  type PublicPostDuelCardActionState,
   publicReceiptDownloadUrl,
 } from '../public-proof-client';
 
@@ -213,23 +214,34 @@ function ResultPanel({ receipt }: { receipt: PublicDuelReceipt }) {
         </p>
       ) : null}
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        {result.outcomes.map((outcome) => (
-          <article key={outcome.side} className="rounded-lg border border-border bg-primary p-4">
-            <p className="proof-label">{outcome.side} pull</p>
-            <h3 className="mt-3 text-lg font-semibold text-primary">{outcome.displayName}</h3>
-            <p className="mt-1 text-lg font-semibold text-lime">
-              {formatPublicMoney(outcome.insuredValue)}
-            </p>
-            <p className="mt-3 break-all font-mono text-[10px] leading-4 text-secondary">
-              {outcome.assetReference}
-            </p>
-            <p className="mt-2 font-mono text-[10px] leading-4 text-secondary">
-              Opened {new Date(outcome.openedAt).toLocaleString()} · value snapshot{' '}
-              {new Date(outcome.sourceTimestamp).toLocaleString()} · {outcome.poolVersion}
-            </p>
-          </article>
-        ))}
+        {result.outcomes.map((outcome) => {
+          const actionState = receipt.cardActions.cards.find(
+            (candidate) => candidate.side === outcome.side,
+          );
+          return (
+            <article key={outcome.side} className="rounded-lg border border-border bg-primary p-4">
+              <p className="proof-label">{outcome.side} pull</p>
+              <h3 className="mt-3 text-lg font-semibold text-primary">{outcome.displayName}</h3>
+              <p className="mt-1 text-lg font-semibold text-lime">
+                {formatPublicMoney(outcome.insuredValue)}
+              </p>
+              <p className="mt-3 break-all font-mono text-[10px] leading-4 text-secondary">
+                {outcome.assetReference}
+              </p>
+              <p className="mt-2 font-mono text-[10px] leading-4 text-secondary">
+                Opened {new Date(outcome.openedAt).toLocaleString()} · value snapshot{' '}
+                {new Date(outcome.sourceTimestamp).toLocaleString()} · {outcome.poolVersion}
+              </p>
+              {actionState ? <CardActionState state={actionState} /> : null}
+            </article>
+          );
+        })}
       </div>
+      {receipt.cardActions.availability === 'hidden' ? (
+        <p className="mt-5 rounded-lg border border-border bg-secondary p-3 text-xs leading-5 text-secondary">
+          {cardActionGateMessage(receipt.cardActions.reason)}
+        </p>
+      ) : null}
       <dl className="proof-definition-list mt-5">
         <div>
           <dt>Winner metric</dt>
@@ -263,6 +275,66 @@ function ResultPanel({ receipt }: { receipt: PublicDuelReceipt }) {
       </dl>
     </section>
   );
+}
+
+function CardActionState({ state }: { state: PublicPostDuelCardActionState }) {
+  return (
+    <section
+      className="mt-4 border-t border-border pt-4"
+      aria-label={`${state.displayName} actions`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="proof-label">Reconciled owner</p>
+          <p className="mt-1 text-sm font-semibold text-primary">{state.owner.display}</p>
+        </div>
+        <span className="rounded-full border border-lime/30 bg-lime/10 px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-lime">
+          Finalized
+        </span>
+      </div>
+      <ul className="mt-4 grid gap-2">
+        {state.actions.map((action) => (
+          <li key={action.action} className="rounded-md border border-border bg-secondary p-3">
+            <div className="flex items-center justify-between gap-3">
+              <strong className="text-sm text-primary">{action.label}</strong>
+              <span
+                className={
+                  action.availability === 'available'
+                    ? 'font-mono text-[10px] uppercase tracking-[0.12em] text-lime'
+                    : 'font-mono text-[10px] uppercase tracking-[0.12em] text-secondary'
+                }
+              >
+                {action.availability}
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-secondary">{action.detail}</p>
+            {action.alternative ? (
+              <p className="mt-2 text-xs font-semibold text-primary">
+                Available alternative: {action.alternative.label}
+              </p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 font-mono text-[10px] leading-4 text-secondary">
+        Settlement {shorten(state.ownership.settlementSignature)} · no post-duel transaction has
+        been created.
+      </p>
+    </section>
+  );
+}
+
+function cardActionGateMessage(reason: PublicDuelReceipt['cardActions']['reason']): string {
+  const messages: Record<Exclude<typeof reason, null>, string> = {
+    'duel-not-settled': 'Card actions stay hidden until the duel reaches settled state.',
+    'mock-assets':
+      'Card actions stay hidden for mock results because no real card was transferred.',
+    'ownership-mismatch':
+      'Card actions are hidden because recorded ownership disagrees with the canonical result.',
+    'ownership-pending':
+      'Card actions stay hidden until an exact finalized settlement reference reconciles ownership.',
+  };
+  return reason ? messages[reason] : 'Card actions are unavailable.';
 }
 
 function PendingResult({ status }: { status: PublicDuelStatus }) {
