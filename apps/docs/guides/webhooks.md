@@ -1,0 +1,24 @@
+# Webhook verification
+
+Webhook delivery is at-least-once. Consumers must be idempotent.
+
+The planned signature headers are:
+
+```text
+OpenPacks-Duel-Event-Id: evt_...
+OpenPacks-Duel-Timestamp: 1784123456
+OpenPacks-Duel-Signature: v1=<hex hmac sha256>
+```
+
+Verify the HMAC over this exact UTF-8 byte sequence:
+
+```text
+<timestamp>.<raw request body>
+```
+
+Reject timestamps outside a five-minute tolerance, compare signatures in
+constant time, and record the event ID before applying side effects. Return a
+2xx response only after the event is durably accepted.
+
+Never calculate the signature from parsed and re-serialized JSON; whitespace and
+key ordering would change the signed payload.

@@ -1,0 +1,21 @@
+{
+  "name": "@openpacksduel/docs",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.13",
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "clean": "rm -rf dist",
+    "dev": "serve . --listen 3002",
+    "api:lint": "redocly lint openapi.yaml",
+    "lint": "redocly lint openapi.yaml",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.39.0",
+    "@types/node": "25.6.0",
+    "serve": "14.2.6",
+    "typescript": "6.0.3"
+  }
+}

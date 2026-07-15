@@ -6,7 +6,8 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Openpacksduel',
-  description: 'Frontend-only Solana Pokemon pack duel MVP with quick matchmaking, wallet challenges, synchronized reveals, and shareable outcomes',
+  description:
+    'Frontend-only Solana Pokemon pack duel MVP with quick matchmaking, wallet challenges, synchronized reveals, and shareable outcomes',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

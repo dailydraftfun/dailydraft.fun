@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="OpenPacks Duel integration API reference" />
+    <title>OpenPacks Duel API</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --scalar-color-accent: #b8ff32;
+        --scalar-background-1: #090b0c;
+        --scalar-background-2: #101315;
+        --scalar-background-3: #171b1d;
+        --scalar-color-1: #f5f7f7;
+        --scalar-color-2: #a9b0b2;
+        --scalar-border-color: #272d30;
+      }
+
+      body {
+        margin: 0;
+        background: #090b0c;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+    <script>
+      Scalar.createApiReference('#app', {
+        url: '/openapi.yaml',
+        theme: 'saturn',
+        layout: 'modern',
+        hideModels: false,
+        hideTestRequestButton: true,
+        metaData: {
+          title: 'OpenPacks Duel API',
+          description: 'Preview integration contract for pack duels on Solana',
+        },
+      })
+    </script>
+  </body>
+</html>

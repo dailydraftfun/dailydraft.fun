@@ -1,19 +1,19 @@
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001';
 const surfaces = [
   {
-    "label": "apps/web",
-    "detail": "Public landing page"
+    label: 'apps/web',
+    detail: 'Public landing page',
   },
   {
-    "label": "apps/app",
-    "detail": "Product web app"
-  }
+    label: 'apps/app',
+    detail: 'Product web app',
+  },
 ] as const;
 const routes = [
   {
-    "label": "Overview",
-    "href": "/overview"
-  }
+    label: 'Overview',
+    href: '/overview',
+  },
 ] as const;
 
 export default function LandingPage() {
@@ -26,33 +26,61 @@ export default function LandingPage() {
         <div className="absolute inset-x-0 bottom-0 h-40 bg-[linear-gradient(0deg,var(--bg-primary),transparent)]" />
 
         <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between gap-4">
-          <a href="/" className="flex min-h-10 items-center gap-2.5" aria-label="openpacksduel home">
+          <a
+            href="/"
+            className="flex min-h-10 items-center gap-2.5"
+            aria-label="openpacksduel home"
+          >
             <span className="grid h-9 w-9 place-items-center rounded-md bg-accent font-mono text-sm font-semibold text-accent-foreground">
               op
             </span>
             <span className="text-sm font-semibold text-secondary">openpacksduel</span>
           </a>
           <nav className="hidden items-center gap-2 sm:flex" aria-label="Landing navigation">
-            <a className="rounded-md px-3 py-2 text-sm text-secondary transition hover:bg-hover hover:text-primary" href="#surfaces">Surfaces</a>
-            <a className="rounded-md px-3 py-2 text-sm text-secondary transition hover:bg-hover hover:text-primary" href="#routes">Routes</a>
-            <a className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground transition hover:bg-accent-hover" href={appUrl}>Open app</a>
+            <a
+              className="rounded-md px-3 py-2 text-sm text-secondary transition hover:bg-hover hover:text-primary"
+              href="#surfaces"
+            >
+              Surfaces
+            </a>
+            <a
+              className="rounded-md px-3 py-2 text-sm text-secondary transition hover:bg-hover hover:text-primary"
+              href="#routes"
+            >
+              Routes
+            </a>
+            <a
+              className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground transition hover:bg-accent-hover"
+              href={appUrl}
+            >
+              Open app
+            </a>
           </nav>
         </header>
 
         <div className="relative z-10 mx-auto grid max-w-6xl gap-10 pt-24 pb-16 lg:grid-cols-[minmax(0,1fr)_440px] lg:items-end lg:pt-32">
           <div>
-            <p className="font-mono text-xs font-semibold uppercase text-agent">Public launch surface</p>
+            <p className="font-mono text-xs font-semibold uppercase text-agent">
+              Public launch surface
+            </p>
             <h1 className="mt-5 max-w-3xl text-6xl font-semibold leading-none tracking-normal text-primary md:text-8xl">
               openpacksduel
             </h1>
             <p className="mt-6 max-w-2xl text-lg font-medium leading-8 text-secondary md:text-xl">
-              Frontend-only Solana Pokemon pack duel MVP with quick matchmaking, wallet challenges, synchronized reveals, and shareable outcomes
+              Frontend-only Solana Pokemon pack duel MVP with quick matchmaking, wallet challenges,
+              synchronized reveals, and shareable outcomes
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <a className="rounded-md bg-accent px-4 py-3 text-sm font-semibold text-accent-foreground transition hover:bg-accent-hover" href={appUrl}>
+              <a
+                className="rounded-md bg-accent px-4 py-3 text-sm font-semibold text-accent-foreground transition hover:bg-accent-hover"
+                href={appUrl}
+              >
                 Open app
               </a>
-              <a className="rounded-md border border-border px-4 py-3 text-sm font-semibold text-secondary transition hover:border-border-strong hover:bg-hover hover:text-primary" href="#surfaces">
+              <a
+                className="rounded-md border border-border px-4 py-3 text-sm font-semibold text-secondary transition hover:border-border-strong hover:bg-hover hover:text-primary"
+                href="#surfaces"
+              >
                 View surfaces
               </a>
             </div>
@@ -61,7 +89,9 @@ export default function LandingPage() {
           <div className="rounded-xl border border-border bg-secondary p-4 shadow-2xl shadow-black/40 backdrop-blur">
             <div className="flex items-center justify-between border-b border-border pb-3">
               <span className="text-xs font-semibold uppercase text-muted">Product snapshot</span>
-              <span className="rounded bg-tertiary px-2 py-1 font-mono text-[10px] text-agent">live scaffold</span>
+              <span className="rounded bg-tertiary px-2 py-1 font-mono text-[10px] text-agent">
+                live scaffold
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-3 py-4">
               <div className="rounded-lg bg-tertiary p-4">
@@ -75,7 +105,10 @@ export default function LandingPage() {
             </div>
             <div className="space-y-2">
               {surfaces.slice(0, 4).map((surface) => (
-                <div key={surface.label} className="flex items-center justify-between rounded-md bg-primary px-3 py-2">
+                <div
+                  key={surface.label}
+                  className="flex items-center justify-between rounded-md bg-primary px-3 py-2"
+                >
                   <span className="font-mono text-xs text-primary">{surface.label}</span>
                   <span className="text-xs text-muted">{surface.detail}</span>
                 </div>
@@ -89,11 +122,16 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl">
           <div className="max-w-2xl">
             <p className="font-mono text-xs font-semibold uppercase text-agent">Selected outputs</p>
-            <h2 className="mt-3 text-3xl font-semibold text-primary md:text-4xl">Generated surfaces have separate jobs.</h2>
+            <h2 className="mt-3 text-3xl font-semibold text-primary md:text-4xl">
+              Generated surfaces have separate jobs.
+            </h2>
           </div>
           <div className="mt-8 grid gap-3 md:grid-cols-3">
             {surfaces.map((surface) => (
-              <article key={surface.label} className="rounded-lg border border-border bg-secondary p-5">
+              <article
+                key={surface.label}
+                className="rounded-lg border border-border bg-secondary p-5"
+              >
                 <h3 className="font-mono text-sm text-primary">{surface.label}</h3>
                 <p className="mt-2 text-sm leading-6 text-secondary">{surface.detail}</p>
               </article>
@@ -106,16 +144,25 @@ export default function LandingPage() {
         <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[320px_minmax(0,1fr)]">
           <div>
             <p className="font-mono text-xs font-semibold uppercase text-agent">App routes</p>
-            <h2 className="mt-3 text-3xl font-semibold text-primary">The product app starts here.</h2>
+            <h2 className="mt-3 text-3xl font-semibold text-primary">
+              The product app starts here.
+            </h2>
             <p className="mt-4 text-sm leading-6 text-secondary">
-              These routes are generated in apps/app. Wire this landing page to the deployed app URL with NEXT_PUBLIC_APP_URL.
+              These routes are generated in apps/app. Wire this landing page to the deployed app URL
+              with NEXT_PUBLIC_APP_URL.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {routes.map((route) => (
-              <a key={route.href} href={appUrl} className="rounded-lg border border-border bg-secondary p-5 transition hover:border-border-strong hover:bg-hover">
+              <a
+                key={route.href}
+                href={appUrl}
+                className="rounded-lg border border-border bg-secondary p-5 transition hover:border-border-strong hover:bg-hover"
+              >
                 <span className="text-sm font-semibold text-primary">{route.label}</span>
-                <span className="mt-2 block font-mono text-xs text-muted">apps/app{route.href}</span>
+                <span className="mt-2 block font-mono text-xs text-muted">
+                  apps/app{route.href}
+                </span>
               </a>
             ))}
           </div>

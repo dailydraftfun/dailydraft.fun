@@ -13,7 +13,7 @@
 }
 
 @theme {
-  --color-border: rgba(255, 255, 255, 0.10);
+  --color-border: rgba(255, 255, 255, 0.1);
   --color-border-strong: rgba(255, 255, 255, 0.18);
   --color-accent: #fafafa;
   --color-accent-hover: #e4e4e7;
@@ -31,14 +31,30 @@
   --radius-xl: 16px;
 }
 
-@utility bg-primary { background-color: var(--bg-primary); }
-@utility bg-secondary { background-color: var(--bg-secondary); }
-@utility bg-tertiary { background-color: var(--bg-tertiary); }
-@utility bg-elevated { background-color: var(--bg-elevated); }
-@utility bg-hover { background-color: var(--bg-hover); }
-@utility text-primary { color: var(--text-primary); }
-@utility text-secondary { color: var(--text-secondary); }
-@utility text-muted { color: var(--text-muted); }
+@utility bg-primary {
+  background-color: var(--bg-primary);
+}
+@utility bg-secondary {
+  background-color: var(--bg-secondary);
+}
+@utility bg-tertiary {
+  background-color: var(--bg-tertiary);
+}
+@utility bg-elevated {
+  background-color: var(--bg-elevated);
+}
+@utility bg-hover {
+  background-color: var(--bg-hover);
+}
+@utility text-primary {
+  color: var(--text-primary);
+}
+@utility text-secondary {
+  color: var(--text-secondary);
+}
+@utility text-muted {
+  color: var(--text-muted);
+}
 
 @layer base {
   * {
@@ -72,6 +88,13 @@
   }
 }
 
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 4px; }
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-hover);
+  border-radius: 4px;
+}
