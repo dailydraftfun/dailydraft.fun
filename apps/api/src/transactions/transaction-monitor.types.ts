@@ -28,6 +28,7 @@ export interface MonitoredTransaction {
   signature: string;
   status: MonitoredStatus;
   submittedAt: Date;
+  wallet: string;
 }
 
 export interface ReconciliationSummary {

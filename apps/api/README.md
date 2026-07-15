@@ -19,6 +19,12 @@ signer/write constraints recorded by the prepared intent. Vercel Cron
 calls `GET /v1/internal/reconciliation/solana` with `CRON_SECRET`; operators can
 run the same batch with `POST` and either the cron secret or an integration key.
 
+Funding reconciliation follows escrow v2's two-sided fee-deposit protocol. A
+single finalized `fund` transaction records that participant's side but keeps
+the duel `committing`; only one finalized deposit from each distinct creator and
+opponent wallet atomically advances the duel to `funded`. Duplicate-wallet or
+non-participant quorum fails closed into refund recovery.
+
 The monitor does not create pack purchases or escrow instructions. Preparation
 remains `501` until the deployed escrow IDL, valueless devnet mints, and provider
 transaction builders are integrated. A signature without a durable prepared

@@ -24,6 +24,11 @@ escrow program, encoded-data hash, and exact ordered account signer/write
 constraints returned by `getTransaction`. Expected accounts appearing elsewhere
 in the transaction are not sufficient.
 
+Escrow v2 funding uses two transactions. The creator and opponent each finalize
+one fee deposit. The first valid deposit remains `committing`; the second distinct
+participant completes the quorum and advances `funded` atomically. Duplicate
+wallet deposits never satisfy quorum and enter refund recovery.
+
 The reconciliation worker is idempotent, bounded to 100 records per run, and
 available at `GET|POST /internal/reconciliation/solana`. Vercel Cron uses
 `Authorization: Bearer $CRON_SECRET`; a manual worker can also use an integration

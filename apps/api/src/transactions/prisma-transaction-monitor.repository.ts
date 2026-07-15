@@ -30,7 +30,11 @@ import type {
   MonitoredTransaction,
 } from './transaction-monitor.types.js';
 
-const ACTIVE_STATUSES = [DuelTransactionStatus.SUBMITTED, DuelTransactionStatus.CONFIRMED];
+const ACTIVE_STATUS_VALUES: DuelTransactionStatus[] = [
+  DuelTransactionStatus.SUBMITTED,
+  DuelTransactionStatus.CONFIRMED,
+];
+const ACTIVE_STATUSES = new Set<DuelTransactionStatus>(ACTIVE_STATUS_VALUES);
 
 @Injectable()
 export class PrismaTransactionMonitorRepository extends TransactionMonitorRepository {
@@ -47,15 +51,10 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       if (!transaction || transaction.duelId !== input.duelId) {
         throw new NotFoundException(`Transaction ${input.transactionId} was not found`);
       }
-      if (input.actorWallet && transaction.wallet !== input.actorWallet) {
-        throw new ForbiddenException('Wallet session cannot submit another wallet transaction');
-      }
       if (
         transaction.submissionIdempotencyKey === input.idempotencyKey &&
         transaction.signature === input.signature &&
-        [DuelTransactionStatus.SUBMITTED, DuelTransactionStatus.CONFIRMED].includes(
-          transaction.status,
-        )
+        ACTIVE_STATUSES.has(transaction.status)
       ) {
         return toBoundSubmission(transaction.id, transaction.duelId, input.signature);
       }
@@ -91,6 +90,16 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           'Transaction intent does not target the configured escrow program',
         );
       }
+      if (transaction.wallet !== transaction.expectedSigner) {
+        throw new ConflictException('Prepared transaction wallet does not match expected signer');
+      }
+      assertWalletSubmissionActor({
+        ...(input.actorWallet ? { actorWallet: input.actorWallet } : {}),
+        creatorWallet: transaction.duel.creatorWallet,
+        expectedSigner: transaction.expectedSigner,
+        opponentWallet: transaction.duel.opponentWallet,
+        transactionWallet: transaction.wallet,
+      });
       const instructionAccounts = parseExpectedAccounts(transaction.expectedInstructionAccounts);
       if (
         !instructionAccounts?.some(
@@ -141,7 +150,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       where: {
         OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: now } }],
         signature: { not: null },
-        status: { in: ACTIVE_STATUSES },
+        status: { in: ACTIVE_STATUS_VALUES },
       },
     });
     return rows.flatMap((row) => {
@@ -180,6 +189,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           signature: row.signature,
           status: row.status === DuelTransactionStatus.CONFIRMED ? 'confirmed' : 'submitted',
           submittedAt: row.submittedAt,
+          wallet: row.wallet,
         },
       ];
     });
@@ -188,7 +198,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
   async recordConfirmed(transactionId: string, now: Date, nextCheckAt: Date): Promise<void> {
     await this.database.$transaction(async (database) => {
       const current = await database.duelTransaction.findUnique({ where: { id: transactionId } });
-      if (!current || !ACTIVE_STATUSES.includes(current.status)) return;
+      if (!current || !ACTIVE_STATUSES.has(current.status)) return;
       await database.duelTransaction.update({
         data: {
           checkAttempts: { increment: 1 },
@@ -211,7 +221,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
   ): Promise<void> {
     await this.database.$transaction(async (database) => {
       const current = await database.duelTransaction.findUnique({ where: { id: transactionId } });
-      if (!current || !ACTIVE_STATUSES.includes(current.status)) return;
+      if (!current || !ACTIVE_STATUSES.has(current.status)) return;
       await database.duelTransaction.update({
         data: {
           checkAttempts: { increment: 1 },
@@ -241,7 +251,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
         include: { duel: true },
         where: { id: transactionId },
       });
-      if (!monitored || !ACTIVE_STATUSES.includes(monitored.status)) return;
+      if (!monitored || !ACTIVE_STATUSES.has(monitored.status)) return;
       const transactionStatus =
         status === 'expired' ? DuelTransactionStatus.EXPIRED : DuelTransactionStatus.FAILED;
       await database.duelTransaction.update({
@@ -293,8 +303,8 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
         where: { id: transactionId },
       });
       if (!monitored) return false;
-      if (monitored.status === DuelTransactionStatus.FINALIZED) return true;
-      if (!ACTIVE_STATUSES.includes(monitored.status)) return false;
+      if (monitored.status === DuelTransactionStatus.FINALIZED) return monitored.errorCode === null;
+      if (!ACTIVE_STATUSES.has(monitored.status)) return false;
       if (!monitored.expectedFromStatus || !monitored.expectedToStatus) {
         await rejectFinalization(database, monitored.id, now, 'MISSING_INTENT_CONSTRAINTS');
         return false;
@@ -308,6 +318,9 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       ) {
         await rejectFinalization(database, monitored.id, now, 'DUEL_STATE_MISMATCH');
         return false;
+      }
+      if (monitored.action === DuelTransactionAction.FUND) {
+        return finalizeFundingSide(database, monitored, now);
       }
       const changed = await database.duel.updateMany({
         data: {
@@ -356,6 +369,158 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       return true;
     });
   }
+}
+
+async function finalizeFundingSide(
+  database: Prisma.TransactionClient,
+  monitored: FundingTransactionRecord,
+  now: Date,
+): Promise<boolean> {
+  const finalized = await database.duelTransaction.findMany({
+    select: { id: true, wallet: true },
+    where: {
+      action: DuelTransactionAction.FUND,
+      duelId: monitored.duelId,
+      id: { not: monitored.id },
+      status: DuelTransactionStatus.FINALIZED,
+    },
+  });
+  const quorum = resolveFundingQuorum({
+    creatorWallet: monitored.duel.creatorWallet,
+    currentAlreadyFinalized: false,
+    currentWallet: monitored.wallet,
+    finalizedWallets: finalized.map((transaction) => transaction.wallet),
+    opponentWallet: monitored.duel.opponentWallet,
+  });
+  if (quorum === 'invalid') {
+    const target = DatabaseDuelStatus.REFUNDING;
+    const changed = await database.duel.updateMany({
+      data: { status: target, version: { increment: 1 } },
+      where: {
+        id: monitored.duel.id,
+        status: DatabaseDuelStatus.COMMITTING,
+        version: monitored.duel.version,
+      },
+    });
+    if (changed.count !== 1) throw new ConflictException('Duel changed during funding recovery');
+    await markFinalizedTransaction(database, monitored, now, 'FUNDING_QUORUM_INVALID');
+    await database.duelEvent.create({
+      data: {
+        data: {
+          action: 'fund',
+          code: 'FUNDING_QUORUM_INVALID',
+          transactionId: monitored.id,
+        },
+        duelId: monitored.duel.id,
+        fromStatus: monitored.duel.status,
+        id: createId('evt'),
+        sequence: monitored.duel.version + 1,
+        toStatus: target,
+        type: 'duel.funding_quorum_invalid',
+      },
+    });
+    return false;
+  }
+
+  const target = quorum === 'complete' ? DatabaseDuelStatus.FUNDED : DatabaseDuelStatus.COMMITTING;
+  const changed = await database.duel.updateMany({
+    data: {
+      ...(target === DatabaseDuelStatus.FUNDED ? { fundedAt: now } : {}),
+      status: target,
+      version: { increment: 1 },
+    },
+    where: {
+      id: monitored.duel.id,
+      status: DatabaseDuelStatus.COMMITTING,
+      version: monitored.duel.version,
+    },
+  });
+  if (changed.count !== 1) throw new ConflictException('Duel changed during funding finalization');
+  await markFinalizedTransaction(database, monitored, now);
+  await database.duelEvent.create({
+    data: {
+      data: {
+        action: 'fund',
+        confirmationStatus: 'finalized',
+        finalizedSides: quorum === 'complete' ? 2 : 1,
+        requiredSides: 2,
+        signature: monitored.signature,
+        transactionId: monitored.id,
+        wallet: monitored.wallet,
+      },
+      duelId: monitored.duel.id,
+      fromStatus: monitored.duel.status,
+      id: createId('evt'),
+      sequence: monitored.duel.version + 1,
+      toStatus: target,
+      type: quorum === 'complete' ? 'duel.funding_finalized' : 'duel.funding_side_finalized',
+    },
+  });
+  return true;
+}
+
+async function markFinalizedTransaction(
+  database: Prisma.TransactionClient,
+  monitored: {
+    confirmedAt: Date | null;
+    id: string;
+  },
+  now: Date,
+  errorCode: string | null = null,
+): Promise<void> {
+  await database.duelTransaction.update({
+    data: {
+      checkAttempts: { increment: 1 },
+      confirmationStatus: 'finalized',
+      confirmedAt: monitored.confirmedAt ?? now,
+      errorCode,
+      errorMessage: errorCode ? 'Finalized funding transaction did not satisfy quorum' : null,
+      finalizedAt: now,
+      lastCheckedAt: now,
+      nextCheckAt: null,
+      status: DuelTransactionStatus.FINALIZED,
+    },
+    where: { id: monitored.id },
+  });
+}
+
+export type FundingQuorum = 'complete' | 'idempotent' | 'invalid' | 'pending';
+
+export function resolveFundingQuorum(input: {
+  creatorWallet: string;
+  currentAlreadyFinalized: boolean;
+  currentWallet: string;
+  finalizedWallets: string[];
+  opponentWallet: string | null;
+}): FundingQuorum {
+  if (input.currentAlreadyFinalized) return 'idempotent';
+  if (!input.opponentWallet || input.creatorWallet === input.opponentWallet) return 'invalid';
+  const participants = new Set([input.creatorWallet, input.opponentWallet]);
+  if (!participants.has(input.currentWallet)) return 'invalid';
+  if (input.finalizedWallets.some((wallet) => !participants.has(wallet))) return 'invalid';
+  if (new Set(input.finalizedWallets).size !== input.finalizedWallets.length) return 'invalid';
+  if (input.finalizedWallets.includes(input.currentWallet)) return 'invalid';
+  const finalizedParticipants = new Set([...input.finalizedWallets, input.currentWallet]);
+  return finalizedParticipants.size === 2 &&
+    finalizedParticipants.has(input.creatorWallet) &&
+    finalizedParticipants.has(input.opponentWallet)
+    ? 'complete'
+    : 'pending';
+}
+
+interface FundingTransactionRecord {
+  confirmedAt: Date | null;
+  duel: {
+    creatorWallet: string;
+    id: string;
+    opponentWallet: string | null;
+    status: DatabaseDuelStatus;
+    version: number;
+  };
+  duelId: string;
+  id: string;
+  signature: string | null;
+  wallet: string;
 }
 
 async function rejectFinalization(
@@ -416,4 +581,23 @@ function toDatabaseStatus(status: DuelStatus): DatabaseDuelStatus {
 
 function createId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replaceAll('-', '')}`;
+}
+
+export function assertWalletSubmissionActor(input: {
+  actorWallet?: string;
+  creatorWallet: string;
+  expectedSigner: string;
+  opponentWallet: string | null;
+  transactionWallet: string;
+}): void {
+  if (!input.actorWallet) return;
+  if (
+    input.actorWallet !== input.transactionWallet ||
+    input.actorWallet !== input.expectedSigner ||
+    ![input.creatorWallet, input.opponentWallet].includes(input.actorWallet)
+  ) {
+    throw new ForbiddenException(
+      'Wallet session cannot submit a transaction for another signer or duel participant',
+    );
+  }
 }

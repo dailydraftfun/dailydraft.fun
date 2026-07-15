@@ -39,6 +39,7 @@ export function monitoredTransaction(
     signature: SIGNATURE,
     status: 'submitted',
     submittedAt: new Date('2026-07-15T20:00:00.000Z'),
+    wallet: SIGNER,
     ...overrides,
   };
 }
