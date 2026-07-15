@@ -16,5 +16,5 @@
     "target": "ES2023",
     "types": ["bun"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["api/**/*.ts", "src/**/*.ts"]
 }
