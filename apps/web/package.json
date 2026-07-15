@@ -2,6 +2,7 @@
   "name": "@openpacksduel/web",
   "version": "0.0.1",
   "private": true,
+  "packageManager": "bun@1.3.13",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
