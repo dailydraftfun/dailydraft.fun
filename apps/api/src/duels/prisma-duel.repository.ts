@@ -391,7 +391,7 @@ export class PrismaDuelRepository extends DuelRepository {
           throw new ConflictException('Duel state changed during transition');
         await transaction.duelEvent.create({
           data: {
-            actorWallet: input.actorWallet,
+            ...(input.actorWallet ? { actorWallet: input.actorWallet } : {}),
             ...(input.data ? { data: input.data as Prisma.InputJsonValue } : {}),
             duelId: duel.id,
             fromStatus: duel.status,
