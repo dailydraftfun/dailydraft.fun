@@ -14,17 +14,27 @@ import {
   ShareNetworkIcon,
   ShieldCheckIcon,
   SparkleIcon,
+  SpinnerGapIcon,
   SwordIcon,
   TrophyIcon,
   UserPlusIcon,
   UsersThreeIcon,
+  WarningCircleIcon,
   XLogoIcon,
 } from '@phosphor-icons/react';
 import { Button, Card, CardContent, Input, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type DuelOpponentType,
+  type DuelTransactionIntent,
+  prepareDuelIntent,
+  submitSignedDuelIntent,
+} from './solana/duel-client';
+import { TransactionIntentReview } from './solana/transaction-intent-review';
+import { useSolanaWallet } from './solana/wallet-provider';
 
-type Mode = 'quick' | 'wallet';
+type Mode = DuelOpponentType;
 type Phase = 'lobby' | 'matching' | 'opening' | 'result';
 
 type Pull = {
@@ -164,12 +174,14 @@ function DuelCard({
   phase,
   winner,
   tier,
+  walletLabel,
 }: {
   pull: Pull;
   side: 'you' | 'opponent';
   phase: Phase;
   winner: boolean;
   tier: number;
+  walletLabel: string;
 }) {
   const visible = phase === 'result';
   return (
@@ -181,7 +193,7 @@ function DuelCard({
         />
         <div>
           <small>{side === 'you' ? 'You' : 'Opponent'}</small>
-          <strong>{side === 'you' ? '8xK4…p2Te' : 'Boba.sol'}</strong>
+          <strong>{walletLabel}</strong>
         </div>
         {winner && visible ? (
           <span className="winner-chip">
@@ -237,12 +249,16 @@ function DuelCard({
 }
 
 export function DuelArena() {
-  const [mode, setMode] = useState<Mode>('quick');
+  const walletConnection = useSolanaWallet();
+  const [mode, setMode] = useState<Mode>('matchmaking');
   const [tier, setTier] = useState(50);
   const [phase, setPhase] = useState<Phase>('lobby');
   const [wallet, setWallet] = useState('');
   const [nonce, setNonce] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [intent, setIntent] = useState<DuelTransactionIntent | null>(null);
+  const [intentPending, setIntentPending] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const timers = useRef<number[]>([]);
   const match = useMemo(() => getMatch(tier, nonce), [tier, nonce]);
   const winner = match.left.value >= match.right.value ? 'you' : 'opponent';
@@ -263,12 +279,73 @@ export function DuelArena() {
     timers.current.push(window.setTimeout(() => setPhase('result'), 3100));
   }
 
+  async function reviewDuel(nextTier = tier, nextMode = mode) {
+    setActionError(null);
+    setTier(nextTier);
+    setMode(nextMode);
+    if (!walletConnection.address) {
+      setActionError('Connect a Solana wallet from the top-right button before funding a duel.');
+      return;
+    }
+    if (walletConnection.networkStatus === 'offline') {
+      setActionError(
+        'Solana devnet RPC is unavailable. Wait for the network to recover and retry.',
+      );
+      return;
+    }
+    if (nextMode === 'direct' && wallet.trim().length < 32) {
+      setActionError('Enter a complete Solana wallet address for the opponent.');
+      return;
+    }
+
+    setIntentPending(true);
+    try {
+      const preparedIntent = await prepareDuelIntent({
+        walletAddress: walletConnection.address,
+        opponentType: nextMode,
+        opponentAddress: nextMode === 'direct' ? wallet.trim() : undefined,
+        packTierUsd: nextTier,
+        platformFeeUsd: nextTier * 0.025,
+      });
+      setIntent(preparedIntent);
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : 'Could not prepare the devnet transaction intent.',
+      );
+    } finally {
+      setIntentPending(false);
+    }
+  }
+
+  async function approveIntent() {
+    if (!intent) return;
+    setIntentPending(true);
+    setActionError(null);
+    try {
+      if (intent.serializedTransactionBase64) {
+        const binary = window.atob(intent.serializedTransactionBase64);
+        const transaction = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        const signedTransaction = await walletConnection.signTransaction(transaction);
+        await submitSignedDuelIntent(intent.id, signedTransaction);
+      }
+      setIntent(null);
+      startDuel(intent.packTierUsd);
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : 'The wallet did not approve the transaction.',
+      );
+    } finally {
+      setIntentPending(false);
+    }
+  }
+
   function resetDuel(rematch = false) {
     for (const timer of timers.current) window.clearTimeout(timer);
     timers.current = [];
     setNonce((value) => value + 1);
     setPhase('lobby');
-    if (rematch) window.setTimeout(() => startDuel(), 80);
+    if (rematch)
+      setActionError('Rematch ready. Review and approve a fresh transaction to continue.');
   }
 
   async function copyChallenge() {
@@ -340,6 +417,7 @@ export function DuelArena() {
               phase={phase}
               winner={winner === 'you'}
               tier={tier}
+              walletLabel={walletConnection.shortAddress ?? 'Your wallet'}
             />
             <div className="versus-mark" aria-hidden="true">
               <span>VS</span>
@@ -350,6 +428,7 @@ export function DuelArena() {
               phase={phase}
               winner={winner === 'opponent'}
               tier={tier}
+              walletLabel={mode === 'house' ? 'Pack Duel House' : match.opponent}
             />
           </div>
 
@@ -407,7 +486,7 @@ export function DuelArena() {
       <section className="lobby-hero">
         <div className="hero-copy">
           <span className="eyebrow">
-            <LightningIcon size={14} weight="fill" /> Live on Solana · UI demo
+            <LightningIcon size={14} weight="fill" /> Solana devnet MVP
           </span>
           <h1>
             Rip together.
@@ -436,25 +515,37 @@ export function DuelArena() {
               <button
                 type="button"
                 role="tab"
-                aria-selected={mode === 'quick'}
-                onClick={() => setMode('quick')}
+                aria-selected={mode === 'direct'}
+                onClick={() => setMode('direct')}
               >
-                <LightningIcon size={17} weight="fill" />
+                <UserPlusIcon size={17} weight="bold" />
                 <span className="mode-tab-copy">
-                  <strong className="mode-tab-title">Quick Duel</strong>
-                  <small className="mode-tab-caption">Match instantly</small>
+                  <strong className="mode-tab-title">Challenge</strong>
+                  <small className="mode-tab-caption">Invite a wallet</small>
                 </span>
               </button>
               <button
                 type="button"
                 role="tab"
-                aria-selected={mode === 'wallet'}
-                onClick={() => setMode('wallet')}
+                aria-selected={mode === 'matchmaking'}
+                onClick={() => setMode('matchmaking')}
               >
-                <UserPlusIcon size={17} weight="bold" />
+                <UsersThreeIcon size={17} weight="fill" />
                 <span className="mode-tab-copy">
-                  <strong className="mode-tab-title">Challenge Wallet</strong>
-                  <small className="mode-tab-caption">Invite a friend</small>
+                  <strong className="mode-tab-title">Matchmake</strong>
+                  <small className="mode-tab-caption">Find a wallet</small>
+                </span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'house'}
+                onClick={() => setMode('house')}
+              >
+                <LightningIcon size={17} weight="fill" />
+                <span className="mode-tab-copy">
+                  <strong className="mode-tab-title">Instant</strong>
+                  <small className="mode-tab-caption">Play the house</small>
                 </span>
               </button>
             </div>
@@ -475,7 +566,7 @@ export function DuelArena() {
                 ))}
               </div>
 
-              {mode === 'wallet' ? (
+              {mode === 'direct' ? (
                 <div className="wallet-challenge-panel">
                   <label htmlFor="opponent-wallet">Opponent wallet</label>
                   <div className="wallet-input-row">
@@ -483,7 +574,7 @@ export function DuelArena() {
                       id="opponent-wallet"
                       value={wallet}
                       onChange={(event) => setWallet(event.target.value)}
-                      placeholder="Wallet address or .sol name"
+                      placeholder="Solana wallet address"
                       className="wallet-input"
                     />
                     <Button
@@ -502,6 +593,26 @@ export function DuelArena() {
                 </div>
               ) : null}
 
+              {mode === 'house' ? (
+                <div className="opponent-disclosure">
+                  <ShieldCheckIcon size={18} weight="fill" />
+                  <span>
+                    <strong>Instant house opponent</strong>
+                    The house funds the matching pack and must precommit before either reveal.
+                  </span>
+                </div>
+              ) : null}
+
+              {mode === 'matchmaking' ? (
+                <div className="opponent-disclosure">
+                  <UsersThreeIcon size={18} weight="fill" />
+                  <span>
+                    <strong>Public wallet matchmaking</strong>
+                    We match the same tier. You can cancel before both wallets commit.
+                  </span>
+                </div>
+              ) : null}
+
               <div className="fee-summary">
                 <span>
                   Pack <strong>${tier.toFixed(2)}</strong>
@@ -517,20 +628,33 @@ export function DuelArena() {
               <Button
                 type="button"
                 className="duel-cta"
-                onClick={() => startDuel()}
-                disabled={mode === 'wallet' && wallet.trim().length === 0}
+                onClick={() => reviewDuel()}
+                disabled={intentPending || (mode === 'direct' && wallet.trim().length === 0)}
               >
-                {mode === 'quick' ? (
+                {intentPending ? (
+                  <SpinnerGapIcon className="wallet-spinner" size={18} />
+                ) : mode === 'matchmaking' || mode === 'house' ? (
                   <LightningIcon size={18} weight="fill" />
                 ) : (
                   <LinkIcon size={18} weight="bold" />
                 )}
-                {mode === 'quick' ? `Find a $${tier} duel` : `Create $${tier} challenge`}
+                {intentPending
+                  ? 'Preparing devnet intent'
+                  : mode === 'direct'
+                    ? `Create $${tier} challenge`
+                    : mode === 'house'
+                      ? `Play house for $${tier}`
+                      : `Find a $${tier} duel`}
               </Button>
               <p className="signing-note">
-                <InfoIcon size={13} /> Demo only — no wallet signature or transaction will be
-                requested.
+                <InfoIcon size={13} /> Every devnet signature is preceded by an explicit transaction
+                review.
               </p>
+              {actionError ? (
+                <p className="duel-action-error" role="alert">
+                  <WarningCircleIcon size={14} weight="fill" /> {actionError}
+                </p>
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -564,7 +688,11 @@ export function DuelArena() {
                 <small>Pack tier</small>
                 <strong>${duel.tier}</strong>
               </div>
-              <Button type="button" variant="ghost" onClick={() => startDuel(duel.tier)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => reviewDuel(duel.tier, 'matchmaking')}
+              >
                 Join duel
               </Button>
             </article>
@@ -592,6 +720,17 @@ export function DuelArena() {
           <ShareNetworkIcon size={15} /> Full rules
         </button>
       </section>
+      {intent ? (
+        <TransactionIntentReview
+          intent={intent}
+          pending={intentPending}
+          error={actionError}
+          onClose={() => {
+            if (!intentPending) setIntent(null);
+          }}
+          onConfirm={approveIntent}
+        />
+      ) : null}
     </main>
   );
 }

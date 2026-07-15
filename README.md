@@ -36,6 +36,13 @@ state events, and Solana transaction reconciliation records are durable in
 PostgreSQL. Mock provider mode never represents a funded or settled game;
 provider inventory, escrow proof, and settlement remain integration milestones.
 
+## Devnet
+
+The public product preview is available at
+[openpacksduel.vercel.app](https://openpacksduel.vercel.app). The isolated Solana
+devnet environment, program identity, environment contract, deployment order,
+and promotion gates are documented in [`docs/devnet-runbook.md`](docs/devnet-runbook.md).
+
 ## Update Dependencies
 
 ```bash

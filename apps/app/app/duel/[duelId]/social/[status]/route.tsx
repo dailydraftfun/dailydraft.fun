@@ -1,5 +1,5 @@
 import { ImageResponse } from 'next/og';
-import { type DuelStatus, getDuelSocialSnapshot, isDuelStatus } from '../../../social-card-data';
+import { getDuelSocialSnapshot, resolveDuelStatus } from '../../../social-card-data';
 
 export const runtime = 'edge';
 
@@ -72,10 +72,9 @@ export async function GET(
   { params }: { params: Promise<{ duelId: string; status: string }> },
 ) {
   const { duelId, status: statusParam } = await params;
-  const status: DuelStatus = isDuelStatus(statusParam) ? statusParam : 'waiting';
+  const status = resolveDuelStatus(statusParam);
   const duel = getDuelSocialSnapshot(duelId, status);
-  const isResult = status === 'won' || status === 'lost';
-  const isWinner = status === 'won';
+  const isResult = status === 'settled';
 
   return new ImageResponse(
     <div
@@ -137,7 +136,7 @@ export async function GET(
                 letterSpacing: 2,
               }}
             >
-              DEMO
+              DEVNET
             </div>
           </div>
 
@@ -219,21 +218,20 @@ export async function GET(
         {isResult ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
             <PullCard
-              label={isWinner ? 'Winner' : 'Your pull'}
+              label="Winner"
               name={duel.playerCard}
               value={duel.playerValue}
               accent={duel.accent}
-              faded={!isWinner}
             />
             <div style={{ display: 'flex', color: '#65717b', fontSize: 20, fontWeight: 700 }}>
               VS
             </div>
             <PullCard
-              label={isWinner ? 'Opponent' : 'Winner'}
+              label="Rival pull"
               name={duel.opponentCard}
               value={duel.opponentValue}
               accent={duel.accent}
-              faded={isWinner}
+              faded
             />
           </div>
         ) : (
