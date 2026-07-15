@@ -38,6 +38,7 @@ import {
   fundDuelAccountConstraints,
 } from '../contracts/openpacksduel-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
+import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
 import type { ExpectedAccountConstraint } from './transaction-monitor.types.js';
@@ -91,6 +92,7 @@ export class DuelFundingService {
     const wallet = parsePublicKey(input.wallet, 'wallet');
     const duel = await this.database.duel.findUnique({ where: { id: input.duelId } });
     if (!duel) throw new NotFoundException(`Duel ${input.duelId} was not found`);
+    const valuationPolicyHash = parsePolicyHash(duel.valuationPolicyHash);
     const side = validateFundingDuelForPreparation(duel, input.wallet, new Date());
     if (side === 'opponent') {
       const creatorFunding = await this.database.duelTransaction.findFirst({
@@ -115,7 +117,12 @@ export class DuelFundingService {
       },
     });
     assertNoActiveFunding(activeFunding);
-    const reusable = await this.findReusable(input, configuration, currentBlockHeight);
+    const reusable = await this.findReusable(
+      input,
+      configuration,
+      currentBlockHeight,
+      CANONICAL_VALUATION_POLICY_HASH,
+    );
     if (reusable) return reusable;
 
     const opponent = parsePublicKey(duel.opponentWallet ?? '', 'opponent wallet');
@@ -161,7 +168,7 @@ export class DuelFundingService {
             nonce,
             opponent,
             providerSigner: configuration.providerSigner,
-            valuationPolicyHash: parsePolicyHash(duel.valuationPolicyHash),
+            valuationPolicyHash,
           },
           creator: wallet,
           paymentMint: NATIVE_MINT,
@@ -194,6 +201,7 @@ export class DuelFundingService {
       programId: configuration.programId.toBase58(),
       providerSigner: configuration.providerSigner.toBase58(),
       sourceSha: ESCROW_V2_SOURCE_SHA,
+      valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
       wallet: input.wallet,
     });
     const metadata = buildMetadata({
@@ -223,6 +231,7 @@ export class DuelFundingService {
     input: { duelId: string; idempotencyKey: string; wallet: string },
     configuration: EscrowConfiguration,
     currentBlockHeight: bigint,
+    valuationPolicyHash: string,
   ): Promise<PreparedFundingIntent | null> {
     const requestHash = preparationHash({
       duelId: input.duelId,
@@ -231,6 +240,7 @@ export class DuelFundingService {
       programId: configuration.programId.toBase58(),
       providerSigner: configuration.providerSigner.toBase58(),
       sourceSha: ESCROW_V2_SOURCE_SHA,
+      valuationPolicyHash,
       wallet: input.wallet,
     });
     const existing = await this.database.duelTransaction.findFirst({
@@ -396,9 +406,11 @@ function parsePublicKey(value: string, label: string): PublicKey {
   }
 }
 
-function parsePolicyHash(value: string | null): Uint8Array {
-  if (!value || !/^[0-9a-fA-F]{64}$/.test(value)) {
-    throw new ServiceUnavailableException('Duel valuation policy hash is not configured');
+export function parsePolicyHash(value: string | null): Uint8Array {
+  if (value !== CANONICAL_VALUATION_POLICY_HASH) {
+    throw new ServiceUnavailableException(
+      'Duel valuation policy does not match the supported canonical policy',
+    );
   }
   return Uint8Array.from(Buffer.from(value, 'hex'));
 }

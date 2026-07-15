@@ -11,7 +11,11 @@ const files = [
   'openapi.yaml',
   'guides/quickstart.md',
   'guides/solana-transactions.md',
+  'guides/valuation-and-proof.md',
   'guides/webhooks.md',
+  'fixtures/valuation/equal-value.json',
+  'fixtures/valuation/stale-value.json',
+  'fixtures/valuation/provider-correction.json',
 ];
 
 await rm(output, { force: true, recursive: true });

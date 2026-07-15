@@ -1,4 +1,9 @@
 import type { Duel, DuelStatus, DuelTransactionRecord, Money } from '../domain.js';
+import { compareInsuredValues } from '../providers/provider-result.js';
+import {
+  CANONICAL_VALUATION_POLICY,
+  requireCanonicalValuationPolicyHash,
+} from '../providers/valuation-policy.js';
 
 export type PublicDuelStatus = DuelStatus | 'expired';
 
@@ -106,8 +111,40 @@ export interface PublicDuelResult {
     displayName: string;
     insuredValue: Money;
     isMock: boolean;
+    poolVersion: string;
+    resultHash: string;
     side: 'creator' | 'opponent';
+    sourceTimestamp: string;
   }>;
+  policy: {
+    authoritativeField: typeof CANONICAL_VALUATION_POLICY.authoritativeField;
+    currency: 'USDC';
+    decimals: 6;
+    hash: string;
+    hashAlgorithm: 'sha256';
+    maxSourceAgeSeconds: number;
+    policyVersion: typeof CANONICAL_VALUATION_POLICY.policyVersion;
+    rounding: 'none';
+    tieRule: typeof CANONICAL_VALUATION_POLICY.tieRule;
+  };
+  proof: {
+    context: {
+      creatorWallet: string;
+      duelId: string;
+      escrowAddress: string;
+      network: 'solana-devnet';
+      opponentWallet: string;
+      providerMode: Duel['providerMode'];
+    };
+    creatorResultHash: string;
+    opponentResultHash: string;
+    poolVersion: string;
+    providerAttestation: {
+      required: boolean;
+      status: 'mock-not-applicable' | 'not-recorded';
+    };
+    schemaVersion: 'openpacksduel.result-proof.v1';
+  };
   resultHash: string;
   settlementReady: boolean;
   totalValue: Money;
@@ -399,10 +436,43 @@ function buildResult(
   opponent: PublicParticipant | null,
 ): PublicDuelResult | null {
   if (!duel.result) return null;
-  const values = duel.result.outcomes.map((outcome) => outcome.insuredValue);
-  if (values.length !== 2) return null;
-  const [left, right] = values;
-  if (!left || !right) return null;
+  const policyHash = requireCanonicalValuationPolicyHash(duel.result.valuationPolicyHash);
+  if (duel.pack.valuationPolicyHash !== policyHash) {
+    throw new Error('Duel result policy does not match the pre-funding policy commitment');
+  }
+  const creatorOutcome = duel.result.outcomes.find((outcome) => outcome.side === 'creator');
+  const opponentOutcome = duel.result.outcomes.find((outcome) => outcome.side === 'opponent');
+  if (!creatorOutcome || !opponentOutcome || duel.result.outcomes.length !== 2) {
+    throw new Error('Duel result must contain one immutable outcome per side');
+  }
+  if (!duel.opponentWallet || !duel.escrowAddress || !opponent) {
+    throw new Error('Duel result proof lacks committed participants or escrow');
+  }
+  const context = {
+    creatorWallet: duel.creatorWallet,
+    duelId: duel.id,
+    escrowAddress: duel.escrowAddress,
+    network: duel.environment,
+    opponentWallet: duel.opponentWallet,
+    providerMode: duel.providerMode,
+    valuationPolicyHash: policyHash,
+  };
+  const comparison = compareInsuredValues(
+    { ...creatorOutcome, valuationPolicyHash: policyHash },
+    { ...opponentOutcome, valuationPolicyHash: policyHash },
+    context,
+  );
+  if (
+    comparison.resultHash !== duel.result.resultHash ||
+    comparison.winnerSide !== duel.result.winnerSide ||
+    comparison.tieRule !== duel.result.tieRule ||
+    duel.result.settlementReady !== (comparison.winnerSide !== null)
+  ) {
+    throw new Error('Duel result proof does not reproduce the recorded winner');
+  }
+  const left = creatorOutcome.insuredValue;
+  const right = opponentOutcome.insuredValue;
+  const values = [left, right];
   const marginAmount = (BigInt(left.amount) - BigInt(right.amount)).toString().replace('-', '');
   const winner =
     duel.result.winnerSide === 'creator'
@@ -418,8 +488,40 @@ function buildResult(
       displayName: outcome.displayName,
       insuredValue: outcome.insuredValue,
       isMock: outcome.isMock,
+      poolVersion: outcome.poolVersion,
+      resultHash: outcome.resultHash,
       side: outcome.side,
+      sourceTimestamp: outcome.sourceTimestamp,
     })),
+    policy: {
+      authoritativeField: CANONICAL_VALUATION_POLICY.authoritativeField,
+      currency: CANONICAL_VALUATION_POLICY.currency,
+      decimals: CANONICAL_VALUATION_POLICY.decimals,
+      hash: policyHash,
+      hashAlgorithm: 'sha256',
+      maxSourceAgeSeconds: CANONICAL_VALUATION_POLICY.maxSourceAgeSeconds,
+      policyVersion: CANONICAL_VALUATION_POLICY.policyVersion,
+      rounding: CANONICAL_VALUATION_POLICY.rounding,
+      tieRule: CANONICAL_VALUATION_POLICY.tieRule,
+    },
+    proof: {
+      context: {
+        creatorWallet: context.creatorWallet,
+        duelId: context.duelId,
+        escrowAddress: context.escrowAddress,
+        network: context.network,
+        opponentWallet: context.opponentWallet,
+        providerMode: context.providerMode,
+      },
+      creatorResultHash: creatorOutcome.resultHash,
+      opponentResultHash: opponentOutcome.resultHash,
+      poolVersion: comparison.poolVersion,
+      providerAttestation: {
+        required: duel.providerMode !== 'mock',
+        status: duel.providerMode === 'mock' ? 'mock-not-applicable' : 'not-recorded',
+      },
+      schemaVersion: 'openpacksduel.result-proof.v1',
+    },
     resultHash: duel.result.resultHash,
     settlementReady: duel.result.settlementReady,
     totalValue: sumMoney(values),
@@ -457,6 +559,12 @@ function receiptMissingFields(input: {
   if (input.duel.status === 'settled') {
     if (!input.duel.result) missing.push('provider_results');
     if (!input.duel.result?.valuationPolicyHash) missing.push('valuation_policy_hash');
+    if (
+      input.duel.providerMode !== 'mock' &&
+      input.duel.result?.outcomes.some((outcome) => !outcome.isMock)
+    ) {
+      missing.push('provider_result_attestation');
+    }
     if (!input.settlementReference) missing.push('card_settlement_reference');
   }
   return missing;

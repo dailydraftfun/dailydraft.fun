@@ -115,10 +115,12 @@ export class OpenPacksApiClient {
       environment: duel.environment,
       escrowAddress: duel.escrowAddress ?? null,
       providerMode: duel.providerMode,
+      poolVersion: duel.result?.outcomes[0]?.poolVersion ?? null,
       resultHash: duel.result?.resultHash ?? null,
       settlementReady: duel.result?.settlementReady ?? false,
       status: duel.status,
       transactionSignature: duel.transactionSignature ?? null,
+      tieRule: duel.result?.tieRule ?? null,
       valuationPolicyHash: duel.result?.valuationPolicyHash ?? null,
       verification: {
         apiStateIsOnChainProof: false,

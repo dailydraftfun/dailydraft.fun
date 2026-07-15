@@ -117,6 +117,14 @@ and house availability with the `OPENPACKSDUEL_ALLOWED_TIERS`,
 `50`, `3`, `20`, and `false` respectively.
 The deterministic mock provider refuses to run unless `OPENPACKSDUEL_NETWORK`
 is `solana-devnet`. Its asset references and values are valueless test data.
+All new duels snapshot the published `collector-crypt-insured-value-usdc-v1`
+policy before funding. Provider outcomes must match that exact SHA-256, use
+integer micro-USDC insured values, share one pool version, and carry a source
+timestamp no more than five minutes old. Equal values enter refund recovery so
+each player receives the original card and both platform fees are refunded.
+Recorded result inputs are immutable; provider corrections require a dispute or
+refund and never rewrite the winner. See the public valuation/proof guide and
+`GET /v1/valuation-policies/current`.
 `SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every
 worker validates the official devnet genesis hash before reading transaction
 state. Funding preparation additionally requires `ESCROW_PROGRAM_ID`,

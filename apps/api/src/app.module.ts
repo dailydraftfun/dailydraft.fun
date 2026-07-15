@@ -8,6 +8,7 @@ import { DuelsModule } from './duels/duels.module.js';
 import { HealthModule } from './health/health.module.js';
 import { MatchmakingModule } from './matchmaking/matchmaking.module.js';
 import { PacksModule } from './packs/packs.module.js';
+import { ProvidersModule } from './providers/providers.module.js';
 import { TransactionsModule } from './transactions/transactions.module.js';
 
 @Module({
@@ -19,6 +20,7 @@ import { TransactionsModule } from './transactions/transactions.module.js';
     HealthModule,
     MatchmakingModule,
     PacksModule,
+    ProvidersModule,
     DuelsModule,
     TransactionsModule,
   ],

@@ -41,8 +41,11 @@ export const duelPackOutcomeSchema = z.object({
   displayName: z.string().max(160),
   insuredValue: moneySchema,
   isMock: z.boolean(),
+  poolVersion: z.string().min(1).max(128),
+  providerReference: z.string(),
   resultHash: z.string().regex(/^[a-f0-9]{64}$/),
   side: z.enum(['creator', 'opponent']),
+  sourceTimestamp: z.iso.datetime(),
 });
 
 export const duelResultSchema = z.object({
@@ -50,6 +53,7 @@ export const duelResultSchema = z.object({
   outcomes: z.array(duelPackOutcomeSchema).length(2),
   resultHash: z.string().regex(/^[a-f0-9]{64}$/),
   settlementReady: z.boolean(),
+  tieRule: z.literal('return-original-assets-and-refund-platform-fees'),
   valuationPolicyHash: z.string().regex(/^[a-f0-9]{64}$/),
   winnerSide: z.enum(['creator', 'opponent']).nullable(),
 });
@@ -102,6 +106,7 @@ export const duelProofSchema = z.object({
   environment: z.literal('solana-devnet'),
   escrowAddress: z.string().nullable(),
   providerMode: z.enum(['mock', 'collector-crypt-sandbox']),
+  poolVersion: z.string().nullable(),
   resultHash: z
     .string()
     .regex(/^[a-f0-9]{64}$/)
@@ -109,6 +114,7 @@ export const duelProofSchema = z.object({
   settlementReady: z.boolean(),
   status: duelStatusSchema,
   transactionSignature: z.string().nullable(),
+  tieRule: z.literal('return-original-assets-and-refund-platform-fees').nullable(),
   valuationPolicyHash: z
     .string()
     .regex(/^[a-f0-9]{64}$/)

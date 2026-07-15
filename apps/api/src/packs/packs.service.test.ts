@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { PacksService } from './packs.service.js';
+import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
 
 describe('PacksService', () => {
   test('lists the active preview pack by default', () => {
@@ -8,6 +9,7 @@ describe('PacksService', () => {
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0]?.id).toBe('pokemon_50');
+    expect(result.data[0]?.valuationPolicyHash).toBe(CANONICAL_VALUATION_POLICY_HASH);
     expect(result.hasMore).toBe(false);
   });
 

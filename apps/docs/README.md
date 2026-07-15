@@ -27,6 +27,8 @@ Open `http://localhost:3000`. No secrets are required to render the reference.
 - Transaction endpoints return serialized transactions for the wallet to inspect
   and sign; they never claim settlement before chain confirmation.
 - Monetary values are integer minor units plus an explicit currency.
+- Winner calculation uses only the versioned insured-value policy documented in
+  [`guides/valuation-and-proof.md`](guides/valuation-and-proof.md).
 - Webhook consumers must verify signatures and tolerate duplicate delivery.
 
 ## Monorepo location

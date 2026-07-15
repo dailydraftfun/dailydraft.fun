@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
 import type { Pack, Page } from '../domain.js';
+import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
 import type { ListPacksQuery } from './list-packs.query.js';
 
 const PACKS: readonly Pack[] = [
@@ -11,7 +12,7 @@ const PACKS: readonly Pack[] = [
     price: { amount: '50000000', currency: 'USDC', decimals: 6 },
     provider: 'jupiter-gacha',
     providerPackId: 'pokemon_50',
-    valuationPolicyHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
   },
 ];
 

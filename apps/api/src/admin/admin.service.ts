@@ -298,9 +298,11 @@ export class AdminService {
         },
         isMock: outcome.isMock,
         openedAt: outcome.openedAt.toISOString(),
+        poolVersion: outcome.poolVersion,
         providerReference: outcome.providerReference,
         resultHash: outcome.resultHash,
         side: outcome.side.toLowerCase(),
+        sourceTimestamp: outcome.sourceTimestamp.toISOString(),
         valuationPolicyHash: outcome.valuationPolicyHash,
       })),
       transactions: duel.transactions.map((transaction) => ({

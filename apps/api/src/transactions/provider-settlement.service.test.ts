@@ -12,6 +12,8 @@ import {
   deriveEscrowV2CardVault,
   ESCROW_V2_PROGRAM_ID,
 } from '../contracts/openpacksduel-escrow-v2.js';
+import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
+import { normalizeProviderResult } from '../providers/provider-result.js';
 import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
 import {
   ProviderSettlementService,
@@ -22,7 +24,7 @@ import { SolanaRpcGateway } from './solana-rpc.client.js';
 const CREATOR = fixturePublicKey(1);
 const OPPONENT = fixturePublicKey(2);
 const PROVIDER = fixturePublicKey(3);
-const POLICY = 'ab'.repeat(32);
+const POLICY = CANONICAL_VALUATION_POLICY_HASH;
 const REQUEST = 'cd'.repeat(32);
 
 describe('provider settlement evidence', () => {
@@ -47,6 +49,12 @@ describe('provider settlement evidence', () => {
     const overflow = evidence();
     requireOutcome(overflow, 0).insuredValueAmount = 18_446_744_073_709_551_616n.toString();
     expect(() => validateCanonicalEvidence(overflow)).toThrow('exceeds u64');
+    const mixedPool = evidence();
+    requireOutcome(mixedPool, 1).poolVersion = 'collector-crypt-pool-v2';
+    expect(() => validateCanonicalEvidence(mixedPool)).toThrow('one provider pool version');
+    const stale = evidence();
+    requireOutcome(stale, 0).sourceTimestamp = new Date('2026-07-15T19:54:59.000Z');
+    expect(() => validateCanonicalEvidence(stale)).toThrow('snapshot is not canonical');
   });
 });
 
@@ -280,15 +288,36 @@ function evidence(creator = '200', opponent = '100') {
 }
 
 function outcome(side: DuelSide, assetReference: string, value: string) {
+  const sourceTimestamp = '2026-07-15T19:59:30.000Z';
+  const openedAt = new Date('2026-07-15T20:00:00.000Z');
+  const providerReference = `provider-${side.toLowerCase()}`;
+  const normalized = normalizeProviderResult(
+    side === DuelSide.CREATOR ? 'creator' : 'opponent',
+    {
+      assetReference,
+      displayName: `${side.toLowerCase()} card`,
+      insuredValue: { amount: value, currency: 'USDC', decimals: 6 },
+      poolVersion: 'collector-crypt-pool-v1',
+      sourceTimestamp,
+      valuationPolicyHash: POLICY,
+    },
+    POLICY,
+    providerReference,
+    openedAt,
+  );
   return {
     assetReference,
+    displayName: normalized.displayName,
     insuredValueAmount: value,
     insuredValueCurrency: 'USDC',
     insuredValueDecimals: 6,
     isMock: false,
-    openedAt: new Date('2026-07-15T20:00:00.000Z'),
-    providerReference: `provider-${side.toLowerCase()}`,
+    openedAt,
+    poolVersion: 'collector-crypt-pool-v1',
+    providerReference,
+    resultHash: normalized.resultHash,
     side,
+    sourceTimestamp: new Date(sourceTimestamp),
     valuationPolicyHash: POLICY,
   };
 }

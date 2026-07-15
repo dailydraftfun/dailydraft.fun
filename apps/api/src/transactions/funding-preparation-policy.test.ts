@@ -6,8 +6,10 @@ import {
   assertNoActiveFunding,
   fundingPreparationStatus,
   isPreparedBlockhashReusable,
+  parsePolicyHash,
   validateFundingDuelForPreparation,
 } from './duel-funding.service.js';
+import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
 import {
   isIdempotentSubmissionReplay,
   recoveryAlertRouting,
@@ -27,6 +29,13 @@ describe('funding preparation policy', () => {
         wallet: 'creator',
       }),
     ).toBe(true);
+  });
+
+  test('commits only the current canonical valuation policy into escrow funding', () => {
+    expect(Buffer.from(parsePolicyHash(CANONICAL_VALUATION_POLICY_HASH)).toString('hex')).toBe(
+      CANONICAL_VALUATION_POLICY_HASH,
+    );
+    expect(() => parsePolicyHash('a'.repeat(64))).toThrow('supported canonical policy');
   });
 
   test('does not transition on opponent or non-funding submission', () => {

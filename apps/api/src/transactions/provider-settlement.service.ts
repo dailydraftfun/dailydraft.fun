@@ -37,6 +37,11 @@ import {
   type EscrowV2Role,
 } from '../contracts/openpacksduel-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
+import {
+  CANONICAL_VALUATION_POLICY,
+  CANONICAL_VALUATION_POLICY_HASH,
+} from '../providers/valuation-policy.js';
+import { assertNormalizedOutcome } from '../providers/provider-result.js';
 import { nonceFromDuelId } from './duel-funding.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
@@ -47,7 +52,9 @@ interface CanonicalOutcome {
   mint: PublicKey;
   openedAt: Date;
   providerReference: string;
+  poolVersion: string;
   side: EscrowV2Role;
+  sourceTimestamp: Date;
   value: bigint;
 }
 
@@ -537,13 +544,17 @@ export function validateCanonicalEvidence(duel: {
   valuationPolicyHash: string | null;
   packOutcomes: Array<{
     assetReference: string;
+    displayName: string;
     insuredValueAmount: string;
     insuredValueCurrency: string;
     insuredValueDecimals: number;
     isMock: boolean;
     openedAt: Date;
+    poolVersion: string;
     providerReference: string;
+    resultHash: string;
     side: DuelSide;
+    sourceTimestamp: Date;
     valuationPolicyHash: string;
   }>;
 }): CanonicalEvidence {
@@ -554,7 +565,7 @@ export function validateCanonicalEvidence(duel: {
     throw new ServiceUnavailableException('Mock or incomplete outcomes cannot settle real assets');
   }
   const policyHash = duel.valuationPolicyHash;
-  if (!policyHash || !/^[a-f0-9]{64}$/.test(policyHash)) {
+  if (policyHash !== CANONICAL_VALUATION_POLICY_HASH) {
     throw new ServiceUnavailableException('Duel valuation policy is not canonical');
   }
   const outcomes = Object.fromEntries(
@@ -580,8 +591,10 @@ export function validateCanonicalEvidence(duel: {
         {
           mint: parsePublicKey(outcome.assetReference, `${side} assetReference`),
           openedAt: outcome.openedAt,
+          poolVersion: outcome.poolVersion,
           providerReference: outcome.providerReference,
           side,
+          sourceTimestamp: outcome.sourceTimestamp,
           value,
         },
       ];
@@ -589,6 +602,43 @@ export function validateCanonicalEvidence(duel: {
   ) as Record<EscrowV2Role, CanonicalOutcome>;
   if (!outcomes.creator || !outcomes.opponent) {
     throw new ServiceUnavailableException('Outcomes must contain creator and opponent sides');
+  }
+  if (outcomes.creator.poolVersion !== outcomes.opponent.poolVersion) {
+    throw new ServiceUnavailableException('Outcomes do not share one provider pool version');
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(outcomes.creator.poolVersion)) {
+    throw new ServiceUnavailableException('Outcome provider pool version is not canonical');
+  }
+  if (
+    !Number.isFinite(outcomes.creator.sourceTimestamp.getTime()) ||
+    !Number.isFinite(outcomes.opponent.sourceTimestamp.getTime()) ||
+    outcomes.creator.sourceTimestamp.getTime() > outcomes.creator.openedAt.getTime() +
+      CANONICAL_VALUATION_POLICY.maxFutureSkewSeconds * 1_000 ||
+    outcomes.opponent.sourceTimestamp.getTime() > outcomes.opponent.openedAt.getTime() +
+      CANONICAL_VALUATION_POLICY.maxFutureSkewSeconds * 1_000 ||
+    outcomes.creator.openedAt.getTime() - outcomes.creator.sourceTimestamp.getTime() >
+      CANONICAL_VALUATION_POLICY.maxSourceAgeSeconds * 1_000 ||
+    outcomes.opponent.openedAt.getTime() - outcomes.opponent.sourceTimestamp.getTime() >
+      CANONICAL_VALUATION_POLICY.maxSourceAgeSeconds * 1_000
+  ) {
+    throw new ServiceUnavailableException('Outcome insured-value snapshot is not canonical');
+  }
+  for (const outcome of duel.packOutcomes) {
+    assertNormalizedOutcome({
+      assetReference: outcome.assetReference,
+      displayName: outcome.displayName,
+      insuredValue: {
+        amount: outcome.insuredValueAmount,
+        currency: 'USDC',
+        decimals: 6,
+      },
+      poolVersion: outcome.poolVersion,
+      providerReference: outcome.providerReference,
+      resultHash: outcome.resultHash,
+      side: outcome.side === DuelSide.CREATOR ? 'creator' : 'opponent',
+      sourceTimestamp: outcome.sourceTimestamp.toISOString(),
+      valuationPolicyHash: outcome.valuationPolicyHash,
+    });
   }
   return {
     creator: outcomes.creator,
@@ -739,10 +789,13 @@ function proof(
   return {
     creatorMint: evidence.creator.mint.toBase58(),
     creatorProviderReference: evidence.creator.providerReference,
+    creatorSourceTimestamp: evidence.creator.sourceTimestamp.toISOString(),
     creatorValue: evidence.creator.value.toString(),
     opponentMint: evidence.opponent.mint.toBase58(),
     opponentProviderReference: evidence.opponent.providerReference,
+    opponentSourceTimestamp: evidence.opponent.sourceTimestamp.toISOString(),
     opponentValue: evidence.opponent.value.toString(),
+    poolVersion: evidence.creator.poolVersion,
     providerRequestId,
     resultCommitment,
     valuationPolicyHash: Buffer.from(evidence.policyHash).toString('hex'),
@@ -752,7 +805,10 @@ function proof(
 
 function canonicalOpenedAt(evidence: CanonicalEvidence): Date {
   return new Date(
-    Math.max(evidence.creator.openedAt.getTime(), evidence.opponent.openedAt.getTime()),
+    Math.max(
+      evidence.creator.sourceTimestamp.getTime(),
+      evidence.opponent.sourceTimestamp.getTime(),
+    ),
   );
 }
 

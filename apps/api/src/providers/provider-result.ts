@@ -3,22 +3,34 @@ import { BadGatewayException } from '@nestjs/common';
 
 import type { Money } from '../domain.js';
 import type { DuelSide, ProviderCardResult } from './pack-provider.js';
+import {
+  CANONICAL_VALUATION_POLICY,
+  requireCanonicalValuationPolicyHash,
+  stableStringify,
+} from './valuation-policy.js';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
-const UNSIGNED_INTEGER_PATTERN = /^\d+$/;
+const UNSIGNED_INTEGER_PATTERN = /^(0|[1-9]\d*)$/;
+const POOL_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 export interface NormalizedPackOutcome {
   assetReference: string;
   displayName: string;
   insuredValue: Money;
+  poolVersion: string;
+  providerReference: string;
   resultHash: string;
   side: DuelSide;
+  sourceTimestamp: string;
   valuationPolicyHash: string;
 }
 
 export interface ComparedPackOutcomes {
   comparisonMetric: 'insured-value';
+  poolVersion: string;
   resultHash: string;
+  tieRule: typeof CANONICAL_VALUATION_POLICY.tieRule;
+  valuationPolicyHash: string;
   winnerSide: DuelSide | null;
 }
 
@@ -29,27 +41,48 @@ export interface PackComparisonContext {
   network: 'solana-devnet' | 'solana-mainnet';
   opponentWallet: string;
   providerMode: 'collector-crypt-sandbox' | 'mock';
+  valuationPolicyHash: string;
 }
 
 export function normalizeProviderResult(
   side: DuelSide,
   result: ProviderCardResult,
+  expectedPolicyHash: string,
+  providerReferenceInput: string,
+  observedAt = new Date(),
 ): NormalizedPackOutcome {
+  requireCanonicalValuationPolicyHash(expectedPolicyHash);
   const assetReference = normalizeText(result.assetReference, 'assetReference', 200);
   const displayName = normalizeText(result.displayName, 'displayName', 160);
+  const providerInsuredValue = result.insuredValue as Partial<Money> | undefined;
   if (
-    result.insuredValue.currency !== 'USDC' ||
-    result.insuredValue.decimals !== 6 ||
-    !UNSIGNED_INTEGER_PATTERN.test(result.insuredValue.amount)
+    !providerInsuredValue ||
+    providerInsuredValue.currency !== 'USDC' ||
+    providerInsuredValue.decimals !== 6 ||
+    typeof providerInsuredValue.amount !== 'string' ||
+    !UNSIGNED_INTEGER_PATTERN.test(providerInsuredValue.amount)
   ) {
     throw new BadGatewayException('Provider returned an unsupported insured-value format');
   }
   if (!SHA256_PATTERN.test(result.valuationPolicyHash)) {
     throw new BadGatewayException('Provider returned an invalid valuation policy hash');
   }
+  if (result.valuationPolicyHash !== expectedPolicyHash) {
+    throw new BadGatewayException('Provider result does not match the funded valuation policy');
+  }
+  const poolVersion = normalizeText(result.poolVersion, 'poolVersion', 128);
+  if (!POOL_VERSION_PATTERN.test(poolVersion)) {
+    throw new BadGatewayException('Provider returned an invalid poolVersion');
+  }
+  const sourceTimestamp = normalizeSourceTimestamp(result.sourceTimestamp, observedAt);
+  const providerReference = normalizeText(
+    providerReferenceInput,
+    'providerReference',
+    200,
+  );
 
   const insuredValue: Money = {
-    amount: BigInt(result.insuredValue.amount).toString(),
+    amount: BigInt(providerInsuredValue.amount).toString(),
     currency: 'USDC',
     decimals: 6,
   };
@@ -57,7 +90,10 @@ export function normalizeProviderResult(
     assetReference,
     displayName,
     insuredValue,
+    poolVersion,
+    providerReference,
     side,
+    sourceTimestamp,
     valuationPolicyHash: result.valuationPolicyHash,
   };
 
@@ -72,11 +108,23 @@ export function compareInsuredValues(
   opponent: NormalizedPackOutcome,
   context: PackComparisonContext,
 ): ComparedPackOutcomes {
+  assertNormalizedOutcome(creator);
+  assertNormalizedOutcome(opponent);
   if (creator.side !== 'creator' || opponent.side !== 'opponent') {
     throw new Error('Pack outcomes must be compared in creator/opponent order');
   }
   if (creator.valuationPolicyHash !== opponent.valuationPolicyHash) {
     throw new BadGatewayException('Pack outcomes use different valuation policies');
+  }
+  if (
+    creator.valuationPolicyHash !== context.valuationPolicyHash ||
+    opponent.valuationPolicyHash !== context.valuationPolicyHash
+  ) {
+    throw new BadGatewayException('Pack outcomes do not match the funded valuation policy');
+  }
+  requireCanonicalValuationPolicyHash(context.valuationPolicyHash);
+  if (creator.poolVersion !== opponent.poolVersion) {
+    throw new BadGatewayException('Pack outcomes use different provider pool versions');
   }
 
   const creatorValue = BigInt(creator.insuredValue.amount);
@@ -88,19 +136,79 @@ export function compareInsuredValues(
     context,
     creatorResultHash: creator.resultHash,
     opponentResultHash: opponent.resultHash,
+    poolVersion: creator.poolVersion,
+    tieRule: CANONICAL_VALUATION_POLICY.tieRule,
     valuationPolicyHash: creator.valuationPolicyHash,
     winnerSide,
   };
   return {
     comparisonMetric: 'insured-value',
+    poolVersion: creator.poolVersion,
     resultHash: sha256(stableStringify(canonical)),
+    tieRule: CANONICAL_VALUATION_POLICY.tieRule,
+    valuationPolicyHash: creator.valuationPolicyHash,
     winnerSide,
   };
 }
 
-function normalizeText(value: string, field: string, maxLength: number): string {
+function normalizeSourceTimestamp(value: unknown, observedAt: Date): string {
+  const sourceAt = canonicalTimestamp(value);
+  const ageMs = observedAt.getTime() - sourceAt.getTime();
+  if (ageMs > CANONICAL_VALUATION_POLICY.maxSourceAgeSeconds * 1_000) {
+    throw new BadGatewayException('Provider insured value is stale');
+  }
+  if (ageMs < -CANONICAL_VALUATION_POLICY.maxFutureSkewSeconds * 1_000) {
+    throw new BadGatewayException('Provider insured value timestamp is in the future');
+  }
+  return value as string;
+}
+
+export function assertNormalizedOutcome(outcome: NormalizedPackOutcome): void {
+  if (
+    normalizeText(outcome.assetReference, 'assetReference', 200) !== outcome.assetReference ||
+    normalizeText(outcome.displayName, 'displayName', 160) !== outcome.displayName ||
+    normalizeText(outcome.providerReference, 'providerReference', 200) !==
+      outcome.providerReference ||
+    !POOL_VERSION_PATTERN.test(outcome.poolVersion) ||
+    outcome.insuredValue.currency !== CANONICAL_VALUATION_POLICY.currency ||
+    outcome.insuredValue.decimals !== CANONICAL_VALUATION_POLICY.decimals ||
+    !UNSIGNED_INTEGER_PATTERN.test(outcome.insuredValue.amount)
+  ) {
+    throw new BadGatewayException('Pack outcome is not canonical');
+  }
+  canonicalTimestamp(outcome.sourceTimestamp);
+  const canonical = {
+    assetReference: outcome.assetReference,
+    displayName: outcome.displayName,
+    insuredValue: outcome.insuredValue,
+    poolVersion: outcome.poolVersion,
+    providerReference: outcome.providerReference,
+    side: outcome.side,
+    sourceTimestamp: outcome.sourceTimestamp,
+    valuationPolicyHash: outcome.valuationPolicyHash,
+  };
+  if (sha256(stableStringify(canonical)) !== outcome.resultHash) {
+    throw new BadGatewayException('Pack outcome result hash does not match its proof inputs');
+  }
+}
+
+function canonicalTimestamp(value: unknown): Date {
+  if (typeof value !== 'string') {
+    throw new BadGatewayException('Provider returned an invalid sourceTimestamp');
+  }
+  const timestamp = new Date(value);
+  if (!Number.isFinite(timestamp.getTime()) || timestamp.toISOString() !== value) {
+    throw new BadGatewayException('Provider returned an invalid sourceTimestamp');
+  }
+  return timestamp;
+}
+
+function normalizeText(value: unknown, field: string, maxLength: number): string {
+  if (typeof value !== 'string') {
+    throw new BadGatewayException(`Provider returned an invalid ${field}`);
+  }
   const normalized = value.trim();
-  if (!normalized || normalized.length > maxLength) {
+  if (!normalized || normalized !== value || normalized.length > maxLength) {
     throw new BadGatewayException(`Provider returned an invalid ${field}`);
   }
   return normalized;
@@ -108,14 +216,4 @@ function normalizeText(value: string, field: string, maxLength: number): string 
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
-}
-
-function stableStringify(value: unknown): string {
-  if (value === undefined) return 'null';
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
-  return `{${entries
-    .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
-    .join(',')}}`;
 }

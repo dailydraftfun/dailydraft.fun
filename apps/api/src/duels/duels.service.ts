@@ -19,6 +19,7 @@ import type {
   JoinDuelRequest,
   ListDuelsQuery,
 } from './duel.dto.js';
+import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
 // biome-ignore lint/style/useImportType: Nest uses the repository class as a runtime injection token.
 import { DuelRepository } from './duel.repository.js';
 import { hashDuelRequest } from './prisma-duel.repository.js';
@@ -56,6 +57,7 @@ export class DuelsService {
   async create(input: CreateDuelRequest, idempotencyKey: string): Promise<Duel> {
     validateCreation(input);
     const pack = this.packs.findOne(input.packId);
+    requireCanonicalValuationPolicyHash(pack.valuationPolicyHash);
     const isHouse = input.matchmakingMode === 'house';
     const providerMode = resolveProviderMode();
     if (isHouse && input.creatorWallet === resolveHouseWallet()) {
