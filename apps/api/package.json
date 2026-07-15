@@ -6,13 +6,14 @@
   "type": "module",
   "packageManager": "bun@1.3.13",
   "scripts": {
-    "build": "bun build src/main.ts --target=bun --packages=external --outdir=dist",
+    "build": "bun build src/main.ts 'api/[...path].ts' --target=bun --packages=external --outdir=dist",
     "clean": "rm -rf dist",
     "dev": "bun --watch src/main.ts",
     "start": "bun run src/main.ts",
-    "lint": "biome check src/",
+    "lint": "biome check api/ src/",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "vercel-build": "cd ../.. && bun --filter @openpacksduel/db db:generate"
   },
   "dependencies": {
     "@openpacksduel/db": "workspace:*",

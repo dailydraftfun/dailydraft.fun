@@ -14,6 +14,8 @@
     "dev:app": "turbo run dev --filter=@openpacksduel/app",
     "dev:docs": "turbo run dev --filter=@openpacksduel/docs",
     "dev:mcp": "turbo run dev --filter=@openpacksduel/mcp",
+    "deploy:api:migrate": "bun --filter @openpacksduel/db db:deploy",
+    "deploy:api:prod": "bun run deploy:api:migrate && vercel deploy --prod --scope vincentshipsit",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "turbo run test",
