@@ -305,7 +305,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setActionError('Checking this wallet for an active public matchmaking ticket.');
       return;
     }
-    if (matchmakingSession && nextMode !== 'matchmaking') {
+    if (matchmakingSession) {
       setActionError('Cancel the active public search before starting a different duel mode.');
       return;
     }
