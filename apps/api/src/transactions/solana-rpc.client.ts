@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import type {
+  SolanaAddressSignature,
   SolanaSignatureStatus,
   SolanaTransactionEnvelope,
 } from './transaction-monitor.types.js';
@@ -29,6 +30,10 @@ export abstract class SolanaRpcGateway {
   ): Promise<{ amount: bigint; mint: string; owner: string }> {
     throw new SolanaRpcUnavailableError('Legacy SPL token-account reads are not implemented');
   }
+  abstract getFinalizedSignaturesForAddress(
+    address: string,
+    limit: number,
+  ): Promise<SolanaAddressSignature[]>;
   abstract getSignatureStatuses(signatures: string[]): Promise<Array<SolanaSignatureStatus | null>>;
   abstract getTransaction(
     signature: string,
@@ -106,6 +111,21 @@ export class SolanaRpcClient extends SolanaRpcGateway {
       throw new SolanaRpcUnavailableError('RPC returned an invalid legacy SPL token account');
     }
     return { amount: BigInt(info.tokenAmount.amount), mint: info.mint, owner: info.owner };
+  }
+
+  async getFinalizedSignaturesForAddress(
+    address: string,
+    limit: number,
+  ): Promise<SolanaAddressSignature[]> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new SolanaRpcUnavailableError();
+    }
+    const result = await this.request('getSignaturesForAddress', [
+      address,
+      { commitment: 'finalized', limit },
+    ]);
+    if (!Array.isArray(result)) throw new SolanaRpcUnavailableError();
+    return result.flatMap(parseFinalizedAddressSignature);
   }
 
   async getSignatureStatuses(signatures: string[]): Promise<Array<SolanaSignatureStatus | null>> {
@@ -189,6 +209,24 @@ function parseSignatureStatus(value: unknown): SolanaSignatureStatus | null {
     throw new SolanaRpcUnavailableError();
   }
   return { confirmationStatus, err: value.err ?? null };
+}
+
+function parseFinalizedAddressSignature(value: unknown): SolanaAddressSignature[] {
+  if (!isObject(value)) throw new SolanaRpcUnavailableError();
+  if (value.err !== null || value.confirmationStatus !== 'finalized') return [];
+  if (
+    typeof value.signature !== 'string' ||
+    (value.blockTime !== null && !isNonNegativeInteger(value.blockTime))
+  ) {
+    throw new SolanaRpcUnavailableError();
+  }
+  return [
+    {
+      blockTime: value.blockTime as number | null,
+      confirmationStatus: 'finalized',
+      signature: value.signature,
+    },
+  ];
 }
 
 function parseTransactionEnvelope(value: unknown): SolanaTransactionEnvelope {

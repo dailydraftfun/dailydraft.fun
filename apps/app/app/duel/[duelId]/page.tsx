@@ -292,10 +292,26 @@ function ProofStat({ label, value }: { label: string; value: string }) {
 }
 
 function ReferenceList({ receipt }: { receipt: PublicDuelReceipt }) {
-  if (receipt.references.solana.length === 0 && receipt.references.provider.length === 0)
+  if (
+    receipt.references.solana.length === 0 &&
+    receipt.references.provider.length === 0 &&
+    receipt.recovery.alerts.length === 0
+  )
     return <p className="mt-3 text-sm text-secondary">No public references recorded yet.</p>;
   return (
     <ul className="mt-4 grid gap-3">
+      {receipt.recovery.alerts.map((alert) => (
+        <li key={`recovery:${alert.signature}`}>
+          <a
+            href={alert.explorerUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-semibold text-amber-300 hover:underline"
+          >
+            Custody recovery required · funding {shorten(alert.signature)}
+          </a>
+        </li>
+      ))}
       {receipt.references.solana.map((reference) => (
         <li key={reference.signature}>
           <a
@@ -305,6 +321,7 @@ function ReferenceList({ receipt }: { receipt: PublicDuelReceipt }) {
             className="text-sm font-semibold text-lime hover:underline"
           >
             Solana {reference.action} · {shorten(reference.signature)}
+            {reference.bindingSource === 'rpc-recovery' ? ' · recovered binding' : ''}
           </a>
         </li>
       ))}

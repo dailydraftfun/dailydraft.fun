@@ -21,6 +21,12 @@ describe('public duel proof', () => {
       requiredSides: 2,
       totalFinalizedAmountLamports: '2000000',
     });
+    expect(receipt.references.solana[0]).toEqual(
+      expect.objectContaining({
+        bindingSource: 'rpc-recovery',
+        recoveredAt: '2026-07-15T20:02:30.000Z',
+      }),
+    );
     expect(receipt.availability.missing).toContain('card_settlement_reference');
     expect(receipt.privacy.indexable).toBe(false);
     expect(JSON.stringify(receipt)).not.toContain('private support detail');
@@ -44,6 +50,31 @@ describe('public duel proof', () => {
     expect(receipt.custody.platformFee.status).toBe('not-started');
     expect(receipt.custody.cardAssets.status).toBe('not-recorded');
     expect(receipt.actions.primary.label).toBe('Open a new duel');
+  });
+
+  test('publishes only exact verified unbound custody alerts', () => {
+    const signature = '4'.repeat(88);
+    const receipt = buildPublicDuelReceipt(settledDuel(), [
+      {
+        action: 'fund',
+        createdAt: '2026-07-15T20:02:00.000Z',
+        duelId: 'duel_receipt00001',
+        id: 'tx_unbound_fund',
+        network: 'solana-devnet',
+        recoveryAlertCode: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH',
+        recoveryCandidateAt: '2026-07-15T20:03:00.000Z',
+        recoveryCandidateSignature: signature,
+        status: 'prepared',
+        updatedAt: '2026-07-15T20:03:00.000Z',
+        wallet: CREATOR,
+      },
+    ]);
+
+    expect(receipt.recovery.status).toBe('attention-required');
+    expect(receipt.recovery.alerts).toEqual([
+      expect.objectContaining({ signature, code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH' }),
+    ]);
+    expect(receipt.references.solana).toEqual([]);
   });
 
   test('does not treat an unfinalized settlement signature as custody proof', () => {
@@ -214,6 +245,7 @@ function fundingTransactions(): DuelTransactionRecord[] {
     finalizedAt: '2026-07-15T20:03:00.000Z',
     id: `tx_fund_${index}`,
     network: 'solana-devnet',
+    recoveredAt: index === 0 ? '2026-07-15T20:02:30.000Z' : null,
     signature: `${index + 1}`.repeat(88),
     status: 'finalized',
     updatedAt: '2026-07-15T20:03:00.000Z',

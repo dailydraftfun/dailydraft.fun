@@ -281,6 +281,13 @@ model DuelTransaction {
   nextCheckAt                     DateTime?
   stuckAt                         DateTime?
   submittedAt                     DateTime?
+  recoveredAt                     DateTime?
+  lastRecoveryCheckedAt           DateTime?
+  nextRecoveryCheckAt             DateTime?
+  recoveryCheckAttempts           Int                    @default(0)
+  recoveryCandidateAt             DateTime?
+  recoveryCandidateSignature      String?
+  recoveryAlertCode               String?
   confirmedAt                     DateTime?
   finalizedAt                     DateTime?
   expiresAt                       DateTime?
@@ -288,11 +295,12 @@ model DuelTransaction {
   updatedAt                       DateTime              @updatedAt
   duel                            Duel                  @relation(fields: [duelId], references: [id], onDelete: Cascade)
 
-  @@unique([duelId, wallet, action])
   @@index([duelId, createdAt])
   @@index([duelId, wallet, action])
   @@index([status, updatedAt])
   @@index([status, nextCheckAt])
+  @@index([status, nextRecoveryCheckAt, createdAt])
+  @@index([recoveryCandidateAt])
 }
 
 model WalletAuthChallenge {

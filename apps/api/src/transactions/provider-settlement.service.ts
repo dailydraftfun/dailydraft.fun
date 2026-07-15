@@ -123,8 +123,8 @@ export class ProviderSettlementService {
     sourceTokenAccount?: string;
   }): Promise<PreparedProviderEscrowTransaction> {
     await this.assertDevnet();
+    assertEscrowProgramConfiguration();
     const caller = parsePublicKey(input.callerWallet, 'callerWallet');
-    const configuration = loadConfiguration();
     const duel = await this.database.duel.findUnique({
       include: { packOutcomes: true },
       where: { id: input.duelId },
@@ -163,6 +163,7 @@ export class ProviderSettlementService {
       });
     }
 
+    const configuration = loadProviderConfiguration();
     const evidence = validateCanonicalEvidence(duel);
     if (input.assetStandard !== 'legacy-spl-nft') {
       throw new BadRequestException('assetStandard must be canonical legacy-spl-nft');
@@ -602,16 +603,19 @@ export function validateCanonicalEvidence(duel: {
   };
 }
 
-function loadConfiguration(): { feeRecipient: PublicKey; providerSigner: PublicKey } {
+function assertEscrowProgramConfiguration(): void {
   if (process.env.OPENPACKSDUEL_NETWORK !== 'solana-devnet') {
     throw new ServiceUnavailableException('Provider settlement is devnet-only');
-  }
-  if (process.env.OPENPACKSDUEL_PROVIDER_ASSET_STANDARD !== 'legacy-spl-nft') {
-    throw new ServiceUnavailableException('Canonical provider asset standard is not confirmed');
   }
   const configuredProgram = parseConfigurationKey('ESCROW_PROGRAM_ID');
   if (!configuredProgram.equals(ESCROW_V2_PROGRAM_ID)) {
     throw new ServiceUnavailableException('Configured escrow program does not match escrow v2');
+  }
+}
+
+function loadProviderConfiguration(): { feeRecipient: PublicKey; providerSigner: PublicKey } {
+  if (process.env.OPENPACKSDUEL_PROVIDER_ASSET_STANDARD !== 'legacy-spl-nft') {
+    throw new ServiceUnavailableException('Canonical provider asset standard is not confirmed');
   }
   return {
     feeRecipient: parseConfigurationKey('ESCROW_FEE_RECIPIENT'),

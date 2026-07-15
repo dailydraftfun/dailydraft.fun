@@ -628,7 +628,8 @@ paths:
       description: |
         Vercel Cron supplies `Authorization: Bearer $CRON_SECRET`. Confirmed
         transactions remain pending; only finalized and verified transactions
-        can advance duel state.
+        can advance duel state. The same bounded pass can recover an exact
+        persisted prepared funding message from its escrow-PDA history.
       x-openpacksduel-availability: devnet
       security:
         - cronSecret: []
@@ -1722,7 +1723,7 @@ components:
     PublicDuelReceipt:
       type: object
       additionalProperties: false
-      required: [schemaVersion, duel, pack, participants, result, fees, custody, references, availability, actions, privacy]
+      required: [schemaVersion, duel, pack, participants, result, fees, custody, references, recovery, availability, actions, privacy]
       properties:
         schemaVersion:
           type: string
@@ -1818,14 +1819,34 @@ components:
               items:
                 type: object
                 additionalProperties: false
-                required: [action, signature, status, finalizedAt, explorerUrl]
+                required: [action, bindingSource, signature, status, finalizedAt, recoveredAt, explorerUrl]
                 properties:
                   action:
                     type: string
                     enum: [fund, cancel, refund, open_pack, commit_result, settle]
+                  bindingSource: { type: string, enum: [api-submission, rpc-recovery] }
                   signature: { type: string }
                   status: { type: string, enum: [prepared, submitted, confirmed, finalized, failed, expired] }
                   finalizedAt: { type: [string, 'null'], format: date-time }
+                  recoveredAt: { type: [string, 'null'], format: date-time }
+                  explorerUrl: { type: string, format: uri }
+        recovery:
+          type: object
+          additionalProperties: false
+          required: [status, alerts]
+          properties:
+            status: { type: string, enum: [none, recovered, attention-required] }
+            alerts:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [action, code, detectedAt, signature, explorerUrl]
+                properties:
+                  action: { type: string, const: fund }
+                  code: { type: string, const: UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH }
+                  detectedAt: { type: string, format: date-time }
+                  signature: { type: string }
                   explorerUrl: { type: string, format: uri }
         availability:
           type: object
@@ -2138,6 +2159,18 @@ components:
           type: [string, 'null']
         recentBlockhash:
           type: [string, 'null']
+        recoveredAt:
+          type: [string, 'null']
+          format: date-time
+          description: Set only after bounded escrow-PDA recovery verifies a persisted prepared intent.
+        recoveryAlertCode:
+          type: [string, 'null']
+          enum: [UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH, null]
+        recoveryCandidateAt:
+          type: [string, 'null']
+          format: date-time
+        recoveryCandidateSignature:
+          type: [string, 'null']
         lastValidBlockHeight:
           type: [string, 'null']
         providerReference:
@@ -2203,7 +2236,7 @@ components:
     ReconciliationSummary:
       type: object
       additionalProperties: false
-      required: [checked, confirmed, expired, failed, finalized, pending, stuck]
+      required: [checked, confirmed, expired, failed, finalized, pending, recoveryAlerts, recoveryCandidates, recoveryChecked, recoveryDeferred, recoveryErrors, recoveryRejected, recovered, stuck]
       properties:
         checked:
           type: integer
@@ -2221,6 +2254,27 @@ components:
           type: integer
           minimum: 0
         pending:
+          type: integer
+          minimum: 0
+        recoveryCandidates:
+          type: integer
+          minimum: 0
+        recoveryChecked:
+          type: integer
+          minimum: 0
+        recoveryAlerts:
+          type: integer
+          minimum: 0
+        recoveryDeferred:
+          type: integer
+          minimum: 0
+        recoveryErrors:
+          type: integer
+          minimum: 0
+        recoveryRejected:
+          type: integer
+          minimum: 0
+        recovered:
           type: integer
           minimum: 0
         stuck:

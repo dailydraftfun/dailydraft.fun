@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { DuelSide, ProviderMode } from '@openpacksduel/db';
+import { DuelSide, DuelStatus, DuelTransactionStatus, ProviderMode } from '@openpacksduel/db';
 import { PublicKey } from '@solana/web3.js';
 
 import {
@@ -12,6 +12,7 @@ import {
   deriveEscrowV2CardVault,
   ESCROW_V2_PROGRAM_ID,
 } from '../contracts/openpacksduel-escrow-v2.js';
+import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
 import {
   ProviderSettlementService,
   validateCanonicalEvidence,
@@ -143,7 +144,30 @@ describe('ProviderSettlementService', () => {
   });
 
   test('prepares a permissionless expired payment refund without server signing', async () => {
-    const duel = databaseDuel(new Date(Date.now() - 60_000));
+    delete process.env.OPENPACKSDUEL_PROVIDER_ASSET_STANDARD;
+    delete process.env.ESCROW_PROVIDER_SIGNER;
+    delete process.env.ESCROW_FEE_RECIPIENT;
+    const duel: MutableDuelFixture = {
+      ...databaseDuel(new Date(Date.now() - 60_000)),
+      escrowAddress: null,
+      status: DuelStatus.CANCELLED,
+      version: 1,
+    };
+    const recovery = recoveryDatabase(duel);
+    const monitor = new PrismaTransactionMonitorRepository(recovery.client);
+    await monitor.recordRecoveryAlert({
+      code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH',
+      nextRecoveryCheckAt: new Date(Date.now() + 60_000),
+      now: new Date(),
+      signature: '4'.repeat(88),
+      transactionId: 'tx_lost_creator_funding',
+    });
+
+    expect(duel.status).toBe(DuelStatus.REFUNDING);
+    expect(duel.escrowAddress).toBe(
+      deriveEscrowV2Addresses(CREATOR, nonceFromFixtureDuel()).duel.toBase58(),
+    );
+    expect(recovery.events).toHaveLength(1);
     const service = new ProviderSettlementService(database(duel), new FixtureRpc());
     const prepared = await service.prepare({
       callerWallet: CREATOR.toBase58(),
@@ -159,6 +183,23 @@ describe('ProviderSettlementService', () => {
     expect(prepared.instruction.name).toBe('refund_expired_payment');
     expect(prepared.reconciliation).toBe('submission-monitor');
     expect(prepared.serializedTransactionBase64.length).toBeGreaterThan(100);
+  });
+
+  test('keeps card and result operations fail-closed when asset standard is unset', async () => {
+    delete process.env.OPENPACKSDUEL_PROVIDER_ASSET_STANDARD;
+    const duel = databaseDuel(new Date(Date.now() + 60_000));
+    const service = new ProviderSettlementService(database(duel), new FixtureRpc());
+
+    await expect(
+      service.prepare({
+        assetStandard: 'legacy-spl-nft',
+        callerWallet: PROVIDER.toBase58(),
+        duelId: duel.id,
+        idempotencyKey: 'unconfirmed-standard-result',
+        operation: 'commit_result',
+        providerRequestId: REQUEST,
+      }),
+    ).rejects.toThrow('Canonical provider asset standard is not confirmed');
   });
 
   test('persists and replays a provider result intent by idempotency key', async () => {
@@ -260,7 +301,7 @@ function requireOutcome(value: ReturnType<typeof evidence>, index: number) {
 
 function databaseDuel(expiresAt: Date) {
   const id = 'duel_provider_settlement_01';
-  const nonce = createHash('sha256').update(id).digest().readBigUInt64LE(0);
+  const nonce = nonceFromFixtureDuel();
   return {
     ...evidence(),
     creatorWallet: CREATOR.toBase58(),
@@ -269,6 +310,61 @@ function databaseDuel(expiresAt: Date) {
     id,
     opponentWallet: OPPONENT.toBase58(),
     status: expiresAt.getTime() < Date.now() ? 'REFUNDING' : 'AWAITING_ASSETS',
+  };
+}
+
+function nonceFromFixtureDuel(): bigint {
+  return createHash('sha256').update('duel_provider_settlement_01').digest().readBigUInt64LE(0);
+}
+
+type MutableDuelFixture = Omit<ReturnType<typeof databaseDuel>, 'escrowAddress' | 'status'> & {
+  escrowAddress: string | null;
+  status: DuelStatus;
+  version: number;
+};
+
+function recoveryDatabase(duel: MutableDuelFixture) {
+  const expectedEscrow = deriveEscrowV2Addresses(CREATOR, nonceFromFixtureDuel()).duel.toBase58();
+  const monitored = {
+    duel,
+    id: 'tx_lost_creator_funding',
+    metadata: { escrowAddress: expectedEscrow, feeAmountLamports: '1000000' },
+    recoveryAlertCode: null,
+    recoveryCandidateAt: null,
+    recoveryCandidateSignature: null,
+    signature: null,
+    status: DuelTransactionStatus.PREPARED,
+  };
+  const events: Array<Record<string, unknown>> = [];
+  const transaction = {
+    duel: {
+      updateMany: ({ data }: { data: Record<string, unknown> }) => {
+        if (typeof data.escrowAddress === 'string') duel.escrowAddress = data.escrowAddress;
+        if (typeof data.status === 'string') duel.status = data.status as DuelStatus;
+        duel.version += 1;
+        return Promise.resolve({ count: 1 });
+      },
+    },
+    duelEvent: {
+      create: ({ data }: { data: Record<string, unknown> }) => {
+        events.push(data);
+        return Promise.resolve(data);
+      },
+    },
+    duelTransaction: {
+      findUnique: () => Promise.resolve(monitored),
+      update: ({ data }: { data: Record<string, unknown> }) => {
+        Object.assign(monitored, data);
+        return Promise.resolve(monitored);
+      },
+    },
+  };
+  return {
+    client: {
+      $transaction: (callback: (database: typeof transaction) => Promise<unknown>) =>
+        callback(transaction),
+    } as never,
+    events,
   };
 }
 
@@ -281,7 +377,7 @@ function fixturePublicKey(byte: number): PublicKey {
   throw new Error(`Could not produce on-curve fixture ${byte}`);
 }
 
-function database(duel: ReturnType<typeof databaseDuel>): never {
+function database(duel: ReturnType<typeof databaseDuel> | MutableDuelFixture): never {
   const transactions = new Map<string, Record<string, unknown>>();
   return {
     duel: { findUnique: () => Promise.resolve(duel) },
@@ -305,6 +401,9 @@ class FixtureRpc extends SolanaRpcGateway {
   }
   async getLatestBlockhash() {
     return { blockhash: CREATOR.toBase58(), lastValidBlockHeight: 150n };
+  }
+  async getFinalizedSignaturesForAddress() {
+    return [];
   }
   async getLegacyMint() {
     return { decimals: 0, supply: 1n };
