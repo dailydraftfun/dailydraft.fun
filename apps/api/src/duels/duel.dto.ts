@@ -110,8 +110,8 @@ export class CancelDuelRequest {
 }
 
 export class PrepareTransactionRequest {
-  @IsIn(['fund', 'cancel', 'refund'])
-  action!: 'cancel' | 'fund' | 'refund';
+  @IsIn(['fund'])
+  action!: 'fund';
 
   @Matches(SOLANA_ADDRESS)
   wallet!: string;

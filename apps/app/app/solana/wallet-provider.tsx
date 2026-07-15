@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  SolanaSignAndSendTransaction,
+  type SolanaSignAndSendTransactionFeature,
   SolanaSignMessage,
   type SolanaSignMessageFeature,
   SolanaSignTransaction,
@@ -16,6 +18,7 @@ import {
   StandardEvents,
   type StandardEventsFeature,
 } from '@wallet-standard/features';
+import bs58 from 'bs58';
 import { createContext, useContext, useEffect, useEffectEvent, useState } from 'react';
 import { trackProductEvent } from '../analytics-client';
 import { SOLANA_CHAIN, SOLANA_CLUSTER, SOLANA_RPC_URL, shortenAddress } from './config';
@@ -23,7 +26,8 @@ import { SOLANA_CHAIN, SOLANA_CLUSTER, SOLANA_RPC_URL, shortenAddress } from './
 type CompatibleWallet = WalletWithFeatures<
   StandardConnectFeature &
     StandardEventsFeature &
-    SolanaSignTransactionFeature &
+    Partial<SolanaSignAndSendTransactionFeature> &
+    Partial<SolanaSignTransactionFeature> &
     Partial<SolanaSignMessageFeature> &
     Partial<StandardDisconnectFeature>
 >;
@@ -47,7 +51,7 @@ type WalletContextValue = {
   clearError: () => void;
   canSignMessage: boolean;
   signMessage: (message: string) => Promise<Uint8Array>;
-  signTransaction: (serializedTransaction: Uint8Array) => Promise<Uint8Array>;
+  signAndSendTransaction: (serializedTransaction: Uint8Array) => Promise<string>;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -58,7 +62,7 @@ function isCompatibleWallet(wallet: Wallet): wallet is CompatibleWallet {
     wallet.chains.includes(SOLANA_CHAIN) &&
     StandardConnect in wallet.features &&
     StandardEvents in wallet.features &&
-    SolanaSignTransaction in wallet.features
+    (SolanaSignAndSendTransaction in wallet.features || SolanaSignTransaction in wallet.features)
   );
 }
 
@@ -103,11 +107,20 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     fetch(SOLANA_RPC_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 'openpacksduel-health', method: 'getHealth' }),
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'openpacksduel-genesis',
+        method: 'getGenesisHash',
+      }),
       signal: controller.signal,
     })
-      .then((response) => {
-        setNetworkStatus(response.ok ? 'online' : 'offline');
+      .then(async (response) => {
+        const payload = (await response.json()) as { result?: unknown };
+        setNetworkStatus(
+          response.ok && payload.result === 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG'
+            ? 'online'
+            : 'offline',
+        );
       })
       .catch((networkError) => {
         if (!(networkError instanceof DOMException && networkError.name === 'AbortError')) {
@@ -190,16 +203,30 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     }
   }
 
-  async function signTransaction(serializedTransaction: Uint8Array) {
+  async function signAndSendTransaction(serializedTransaction: Uint8Array) {
     if (!selectedWallet || !account) throw new Error('Connect a Solana wallet first.');
-    const [output] = await selectedWallet.features[SolanaSignTransaction].signTransaction({
+    const sendFeature = selectedWallet.features[SolanaSignAndSendTransaction];
+    if (sendFeature) {
+      const [output] = await sendFeature.signAndSendTransaction({
+        account,
+        chain: SOLANA_CHAIN,
+        options: { preflightCommitment: 'confirmed', skipPreflight: false },
+        transaction: serializedTransaction,
+      });
+      if (!output) throw new Error('The wallet did not broadcast the devnet transaction.');
+      return bs58.encode(output.signature);
+    }
+
+    const signFeature = selectedWallet.features[SolanaSignTransaction];
+    if (!signFeature) throw new Error(`${selectedWallet.name} cannot sign Solana transactions.`);
+    const [signed] = await signFeature.signTransaction({
       account,
-      transaction: serializedTransaction,
       chain: SOLANA_CHAIN,
       options: { preflightCommitment: 'confirmed' },
+      transaction: serializedTransaction,
     });
-    if (!output) throw new Error('The wallet did not return a signed transaction.');
-    return output.signedTransaction;
+    if (!signed) throw new Error('The wallet did not return a signed transaction.');
+    return broadcastSignedTransaction(signed.signedTransaction);
   }
 
   async function signMessage(message: string) {
@@ -232,11 +259,38 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     connect,
     disconnect,
     clearError: () => setError(null),
-    signTransaction,
+    signAndSendTransaction,
     signMessage,
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+}
+
+async function broadcastSignedTransaction(signedTransaction: Uint8Array): Promise<string> {
+  const response = await fetch(SOLANA_RPC_URL, {
+    body: JSON.stringify({
+      id: 'openpacksduel-send',
+      jsonrpc: '2.0',
+      method: 'sendTransaction',
+      params: [
+        toBase64(signedTransaction),
+        { encoding: 'base64', preflightCommitment: 'confirmed' },
+      ],
+    }),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  });
+  const payload = (await response.json()) as { error?: { message?: string }; result?: unknown };
+  if (!response.ok || typeof payload.result !== 'string') {
+    throw new Error(payload.error?.message ?? 'The signed devnet transaction was not broadcast.');
+  }
+  return payload.result;
+}
+
+function toBase64(value: Uint8Array): string {
+  let binary = '';
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return window.btoa(binary);
 }
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {

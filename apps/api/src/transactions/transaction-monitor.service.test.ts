@@ -80,6 +80,10 @@ class FakeRpc extends SolanaRpcGateway {
     return this.blockHeight;
   }
 
+  async getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: bigint }> {
+    return { blockhash: 'unused', lastValidBlockHeight: 2_000n };
+  }
+
   async getSignatureStatuses(): Promise<Array<SolanaSignatureStatus | null>> {
     return [this.signatureStatus];
   }

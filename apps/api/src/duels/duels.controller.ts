@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Get,
   HttpCode,
-  NotImplementedException,
   Param,
   Post,
   Query,
@@ -18,6 +17,8 @@ import { DuelMutationGuard } from '../auth/duel-mutation.guard.js';
 import { IdempotencyKey } from '../common/idempotency-key.decorator.js';
 import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
 import type { Duel, Page } from '../domain.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { DuelFundingService } from '../transactions/duel-funding.service.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
 import {
   CancelDuelRequest,
@@ -37,6 +38,7 @@ export class DuelsController {
   constructor(
     private readonly duels: DuelsService,
     private readonly opening: DuelOpeningService,
+    private readonly funding: DuelFundingService,
   ) {}
 
   @Get()
@@ -104,16 +106,20 @@ export class DuelsController {
   }
 
   @Post(':duelId/transactions')
-  @UseGuards(IntegrationKeyGuard)
-  async prepareTransaction(
+  @HttpCode(201)
+  @UseGuards(DuelMutationGuard)
+  prepareTransaction(
     @Param() params: DuelIdParams,
-    @Body() _input: PrepareTransactionRequest,
-    @IdempotencyKey() _idempotencyKey: string,
-  ): Promise<never> {
-    await this.duels.findOne(params.duelId);
-    throw new NotImplementedException(
-      'Transaction preparation is disabled until the Solana escrow integration is live',
-    );
+    @Body() input: PrepareTransactionRequest,
+    @CurrentDuelAuthentication() authentication: DuelAuthentication,
+    @IdempotencyKey() idempotencyKey: string,
+  ) {
+    assertWalletActor(authentication, input.wallet);
+    return this.funding.prepare({
+      duelId: params.duelId,
+      idempotencyKey,
+      wallet: input.wallet,
+    });
   }
 
   @Get(':duelId/social-card')

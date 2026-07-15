@@ -122,11 +122,25 @@ export const duelProofSchema = z.object({
 });
 
 export const preparedTransactionSchema = z.object({
-  action: z.enum(['fund', 'cancel', 'refund']),
-  encoding: z.literal('base64'),
+  action: z.literal('fund'),
+  chain: z.literal('solana:devnet'),
+  cluster: z.literal('devnet'),
+  duelId: z.string(),
+  escrowAddress: z.string(),
   expiresAt: z.iso.datetime(),
-  summary: z.string(),
-  transaction: z.string().min(1),
+  feeAmountLamports: z.string().regex(/^\d+$/),
+  feeAmountSol: z.string(),
+  feeRecipient: z.string(),
+  fundingSide: z.enum(['creator', 'opponent']),
+  id: z.string(),
+  lastValidBlockHeight: z.string().regex(/^\d+$/),
+  paymentMint: z.string(),
+  programId: z.string(),
+  recentBlockhash: z.string(),
+  serializedTransactionBase64: z.string().min(1),
+  status: z.literal('prepared'),
+  wallet: z.string(),
+  warnings: z.array(z.string()).min(1),
 });
 
 export const walletConfirmationSchema = z.object({

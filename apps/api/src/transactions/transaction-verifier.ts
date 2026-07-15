@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import bs58 from 'bs58';
 
 import type {
   ExpectedAccountConstraint,
@@ -34,6 +35,9 @@ export function verifyTransactionEnvelope(
   ) {
     throw new TransactionVerificationError('BLOCKHASH_MISMATCH');
   }
+  if (hashTransactionMessage(envelope) !== monitored.expectedMessageHash) {
+    throw new TransactionVerificationError('MESSAGE_MISMATCH');
+  }
 
   const accounts = resolveAccountAccess(envelope);
   const signer = accounts.find((account) => account.address === monitored.expectedSigner);
@@ -59,6 +63,70 @@ export function verifyTransactionEnvelope(
   if (matchingInstructions.length > 1 && !monitored.allowMultipleInstructionMatches) {
     throw new TransactionVerificationError('AMBIGUOUS_INSTRUCTION_MATCH');
   }
+}
+
+export function hashTransactionMessage(envelope: SolanaTransactionEnvelope): string {
+  const { message } = envelope.transaction;
+  const headerValues = [
+    message.header.numRequiredSignatures,
+    message.header.numReadonlySignedAccounts,
+    message.header.numReadonlyUnsignedAccounts,
+  ];
+  if (headerValues.some((value) => value > 255)) {
+    throw new TransactionVerificationError('INVALID_ACCOUNT_HEADER');
+  }
+  const bytes: Buffer[] = [
+    Buffer.from(headerValues),
+    encodeShortVector(message.accountKeys.length),
+    ...message.accountKeys.map((address) => decodeBase58(address, 32)),
+    decodeBase58(message.recentBlockhash, 32),
+    encodeShortVector(message.instructions.length),
+  ];
+  for (const instruction of message.instructions) {
+    if (
+      instruction.programIdIndex > 255 ||
+      instruction.accounts.some((accountIndex) => accountIndex > 255)
+    ) {
+      throw new TransactionVerificationError('INVALID_INSTRUCTION_INDEX');
+    }
+    const data = decodeBase58(instruction.data);
+    bytes.push(
+      Buffer.from([instruction.programIdIndex]),
+      encodeShortVector(instruction.accounts.length),
+      Buffer.from(instruction.accounts),
+      encodeShortVector(data.length),
+      data,
+    );
+  }
+  return createHash('sha256').update(Buffer.concat(bytes)).digest('hex');
+}
+
+function decodeBase58(value: string, expectedLength?: number): Buffer {
+  try {
+    const decoded = Buffer.from(bs58.decode(value));
+    if (expectedLength !== undefined && decoded.length !== expectedLength) {
+      throw new TransactionVerificationError('INVALID_MESSAGE_ADDRESS');
+    }
+    return decoded;
+  } catch (error) {
+    if (error instanceof TransactionVerificationError) throw error;
+    throw new TransactionVerificationError('INVALID_MESSAGE_ENCODING');
+  }
+}
+
+function encodeShortVector(value: number): Buffer {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new TransactionVerificationError('INVALID_MESSAGE_LENGTH');
+  }
+  const output: number[] = [];
+  let remaining = value;
+  do {
+    let next = remaining & 0x7f;
+    remaining = Math.floor(remaining / 128);
+    if (remaining > 0) next |= 0x80;
+    output.push(next);
+  } while (remaining > 0);
+  return Buffer.from(output);
 }
 
 function resolveAccountAccess(envelope: SolanaTransactionEnvelope): AccountAccess[] {

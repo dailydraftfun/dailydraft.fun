@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import { monitoredTransaction, transactionEnvelope } from './transaction-monitor.test-fixtures.js';
-import { TransactionVerificationError, verifyTransactionEnvelope } from './transaction-verifier.js';
+import {
+  hashTransactionMessage,
+  TransactionVerificationError,
+  verifyTransactionEnvelope,
+} from './transaction-verifier.js';
 
 describe('verifyTransactionEnvelope', () => {
   test('accepts the stored signer, program, blockhash, and account access constraints', () => {
@@ -48,14 +52,31 @@ describe('verifyTransactionEnvelope', () => {
 
     expectVerificationCode(envelope, 'AMBIGUOUS_INSTRUCTION_MATCH');
   });
+
+  test('rejects any mutation to another instruction in the bound message', () => {
+    const envelope = transactionEnvelope();
+    envelope.transaction.message.instructions.unshift({
+      accounts: [0],
+      data: 'mutated-initialize-args',
+      programIdIndex: 2,
+    });
+
+    expectVerificationCode(envelope, 'MESSAGE_MISMATCH', false);
+  });
 });
 
 function expectVerificationCode(
   envelope: ReturnType<typeof transactionEnvelope>,
   expectedCode: string,
+  bindMutatedMessage = true,
 ): void {
   try {
-    verifyTransactionEnvelope(monitoredTransaction(), envelope);
+    verifyTransactionEnvelope(
+      monitoredTransaction({
+        ...(bindMutatedMessage ? { expectedMessageHash: hashTransactionMessage(envelope) } : {}),
+      }),
+      envelope,
+    );
     throw new Error('Expected transaction verification to fail');
   } catch (error) {
     expect(error).toBeInstanceOf(TransactionVerificationError);

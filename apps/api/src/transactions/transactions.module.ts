@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AnalyticsModule } from '../analytics/analytics.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { DuelFundingService } from './duel-funding.service.js';
 import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
 import { SolanaRpcClient, SolanaRpcGateway } from './solana-rpc.client.js';
 import {
@@ -14,9 +15,11 @@ import { WorkerKeyGuard } from './worker-key.guard.js';
 
 @Module({
   controllers: [TransactionSubmissionController, TransactionReconciliationController],
+  exports: [DuelFundingService],
   imports: [AnalyticsModule, AuthModule],
   providers: [
     WorkerKeyGuard,
+    DuelFundingService,
     TransactionMonitorService,
     { provide: TransactionMonitorRepository, useClass: PrismaTransactionMonitorRepository },
     { provide: SolanaRpcGateway, useClass: SolanaRpcClient },

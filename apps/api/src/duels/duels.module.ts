@@ -5,6 +5,7 @@ import { AuthModule } from '../auth/auth.module.js';
 import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
 import { PacksModule } from '../packs/packs.module.js';
 import { ProvidersModule } from '../providers/providers.module.js';
+import { TransactionsModule } from '../transactions/transactions.module.js';
 import { DuelRepository } from './duel.repository.js';
 import { DuelOpeningService } from './duel-opening.service.js';
 import { DuelsController } from './duels.controller.js';
@@ -13,7 +14,7 @@ import { PrismaDuelRepository } from './prisma-duel.repository.js';
 
 @Module({
   controllers: [DuelsController],
-  imports: [AnalyticsModule, AuthModule, PacksModule, ProvidersModule],
+  imports: [AnalyticsModule, AuthModule, PacksModule, ProvidersModule, TransactionsModule],
   providers: [
     DuelsService,
     DuelOpeningService,

@@ -65,10 +65,24 @@ describe('OpenPacksApiClient', () => {
         request = new Request(input, init);
         return Response.json({
           action: 'fund',
-          encoding: 'base64',
+          chain: 'solana:devnet',
+          cluster: 'devnet',
+          duelId: 'duel_123456789abc',
+          escrowAddress: 'Escrow111111111111111111111111111111111',
           expiresAt: '2026-07-15T23:00:00.000Z',
-          summary: 'Fund the devnet escrow fee deposit.',
-          transaction: 'AQIDBA==',
+          feeAmountLamports: '1000000',
+          feeAmountSol: '0.001',
+          feeRecipient: 'Fee1111111111111111111111111111111111111',
+          fundingSide: 'creator',
+          id: 'tx_123456789abc',
+          lastValidBlockHeight: '12345',
+          paymentMint: 'So11111111111111111111111111111111111111112',
+          programId: 'Co198eFfQcmn1WzZRnHV6jxcSLBDCv1qNfPfiBYdCLfS',
+          recentBlockhash: '11111111111111111111111111111111',
+          serializedTransactionBase64: 'AQIDBA==',
+          status: 'prepared',
+          wallet: '11111111111111111111111111111111',
+          warnings: ['Pack purchase is not included.'],
         });
       },
     });
@@ -80,7 +94,7 @@ describe('OpenPacksApiClient', () => {
       wallet: '11111111111111111111111111111111',
     });
 
-    expect(result.encoding).toBe('base64');
+    expect(result.serializedTransactionBase64).toBe('AQIDBA==');
     expect(request?.method).toBe('POST');
     expect(request?.headers.get('authorization')).toBe('Bearer opd_test_secret');
     expect(request?.headers.get('idempotency-key')).toBe('mcp:test:fund:1234');

@@ -4,7 +4,7 @@ const ALLOWED_TRANSITIONS: Readonly<Record<DuelStatus, readonly DuelStatus[]>> =
   awaiting_assets: ['settling', 'refunding', 'failed'],
   cancelled: [],
   cancelling: ['cancelled', 'refunding', 'failed'],
-  committing: ['funded', 'refunding', 'failed'],
+  committing: ['funded', 'cancelled', 'refunding', 'failed'],
   failed: ['refunding'],
   funded: ['opening', 'refunding', 'failed'],
   matched: ['committing', 'cancelled', 'failed'],
