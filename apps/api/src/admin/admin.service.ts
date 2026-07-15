@@ -2,11 +2,12 @@ import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
-  TooManyRequestsException,
 } from '@nestjs/common';
 import {
   type DatabaseClient,
@@ -159,14 +160,16 @@ export class AdminService {
     const rows = await this.database.operatorAuditEvent.findMany({
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: query.limit + 1,
-      where: cursor
+      ...(cursor
         ? {
-            OR: [
-              { createdAt: { lt: cursor.createdAt } },
-              { createdAt: cursor.createdAt, id: { lt: cursor.id } },
-            ],
+            where: {
+              OR: [
+                { createdAt: { lt: cursor.createdAt } },
+                { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+              ],
+            },
           }
-        : undefined,
+        : {}),
     });
     const hasMore = rows.length > query.limit;
     const visible = hasMore ? rows.slice(0, query.limit) : rows;
@@ -458,10 +461,13 @@ export function assertWithinRiskLimits(input: {
   walletActive: number;
 }): void {
   if (input.walletActive >= input.limits.maxActiveDuelsPerWallet) {
-    throw new TooManyRequestsException('Wallet active-duel limit reached');
+    throw new HttpException('Wallet active-duel limit reached', HttpStatus.TOO_MANY_REQUESTS);
   }
   if (input.tierActive >= input.limits.maxConcurrentDuelsPerTier) {
-    throw new TooManyRequestsException('Pack-tier concurrent-duel limit reached');
+    throw new HttpException(
+      'Pack-tier concurrent-duel limit reached',
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 }
 
@@ -539,8 +545,10 @@ function attentionReasons(
   if (duel.transactions.some((transaction) => transaction.stuckAt))
     reasons.add('transaction_stuck');
   if (
-    duel.transactions.some((transaction) =>
-      [DuelTransactionStatus.FAILED, DuelTransactionStatus.EXPIRED].includes(transaction.status),
+    duel.transactions.some(
+      (transaction) =>
+        transaction.status === DuelTransactionStatus.FAILED ||
+        transaction.status === DuelTransactionStatus.EXPIRED,
     )
   ) {
     reasons.add('transaction_failed');
