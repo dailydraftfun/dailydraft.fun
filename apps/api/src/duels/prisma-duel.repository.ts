@@ -35,6 +35,7 @@ import {
   type TransactionClient,
   type TransitionDuelRecord,
 } from './duel.repository.js';
+import { canTransition } from './duel-state.js';
 
 const ACTIVE_TIMEOUT_STATUSES = new Set<DatabaseDuelStatus>([
   DatabaseDuelStatus.WAITING,
@@ -349,6 +350,12 @@ export class PrismaDuelRepository extends DuelRepository {
     });
     return transactions.map((transaction) => ({
       action: toApiTransactionAction(transaction.action),
+      checkAttempts: transaction.checkAttempts,
+      confirmationStatus:
+        transaction.confirmationStatus === 'confirmed' ||
+        transaction.confirmationStatus === 'finalized'
+          ? transaction.confirmationStatus
+          : null,
       confirmedAt: transaction.confirmedAt?.toISOString() ?? null,
       createdAt: transaction.createdAt.toISOString(),
       duelId: transaction.duelId,
@@ -356,6 +363,8 @@ export class PrismaDuelRepository extends DuelRepository {
       errorMessage: transaction.errorMessage,
       expiresAt: transaction.expiresAt?.toISOString() ?? null,
       id: transaction.id,
+      finalizedAt: transaction.finalizedAt?.toISOString() ?? null,
+      lastCheckedAt: transaction.lastCheckedAt?.toISOString() ?? null,
       lastValidBlockHeight: transaction.lastValidBlockHeight?.toString() ?? null,
       network: 'solana-devnet',
       providerReference: transaction.providerReference,
@@ -363,6 +372,7 @@ export class PrismaDuelRepository extends DuelRepository {
       signature: transaction.signature,
       status: toApiTransactionStatus(transaction.status),
       submittedAt: transaction.submittedAt?.toISOString() ?? null,
+      stuckAt: transaction.stuckAt?.toISOString() ?? null,
       updatedAt: transaction.updatedAt.toISOString(),
       wallet: transaction.wallet,
     }));
@@ -788,24 +798,4 @@ function stableStringify(value: unknown): string {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
     .join(',')}}`;
-}
-
-const ALLOWED_TRANSITIONS: Readonly<Record<DuelStatus, readonly DuelStatus[]>> = {
-  awaiting_assets: ['settling', 'refunding', 'failed'],
-  cancelled: [],
-  cancelling: ['cancelled', 'refunding', 'failed'],
-  committing: ['funded', 'refunding', 'failed'],
-  failed: ['refunding'],
-  funded: ['opening', 'refunding', 'failed'],
-  matched: ['committing', 'cancelled', 'failed'],
-  opening: ['awaiting_assets', 'refunding', 'failed'],
-  refunded: [],
-  refunding: ['refunded', 'failed'],
-  settled: [],
-  settling: ['settled', 'refunding', 'failed'],
-  waiting: ['matched', 'cancelled', 'failed'],
-};
-
-export function canTransition(from: DuelStatus, to: DuelStatus): boolean {
-  return ALLOWED_TRANSITIONS[from].includes(to);
 }

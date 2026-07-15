@@ -55,6 +55,7 @@ enum DuelTransactionStatus {
   PREPARED
   SUBMITTED
   CONFIRMED
+  FINALIZED
   FAILED
   EXPIRED
 }
@@ -154,30 +155,46 @@ model IdempotencyRecord {
 }
 
 model DuelTransaction {
-  id                    String                @id
-  duelId                String
-  action                DuelTransactionAction
-  status                DuelTransactionStatus @default(PREPARED)
-  network               SolanaNetwork         @default(DEVNET)
-  wallet                String
-  signature             String?               @unique
-  idempotencyKey        String?               @unique
-  serializedTransaction String?
-  recentBlockhash       String?
-  lastValidBlockHeight  BigInt?
-  providerReference     String?
-  errorCode             String?
-  errorMessage          String?
-  metadata              Json?
-  submittedAt           DateTime?
-  confirmedAt           DateTime?
-  expiresAt             DateTime?
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
-  duel                  Duel                  @relation(fields: [duelId], references: [id], onDelete: Cascade)
+  id                              String                 @id
+  duelId                          String
+  action                          DuelTransactionAction
+  status                          DuelTransactionStatus  @default(PREPARED)
+  network                         SolanaNetwork          @default(DEVNET)
+  wallet                          String
+  signature                       String?                @unique
+  idempotencyKey                  String?                @unique
+  submissionIdempotencyKey        String?                @unique
+  serializedTransaction           String?
+  recentBlockhash                 String?
+  lastValidBlockHeight            BigInt?
+  expectedSigner                  String?
+  expectedProgramId               String?
+  expectedAccounts                Json?
+  expectedInstructionDataHash     String?
+  expectedInstructionAccounts     Json?
+  allowMultipleInstructionMatches Boolean                @default(false)
+  expectedFromStatus              DuelStatus?
+  expectedToStatus                DuelStatus?
+  providerReference               String?
+  errorCode                       String?
+  errorMessage                    String?
+  metadata                        Json?
+  confirmationStatus              String?
+  checkAttempts                   Int                    @default(0)
+  lastCheckedAt                   DateTime?
+  nextCheckAt                     DateTime?
+  stuckAt                         DateTime?
+  submittedAt                     DateTime?
+  confirmedAt                     DateTime?
+  finalizedAt                     DateTime?
+  expiresAt                       DateTime?
+  createdAt                       DateTime               @default(now())
+  updatedAt                       DateTime               @updatedAt
+  duel                            Duel                   @relation(fields: [duelId], references: [id], onDelete: Cascade)
 
   @@index([duelId, createdAt])
   @@index([status, updatedAt])
+  @@index([status, nextCheckAt])
 }
 
 model WalletAuthChallenge {

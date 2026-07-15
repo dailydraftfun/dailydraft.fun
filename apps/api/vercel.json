@@ -10,6 +10,12 @@
     }
   },
   "installCommand": "cd ../.. && bun install --frozen-lockfile",
+  "crons": [
+    {
+      "path": "/v1/internal/reconciliation/solana",
+      "schedule": "*/5 * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/v1",

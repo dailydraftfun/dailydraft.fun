@@ -29,6 +29,8 @@ tags:
     description: Public matchmaking intents and canonical duel state.
   - name: Transactions
     description: Unsigned Solana transactions for wallet inspection and approval.
+  - name: Operations
+    description: Authenticated devnet reconciliation workers and operator controls.
   - name: Social
     description: Canonical share pages and generated social-card images.
 security: []
@@ -412,6 +414,95 @@ paths:
           $ref: '#/components/responses/NotImplemented'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /duels/{duelId}/transactions/{transactionId}/submissions:
+    post:
+      operationId: recordDuelTransactionSubmission
+      tags: [Transactions]
+      summary: Bind a broadcast signature to a durable prepared intent
+      description: |
+        Accepts the signing wallet's authenticated session or an integration
+        key. A wallet session can bind only its own prepared transaction.
+        The transaction intent must already contain its blockhash, expiry,
+        expected signer, escrow program, target instruction data hash, exact
+        ordered instruction-account access constraints, and state transition.
+        Arbitrary signatures cannot create an intent.
+      x-openpacksduel-availability: devnet
+      security:
+        - walletSession: []
+        - integrationKey: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+        - $ref: '#/components/parameters/TransactionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordSubmissionRequest'
+      responses:
+        '202':
+          description: Signature recorded for independent reconciliation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoundSubmission'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /internal/reconciliation/solana:
+    get:
+      operationId: reconcileSolanaTransactionsFromCron
+      tags: [Operations]
+      summary: Reconcile a bounded batch of submitted Solana transactions
+      description: |
+        Vercel Cron supplies `Authorization: Bearer $CRON_SECRET`. Confirmed
+        transactions remain pending; only finalized and verified transactions
+        can advance duel state.
+      x-openpacksduel-availability: devnet
+      security:
+        - cronSecret: []
+        - integrationKey: []
+      parameters:
+        - $ref: '#/components/parameters/ReconciliationLimit'
+      responses:
+        '200':
+          description: Bounded reconciliation summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconciliationSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: reconcileSolanaTransactionsManually
+      tags: [Operations]
+      summary: Manually reconcile a bounded batch
+      description: Accepts the cron secret or an integration API key.
+      x-openpacksduel-availability: devnet
+      security:
+        - cronSecret: []
+        - integrationKey: []
+      parameters:
+        - $ref: '#/components/parameters/ReconciliationLimit'
+      responses:
+        '200':
+          description: Bounded reconciliation summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconciliationSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /duels/{duelId}/social-card:
     get:
       operationId: getDuelSocialCard
@@ -463,6 +554,11 @@ paths:
           $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
+    cronSecret:
+      type: http
+      scheme: bearer
+      bearerFormat: random server secret
+      description: Vercel Cron bearer secret; accepted only by internal worker routes.
     integrationKey:
       type: http
       scheme: bearer
@@ -501,6 +597,22 @@ components:
       schema:
         type: string
         pattern: '^duel_[A-Za-z0-9]{12,64}$'
+    TransactionId:
+      name: transactionId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^tx_[A-Za-z0-9]{12,64}$'
+    ReconciliationLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -965,7 +1077,7 @@ components:
           enum: [fund, cancel, refund, open_pack, settle]
         status:
           type: string
-          enum: [prepared, submitted, confirmed, failed, expired]
+          enum: [prepared, submitted, confirmed, finalized, failed, expired]
         network:
           type: string
           const: solana-devnet
@@ -989,6 +1101,21 @@ components:
         confirmedAt:
           type: [string, 'null']
           format: date-time
+        finalizedAt:
+          type: [string, 'null']
+          format: date-time
+        confirmationStatus:
+          type: [string, 'null']
+          enum: [confirmed, finalized, null]
+        checkAttempts:
+          type: integer
+          minimum: 0
+        lastCheckedAt:
+          type: [string, 'null']
+          format: date-time
+        stuckAt:
+          type: [string, 'null']
+          format: date-time
         expiresAt:
           type: [string, 'null']
           format: date-time
@@ -998,6 +1125,56 @@ components:
         updatedAt:
           type: string
           format: date-time
+    RecordSubmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [signature]
+      properties:
+        signature:
+          type: string
+          pattern: '^[1-9A-HJ-NP-Za-km-z]{64,96}$'
+    BoundSubmission:
+      type: object
+      additionalProperties: false
+      required: [transactionId, duelId, signature, status]
+      properties:
+        transactionId:
+          type: string
+          pattern: '^tx_[A-Za-z0-9]{12,64}$'
+        duelId:
+          type: string
+          pattern: '^duel_[A-Za-z0-9]{12,64}$'
+        signature:
+          type: string
+        status:
+          type: string
+          const: submitted
+    ReconciliationSummary:
+      type: object
+      additionalProperties: false
+      required: [checked, confirmed, expired, failed, finalized, pending, stuck]
+      properties:
+        checked:
+          type: integer
+          minimum: 0
+        confirmed:
+          type: integer
+          minimum: 0
+        expired:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+        finalized:
+          type: integer
+          minimum: 0
+        pending:
+          type: integer
+          minimum: 0
+        stuck:
+          type: integer
+          minimum: 0
     SocialCard:
       type: object
       additionalProperties: false
