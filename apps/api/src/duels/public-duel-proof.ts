@@ -17,6 +17,7 @@ export interface PublicDuelReceipt {
     complete: boolean;
     missing: string[];
   };
+  cardActions: PublicPostDuelCardActions;
   custody: {
     cardAssets: {
       detail: string;
@@ -70,6 +71,48 @@ export interface PublicDuelReceipt {
   };
   result: PublicDuelResult | null;
   schemaVersion: 'openpacksduel.receipt.v1';
+}
+
+export interface PublicPostDuelCardActions {
+  availability: 'available' | 'hidden';
+  cards: PublicPostDuelCardActionState[];
+  reason: 'duel-not-settled' | 'mock-assets' | 'ownership-mismatch' | 'ownership-pending' | null;
+  receiptHref: string;
+  schemaVersion: 'openpacksduel.card-actions.v1';
+}
+
+export interface PublicPostDuelCardActionState {
+  actionStateId: string;
+  actions: PublicPostDuelCardAction[];
+  assetReference: string;
+  displayName: string;
+  duelId: string;
+  insuredValue: Money;
+  owner: PublicParticipant;
+  ownership: {
+    basis: 'finalized-settlement-reference';
+    settlementSignature: string;
+    status: 'reconciled';
+  };
+  providerReference: string;
+  receiptHref: string;
+  side: 'creator' | 'opponent';
+}
+
+export interface PublicPostDuelCardAction {
+  action: 'keep' | 'list' | 'redeem' | 'sell-back';
+  alternative: { action: 'keep'; label: 'Keep card' } | null;
+  availability: 'available' | 'unavailable';
+  capability:
+    | 'collector-crypt-buyback'
+    | 'collector-crypt-marketplace-listing'
+    | 'collector-crypt-shipping'
+    | 'ownership-receipt';
+  detail: string;
+  label: string;
+  reason: 'partner-onboarding-required' | null;
+  requiresSignature: false;
+  transaction: null;
 }
 
 export interface PublicParticipant {
@@ -263,9 +306,9 @@ export function buildPublicDuelReceipt(
   const mockOutcome =
     duel.providerMode === 'mock' ||
     Boolean(duel.result?.outcomes.some((outcome) => outcome.isMock));
-  const settlementReference =
-    !mockOutcome &&
-    solana.some((reference) => reference.action === 'settle' && reference.status === 'finalized');
+  const settlementReference = !mockOutcome
+    ? solana.find((reference) => reference.action === 'settle' && reference.status === 'finalized')
+    : undefined;
   const provider =
     duel.result?.outcomes.map((outcome) => ({
       assetReference: outcome.assetReference,
@@ -277,12 +320,19 @@ export function buildPublicDuelReceipt(
     duel,
     feeAmounts,
     fundingSides,
-    settlementReference,
+    settlementReference: Boolean(settlementReference),
   });
 
   return {
     actions: receiptActions(duel.id, status),
     availability: { complete: missing.length === 0, missing },
+    cardActions: buildPostDuelCardActions({
+      creator,
+      duel,
+      opponent,
+      receiptResult: result,
+      settlementReference,
+    }),
     custody: {
       cardAssets: {
         detail: settlementReference
@@ -348,6 +398,140 @@ export function buildPublicDuelReceipt(
     result,
     schemaVersion: 'openpacksduel.receipt.v1',
   };
+}
+
+function buildPostDuelCardActions(input: {
+  creator: PublicParticipant;
+  duel: Duel;
+  opponent: PublicParticipant | null;
+  receiptResult: PublicDuelResult | null;
+  settlementReference: PublicSolanaReference | undefined;
+}): PublicPostDuelCardActions {
+  const receiptHref = `/v1/duels/${encodeURIComponent(input.duel.id)}/receipt`;
+  const hidden = (
+    reason: Exclude<PublicPostDuelCardActions['reason'], null>,
+  ): PublicPostDuelCardActions => ({
+    availability: 'hidden',
+    cards: [],
+    reason,
+    receiptHref,
+    schemaVersion: 'openpacksduel.card-actions.v1',
+  });
+
+  if (input.duel.status !== 'settled') return hidden('duel-not-settled');
+  const duelResult = input.duel.result;
+  const receiptResult = input.receiptResult;
+  const opponent = input.opponent;
+  if (!duelResult || !receiptResult || !opponent) {
+    return hidden('ownership-pending');
+  }
+  if (input.duel.providerMode === 'mock' || duelResult.outcomes.some((outcome) => outcome.isMock)) {
+    return hidden('mock-assets');
+  }
+  if (!winnerWalletMatchesResult(input.duel)) return hidden('ownership-mismatch');
+  const settlementReference = input.settlementReference;
+  if (!settlementReference) return hidden('ownership-pending');
+
+  return {
+    availability: 'available',
+    cards: duelResult.outcomes.map((outcome) => {
+      const owner = ownerForOutcome(
+        outcome.side,
+        receiptResult.winnerSide,
+        input.creator,
+        opponent,
+      );
+      return {
+        actionStateId: `card-action:${input.duel.id}:${outcome.side}:${outcome.resultHash}`,
+        actions: cardActionCapabilities(owner),
+        assetReference: outcome.assetReference,
+        displayName: outcome.displayName,
+        duelId: input.duel.id,
+        insuredValue: outcome.insuredValue,
+        owner,
+        ownership: {
+          basis: 'finalized-settlement-reference',
+          settlementSignature: settlementReference.signature,
+          status: 'reconciled',
+        },
+        providerReference: outcome.providerReference,
+        receiptHref,
+        side: outcome.side,
+      };
+    }),
+    reason: null,
+    receiptHref,
+    schemaVersion: 'openpacksduel.card-actions.v1',
+  };
+}
+
+function winnerWalletMatchesResult(duel: Duel): boolean {
+  const winnerSide = duel.result?.winnerSide;
+  if (winnerSide === 'creator') return duel.winnerWallet === duel.creatorWallet;
+  if (winnerSide === 'opponent') return duel.winnerWallet === duel.opponentWallet;
+  return winnerSide === null && duel.winnerWallet == null;
+}
+
+function ownerForOutcome(
+  side: 'creator' | 'opponent',
+  winnerSide: 'creator' | 'opponent' | null,
+  creator: PublicParticipant,
+  opponent: PublicParticipant,
+): PublicParticipant {
+  if (winnerSide === 'creator') return creator;
+  if (winnerSide === 'opponent') return opponent;
+  return side === 'creator' ? creator : opponent;
+}
+
+function cardActionCapabilities(owner: PublicParticipant): PublicPostDuelCardAction[] {
+  const keep: PublicPostDuelCardAction = {
+    action: 'keep',
+    alternative: null,
+    availability: 'available',
+    capability: 'ownership-receipt',
+    detail: `${owner.display} remains the recorded owner. Keep creates no transaction or custody change.`,
+    label: 'Keep card',
+    reason: null,
+    requiresSignature: false,
+    transaction: null,
+  };
+  const unavailable = (
+    action: 'list' | 'redeem' | 'sell-back',
+    capability: PublicPostDuelCardAction['capability'],
+    label: string,
+    detail: string,
+  ): PublicPostDuelCardAction => ({
+    action,
+    alternative: { action: 'keep', label: 'Keep card' },
+    availability: 'unavailable',
+    capability,
+    detail,
+    label,
+    reason: 'partner-onboarding-required',
+    requiresSignature: false,
+    transaction: null,
+  });
+  return [
+    keep,
+    unavailable(
+      'list',
+      'collector-crypt-marketplace-listing',
+      'List card',
+      'Unavailable until Collector Crypt exposes the authenticated marketplace transaction builder.',
+    ),
+    unavailable(
+      'sell-back',
+      'collector-crypt-buyback',
+      'Sell back',
+      'Unavailable until current buyback eligibility, value, expiry, and recipient can be verified.',
+    ),
+    unavailable(
+      'redeem',
+      'collector-crypt-shipping',
+      'Redeem physical card',
+      'Unavailable until partner authentication, shipping fees, payment, burn, and shipment status are supported.',
+    ),
+  ];
 }
 
 export function buildPublicWalletProfile(

@@ -198,6 +198,9 @@ describe('public duel proof', () => {
     );
     expect(receipt.custody.cardAssets.status).toBe('provider-results-recorded');
     expect(receipt.availability.missing).toContain('card_settlement_reference');
+    expect(receipt.cardActions).toEqual(
+      expect.objectContaining({ availability: 'hidden', cards: [], reason: 'ownership-pending' }),
+    );
   });
 
   test('does not treat a finalized mock settlement as real card custody proof', () => {
@@ -222,6 +225,90 @@ describe('public duel proof', () => {
     );
     expect(receipt.custody.cardAssets.status).toBe('provider-results-recorded');
     expect(receipt.availability.missing).toContain('card_settlement_reference');
+    expect(receipt.cardActions).toEqual(
+      expect.objectContaining({ availability: 'hidden', cards: [], reason: 'mock-assets' }),
+    );
+  });
+
+  test.each([
+    ['creator', CREATOR, [CREATOR, CREATOR]],
+    ['opponent', OPPONENT, [OPPONENT, OPPONENT]],
+    [null, null, [CREATOR, OPPONENT]],
+  ] as const)('projects independent per-card actions after a reconciled %s result', (winnerSide, winnerWallet, expectedOwners) => {
+    const duel = realSettledDuel(winnerSide);
+    expect(duel.winnerWallet ?? null).toBe(winnerWallet);
+    const transactions = [...fundingTransactions(), settlementTransaction()];
+
+    const first = buildPublicDuelReceipt(duel, transactions);
+    const replay = buildPublicDuelReceipt(duel, transactions);
+
+    expect(first.cardActions).toEqual(replay.cardActions);
+    expect(first.cardActions).toEqual(
+      expect.objectContaining({
+        availability: 'available',
+        reason: null,
+        receiptHref: '/v1/duels/duel_receipt00001/receipt',
+        schemaVersion: 'openpacksduel.card-actions.v1',
+      }),
+    );
+    expect(first.cardActions.cards).toHaveLength(2);
+    expect(first.cardActions.cards.map((card) => card.owner.address)).toEqual(expectedOwners);
+    expect(new Set(first.cardActions.cards.map((card) => card.actionStateId)).size).toBe(2);
+    for (const card of first.cardActions.cards) {
+      expect(card).toEqual(
+        expect.objectContaining({
+          duelId: duel.id,
+          receiptHref: first.cardActions.receiptHref,
+        }),
+      );
+      expect(card.ownership).toEqual({
+        basis: 'finalized-settlement-reference',
+        settlementSignature: '3'.repeat(88),
+        status: 'reconciled',
+      });
+      expect(card.actions.map((action) => action.action)).toEqual([
+        'keep',
+        'list',
+        'sell-back',
+        'redeem',
+      ]);
+      expect(card.actions.find((action) => action.action === 'keep')).toEqual(
+        expect.objectContaining({
+          availability: 'available',
+          capability: 'ownership-receipt',
+          requiresSignature: false,
+          transaction: null,
+        }),
+      );
+      for (const action of card.actions.filter((candidate) => candidate.action !== 'keep')) {
+        expect(action).toEqual(
+          expect.objectContaining({
+            alternative: { action: 'keep', label: 'Keep card' },
+            availability: 'unavailable',
+            reason: 'partner-onboarding-required',
+            requiresSignature: false,
+            transaction: null,
+          }),
+        );
+      }
+    }
+  });
+
+  test('hides actions while settlement ownership is pending or mismatched', () => {
+    const pending = realSettledDuel('creator');
+    const pendingReceipt = buildPublicDuelReceipt(pending, fundingTransactions());
+    expect(pendingReceipt.cardActions).toEqual(
+      expect.objectContaining({ availability: 'hidden', cards: [], reason: 'ownership-pending' }),
+    );
+
+    const mismatched = { ...realSettledDuel('creator'), winnerWallet: OPPONENT };
+    const mismatchReceipt = buildPublicDuelReceipt(mismatched, [
+      ...fundingTransactions(),
+      settlementTransaction(),
+    ]);
+    expect(mismatchReceipt.cardActions).toEqual(
+      expect.objectContaining({ availability: 'hidden', cards: [], reason: 'ownership-mismatch' }),
+    );
   });
 
   test('calculates wallet record, biggest win, refunds, and pseudonymous opponents', () => {
@@ -359,6 +446,52 @@ function settledDuel(): Duel {
   };
 }
 
+function realSettledDuel(winnerSide: 'creator' | 'opponent' | null): Duel {
+  const sourceTimestamp = '2026-07-15T20:03:30.000Z';
+  const observedAt = new Date('2026-07-15T20:04:00.000Z');
+  const values =
+    winnerSide === 'creator'
+      ? (['100000000', '15000000'] as const)
+      : winnerSide === 'opponent'
+        ? (['15000000', '100000000'] as const)
+        : (['100000000', '100000000'] as const);
+  const creator = normalizeProviderResult(
+    'creator',
+    providerResult('creator-card-mint', 'Umbreon VMAX', values[0], sourceTimestamp),
+    CANONICAL_VALUATION_POLICY_HASH,
+    'collector:pack:creator',
+    observedAt,
+  );
+  const opponent = normalizeProviderResult(
+    'opponent',
+    providerResult('opponent-card-mint', 'Blastoise', values[1], sourceTimestamp),
+    CANONICAL_VALUATION_POLICY_HASH,
+    'collector:pack:opponent',
+    observedAt,
+  );
+  const comparison = compareInsuredValues(creator, opponent, {
+    creatorWallet: CREATOR,
+    duelId: 'duel_receipt00001',
+    escrowAddress: ESCROW,
+    network: 'solana-devnet',
+    opponentWallet: OPPONENT,
+    providerMode: 'collector-crypt-sandbox',
+    valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
+  });
+  const base = settledDuel();
+  return {
+    ...base,
+    providerMode: 'collector-crypt-sandbox',
+    result: {
+      ...requireResult(base),
+      outcomes: [toDuelOutcome(creator, false), toDuelOutcome(opponent, false)],
+      resultHash: comparison.resultHash,
+      winnerSide,
+    },
+    winnerWallet: winnerSide === 'creator' ? CREATOR : winnerSide === 'opponent' ? OPPONENT : null,
+  };
+}
+
 function providerResult(
   assetReference: string,
   displayName: string,
@@ -377,12 +510,13 @@ function providerResult(
 
 function toDuelOutcome(
   outcome: ReturnType<typeof normalizeProviderResult>,
+  isMock = true,
 ): NonNullable<Duel['result']>['outcomes'][number] {
   return {
     assetReference: outcome.assetReference,
     displayName: outcome.displayName,
     insuredValue: outcome.insuredValue,
-    isMock: true,
+    isMock,
     openedAt: outcome.openedAt,
     poolVersion: outcome.poolVersion,
     provider: 'collector-crypt',
@@ -410,4 +544,19 @@ function fundingTransactions(): DuelTransactionRecord[] {
     updatedAt: '2026-07-15T20:03:00.000Z',
     wallet,
   }));
+}
+
+function settlementTransaction(): DuelTransactionRecord {
+  return {
+    action: 'settle',
+    createdAt: '2026-07-15T20:04:00.000Z',
+    duelId: 'duel_receipt00001',
+    finalizedAt: '2026-07-15T20:05:00.000Z',
+    id: 'tx_settle_finalized',
+    network: 'solana-devnet',
+    signature: '3'.repeat(88),
+    status: 'finalized',
+    updatedAt: '2026-07-15T20:05:00.000Z',
+    wallet: CREATOR,
+  };
 }

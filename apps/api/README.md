@@ -144,6 +144,17 @@ platform fees immediately without waiting for expiry or entering recovery.
 Recorded result inputs are immutable; provider corrections require a dispute or
 refund and never rewrite the winner. See the public valuation/proof guide and
 `GET /v1/valuation-policies/current`.
+
+The public duel receipt also projects partner-independent card action state after
+an exact finalized settlement reference reconciles ownership. Each card is
+independent, including both cards awarded to one winner. `keep` is an ownership
+receipt only and creates no transaction. Marketplace listing, insured buyback,
+and physical redemption remain explicitly unavailable and return `keep` as the
+safe alternative; the API never fabricates a partner transaction. Mock results,
+pending settlement, and winner/ownership mismatches return no card actions.
+Collector Crypt authentication, marketplace builders, live buyback eligibility,
+shipping fees, USDC payment, NFT burn, and shipment tracking remain open gates in
+[issue #24](https://github.com/openpacksduel/app/issues/24).
 `SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every
 worker validates the official devnet genesis hash before reading transaction
 state. Funding preparation additionally requires `ESCROW_PROGRAM_ID`,
