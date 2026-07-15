@@ -1,12 +1,14 @@
 openapi: 3.1.0
 info:
   title: OpenPacks Duel API
-  version: 0.1.0-preview
+  version: 0.2.0-devnet
   summary: Build pack-opening duels on Solana
   description: |
     Preview contract for pack discovery, duel matchmaking, wallet-signed Solana
     transactions, status tracking, and social sharing. The API never accepts
-    wallet private keys and does not replace on-chain verification.
+    wallet private keys and does not replace on-chain verification. Every duel
+    created by this contract is explicitly Solana devnet-only. Mock provider
+    responses never imply funding, settlement, or mainnet readiness.
   license:
     name: MIT
     identifier: MIT
@@ -17,7 +19,7 @@ servers:
   - url: http://localhost:3003/v1
     description: Local development
   - url: https://api.openpacksduel.com/v1
-    description: Planned production endpoint (not live)
+    description: Reserved devnet API endpoint (not live; not mainnet)
 tags:
   - name: Packs
     description: Duel-eligible pack definitions and current inventory metadata.
@@ -33,7 +35,7 @@ paths:
     get:
       operationId: getHealth
       summary: Check API process health
-      x-openpacksduel-availability: preview
+      x-openpacksduel-availability: devnet
       responses:
         '200':
           description: API process is accepting requests
@@ -43,12 +45,14 @@ paths:
                 $ref: '#/components/schemas/Health'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /packs:
     get:
       operationId: listPacks
       tags: [Packs]
       summary: List duel-eligible pack definitions
-      x-openpacksduel-availability: preview
+      x-openpacksduel-availability: devnet
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -71,7 +75,7 @@ paths:
       operationId: getPack
       tags: [Packs]
       summary: Get one pack definition
-      x-openpacksduel-availability: preview
+      x-openpacksduel-availability: devnet
       parameters:
         - $ref: '#/components/parameters/PackId'
       responses:
@@ -88,7 +92,7 @@ paths:
       operationId: listDuels
       tags: [Duels]
       summary: List public duels
-      x-openpacksduel-availability: preview
+      x-openpacksduel-availability: devnet
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -100,6 +104,14 @@ paths:
           in: query
           schema:
             $ref: '#/components/schemas/SolanaAddress'
+        - name: matchmakingMode
+          in: query
+          schema:
+            $ref: '#/components/schemas/MatchmakingMode'
+        - name: packId
+          in: query
+          schema:
+            $ref: '#/components/schemas/PackId'
       responses:
         '200':
           description: Duels
@@ -114,7 +126,7 @@ paths:
       tags: [Duels]
       summary: Create an off-chain duel intent
       description: The returned intent is not funded until its Solana transaction confirms.
-      x-openpacksduel-availability: preview
+      x-openpacksduel-availability: devnet
       security:
         - bearerAuth: []
       parameters:
@@ -149,7 +161,7 @@ paths:
       operationId: getDuel
       tags: [Duels]
       summary: Get canonical duel state
-      x-openpacksduel-availability: preview
+      x-openpacksduel-availability: devnet
       parameters:
         - $ref: '#/components/parameters/DuelId'
       responses:
@@ -161,13 +173,121 @@ paths:
                 $ref: '#/components/schemas/Duel'
         '404':
           $ref: '#/components/responses/NotFound'
+  /duels/{duelId}/join:
+    post:
+      operationId: joinDuel
+      tags: [Duels]
+      summary: Join a direct invitation or open devnet duel
+      description: |
+        Atomically claims an open duel or accepts a direct invitation. House
+        duels are already matched at creation and cannot be joined.
+      x-openpacksduel-availability: devnet
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinDuelRequest'
+      responses:
+        '200':
+          description: Duel matched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Duel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /duels/{duelId}/cancel:
+    post:
+      operationId: cancelDuel
+      tags: [Duels]
+      summary: Cancel an unfunded devnet duel
+      description: |
+        A participant can cancel only while the duel is waiting or matched.
+        Expired waiting and matched duels deterministically become cancelled
+        with the `timeout` reason.
+      x-openpacksduel-availability: devnet
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelDuelRequest'
+      responses:
+        '200':
+          description: Duel cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Duel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /duels/{duelId}/events:
+    get:
+      operationId: listDuelEvents
+      tags: [Duels]
+      summary: List the immutable duel state timeline
+      x-openpacksduel-availability: devnet
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+      responses:
+        '200':
+          description: Ordered audit events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DuelEvent'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /duels/{duelId}/transactions:
+    get:
+      operationId: listDuelTransactions
+      tags: [Transactions]
+      summary: List reconciliation-safe Solana transaction records
+      x-openpacksduel-availability: devnet
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+      responses:
+        '200':
+          description: Ordered transaction records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DuelTransactionRecord'
+        '404':
+          $ref: '#/components/responses/NotFound'
     post:
       operationId: prepareDuelTransaction
       tags: [Transactions]
       summary: Prepare a wallet-signed Solana transaction
       description: Returns an unsigned serialized transaction. The API never signs for a wallet.
-      x-openpacksduel-availability: preview
+      x-openpacksduel-availability: contract-only
       security:
         - bearerAuth: []
       parameters:
@@ -201,7 +321,7 @@ paths:
       operationId: getDuelSocialCard
       tags: [Social]
       summary: Get canonical share and social-card URLs
-      x-openpacksduel-availability: preview
+      x-openpacksduel-availability: devnet
       parameters:
         - $ref: '#/components/parameters/DuelId'
       responses:
@@ -303,7 +423,7 @@ components:
     Health:
       type: object
       additionalProperties: false
-      required: [service, status, version]
+      required: [service, status, version, dependencies]
       properties:
         service:
           type: string
@@ -313,6 +433,15 @@ components:
           const: ok
         version:
           type: string
+          const: 0.2.0-devnet
+        dependencies:
+          type: object
+          additionalProperties: false
+          required: [database]
+          properties:
+            database:
+              type: string
+              const: ok
     SolanaAddress:
       type: string
       pattern: '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
@@ -374,10 +503,23 @@ components:
           type: boolean
     MatchmakingMode:
       type: string
-      enum: [open, direct]
+      enum: [direct, house, open]
     DuelStatus:
       type: string
-      enum: [waiting, funded, opening, awaiting_assets, settled, cancelled, refunded, failed]
+      enum:
+        - waiting
+        - matched
+        - committing
+        - funded
+        - opening
+        - awaiting_assets
+        - settling
+        - settled
+        - cancelling
+        - cancelled
+        - refunding
+        - refunded
+        - failed
     CreateDuelRequest:
       type: object
       additionalProperties: false
@@ -396,10 +538,40 @@ components:
         expiresAt:
           type: string
           format: date-time
+          description: Must be in the future and no more than 24 hours from creation.
+    JoinDuelRequest:
+      type: object
+      additionalProperties: false
+      required: [wallet]
+      properties:
+        wallet:
+          $ref: '#/components/schemas/SolanaAddress'
+    CancelDuelRequest:
+      type: object
+      additionalProperties: false
+      required: [wallet]
+      properties:
+        wallet:
+          $ref: '#/components/schemas/SolanaAddress'
+        reason:
+          type: string
+          maxLength: 160
     Duel:
       type: object
       additionalProperties: false
-      required: [id, status, matchmakingMode, creatorWallet, pack, stake, createdAt, expiresAt]
+      required:
+        - id
+        - status
+        - matchmakingMode
+        - creatorWallet
+        - environment
+        - providerMode
+        - houseOpponent
+        - pack
+        - stake
+        - version
+        - createdAt
+        - expiresAt
       properties:
         id:
           type: string
@@ -409,6 +581,15 @@ components:
           $ref: '#/components/schemas/MatchmakingMode'
         creatorWallet:
           $ref: '#/components/schemas/SolanaAddress'
+        environment:
+          type: string
+          const: solana-devnet
+        providerMode:
+          type: string
+          enum: [mock, collector-crypt-sandbox]
+          description: Mock mode never represents a funded or settled game.
+        houseOpponent:
+          type: boolean
         opponentWallet:
           oneOf:
             - $ref: '#/components/schemas/SolanaAddress'
@@ -427,6 +608,14 @@ components:
           oneOf:
             - $ref: '#/components/schemas/SolanaAddress'
             - type: 'null'
+        opponentJoinedAt:
+          type: [string, 'null']
+          format: date-time
+        cancellationReason:
+          type: [string, 'null']
+        version:
+          type: integer
+          minimum: 1
         createdAt:
           type: string
           format: date-time
@@ -449,6 +638,38 @@ components:
           type: [string, 'null']
         hasMore:
           type: boolean
+    DuelEvent:
+      type: object
+      additionalProperties: false
+      required: [id, duelId, sequence, type, createdAt]
+      properties:
+        id:
+          type: string
+        duelId:
+          type: string
+        sequence:
+          type: integer
+          minimum: 1
+        type:
+          type: string
+        actorWallet:
+          oneOf:
+            - $ref: '#/components/schemas/SolanaAddress'
+            - type: 'null'
+        fromStatus:
+          oneOf:
+            - $ref: '#/components/schemas/DuelStatus'
+            - type: 'null'
+        toStatus:
+          oneOf:
+            - $ref: '#/components/schemas/DuelStatus'
+            - type: 'null'
+        data:
+          type: [object, 'null']
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
     TransactionAction:
       type: string
       enum: [fund, cancel, refund]
@@ -480,6 +701,53 @@ components:
         summary:
           type: string
           description: Human-readable instructions for wallet confirmation UI.
+    DuelTransactionRecord:
+      type: object
+      additionalProperties: false
+      required: [id, duelId, action, status, network, wallet, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        duelId:
+          type: string
+        action:
+          type: string
+          enum: [fund, cancel, refund, open_pack, settle]
+        status:
+          type: string
+          enum: [prepared, submitted, confirmed, failed, expired]
+        network:
+          type: string
+          const: solana-devnet
+        wallet:
+          $ref: '#/components/schemas/SolanaAddress'
+        signature:
+          type: [string, 'null']
+        recentBlockhash:
+          type: [string, 'null']
+        lastValidBlockHeight:
+          type: [string, 'null']
+        providerReference:
+          type: [string, 'null']
+        errorCode:
+          type: [string, 'null']
+        errorMessage:
+          type: [string, 'null']
+        submittedAt:
+          type: [string, 'null']
+          format: date-time
+        confirmedAt:
+          type: [string, 'null']
+          format: date-time
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     SocialCard:
       type: object
       additionalProperties: false

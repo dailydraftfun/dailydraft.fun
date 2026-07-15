@@ -3,6 +3,7 @@ node_modules
 .next
 dist
 out
+generated
 .env
 .env.*
 !.env.example

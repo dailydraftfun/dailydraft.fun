@@ -17,8 +17,10 @@ import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
 import type { Duel, Page } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
 import {
+  CancelDuelRequest,
   CreateDuelRequest,
   DuelIdParams,
+  JoinDuelRequest,
   ListDuelsQuery,
   PrepareTransactionRequest,
 } from './duel.dto.js';
@@ -30,7 +32,7 @@ export class DuelsController {
   constructor(private readonly duels: DuelsService) {}
 
   @Get()
-  findAll(@Query() query: ListDuelsQuery): Page<Duel> {
+  findAll(@Query() query: ListDuelsQuery): Promise<Page<Duel>> {
     return this.duels.findAll(query);
   }
 
@@ -41,25 +43,58 @@ export class DuelsController {
     @Body() input: CreateDuelRequest,
     @IdempotencyKey() idempotencyKey: string,
     @Res({ passthrough: true }) response: FastifyReply,
-  ): Duel {
-    const duel = this.duels.create(input, idempotencyKey);
-    response.header('location', `/v1/duels/${duel.id}`);
-    return duel;
+  ): Promise<Duel> {
+    return this.duels.create(input, idempotencyKey).then((duel) => {
+      response.header('location', `/v1/duels/${duel.id}`);
+      return duel;
+    });
   }
 
   @Get(':duelId')
-  findOne(@Param() params: DuelIdParams): Duel {
+  findOne(@Param() params: DuelIdParams): Promise<Duel> {
     return this.duels.findOne(params.duelId);
+  }
+
+  @Post(':duelId/join')
+  @HttpCode(200)
+  @UseGuards(IntegrationKeyGuard)
+  join(
+    @Param() params: DuelIdParams,
+    @Body() input: JoinDuelRequest,
+    @IdempotencyKey() idempotencyKey: string,
+  ): Promise<Duel> {
+    return this.duels.join(params.duelId, input, idempotencyKey);
+  }
+
+  @Post(':duelId/cancel')
+  @HttpCode(200)
+  @UseGuards(IntegrationKeyGuard)
+  cancel(
+    @Param() params: DuelIdParams,
+    @Body() input: CancelDuelRequest,
+    @IdempotencyKey() idempotencyKey: string,
+  ): Promise<Duel> {
+    return this.duels.cancel(params.duelId, input, idempotencyKey);
+  }
+
+  @Get(':duelId/events')
+  listEvents(@Param() params: DuelIdParams) {
+    return this.duels.listEvents(params.duelId);
+  }
+
+  @Get(':duelId/transactions')
+  listTransactions(@Param() params: DuelIdParams) {
+    return this.duels.listTransactions(params.duelId);
   }
 
   @Post(':duelId/transactions')
   @UseGuards(IntegrationKeyGuard)
-  prepareTransaction(
+  async prepareTransaction(
     @Param() params: DuelIdParams,
     @Body() _input: PrepareTransactionRequest,
     @IdempotencyKey() _idempotencyKey: string,
-  ): never {
-    this.duels.findOne(params.duelId);
+  ): Promise<never> {
+    await this.duels.findOne(params.duelId);
     throw new NotImplementedException(
       'Transaction preparation is disabled until the Solana escrow integration is live',
     );

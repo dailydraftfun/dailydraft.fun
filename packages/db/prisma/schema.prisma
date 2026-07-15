@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum DuelMode {
+  DIRECT
+  OPEN
+  HOUSE
+}
+
+enum DuelStatus {
+  WAITING
+  MATCHED
+  COMMITTING
+  FUNDED
+  OPENING
+  AWAITING_ASSETS
+  SETTLING
+  SETTLED
+  CANCELLING
+  CANCELLED
+  REFUNDING
+  REFUNDED
+  FAILED
+}
+
+enum SolanaNetwork {
+  DEVNET
+}
+
+enum ProviderMode {
+  MOCK
+  COLLECTOR_CRYPT_SANDBOX
+}
+
+enum DuelTransactionAction {
+  FUND
+  CANCEL
+  REFUND
+  OPEN_PACK
+  SETTLE
+}
+
+enum DuelTransactionStatus {
+  PREPARED
+  SUBMITTED
+  CONFIRMED
+  FAILED
+  EXPIRED
+}
+
+model Duel {
+  id                  String            @id
+  mode                DuelMode
+  status              DuelStatus
+  network             SolanaNetwork     @default(DEVNET)
+  providerMode        ProviderMode      @default(MOCK)
+  creatorWallet       String
+  opponentWallet      String?
+  opponentJoinedAt    DateTime?
+  houseOpponent       Boolean           @default(false)
+  winnerWallet        String?
+  escrowAddress       String?
+  packId              String
+  packName            String
+  packProvider        String
+  providerPackId      String?
+  stakeAmount         String
+  stakeCurrency       String            @default("USDC")
+  stakeDecimals       Int               @default(6)
+  valuationPolicyHash String?
+  expiresAt           DateTime
+  cancellationReason  String?
+  version             Int               @default(1)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  matchedAt           DateTime?
+  fundedAt            DateTime?
+  settledAt           DateTime?
+  events              DuelEvent[]
+  transactions        DuelTransaction[]
+
+  @@index([status, expiresAt])
+  @@index([mode, status, packId, createdAt])
+  @@index([creatorWallet, createdAt])
+  @@index([opponentWallet, createdAt])
+  @@index([winnerWallet, createdAt])
+}
+
+model DuelEvent {
+  id          String      @id
+  duelId      String
+  sequence    Int
+  type        String
+  actorWallet String?
+  fromStatus  DuelStatus?
+  toStatus    DuelStatus?
+  data        Json?
+  createdAt   DateTime    @default(now())
+  duel        Duel        @relation(fields: [duelId], references: [id], onDelete: Cascade)
+
+  @@unique([duelId, sequence])
+  @@index([duelId, createdAt])
+}
+
+model IdempotencyRecord {
+  id          String   @id
+  scope       String
+  key         String
+  requestHash String
+  resourceId  String
+  statusCode  Int
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+}
+
+model DuelTransaction {
+  id                    String                @id
+  duelId                String
+  action                DuelTransactionAction
+  status                DuelTransactionStatus @default(PREPARED)
+  network               SolanaNetwork         @default(DEVNET)
+  wallet                String
+  signature             String?               @unique
+  idempotencyKey        String?               @unique
+  serializedTransaction String?
+  recentBlockhash       String?
+  lastValidBlockHeight  BigInt?
+  providerReference     String?
+  errorCode             String?
+  errorMessage          String?
+  metadata              Json?
+  submittedAt           DateTime?
+  confirmedAt           DateTime?
+  expiresAt             DateTime?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  duel                  Duel                  @relation(fields: [duelId], references: [id], onDelete: Cascade)
+
+  @@index([duelId, createdAt])
+  @@index([status, updatedAt])
+}
