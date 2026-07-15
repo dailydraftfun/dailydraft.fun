@@ -391,6 +391,10 @@ export function validateCanonicalEvidence(duel: {
   if (duel.packOutcomes.length !== 2 || duel.packOutcomes.some((outcome) => outcome.isMock)) {
     throw new ServiceUnavailableException('Mock or incomplete outcomes cannot settle real assets');
   }
+  const policyHash = duel.valuationPolicyHash;
+  if (!policyHash || !/^[a-f0-9]{64}$/.test(policyHash)) {
+    throw new ServiceUnavailableException('Duel valuation policy is not canonical');
+  }
   const outcomes = Object.fromEntries(
     duel.packOutcomes.map((outcome) => {
       if (
@@ -403,8 +407,7 @@ export function validateCanonicalEvidence(duel: {
       const value = BigInt(outcome.insuredValueAmount);
       if (value > U64_MAX) throw new ServiceUnavailableException('Insured value exceeds u64');
       if (
-        !duel.valuationPolicyHash ||
-        outcome.valuationPolicyHash !== duel.valuationPolicyHash ||
+        outcome.valuationPolicyHash !== policyHash ||
         !/^[a-f0-9]{64}$/.test(outcome.valuationPolicyHash)
       ) {
         throw new ServiceUnavailableException('Outcome valuation policy is not canonical');
@@ -428,7 +431,7 @@ export function validateCanonicalEvidence(duel: {
   return {
     creator: outcomes.creator,
     opponent: outcomes.opponent,
-    policyHash: Uint8Array.from(Buffer.from(duel.valuationPolicyHash, 'hex')),
+    policyHash: Uint8Array.from(Buffer.from(policyHash, 'hex')),
     winner:
       outcomes.creator.value === outcomes.opponent.value
         ? null
