@@ -1,0 +1,21 @@
+{
+  "fixture": "provider-correction",
+  "policyHash": "406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b",
+  "committed": {
+    "openedAt": "2026-07-15T20:04:00.000Z",
+    "providerReference": "cc-pack-example-creator",
+    "assetReference": "cc-mint-example-creator",
+    "insuredValue": { "amount": "51000000", "currency": "USDC", "decimals": 6 },
+    "poolVersion": "collector-crypt-pool-v1",
+    "sourceTimestamp": "2026-07-15T20:03:30.000Z"
+  },
+  "correction": {
+    "insuredValue": { "amount": "49000000", "currency": "USDC", "decimals": 6 },
+    "receivedAt": "2026-07-15T20:10:00.000Z"
+  },
+  "expected": {
+    "rewriteCommittedResult": false,
+    "action": "dispute-or-refund",
+    "reason": "immutable-after-result-commit-dispute-or-refund"
+  }
+}

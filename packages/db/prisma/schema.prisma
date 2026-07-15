@@ -207,6 +207,8 @@ model DuelPackOutcome {
   insuredValueAmount   String
   insuredValueCurrency String   @default("USDC")
   insuredValueDecimals Int      @default(6)
+  sourceTimestamp      DateTime?
+  poolVersion          String?
   valuationPolicyHash  String
   resultHash           String
   isMock               Boolean

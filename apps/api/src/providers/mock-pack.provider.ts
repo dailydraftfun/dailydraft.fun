@@ -9,10 +9,9 @@ import type {
   ProviderPackSnapshot,
 } from './pack-provider.js';
 import { PackProvider } from './pack-provider.js';
+import { CANONICAL_VALUATION_POLICY_HASH } from './valuation-policy.js';
 
-const MOCK_POLICY_HASH = createHash('sha256')
-  .update('openpacksduel:mock-insured-value:devnet:v1')
-  .digest('hex');
+const MOCK_POOL_VERSION = 'openpacksduel.mock-pool.devnet.v1';
 const CARD_NAMES = [
   'Devnet Charizard Test Card',
   'Devnet Pikachu Test Card',
@@ -42,8 +41,10 @@ export class MockPackProvider extends PackProvider {
     if (!current) throw new NotFoundException('Mock pack was not generated');
     if (current.status === 'opened') return current;
 
-    const result = createMockResult(input.providerReference);
+    const openedAt = new Date().toISOString();
+    const result = createMockResult(input.providerReference, openedAt);
     const opened: ProviderPackSnapshot = {
+      openedAt,
       providerReference: input.providerReference,
       result,
       status: 'opened',
@@ -60,7 +61,7 @@ export class MockPackProvider extends PackProvider {
   }
 }
 
-function createMockResult(providerReference: string): ProviderCardResult {
+function createMockResult(providerReference: string, openedAt: string): ProviderCardResult {
   const hash = digest(providerReference);
   const numericSeed = Number.parseInt(hash.slice(0, 8), 16);
   // Side-specific parity allocates non-overlapping values, so a deterministic
@@ -71,7 +72,9 @@ function createMockResult(providerReference: string): ProviderCardResult {
     assetReference: `mock_asset_${hash.slice(0, 40)}`,
     displayName: CARD_NAMES[numericSeed % CARD_NAMES.length] ?? CARD_NAMES[0],
     insuredValue: { amount: String(cents * 10_000), currency: 'USDC', decimals: 6 },
-    valuationPolicyHash: MOCK_POLICY_HASH,
+    poolVersion: MOCK_POOL_VERSION,
+    sourceTimestamp: openedAt,
+    valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
   };
 }
 

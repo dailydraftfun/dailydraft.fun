@@ -5,6 +5,7 @@ export const ESCROW_V2_SOURCE_SHA = '4aa3bb7560443c0565ded2d6edee67c6a544dd5f';
 export const ESCROW_V2_IDL_SHA256 =
   '53ed60b44d5cef022db0301e5d6495ca3bf84486a048c7dd7ce5621a499762e0';
 export const ESCROW_V2_PROGRAM_ID = new PublicKey('Co198eFfQcmn1WzZRnHV6jxcSLBDCv1qNfPfiBYdCLfS');
+export const ESCROW_V2_MAX_OPENING_FUTURE_SKEW_SECONDS = 30n;
 export const FUND_DUEL_DISCRIMINATOR = Uint8Array.from([135, 82, 1, 209, 16, 87, 207, 32]);
 export const INITIALIZE_DUEL_DISCRIMINATOR = Uint8Array.from([197, 5, 158, 89, 174, 188, 134, 6]);
 export const DEPOSIT_CARD_ASSET_DISCRIMINATOR = Uint8Array.from([
@@ -39,6 +40,12 @@ export interface InitializeDuelArgs {
   providerSigner: PublicKey;
   feeRecipient: PublicKey;
   valuationPolicyHash: Uint8Array;
+}
+
+export function toEscrowV2UnixSeconds(value: Date): bigint {
+  const milliseconds = value.getTime();
+  if (!Number.isFinite(milliseconds)) throw new Error('escrow timestamp must be a valid date');
+  return BigInt(Math.floor(milliseconds / 1_000));
 }
 
 export function deriveEscrowV2Addresses(creator: PublicKey, nonce: bigint): EscrowV2Addresses {

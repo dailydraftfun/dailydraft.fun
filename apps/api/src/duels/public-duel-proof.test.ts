@@ -1,10 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { Duel, DuelTransactionRecord } from '../domain.js';
+import type { ProviderCardResult } from '../providers/pack-provider.js';
+import { compareInsuredValues, normalizeProviderResult } from '../providers/provider-result.js';
+import {
+  CANONICAL_VALUATION_POLICY,
+  CANONICAL_VALUATION_POLICY_HASH,
+} from '../providers/valuation-policy.js';
 import { buildPublicDuelReceipt, buildPublicWalletProfile } from './public-duel-proof.js';
 
 const CREATOR = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
 const OPPONENT = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
+const ESCROW = '7YttLkHDoNj9wyDur5rWnFwyCRLQ8vWUvqGL9cM23Zgy';
 
 describe('public duel proof', () => {
   test('builds a strict receipt from public state without support metadata', () => {
@@ -14,6 +21,19 @@ describe('public duel proof', () => {
     expect(receipt.result?.winner?.address).toBe(CREATOR);
     expect(receipt.result?.totalValue.amount).toBe('115000000');
     expect(receipt.result?.margin.amount).toBe('85000000');
+    expect(receipt.result?.policy).toEqual(
+      expect.objectContaining({
+        authoritativeField: 'collector-crypt.gacha.result.insuredValue',
+        hash: CANONICAL_VALUATION_POLICY_HASH,
+        tieRule: 'return-original-assets-and-refund-platform-fees',
+      }),
+    );
+    expect(receipt.result?.proof).toEqual(
+      expect.objectContaining({
+        poolVersion: 'collector-crypt-pool-v1',
+        schemaVersion: 'openpacksduel.result-proof.v1',
+      }),
+    );
     expect(receipt.fees).toEqual({
       asset: 'WSOL',
       finalizedSides: 2,
@@ -52,6 +72,56 @@ describe('public duel proof', () => {
     expect(receipt.actions.primary.label).toBe('Open a new duel');
   });
 
+  test('publishes a settlement-ready receipt for an equal-value tie', () => {
+    const duel = settledDuel();
+    const result = requireResult(duel);
+    const creator = result.outcomes.find((outcome) => outcome.side === 'creator');
+    if (!creator) throw new Error('Test fixture requires a creator outcome');
+    const opponent = normalizeProviderResult(
+      'opponent',
+      providerResult(
+        'mock:card:opponent',
+        'Equal-value opponent',
+        creator.insuredValue.amount,
+        creator.sourceTimestamp,
+      ),
+      CANONICAL_VALUATION_POLICY_HASH,
+      'mock:pack:opponent',
+      new Date(creator.openedAt),
+    );
+    const comparison = compareInsuredValues(
+      { ...creator, valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH },
+      opponent,
+      {
+        creatorWallet: CREATOR,
+        duelId: duel.id,
+        escrowAddress: ESCROW,
+        network: 'solana-devnet',
+        opponentWallet: OPPONENT,
+        providerMode: 'mock',
+        valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
+      },
+    );
+    const receipt = buildPublicDuelReceipt(
+      {
+        ...duel,
+        result: {
+          ...result,
+          outcomes: [creator, toDuelOutcome(opponent)],
+          resultHash: comparison.resultHash,
+          winnerSide: null,
+        },
+        status: 'settling',
+        winnerWallet: null,
+      },
+      fundingTransactions(),
+    );
+
+    expect(receipt.result).toEqual(
+      expect.objectContaining({ settlementReady: true, winner: null, winnerSide: null }),
+    );
+  });
+
   test('publishes only exact verified unbound custody alerts', () => {
     const signature = '4'.repeat(88);
     const receipt = buildPublicDuelReceipt(settledDuel(), [
@@ -80,13 +150,31 @@ describe('public duel proof', () => {
   test('does not treat an unfinalized settlement signature as custody proof', () => {
     const duel = settledDuel();
     const result = requireResult(duel);
+    const outcomes = result.outcomes.map((outcome) => ({ ...outcome, isMock: false }));
+    const creator = outcomes.find((outcome) => outcome.side === 'creator');
+    const opponent = outcomes.find((outcome) => outcome.side === 'opponent');
+    if (!creator || !opponent) throw new Error('Test fixture requires both outcomes');
+    const comparison = compareInsuredValues(
+      { ...creator, valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH },
+      { ...opponent, valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH },
+      {
+        creatorWallet: CREATOR,
+        duelId: duel.id,
+        escrowAddress: ESCROW,
+        network: 'solana-devnet',
+        opponentWallet: OPPONENT,
+        providerMode: 'collector-crypt-sandbox',
+        valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
+      },
+    );
     const receipt = buildPublicDuelReceipt(
       {
         ...duel,
         providerMode: 'collector-crypt-sandbox',
         result: {
           ...result,
-          outcomes: result.outcomes.map((outcome) => ({ ...outcome, isMock: false })),
+          outcomes,
+          resultHash: comparison.resultHash,
         },
       },
       [
@@ -167,6 +255,38 @@ describe('public duel proof', () => {
     expect(profile.duels[0]?.opponentDisplay).toBe('DeWQ…12Eu');
     expect(profile.privacy.indexable).toBe(false);
   });
+
+  test('fails closed when a recorded winner no longer reproduces from proof inputs', () => {
+    const duel = settledDuel();
+    const result = requireResult(duel);
+
+    expect(() =>
+      buildPublicDuelReceipt(
+        { ...duel, result: { ...result, winnerSide: 'opponent' }, winnerWallet: OPPONENT },
+        fundingTransactions(),
+      ),
+    ).toThrow('does not reproduce the recorded winner');
+  });
+
+  test('does not rewrite a committed result when a provider value is corrected later', () => {
+    const duel = settledDuel();
+    const result = requireResult(duel);
+    const corrected = result.outcomes.map((outcome) =>
+      outcome.side === 'creator'
+        ? {
+            ...outcome,
+            insuredValue: { ...outcome.insuredValue, amount: '49000000' },
+          }
+        : outcome,
+    );
+
+    expect(() =>
+      buildPublicDuelReceipt(
+        { ...duel, result: { ...result, outcomes: corrected } },
+        fundingTransactions(),
+      ),
+    ).toThrow('result hash does not match its proof inputs');
+  });
 });
 
 function requireResult(duel: Duel): NonNullable<Duel['result']> {
@@ -175,12 +295,37 @@ function requireResult(duel: Duel): NonNullable<Duel['result']> {
 }
 
 function settledDuel(): Duel {
+  const sourceTimestamp = '2026-07-15T20:03:30.000Z';
+  const observedAt = new Date('2026-07-15T20:04:00.000Z');
+  const creator = normalizeProviderResult(
+    'creator',
+    providerResult('mock:card:creator', 'Umbreon VMAX', '100000000', sourceTimestamp),
+    CANONICAL_VALUATION_POLICY_HASH,
+    'mock:pack:creator',
+    observedAt,
+  );
+  const opponent = normalizeProviderResult(
+    'opponent',
+    providerResult('mock:card:opponent', 'Blastoise', '15000000', sourceTimestamp),
+    CANONICAL_VALUATION_POLICY_HASH,
+    'mock:pack:opponent',
+    observedAt,
+  );
+  const comparison = compareInsuredValues(creator, opponent, {
+    creatorWallet: CREATOR,
+    duelId: 'duel_receipt00001',
+    escrowAddress: ESCROW,
+    network: 'solana-devnet',
+    opponentWallet: OPPONENT,
+    providerMode: 'mock',
+    valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
+  });
   return {
     cancellationReason: null,
     createdAt: '2026-07-15T20:00:00.000Z',
     creatorWallet: CREATOR,
     environment: 'solana-devnet',
-    escrowAddress: '7YttLkHDoNj9wyDur5rWnFwyCRLQ8vWUvqGL9cM23Zgy',
+    escrowAddress: ESCROW,
     expiresAt: '2026-07-15T21:00:00.000Z',
     houseOpponent: false,
     id: 'duel_receipt00001',
@@ -194,36 +339,16 @@ function settledDuel(): Duel {
       price: { amount: '50000000', currency: 'USDC', decimals: 6 },
       provider: 'collector-crypt',
       providerPackId: 'pokemon_50',
-      valuationPolicyHash: 'a'.repeat(64),
+      valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
     },
     providerMode: 'mock',
     result: {
       comparisonMetric: 'insured-value',
-      outcomes: [
-        {
-          assetReference: 'mock:card:creator',
-          displayName: 'Umbreon VMAX',
-          insuredValue: { amount: '100000000', currency: 'USDC', decimals: 6 },
-          isMock: true,
-          provider: 'collector-crypt',
-          providerReference: 'mock:pack:creator',
-          resultHash: 'b'.repeat(64),
-          side: 'creator',
-        },
-        {
-          assetReference: 'mock:card:opponent',
-          displayName: 'Blastoise',
-          insuredValue: { amount: '15000000', currency: 'USDC', decimals: 6 },
-          isMock: true,
-          provider: 'collector-crypt',
-          providerReference: 'mock:pack:opponent',
-          resultHash: 'c'.repeat(64),
-          side: 'opponent',
-        },
-      ],
-      resultHash: 'd'.repeat(64),
+      outcomes: [toDuelOutcome(creator), toDuelOutcome(opponent)],
+      resultHash: comparison.resultHash,
       settlementReady: true,
-      valuationPolicyHash: 'a'.repeat(64),
+      tieRule: CANONICAL_VALUATION_POLICY.tieRule,
+      valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
       winnerSide: 'creator',
     },
     stake: { amount: '50000000', currency: 'USDC', decimals: 6 },
@@ -231,6 +356,40 @@ function settledDuel(): Duel {
     updatedAt: '2026-07-15T20:10:00.000Z',
     version: 8,
     winnerWallet: CREATOR,
+  };
+}
+
+function providerResult(
+  assetReference: string,
+  displayName: string,
+  amount: string,
+  sourceTimestamp: string,
+): ProviderCardResult {
+  return {
+    assetReference,
+    displayName,
+    insuredValue: { amount, currency: 'USDC', decimals: 6 },
+    poolVersion: 'collector-crypt-pool-v1',
+    sourceTimestamp,
+    valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
+  };
+}
+
+function toDuelOutcome(
+  outcome: ReturnType<typeof normalizeProviderResult>,
+): NonNullable<Duel['result']>['outcomes'][number] {
+  return {
+    assetReference: outcome.assetReference,
+    displayName: outcome.displayName,
+    insuredValue: outcome.insuredValue,
+    isMock: true,
+    openedAt: outcome.openedAt,
+    poolVersion: outcome.poolVersion,
+    provider: 'collector-crypt',
+    providerReference: outcome.providerReference,
+    resultHash: outcome.resultHash,
+    side: outcome.side,
+    sourceTimestamp: outcome.sourceTimestamp,
   };
 }
 

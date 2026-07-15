@@ -3,6 +3,7 @@
 - API contract: /openapi.yaml
 - Quickstart: /guides/quickstart.md
 - Solana transaction model: /guides/solana-transactions.md
+- Canonical valuation and proof: /guides/valuation-and-proof.md
 - Webhook verification: /guides/webhooks.md
 - Escrow protocol: https://github.com/openpacksduel/escrow/blob/main/docs/protocol.md
 - MCP server: https://github.com/openpacksduel/mcp

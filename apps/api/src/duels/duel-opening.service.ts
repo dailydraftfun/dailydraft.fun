@@ -9,6 +9,7 @@ import type { DuelSide, ProviderPackSnapshot } from '../providers/pack-provider.
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { PackProviderService } from '../providers/pack-provider.service.js';
 import { compareInsuredValues, normalizeProviderResult } from '../providers/provider-result.js';
+import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
 // biome-ignore lint/style/useImportType: Nest uses the repository class as a runtime injection token.
 import { DuelRepository } from './duel.repository.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
@@ -44,6 +45,7 @@ export class DuelOpeningService {
     if (!providerPackId) {
       throw new ConflictException('Duel pack has no provider pack mapping');
     }
+    const valuationPolicyHash = requireCanonicalValuationPolicyHash(duel.pack.valuationPolicyHash);
     const provider = this.providers.forDuel(duel);
 
     if (duel.status === 'funded') {
@@ -68,8 +70,8 @@ export class DuelOpeningService {
       tier,
     });
     const [creator, opponent] = await Promise.all([
-      this.openSide(duel, 'creator', provider, providerPackId, escrowAddress),
-      this.openSide(duel, 'opponent', provider, providerPackId, escrowAddress),
+      this.openSide(duel, 'creator', provider, providerPackId, escrowAddress, valuationPolicyHash),
+      this.openSide(duel, 'opponent', provider, providerPackId, escrowAddress, valuationPolicyHash),
     ]).catch(async (error: unknown) => {
       await this.analytics?.recordServer({
         duelId,
@@ -87,6 +89,7 @@ export class DuelOpeningService {
       network: duel.environment,
       opponentWallet,
       providerMode: duel.providerMode,
+      valuationPolicyHash,
     });
 
     const resolved = await this.repository.resolveOpenedPacks({
@@ -120,6 +123,7 @@ export class DuelOpeningService {
     provider: ReturnType<PackProviderService['forDuel']>,
     providerPackId: string,
     recipientWallet: string,
+    valuationPolicyHash: string,
   ) {
     const providerOperationKey = `${duel.id}:${side}`;
     const generated = await provider.generatePack({
@@ -134,20 +138,25 @@ export class DuelOpeningService {
       providerReference: generated.providerReference,
     });
     const snapshot = await provider.getPack(generated.providerReference);
-    const result = requireOpenedResult(snapshot);
-    return {
-      ...normalizeProviderResult(side, result),
-      providerReference: snapshot.providerReference,
-    };
+    const opened = requireOpenedSnapshot(snapshot);
+    return normalizeProviderResult(
+      side,
+      opened.result,
+      valuationPolicyHash,
+      opened.providerReference,
+      new Date(opened.openedAt),
+    );
   }
 }
 
-function requireOpenedResult(snapshot: ProviderPackSnapshot) {
+function requireOpenedSnapshot(
+  snapshot: ProviderPackSnapshot,
+): Extract<ProviderPackSnapshot, { status: 'opened' }> {
   if (snapshot.status === 'failed') {
     throw new BadGatewayException('Pack provider could not open a pack');
   }
   if (snapshot.status !== 'opened') {
     throw new ConflictException(`Pack provider result is ${snapshot.status}`);
   }
-  return snapshot.result;
+  return snapshot;
 }

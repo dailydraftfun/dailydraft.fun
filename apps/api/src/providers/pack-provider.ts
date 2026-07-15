@@ -24,6 +24,8 @@ export interface ProviderCardResult {
   assetReference: string;
   displayName: string;
   insuredValue: Money;
+  poolVersion: string;
+  sourceTimestamp: string;
   valuationPolicyHash: string;
 }
 
@@ -31,6 +33,7 @@ export type ProviderPackSnapshot =
   | { providerReference: string; status: 'generated' | 'opening' }
   | { errorCode: string; providerReference: string; status: 'failed' }
   | {
+      openedAt: string;
       providerReference: string;
       result: ProviderCardResult;
       status: 'opened';

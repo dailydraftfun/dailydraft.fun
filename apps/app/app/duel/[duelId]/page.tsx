@@ -223,13 +223,20 @@ function ResultPanel({ receipt }: { receipt: PublicDuelReceipt }) {
             <p className="mt-3 break-all font-mono text-[10px] leading-4 text-secondary">
               {outcome.assetReference}
             </p>
+            <p className="mt-2 font-mono text-[10px] leading-4 text-secondary">
+              Opened {new Date(outcome.openedAt).toLocaleString()} · value snapshot{' '}
+              {new Date(outcome.sourceTimestamp).toLocaleString()} · {outcome.poolVersion}
+            </p>
           </article>
         ))}
       </div>
       <dl className="proof-definition-list mt-5">
         <div>
           <dt>Winner metric</dt>
-          <dd>{result.comparisonMetric}</dd>
+          <dd>
+            {result.policy.authoritativeField} · {result.policy.currency} / 10^
+            {result.policy.decimals} · no rounding
+          </dd>
         </div>
         <div>
           <dt>Winning margin</dt>
@@ -237,7 +244,17 @@ function ResultPanel({ receipt }: { receipt: PublicDuelReceipt }) {
         </div>
         <div>
           <dt>Valuation policy</dt>
-          <dd className="break-all font-mono text-xs">{result.valuationPolicyHash}</dd>
+          <dd className="break-all font-mono text-xs">
+            {result.policy.policyVersion} · {result.valuationPolicyHash}
+          </dd>
+        </div>
+        <div>
+          <dt>Tie rule</dt>
+          <dd>Return each original card and refund both platform fees.</dd>
+        </div>
+        <div>
+          <dt>Provider attestation</dt>
+          <dd>{result.proof.providerAttestation.status}</dd>
         </div>
         <div>
           <dt>Result hash</dt>

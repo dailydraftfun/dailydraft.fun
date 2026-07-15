@@ -1,0 +1,22 @@
+{
+  "fixture": "equal-value",
+  "policyHash": "406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b",
+  "poolVersion": "collector-crypt-pool-v1",
+  "creator": {
+    "openedAt": "2026-07-15T20:04:00.000Z",
+    "insuredValue": { "amount": "50000000", "currency": "USDC", "decimals": 6 },
+    "sourceTimestamp": "2026-07-15T20:03:30.000Z"
+  },
+  "opponent": {
+    "openedAt": "2026-07-15T20:04:01.000Z",
+    "insuredValue": { "amount": "50000000", "currency": "USDC", "decimals": 6 },
+    "sourceTimestamp": "2026-07-15T20:03:31.000Z"
+  },
+  "expected": {
+    "winnerSide": null,
+    "settlementReady": true,
+    "nextStatus": "awaiting_assets",
+    "escrowPath": ["deposit_cards", "commit_tie_result", "settle_permissionlessly"],
+    "tieRule": "return-original-assets-and-refund-platform-fees"
+  }
+}

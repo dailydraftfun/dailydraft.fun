@@ -96,8 +96,42 @@ export type PublicDuelReceipt = {
       displayName: string;
       insuredValue: PublicMoney;
       isMock: boolean;
+      openedAt: string;
+      poolVersion: string;
+      resultHash: string;
       side: 'creator' | 'opponent';
+      sourceTimestamp: string;
     }>;
+    policy: {
+      authoritativeField: string;
+      currency: 'USDC';
+      decimals: 6;
+      hash: string;
+      hashAlgorithm: 'sha256';
+      maxSourceAgeSeconds: number;
+      maxValueMinorUnits: string;
+      policyVersion: string;
+      rounding: 'none';
+      tieRule: 'return-original-assets-and-refund-platform-fees';
+    };
+    proof: {
+      context: {
+        creatorWallet: string;
+        duelId: string;
+        escrowAddress: string;
+        network: 'solana-devnet';
+        opponentWallet: string;
+        providerMode: 'collector-crypt-sandbox' | 'mock';
+      };
+      creatorResultHash: string;
+      opponentResultHash: string;
+      poolVersion: string;
+      providerAttestation: {
+        required: boolean;
+        status: 'mock-not-applicable' | 'not-recorded';
+      };
+      schemaVersion: 'openpacksduel.result-proof.v1';
+    };
     resultHash: string;
     settlementReady: boolean;
     totalValue: PublicMoney;

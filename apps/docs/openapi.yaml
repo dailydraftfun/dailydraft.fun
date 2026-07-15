@@ -25,6 +25,8 @@ tags:
     description: Replay-safe Solana devnet wallet ownership sessions.
   - name: Packs
     description: Duel-eligible pack definitions and current inventory metadata.
+  - name: Valuation
+    description: Immutable winner-comparison policies committed before either player funds.
   - name: Duels
     description: Public matchmaking intents and canonical duel state.
   - name: Matchmaking
@@ -55,6 +57,42 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /valuation-policies/current:
+    get:
+      operationId: getCurrentValuationPolicy
+      tags: [Valuation]
+      summary: Get the only valuation policy accepted for new devnet duels
+      description: |
+        Returns the canonical JSON policy and its SHA-256 hash. The same hash is
+        snapshotted on the duel, matchmaking ticket, funding transaction, result
+        proof, and escrow account before either player funds.
+      x-openpacksduel-availability: devnet
+      responses:
+        '200':
+          description: Current immutable valuation policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValuationPolicyDocument'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /valuation-policies/{policyHash}:
+    get:
+      operationId: getValuationPolicyByHash
+      tags: [Valuation]
+      summary: Resolve an immutable valuation policy by its committed hash
+      x-openpacksduel-availability: devnet
+      parameters:
+        - $ref: '#/components/parameters/ValuationPolicyHash'
+      responses:
+        '200':
+          description: Immutable valuation policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValuationPolicyDocument'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /packs:
     get:
       operationId: listPacks
@@ -1081,6 +1119,13 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/SolanaAddress'
+    ValuationPolicyHash:
+      name: policyHash
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-f0-9]{64}$'
     TransactionId:
       name: transactionId
       in: path
@@ -1380,10 +1425,81 @@ components:
         decimals:
           type: integer
           const: 6
+    ValuationPolicyDocument:
+      type: object
+      additionalProperties: false
+      required: [hashAlgorithm, policyHash, policy]
+      properties:
+        hashAlgorithm:
+          type: string
+          const: sha256
+        policyHash:
+          type: string
+          const: 406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b
+        policy:
+          $ref: '#/components/schemas/ValuationPolicy'
+    ValuationPolicy:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - policyVersion
+        - authoritativeField
+        - comparisonMetric
+        - currency
+        - decimals
+        - numericRepresentation
+        - rounding
+        - maxSourceAgeSeconds
+        - maxValueMinorUnits
+        - maxFutureSkewSeconds
+        - tieRule
+        - providerCorrectionRule
+      properties:
+        schemaVersion:
+          type: string
+          const: openpacksduel.valuation-policy.v1
+        policyVersion:
+          type: string
+          const: collector-crypt-insured-value-usdc-v1
+        authoritativeField:
+          type: string
+          const: collector-crypt.gacha.result.insuredValue
+          description: Collector Crypt Gacha result insured value as mapped by the disabled partner adapter; never a listing, buyback, or resale estimate.
+        comparisonMetric:
+          type: string
+          const: insured-value
+        currency:
+          type: string
+          const: USDC
+        decimals:
+          type: integer
+          const: 6
+        numericRepresentation:
+          type: string
+          const: unsigned-integer-minor-units
+        rounding:
+          type: string
+          const: none
+        maxSourceAgeSeconds:
+          type: integer
+          const: 300
+        maxValueMinorUnits:
+          type: string
+          const: '18446744073709551615'
+        maxFutureSkewSeconds:
+          type: integer
+          const: 30
+        tieRule:
+          type: string
+          const: return-original-assets-and-refund-platform-fees
+        providerCorrectionRule:
+          type: string
+          const: immutable-after-result-commit-dispute-or-refund
     Pack:
       type: object
       additionalProperties: false
-      required: [id, name, provider, price, active]
+      required: [id, name, provider, price, active, valuationPolicyHash]
       properties:
         id:
           type: string
@@ -1648,7 +1764,7 @@ components:
     DuelPackOutcome:
       type: object
       additionalProperties: false
-      required: [side, assetReference, displayName, insuredValue, resultHash, isMock, provider, providerReference]
+      required: [side, assetReference, displayName, insuredValue, openedAt, poolVersion, sourceTimestamp, resultHash, isMock, provider, providerReference]
       properties:
         side:
           type: string
@@ -1661,6 +1777,18 @@ components:
           maxLength: 160
         insuredValue:
           $ref: '#/components/schemas/Money'
+        openedAt:
+          type: string
+          format: date-time
+          description: Provider-reported completion time committed as escrow opened_at; its whole-second value must be between finalized funding and expiry and no more than 30 seconds ahead of server time.
+        poolVersion:
+          type: string
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+          description: Immutable provider inventory/value-pool snapshot shared by both outcomes.
+        sourceTimestamp:
+          type: string
+          format: date-time
+          description: Provider timestamp for the insured-value source snapshot, captured before comparison.
         resultHash:
           type: string
           pattern: '^[a-f0-9]{64}$'
@@ -1679,6 +1807,7 @@ components:
         - outcomes
         - resultHash
         - settlementReady
+        - tieRule
         - valuationPolicyHash
         - winnerSide
       properties:
@@ -1697,6 +1826,10 @@ components:
         settlementReady:
           type: boolean
           description: Results can be passed to settlement; assets are not yet transferred.
+        tieRule:
+          type: string
+          const: return-original-assets-and-refund-platform-fees
+          description: Equal integer insured values return each original card and refund both platform fees.
         valuationPolicyHash:
           type: string
           pattern: '^[a-f0-9]{64}$'
@@ -1862,7 +1995,7 @@ components:
     PublicDuelResult:
       type: object
       additionalProperties: false
-      required: [comparisonMetric, outcomes, resultHash, settlementReady, valuationPolicyHash, winnerSide, winner, margin, totalValue]
+      required: [comparisonMetric, outcomes, policy, proof, resultHash, settlementReady, valuationPolicyHash, winnerSide, winner, margin, totalValue]
       properties:
         comparisonMetric: { type: string, const: insured-value }
         outcomes:
@@ -1872,13 +2005,59 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [side, assetReference, displayName, insuredValue, isMock]
+            required: [side, assetReference, displayName, insuredValue, isMock, openedAt, poolVersion, sourceTimestamp, resultHash]
             properties:
               side: { type: string, enum: [creator, opponent] }
               assetReference: { type: string }
               displayName: { type: string }
               insuredValue: { $ref: '#/components/schemas/Money' }
               isMock: { type: boolean }
+              openedAt: { type: string, format: date-time }
+              poolVersion: { type: string }
+              sourceTimestamp: { type: string, format: date-time }
+              resultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        policy:
+          type: object
+          additionalProperties: false
+          required: [authoritativeField, currency, decimals, hash, hashAlgorithm, maxSourceAgeSeconds, maxValueMinorUnits, policyVersion, rounding, tieRule]
+          properties:
+            authoritativeField: { type: string, const: collector-crypt.gacha.result.insuredValue }
+            currency: { type: string, const: USDC }
+            decimals: { type: integer, const: 6 }
+            hash: { type: string, pattern: '^[a-f0-9]{64}$' }
+            hashAlgorithm: { type: string, const: sha256 }
+            maxSourceAgeSeconds: { type: integer, const: 300 }
+            maxValueMinorUnits: { type: string, const: '18446744073709551615' }
+            policyVersion: { type: string, const: collector-crypt-insured-value-usdc-v1 }
+            rounding: { type: string, const: none }
+            tieRule: { type: string, const: return-original-assets-and-refund-platform-fees }
+        proof:
+          type: object
+          additionalProperties: false
+          required: [schemaVersion, context, creatorResultHash, opponentResultHash, poolVersion, providerAttestation]
+          properties:
+            schemaVersion: { type: string, const: openpacksduel.result-proof.v1 }
+            context:
+              type: object
+              additionalProperties: false
+              required: [duelId, creatorWallet, opponentWallet, escrowAddress, network, providerMode]
+              properties:
+                duelId: { type: string }
+                creatorWallet: { $ref: '#/components/schemas/SolanaAddress' }
+                opponentWallet: { $ref: '#/components/schemas/SolanaAddress' }
+                escrowAddress: { $ref: '#/components/schemas/SolanaAddress' }
+                network: { type: string, const: solana-devnet }
+                providerMode: { type: string, enum: [mock, collector-crypt-sandbox] }
+            creatorResultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+            opponentResultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+            poolVersion: { type: string }
+            providerAttestation:
+              type: object
+              additionalProperties: false
+              required: [required, status]
+              properties:
+                required: { type: boolean }
+                status: { type: string, enum: [mock-not-applicable, not-recorded] }
         resultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
         settlementReady: { type: boolean }
         valuationPolicyHash: { type: string, pattern: '^[a-f0-9]{64}$' }

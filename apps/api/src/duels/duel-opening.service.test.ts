@@ -5,6 +5,7 @@ import { PacksService } from '../packs/packs.service.js';
 import { CollectorCryptPackProvider } from '../providers/collector-crypt-pack.provider.js';
 import { MockPackProvider } from '../providers/mock-pack.provider.js';
 import { PackProviderService } from '../providers/pack-provider.service.js';
+import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
 import type { ListDuelsQuery } from './duel.dto.js';
 import {
   type CreateDuelRecord,
@@ -82,17 +83,21 @@ class OpeningRepository extends DuelRepository {
           displayName: outcome.displayName,
           insuredValue: outcome.insuredValue,
           isMock: input.isMock,
+          openedAt: outcome.openedAt,
           provider: input.provider,
           providerReference: outcome.providerReference,
+          poolVersion: outcome.poolVersion,
           resultHash: outcome.resultHash,
           side: outcome.side,
+          sourceTimestamp: outcome.sourceTimestamp,
         })),
         resultHash: input.comparison.resultHash,
-        settlementReady: input.comparison.winnerSide !== null,
+        settlementReady: true,
+        tieRule: input.comparison.tieRule,
         valuationPolicyHash: input.creator.valuationPolicyHash,
         winnerSide: input.comparison.winnerSide,
       },
-      status: input.comparison.winnerSide ? 'awaiting_assets' : 'refunding',
+      status: 'awaiting_assets',
       version: duel.version + 1,
       winnerWallet,
     };
@@ -155,6 +160,7 @@ function fundedDuel(id: string, houseOpponent: boolean): Duel {
       price: { amount: '50000000', currency: 'USDC', decimals: 6 },
       provider: 'jupiter-gacha',
       providerPackId: 'pokemon_50',
+      valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
     },
     providerMode: 'mock',
     stake: { amount: '50000000', currency: 'USDC', decimals: 6 },

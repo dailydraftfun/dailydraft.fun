@@ -60,10 +60,13 @@ export interface DuelPackOutcome {
   displayName: string;
   insuredValue: Money;
   isMock: boolean;
+  openedAt: string;
   provider: string;
   providerReference: string;
+  poolVersion: string;
   resultHash: string;
   side: 'creator' | 'opponent';
+  sourceTimestamp: string;
 }
 
 export interface DuelResult {
@@ -71,6 +74,7 @@ export interface DuelResult {
   outcomes: DuelPackOutcome[];
   resultHash: string;
   settlementReady: boolean;
+  tieRule: 'return-original-assets-and-refund-platform-fees';
   valuationPolicyHash: string;
   winnerSide: 'creator' | 'opponent' | null;
 }

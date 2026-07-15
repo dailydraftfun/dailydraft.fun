@@ -1,0 +1,11 @@
+{
+  "fixture": "stale-value",
+  "policyHash": "406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b",
+  "openedAt": "2026-07-15T20:04:00.000Z",
+  "sourceTimestamp": "2026-07-15T19:58:59.000Z",
+  "maxSourceAgeSeconds": 300,
+  "expected": {
+    "accepted": false,
+    "error": "Provider insured value is stale"
+  }
+}

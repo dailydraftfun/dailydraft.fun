@@ -16,7 +16,10 @@ import {
   type Prisma,
   ProviderMode,
 } from '@openpacksduel/db';
-
+import {
+  ESCROW_V2_MAX_OPENING_FUTURE_SKEW_SECONDS,
+  toEscrowV2UnixSeconds,
+} from '../contracts/openpacksduel-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type {
   Duel,
@@ -27,6 +30,10 @@ import type {
   Money,
   Page,
 } from '../domain.js';
+import {
+  CANONICAL_VALUATION_POLICY_HASH,
+  requireCanonicalValuationPolicyHash,
+} from '../providers/valuation-policy.js';
 import type { ListDuelsQuery } from './duel.dto.js';
 import {
   type CreateDuelRecord,
@@ -144,7 +151,11 @@ export class PrismaDuelRepository extends DuelRepository {
         });
         await transaction.duelEvent.create({
           data: {
-            data: { environment: 'solana-devnet', houseOpponent: input.houseOpponent },
+            data: {
+              environment: 'solana-devnet',
+              houseOpponent: input.houseOpponent,
+              valuationPolicyHash: input.pack.valuationPolicyHash,
+            },
             duelId: created.id,
             id: createId('evt'),
             sequence: 1,
@@ -474,6 +485,30 @@ export class PrismaDuelRepository extends DuelRepository {
           );
         }
         if (!duel.opponentWallet) throw new ConflictException('Duel has no committed opponent');
+        if (!duel.fundedAt) throw new ConflictException('Duel has no finalized funding boundary');
+        requireCanonicalValuationPolicyHash(duel.valuationPolicyHash);
+        if (
+          !duel.valuationPolicyHash ||
+          duel.valuationPolicyHash !== input.comparison.valuationPolicyHash ||
+          input.creator.valuationPolicyHash !== duel.valuationPolicyHash ||
+          input.opponent.valuationPolicyHash !== duel.valuationPolicyHash
+        ) {
+          throw new ConflictException('Pack results do not match the funded valuation policy');
+        }
+        if (
+          input.creator.poolVersion !== input.comparison.poolVersion ||
+          input.opponent.poolVersion !== input.comparison.poolVersion
+        ) {
+          throw new ConflictException('Pack results do not share one immutable pool version');
+        }
+        const now = new Date();
+        assertOpeningTimesWithinEscrowWindow({
+          creatorOpenedAt: input.creator.openedAt,
+          expiresAt: duel.expiresAt,
+          fundedAt: duel.fundedAt,
+          now,
+          opponentOpenedAt: input.opponent.openedAt,
+        });
 
         const winnerWallet =
           input.comparison.winnerSide === 'creator'
@@ -481,15 +516,12 @@ export class PrismaDuelRepository extends DuelRepository {
             : input.comparison.winnerSide === 'opponent'
               ? duel.opponentWallet
               : null;
-        const target = winnerWallet
-          ? DatabaseDuelStatus.AWAITING_ASSETS
-          : DatabaseDuelStatus.REFUNDING;
-        const now = new Date();
+        const target = resolvedPackTargetStatus(input.comparison.winnerSide);
 
         await transaction.duelPackOutcome.createMany({
           data: [
-            toPackOutcomeCreate(input.duelId, input.creator, input.provider, input.isMock, now),
-            toPackOutcomeCreate(input.duelId, input.opponent, input.provider, input.isMock, now),
+            toPackOutcomeCreate(input.duelId, input.creator, input.provider, input.isMock),
+            toPackOutcomeCreate(input.duelId, input.opponent, input.provider, input.isMock),
           ],
         });
         const updated = await transaction.duel.updateMany({
@@ -515,7 +547,10 @@ export class PrismaDuelRepository extends DuelRepository {
             data: {
               comparisonMetric: input.comparison.comparisonMetric,
               isMock: input.isMock,
+              poolVersion: input.comparison.poolVersion,
               resultHash: input.comparison.resultHash,
+              tieRule: input.comparison.tieRule,
+              valuationPolicyHash: input.comparison.valuationPolicyHash,
               winnerSide: input.comparison.winnerSide,
             },
             duelId: duel.id,
@@ -592,6 +627,38 @@ export class PrismaDuelRepository extends DuelRepository {
   }
 }
 
+export function resolvedPackTargetStatus(
+  _winnerSide: ResolveOpenedPacksRecord['comparison']['winnerSide'],
+): typeof DatabaseDuelStatus.AWAITING_ASSETS {
+  return DatabaseDuelStatus.AWAITING_ASSETS;
+}
+
+export function assertOpeningTimesWithinEscrowWindow(input: {
+  creatorOpenedAt: string;
+  expiresAt: Date;
+  fundedAt: Date;
+  now: Date;
+  opponentOpenedAt: string;
+}): void {
+  const openingTimes = [input.creatorOpenedAt, input.opponentOpenedAt].map((openedAt) =>
+    toEscrowV2UnixSeconds(new Date(openedAt)),
+  );
+  const fundedAt = toEscrowV2UnixSeconds(input.fundedAt);
+  const expiresAt = toEscrowV2UnixSeconds(input.expiresAt);
+  const latestAllowed =
+    toEscrowV2UnixSeconds(input.now) + ESCROW_V2_MAX_OPENING_FUTURE_SKEW_SECONDS;
+
+  if (openingTimes.some((openedAt) => openedAt < fundedAt)) {
+    throw new ConflictException('Pack opening predates finalized duel funding');
+  }
+  if (openingTimes.some((openedAt) => openedAt > expiresAt)) {
+    throw new ConflictException('Pack opening occurred after duel expiry');
+  }
+  if (openingTimes.some((openedAt) => openedAt > latestAllowed)) {
+    throw new ConflictException('Pack opening exceeds escrow future-skew allowance');
+  }
+}
+
 function matchesQuery(
   duel: {
     creatorWallet: string;
@@ -630,10 +697,13 @@ function toDuel(row: {
     insuredValueCurrency: string;
     insuredValueDecimals: number;
     isMock: boolean;
+    openedAt: Date;
     provider: string;
     providerReference: string;
+    poolVersion: string | null;
     resultHash: string;
     side: DatabaseDuelSide;
+    sourceTimestamp: Date | null;
     valuationPolicyHash: string;
   }>;
   packId: string;
@@ -684,7 +754,7 @@ function toDuel(row: {
   };
 }
 
-function toDuelResult(row: {
+export function toDuelResult(row: {
   creatorWallet: string;
   opponentWallet: string | null;
   packOutcomes?: Array<{
@@ -694,31 +764,61 @@ function toDuelResult(row: {
     insuredValueCurrency: string;
     insuredValueDecimals: number;
     isMock: boolean;
+    openedAt: Date;
     provider: string;
     providerReference: string;
+    poolVersion: string | null;
     resultHash: string;
     side: DatabaseDuelSide;
+    sourceTimestamp: Date | null;
     valuationPolicyHash: string;
   }>;
   resultHash: string | null;
   resultReadyAt: Date | null;
+  valuationPolicyHash: string | null;
   winnerWallet: string | null;
 }): NonNullable<Duel['result']> | null {
   if (!row.resultHash || !row.resultReadyAt || row.packOutcomes?.length !== 2) return null;
-  const outcomes = row.packOutcomes.map((outcome) => ({
-    assetReference: outcome.assetReference,
-    displayName: outcome.displayName,
-    insuredValue: toMoney(
-      outcome.insuredValueAmount,
-      outcome.insuredValueCurrency,
-      outcome.insuredValueDecimals,
-    ),
-    isMock: outcome.isMock,
-    provider: outcome.provider,
-    providerReference: outcome.providerReference,
-    resultHash: outcome.resultHash,
-    side: outcome.side === DatabaseDuelSide.CREATOR ? ('creator' as const) : ('opponent' as const),
-  }));
+  const policyHashes = new Set(row.packOutcomes.map((outcome) => outcome.valuationPolicyHash));
+  const poolVersions = new Set(row.packOutcomes.map((outcome) => outcome.poolVersion));
+  if (
+    row.valuationPolicyHash !== CANONICAL_VALUATION_POLICY_HASH ||
+    row.packOutcomes.some((outcome) => !outcome.poolVersion || !outcome.sourceTimestamp)
+  ) {
+    return null;
+  }
+  if (
+    !row.valuationPolicyHash ||
+    policyHashes.size !== 1 ||
+    !policyHashes.has(row.valuationPolicyHash) ||
+    poolVersions.size !== 1
+  ) {
+    throw new Error('Persisted duel result violates canonical valuation proof invariants');
+  }
+  requireCanonicalValuationPolicyHash(row.valuationPolicyHash);
+  const outcomes = row.packOutcomes.map((outcome) => {
+    if (!outcome.poolVersion || !outcome.sourceTimestamp) {
+      throw new Error('Canonical duel result lost required provider snapshot data');
+    }
+    return {
+      assetReference: outcome.assetReference,
+      displayName: outcome.displayName,
+      insuredValue: toMoney(
+        outcome.insuredValueAmount,
+        outcome.insuredValueCurrency,
+        outcome.insuredValueDecimals,
+      ),
+      isMock: outcome.isMock,
+      openedAt: outcome.openedAt.toISOString(),
+      provider: outcome.provider,
+      providerReference: outcome.providerReference,
+      poolVersion: outcome.poolVersion,
+      resultHash: outcome.resultHash,
+      side:
+        outcome.side === DatabaseDuelSide.CREATOR ? ('creator' as const) : ('opponent' as const),
+      sourceTimestamp: outcome.sourceTimestamp.toISOString(),
+    };
+  });
   const winnerSide =
     row.winnerWallet === row.creatorWallet
       ? ('creator' as const)
@@ -729,8 +829,9 @@ function toDuelResult(row: {
     comparisonMetric: 'insured-value',
     outcomes,
     resultHash: row.resultHash,
-    settlementReady: winnerSide !== null,
-    valuationPolicyHash: row.packOutcomes[0]?.valuationPolicyHash ?? '',
+    settlementReady: true,
+    tieRule: 'return-original-assets-and-refund-platform-fees',
+    valuationPolicyHash: row.valuationPolicyHash,
     winnerSide,
   };
 }
@@ -740,7 +841,6 @@ function toPackOutcomeCreate(
   outcome: ResolveOpenedPacksRecord['creator'],
   provider: string,
   isMock: boolean,
-  openedAt: Date,
 ) {
   return {
     assetReference: outcome.assetReference,
@@ -751,11 +851,13 @@ function toPackOutcomeCreate(
     insuredValueCurrency: outcome.insuredValue.currency,
     insuredValueDecimals: outcome.insuredValue.decimals,
     isMock,
-    openedAt,
+    openedAt: new Date(outcome.openedAt),
     provider,
     providerReference: outcome.providerReference,
+    poolVersion: outcome.poolVersion,
     resultHash: outcome.resultHash,
     side: outcome.side === 'creator' ? DatabaseDuelSide.CREATOR : DatabaseDuelSide.OPPONENT,
+    sourceTimestamp: new Date(outcome.sourceTimestamp),
     valuationPolicyHash: outcome.valuationPolicyHash,
   };
 }
