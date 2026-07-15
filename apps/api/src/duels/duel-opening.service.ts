@@ -45,9 +45,7 @@ export class DuelOpeningService {
     if (!providerPackId) {
       throw new ConflictException('Duel pack has no provider pack mapping');
     }
-    const valuationPolicyHash = requireCanonicalValuationPolicyHash(
-      duel.pack.valuationPolicyHash,
-    );
+    const valuationPolicyHash = requireCanonicalValuationPolicyHash(duel.pack.valuationPolicyHash);
     const provider = this.providers.forDuel(duel);
 
     if (duel.status === 'funded') {
@@ -72,22 +70,8 @@ export class DuelOpeningService {
       tier,
     });
     const [creator, opponent] = await Promise.all([
-      this.openSide(
-        duel,
-        'creator',
-        provider,
-        providerPackId,
-        escrowAddress,
-        valuationPolicyHash,
-      ),
-      this.openSide(
-        duel,
-        'opponent',
-        provider,
-        providerPackId,
-        escrowAddress,
-        valuationPolicyHash,
-      ),
+      this.openSide(duel, 'creator', provider, providerPackId, escrowAddress, valuationPolicyHash),
+      this.openSide(duel, 'opponent', provider, providerPackId, escrowAddress, valuationPolicyHash),
     ]).catch(async (error: unknown) => {
       await this.analytics?.recordServer({
         duelId,
@@ -155,12 +139,7 @@ export class DuelOpeningService {
     });
     const snapshot = await provider.getPack(generated.providerReference);
     const result = requireOpenedResult(snapshot);
-    return normalizeProviderResult(
-      side,
-      result,
-      valuationPolicyHash,
-      snapshot.providerReference,
-    );
+    return normalizeProviderResult(side, result, valuationPolicyHash, snapshot.providerReference);
   }
 }
 

@@ -13,13 +13,13 @@ import { AnalyticsService } from '../analytics/analytics.service.js';
 import type { Duel, DuelEvent, DuelTransactionRecord, Page } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { PacksService } from '../packs/packs.service.js';
+import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
 import type {
   CancelDuelRequest,
   CreateDuelRequest,
   JoinDuelRequest,
   ListDuelsQuery,
 } from './duel.dto.js';
-import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
 // biome-ignore lint/style/useImportType: Nest uses the repository class as a runtime injection token.
 import { DuelRepository } from './duel.repository.js';
 import { hashDuelRequest } from './prisma-duel.repository.js';

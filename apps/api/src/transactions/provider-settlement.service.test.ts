@@ -12,8 +12,8 @@ import {
   deriveEscrowV2CardVault,
   ESCROW_V2_PROGRAM_ID,
 } from '../contracts/openpacksduel-escrow-v2.js';
-import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
 import { normalizeProviderResult } from '../providers/provider-result.js';
+import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
 import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
 import {
   ProviderSettlementService,

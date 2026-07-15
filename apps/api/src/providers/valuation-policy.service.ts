@@ -1,9 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import {
-  CANONICAL_VALUATION_POLICY,
-  CANONICAL_VALUATION_POLICY_HASH,
-} from './valuation-policy.js';
+import { CANONICAL_VALUATION_POLICY, CANONICAL_VALUATION_POLICY_HASH } from './valuation-policy.js';
 
 @Injectable()
 export class ValuationPolicyService {

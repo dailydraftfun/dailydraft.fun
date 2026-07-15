@@ -27,8 +27,8 @@ import type {
   Money,
   Page,
 } from '../domain.js';
-import type { ListDuelsQuery } from './duel.dto.js';
 import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
+import type { ListDuelsQuery } from './duel.dto.js';
 import {
   type CreateDuelRecord,
   DuelRepository,

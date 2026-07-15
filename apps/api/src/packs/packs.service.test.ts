@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-
-import { PacksService } from './packs.service.js';
 import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
+import { PacksService } from './packs.service.js';
 
 describe('PacksService', () => {
   test('lists the active preview pack by default', () => {

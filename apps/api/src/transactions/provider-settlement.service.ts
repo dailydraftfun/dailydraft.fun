@@ -37,11 +37,11 @@ import {
   type EscrowV2Role,
 } from '../contracts/openpacksduel-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
+import { assertNormalizedOutcome } from '../providers/provider-result.js';
 import {
   CANONICAL_VALUATION_POLICY,
   CANONICAL_VALUATION_POLICY_HASH,
 } from '../providers/valuation-policy.js';
-import { assertNormalizedOutcome } from '../providers/provider-result.js';
 import { nonceFromDuelId } from './duel-funding.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
@@ -612,10 +612,12 @@ export function validateCanonicalEvidence(duel: {
   if (
     !Number.isFinite(outcomes.creator.sourceTimestamp.getTime()) ||
     !Number.isFinite(outcomes.opponent.sourceTimestamp.getTime()) ||
-    outcomes.creator.sourceTimestamp.getTime() > outcomes.creator.openedAt.getTime() +
-      CANONICAL_VALUATION_POLICY.maxFutureSkewSeconds * 1_000 ||
-    outcomes.opponent.sourceTimestamp.getTime() > outcomes.opponent.openedAt.getTime() +
-      CANONICAL_VALUATION_POLICY.maxFutureSkewSeconds * 1_000 ||
+    outcomes.creator.sourceTimestamp.getTime() >
+      outcomes.creator.openedAt.getTime() +
+        CANONICAL_VALUATION_POLICY.maxFutureSkewSeconds * 1_000 ||
+    outcomes.opponent.sourceTimestamp.getTime() >
+      outcomes.opponent.openedAt.getTime() +
+        CANONICAL_VALUATION_POLICY.maxFutureSkewSeconds * 1_000 ||
     outcomes.creator.openedAt.getTime() - outcomes.creator.sourceTimestamp.getTime() >
       CANONICAL_VALUATION_POLICY.maxSourceAgeSeconds * 1_000 ||
     outcomes.opponent.openedAt.getTime() - outcomes.opponent.sourceTimestamp.getTime() >

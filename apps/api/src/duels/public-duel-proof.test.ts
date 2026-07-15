@@ -276,10 +276,7 @@ function settledDuel(): Duel {
     providerMode: 'mock',
     result: {
       comparisonMetric: 'insured-value',
-      outcomes: [
-        toDuelOutcome(creator),
-        toDuelOutcome(opponent),
-      ],
+      outcomes: [toDuelOutcome(creator), toDuelOutcome(opponent)],
       resultHash: comparison.resultHash,
       settlementReady: true,
       tieRule: CANONICAL_VALUATION_POLICY.tieRule,

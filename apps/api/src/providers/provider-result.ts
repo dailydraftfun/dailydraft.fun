@@ -75,11 +75,7 @@ export function normalizeProviderResult(
     throw new BadGatewayException('Provider returned an invalid poolVersion');
   }
   const sourceTimestamp = normalizeSourceTimestamp(result.sourceTimestamp, observedAt);
-  const providerReference = normalizeText(
-    providerReferenceInput,
-    'providerReference',
-    200,
-  );
+  const providerReference = normalizeText(providerReferenceInput, 'providerReference', 200);
 
   const insuredValue: Money = {
     amount: BigInt(providerInsuredValue.amount).toString(),

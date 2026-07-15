@@ -59,9 +59,7 @@ describe('provider result normalization', () => {
         'provider-opponent',
         OBSERVED_AT,
       ),
-    ).toThrow(
-      'does not match the funded valuation policy',
-    );
+    ).toThrow('does not match the funded valuation policy');
   });
 
   test('binds duel, wallets, escrow, network, and provider mode into the result hash', () => {

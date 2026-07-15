@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { DuelStatus, DuelTransactionAction, DuelTransactionStatus } from '@openpacksduel/db';
-
+import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
 import {
   ACTIVE_FUNDING_STATUSES,
   assertNoActiveFunding,
@@ -9,7 +9,6 @@ import {
   parsePolicyHash,
   validateFundingDuelForPreparation,
 } from './duel-funding.service.js';
-import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
 import {
   isIdempotentSubmissionReplay,
   recoveryAlertRouting,
