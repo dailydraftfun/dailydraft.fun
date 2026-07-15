@@ -25,7 +25,9 @@ export type DuelSocialSnapshot = StatusPresentation & {
   status: DuelStatus;
   tier: number;
   player: string;
+  playerAddress: string;
   opponent: string;
+  opponentAddress: string;
   opponentType: 'wallet' | 'house';
   playerCard: string;
   playerValue: number;
@@ -116,13 +118,19 @@ export function resolveDuelStatus(value: string | string[] | undefined): DuelSta
 }
 
 export function getDuelSocialSnapshot(duelId: string, status: DuelStatus): DuelSocialSnapshot {
+  const tierMatch = duelId.match(/(?:^|[-_])(25|50|100)(?:$|[-_])/);
+  const tier = tierMatch ? Number(tierMatch[1]) : 50;
+  const opponentType = duelId.toLowerCase().includes('house') ? 'house' : 'wallet';
+
   return {
     duelId,
     status,
-    tier: 50,
-    player: '8xK4…p2Te',
-    opponent: 'Boba.sol',
-    opponentType: 'wallet',
+    tier,
+    player: '9xQe…9gJ1',
+    playerAddress: '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1',
+    opponent: opponentType === 'house' ? 'Pack Duel House' : 'Boba.sol',
+    opponentAddress: 'ComputeBudget111111111111111111111111111111',
+    opponentType,
     playerCard: 'Umbreon VMAX',
     playerValue: 1380,
     opponentCard: 'Blastoise',

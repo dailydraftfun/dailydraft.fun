@@ -35,6 +35,9 @@ The product remains a devnet MVP. Duel intents, matchmaking, idempotency records
 state events, and Solana transaction reconciliation records are durable in
 PostgreSQL. Mock provider mode never represents a funded or settled game;
 provider inventory, escrow proof, and settlement remain integration milestones.
+The UI requests signatures only when the API supplies a serialized devnet
+transaction. Without one, the review remains an explicit simulation and moves
+no funds.
 
 ## Devnet
 

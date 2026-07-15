@@ -35,7 +35,7 @@ smoke workflow.
 | --- | --- |
 | `NEXT_PUBLIC_SOLANA_NETWORK` | Must be `devnet` for the MVP. |
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Optional RPC override; defaults to the public devnet endpoint. |
-| `NEXT_PUBLIC_OPENPACKSDUEL_API_URL` | Public base URL of the deployed API. |
+| `NEXT_PUBLIC_DUEL_API_URL` | Public base URL of the deployed API, including `/v1`. |
 | `NEXT_PUBLIC_ESCROW_PROGRAM_ID` | Published devnet escrow program address. |
 | `NEXT_PUBLIC_PROVIDER_MODE` | Must be `mock` until partner onboarding is complete. |
 
@@ -71,4 +71,3 @@ Devnet readiness does not imply mainnet readiness. Mainnet remains blocked on
 Collector Crypt approval, supported recipient and asset standards, canonical
 valuation proof, legal/compliance sign-off, production persistence, independent
 escrow audit, governed upgrade authority, and incident controls.
-
