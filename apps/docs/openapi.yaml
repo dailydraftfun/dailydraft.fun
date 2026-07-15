@@ -1,0 +1,518 @@
+openapi: 3.1.0
+info:
+  title: OpenPacks Duel API
+  version: 0.1.0-preview
+  summary: Build pack-opening duels on Solana
+  description: |
+    Preview contract for pack discovery, duel matchmaking, wallet-signed Solana
+    transactions, status tracking, and social sharing. The API never accepts
+    wallet private keys and does not replace on-chain verification.
+  license:
+    name: MIT
+    identifier: MIT
+  contact:
+    name: OpenPacks Duel
+    url: https://github.com/openpacksduel
+servers:
+  - url: http://localhost:3003/v1
+    description: Local development
+  - url: https://api.openpacksduel.com/v1
+    description: Planned production endpoint (not live)
+tags:
+  - name: Packs
+    description: Duel-eligible pack definitions and current inventory metadata.
+  - name: Duels
+    description: Public matchmaking intents and canonical duel state.
+  - name: Transactions
+    description: Unsigned Solana transactions for wallet inspection and approval.
+  - name: Social
+    description: Canonical share pages and generated social-card images.
+security: []
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check API process health
+      x-openpacksduel-availability: preview
+      responses:
+        '200':
+          description: API process is accepting requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /packs:
+    get:
+      operationId: listPacks
+      tags: [Packs]
+      summary: List duel-eligible pack definitions
+      x-openpacksduel-availability: preview
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: active
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Pack definitions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /packs/{packId}:
+    get:
+      operationId: getPack
+      tags: [Packs]
+      summary: Get one pack definition
+      x-openpacksduel-availability: preview
+      parameters:
+        - $ref: '#/components/parameters/PackId'
+      responses:
+        '200':
+          description: Pack definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pack'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /duels:
+    get:
+      operationId: listDuels
+      tags: [Duels]
+      summary: List public duels
+      x-openpacksduel-availability: preview
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/DuelStatus'
+        - name: wallet
+          in: query
+          schema:
+            $ref: '#/components/schemas/SolanaAddress'
+      responses:
+        '200':
+          description: Duels
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DuelList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      operationId: createDuel
+      tags: [Duels]
+      summary: Create an off-chain duel intent
+      description: The returned intent is not funded until its Solana transaction confirms.
+      x-openpacksduel-availability: preview
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDuelRequest'
+      responses:
+        '201':
+          description: Duel intent created
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Duel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /duels/{duelId}:
+    get:
+      operationId: getDuel
+      tags: [Duels]
+      summary: Get canonical duel state
+      x-openpacksduel-availability: preview
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+      responses:
+        '200':
+          description: Duel state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Duel'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /duels/{duelId}/transactions:
+    post:
+      operationId: prepareDuelTransaction
+      tags: [Transactions]
+      summary: Prepare a wallet-signed Solana transaction
+      description: Returns an unsigned serialized transaction. The API never signs for a wallet.
+      x-openpacksduel-availability: preview
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrepareTransactionRequest'
+      responses:
+        '200':
+          description: Transaction ready for wallet inspection and signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreparedTransaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /duels/{duelId}/social-card:
+    get:
+      operationId: getDuelSocialCard
+      tags: [Social]
+      summary: Get canonical share and social-card URLs
+      x-openpacksduel-availability: preview
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+      responses:
+        '200':
+          description: Canonical social URLs for the current duel status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocialCard'
+        '404':
+          $ref: '#/components/responses/NotFound'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opd_live_...
+      description: Server-side integration key. Never expose it in browser code.
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        maxLength: 256
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    PackId:
+      name: packId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/PackId'
+    DuelId:
+      name: duelId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^duel_[A-Za-z0-9]{12,64}$'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: Missing or invalid integration key
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Request conflicts with current duel state
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotImplemented:
+      description: Operation is contractually reserved but not available yet
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RateLimited:
+      description: Too many requests
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unavailable:
+      description: Required server configuration or dependency is unavailable
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [service, status, version]
+      properties:
+        service:
+          type: string
+          const: openpacksduel-api
+        status:
+          type: string
+          const: ok
+        version:
+          type: string
+    SolanaAddress:
+      type: string
+      pattern: '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
+      examples: [9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1]
+    PackId:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9_-]{2,63}$'
+    Money:
+      type: object
+      additionalProperties: false
+      required: [amount, currency, decimals]
+      properties:
+        amount:
+          type: string
+          pattern: '^[0-9]+$'
+          description: Integer minor units encoded as a string.
+        currency:
+          type: string
+          enum: [USDC]
+        decimals:
+          type: integer
+          const: 6
+    Pack:
+      type: object
+      additionalProperties: false
+      required: [id, name, provider, price, active]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        provider:
+          type: string
+          description: Pack inventory provider identifier.
+        providerPackId:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        imageUrl:
+          type: string
+          format: uri
+        active:
+          type: boolean
+        valuationPolicyHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+    PackList:
+      type: object
+      additionalProperties: false
+      required: [data, hasMore]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Pack'
+        nextCursor:
+          type: [string, 'null']
+        hasMore:
+          type: boolean
+    MatchmakingMode:
+      type: string
+      enum: [open, direct]
+    DuelStatus:
+      type: string
+      enum: [waiting, funded, opening, awaiting_assets, settled, cancelled, refunded, failed]
+    CreateDuelRequest:
+      type: object
+      additionalProperties: false
+      required: [creatorWallet, packId, matchmakingMode, expiresAt]
+      properties:
+        creatorWallet:
+          $ref: '#/components/schemas/SolanaAddress'
+        opponentWallet:
+          oneOf:
+            - $ref: '#/components/schemas/SolanaAddress'
+            - type: 'null'
+        packId:
+          $ref: '#/components/schemas/PackId'
+        matchmakingMode:
+          $ref: '#/components/schemas/MatchmakingMode'
+        expiresAt:
+          type: string
+          format: date-time
+    Duel:
+      type: object
+      additionalProperties: false
+      required: [id, status, matchmakingMode, creatorWallet, pack, stake, createdAt, expiresAt]
+      properties:
+        id:
+          type: string
+        status:
+          $ref: '#/components/schemas/DuelStatus'
+        matchmakingMode:
+          $ref: '#/components/schemas/MatchmakingMode'
+        creatorWallet:
+          $ref: '#/components/schemas/SolanaAddress'
+        opponentWallet:
+          oneOf:
+            - $ref: '#/components/schemas/SolanaAddress'
+            - type: 'null'
+        pack:
+          $ref: '#/components/schemas/Pack'
+        stake:
+          $ref: '#/components/schemas/Money'
+        escrowAddress:
+          oneOf:
+            - $ref: '#/components/schemas/SolanaAddress'
+            - type: 'null'
+        transactionSignature:
+          type: [string, 'null']
+        winnerWallet:
+          oneOf:
+            - $ref: '#/components/schemas/SolanaAddress'
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    DuelList:
+      type: object
+      additionalProperties: false
+      required: [data, hasMore]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Duel'
+        nextCursor:
+          type: [string, 'null']
+        hasMore:
+          type: boolean
+    TransactionAction:
+      type: string
+      enum: [fund, cancel, refund]
+    PrepareTransactionRequest:
+      type: object
+      additionalProperties: false
+      required: [action, wallet]
+      properties:
+        action:
+          $ref: '#/components/schemas/TransactionAction'
+        wallet:
+          $ref: '#/components/schemas/SolanaAddress'
+    PreparedTransaction:
+      type: object
+      additionalProperties: false
+      required: [transaction, encoding, expiresAt, action, summary]
+      properties:
+        transaction:
+          type: string
+          contentEncoding: base64
+        encoding:
+          type: string
+          const: base64
+        expiresAt:
+          type: string
+          format: date-time
+        action:
+          $ref: '#/components/schemas/TransactionAction'
+        summary:
+          type: string
+          description: Human-readable instructions for wallet confirmation UI.
+    SocialCard:
+      type: object
+      additionalProperties: false
+      required: [duelId, status, pageUrl, imageUrl]
+      properties:
+        duelId:
+          type: string
+        status:
+          $ref: '#/components/schemas/DuelStatus'
+        pageUrl:
+          type: string
+          format: uri
+        imageUrl:
+          type: string
+          format: uri
+        shareText:
+          type: string
+          maxLength: 280
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, requestId]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        requestId:
+          type: string

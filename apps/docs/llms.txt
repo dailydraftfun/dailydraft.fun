@@ -1,0 +1,13 @@
+# OpenPacks Duel developer documentation
+
+- API contract: /openapi.yaml
+- Quickstart: /guides/quickstart.md
+- Solana transaction model: /guides/solana-transactions.md
+- Webhook verification: /guides/webhooks.md
+- Escrow protocol: https://github.com/openpacksduel/escrow/blob/main/docs/protocol.md
+- MCP server: https://github.com/openpacksduel/mcp
+- Agent skills: https://github.com/openpacksduel/skills
+
+The API contract is preview-only until its endpoints are deployed. Never provide
+a wallet private key or seed phrase to OpenPacks Duel, its API, MCP server, or an
+agent skill.
