@@ -1,8 +1,7 @@
 'use client';
 
-import { ChartBarIcon, CoinsIcon, LightningIcon, WalletIcon } from '@phosphor-icons/react';
-import { Button } from '@shipshitdev/ui';
-import { useState } from 'react';
+import { ChartBarIcon, LightningIcon } from '@phosphor-icons/react';
+import { WalletControl } from './solana/wallet-control';
 
 function BrandMark() {
   return (
@@ -14,8 +13,6 @@ function BrandMark() {
 }
 
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
-  const [connected, setConnected] = useState(false);
-
   return (
     <div className="min-h-screen bg-primary text-primary">
       <header className="sticky top-0 z-50 border-b border-border bg-primary/90 backdrop-blur-xl">
@@ -53,19 +50,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
               </span>
               18 players online
             </div>
-            <Button
-              type="button"
-              onClick={() => setConnected((value) => !value)}
-              className={connected ? 'wallet-button wallet-button-connected' : 'wallet-button'}
-              aria-pressed={connected}
-            >
-              {connected ? (
-                <CoinsIcon size={16} weight="fill" />
-              ) : (
-                <WalletIcon size={16} weight="bold" />
-              )}
-              <span>{connected ? '8xK4…p2Te' : 'Connect wallet'}</span>
-            </Button>
+            <WalletControl />
           </div>
         </div>
       </header>
