@@ -47,11 +47,27 @@ smoke workflow.
 | `OPENPACKSDUEL_NETWORK` | Must be `solana-devnet`. |
 | `SOLANA_RPC_URL` | Server-side RPC endpoint. |
 | `ESCROW_PROGRAM_ID` | Published devnet escrow program address. |
+| `CRON_SECRET` | Long random bearer secret used by Vercel Cron. |
+| `SOLANA_RPC_TIMEOUT_MS` | Optional per-request timeout; bounded to 30 seconds. |
+| `SOLANA_RPC_RETRIES` | Optional retry count; bounded to four retries. |
+| `SOLANA_RECONCILIATION_STUCK_MS` | Operator alert threshold; defaults to ten minutes. |
 | `OPENPACKSDUEL_PROVIDER_MODE` | Must be `mock` until the Collector Crypt contract is confirmed. |
 | `OPENPACKSDUEL_API_KEYS` | Server-to-server integration keys; never expose to the browser. |
 | `OPENPACKSDUEL_APP_URL` | Canonical product URL. |
 | `OPENPACKSDUEL_AUTH_DOMAIN` | Host matching the canonical product URL in wallet sign-in messages. |
 | `CORS_ORIGINS` | Explicit allowed browser origins. |
+
+The transaction worker runs every five minutes in production and can be invoked
+manually at `POST /v1/internal/reconciliation/solana`. It treats `confirmed` as
+progress and advances duel state only after a `finalized` transaction matches
+the stored signer and blockhash plus one unique escrow instruction with the
+stored data hash and exact ordered account constraints. The public RPC
+fallback is appropriate only for this devnet preview and may rate-limit calls.
+
+No escrow or pack transaction builder is implied by the worker. The existing
+prepare route remains fail-closed until the deployed program IDL, devnet test
+mints, exact token-account constraints, and Collector Crypt builder contract are
+available.
 
 ## Release order
 

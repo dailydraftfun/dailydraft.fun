@@ -87,6 +87,8 @@ export interface DuelEvent {
 
 export interface DuelTransactionRecord {
   action: 'cancel' | 'fund' | 'open_pack' | 'refund' | 'settle';
+  checkAttempts?: number;
+  confirmationStatus?: 'confirmed' | 'finalized' | null;
   confirmedAt?: string | null;
   createdAt: string;
   duelId: string;
@@ -94,13 +96,16 @@ export interface DuelTransactionRecord {
   errorMessage?: string | null;
   expiresAt?: string | null;
   id: string;
+  finalizedAt?: string | null;
+  lastCheckedAt?: string | null;
   lastValidBlockHeight?: string | null;
   network: 'solana-devnet';
   providerReference?: string | null;
   recentBlockhash?: string | null;
   signature?: string | null;
-  status: 'confirmed' | 'expired' | 'failed' | 'prepared' | 'submitted';
+  status: 'confirmed' | 'expired' | 'failed' | 'finalized' | 'prepared' | 'submitted';
   submittedAt?: string | null;
+  stuckAt?: string | null;
   updatedAt: string;
   wallet: string;
 }

@@ -9,6 +9,21 @@ cancellation, and social-card metadata. Transaction preparation returns
 `501 Not Implemented` until the Solana escrow integration constructs verifiable
 unsigned transactions.
 
+Submitted escrow signatures are bound idempotently to a previously prepared
+intent and reconciled independently of the browser. The server validates the
+RPC cluster genesis hash, follows `confirmed` progress, requires `finalized`
+before advancing a duel, and re-verifies the transaction signature, recent
+blockhash, signer, and one uniquely matching target instruction. That instruction
+must match the escrow program, encoded-data hash, and exact ordered account
+signer/write constraints recorded by the prepared intent. Vercel Cron
+calls `GET /v1/internal/reconciliation/solana` with `CRON_SECRET`; operators can
+run the same batch with `POST` and either the cron secret or an integration key.
+
+The monitor does not create pack purchases or escrow instructions. Preparation
+remains `501` until the deployed escrow IDL, valueless devnet mints, and provider
+transaction builders are integrated. A signature without a durable prepared
+intent is rejected rather than inferred from chain data.
+
 Funded duels can use the authenticated `POST /v1/duels/{duelId}/open-packs`
 orchestrator. It generates and opens both sides through one provider boundary,
 normalizes USDC insured values, compares integer amounts, and records a public,
@@ -37,6 +52,9 @@ transaction routes and must never be shipped to browser code.
 every duel is explicitly labeled `solana-devnet`; this API is not mainnet-ready.
 The deterministic mock provider refuses to run unless `OPENPACKSDUEL_NETWORK`
 is `solana-devnet`. Its asset references and values are valueless test data.
+`SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every
+worker validates the official devnet genesis hash before reading transaction
+state. Set `ESCROW_PROGRAM_ID` and a long random `CRON_SECRET` in Vercel.
 
 `collector-crypt-sandbox` is a fail-closed adapter stub: no undocumented HTTP
 paths or response shapes are assumed. It remains unavailable until Collector

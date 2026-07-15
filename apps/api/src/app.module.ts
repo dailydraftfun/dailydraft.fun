@@ -5,6 +5,9 @@ import { DatabaseModule } from './database/database.module.js';
 import { DuelsModule } from './duels/duels.module.js';
 import { HealthModule } from './health/health.module.js';
 import { PacksModule } from './packs/packs.module.js';
+import { TransactionsModule } from './transactions/transactions.module.js';
 
-@Module({ imports: [DatabaseModule, AuthModule, HealthModule, PacksModule, DuelsModule] })
+@Module({
+  imports: [DatabaseModule, AuthModule, HealthModule, PacksModule, DuelsModule, TransactionsModule],
+})
 export class AppModule {}

@@ -9,8 +9,8 @@ import {
   type ResolveOpenedPacksRecord,
   type TransitionDuelRecord,
 } from './duel.repository.js';
+import { canTransition, isTransactionTransition } from './duel-state.js';
 import { DuelsService } from './duels.service.js';
-import { canTransition } from './prisma-duel.repository.js';
 
 const WALLET = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
 const OPPONENT = 'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW';
@@ -21,6 +21,8 @@ describe('DuelsService', () => {
     expect(canTransition('settling', 'settled')).toBe(true);
     expect(canTransition('settled', 'opening')).toBe(false);
     expect(canTransition('failed', 'refunding')).toBe(true);
+    expect(isTransactionTransition('settle', 'settling', 'settled')).toBe(true);
+    expect(isTransactionTransition('fund', 'settling', 'settled')).toBe(false);
   });
 
   test('replays an idempotent create request from durable storage', async () => {
