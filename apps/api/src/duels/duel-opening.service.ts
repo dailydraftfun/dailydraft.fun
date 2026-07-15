@@ -138,23 +138,25 @@ export class DuelOpeningService {
       providerReference: generated.providerReference,
     });
     const snapshot = await provider.getPack(generated.providerReference);
-    const result = requireOpenedResult(snapshot);
+    const opened = requireOpenedSnapshot(snapshot);
     return normalizeProviderResult(
       side,
-      result,
+      opened.result,
       valuationPolicyHash,
-      snapshot.providerReference,
-      new Date(snapshot.openedAt),
+      opened.providerReference,
+      new Date(opened.openedAt),
     );
   }
 }
 
-function requireOpenedResult(snapshot: ProviderPackSnapshot) {
+function requireOpenedSnapshot(
+  snapshot: ProviderPackSnapshot,
+): Extract<ProviderPackSnapshot, { status: 'opened' }> {
   if (snapshot.status === 'failed') {
     throw new BadGatewayException('Pack provider could not open a pack');
   }
   if (snapshot.status !== 'opened') {
     throw new ConflictException(`Pack provider result is ${snapshot.status}`);
   }
-  return snapshot.result;
+  return snapshot;
 }
