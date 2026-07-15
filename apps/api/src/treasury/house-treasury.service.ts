@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   type DatabaseClient,
+  DuelSide,
   DuelStatus,
   HouseInventoryDisposition,
   HouseInventoryListingState,
@@ -91,7 +92,8 @@ export class HouseTreasuryService {
           return { inventoryCreated: 0, released: false, transitioned: false };
         }
         const now = new Date();
-        const target = reservationTarget(current.duel.status);
+        const resolution = houseReservationResolution(current.duel);
+        const target = resolution.target;
         if (!target || target === current.status) {
           await transaction.houseTreasuryReservation.updateMany({
             data: { lastReconciledAt: now, version: { increment: 1 } },
@@ -139,17 +141,24 @@ export class HouseTreasuryService {
         if (target !== HouseTreasuryReservationStatus.SETTLED) {
           return { inventoryCreated: 0, released: false, transitioned: true };
         }
-        if (current.duel.winnerWallet !== current.duel.opponentWallet) {
+        if (resolution.ledgerType === HouseTreasuryLedgerType.PLAYER_WIN_LOSS) {
           await appendLedger(transaction, {
             amount: current.amount,
             currency: current.currency,
             decimals: current.decimals,
             duelId: current.duelId,
             idempotencyKey: `player-win-loss:${current.duelId}`,
+            metadata: { reason: resolution.reason },
             reservationId: current.id,
             type: HouseTreasuryLedgerType.PLAYER_WIN_LOSS,
           });
           return { inventoryCreated: 0, released: false, transitioned: true };
+        }
+        if (
+          resolution.ledgerType !== HouseTreasuryLedgerType.HOUSE_PACK_COST ||
+          !resolution.custodyWallet
+        ) {
+          throw new ServiceUnavailableException('House terminal accounting is incomplete');
         }
         await appendLedger(transaction, {
           amount: current.amount,
@@ -157,11 +166,14 @@ export class HouseTreasuryService {
           decimals: current.decimals,
           duelId: current.duelId,
           idempotencyKey: `house-pack-cost:${current.duelId}`,
+          metadata: { reason: resolution.reason },
           reservationId: current.id,
           type: HouseTreasuryLedgerType.HOUSE_PACK_COST,
         });
         let inventoryCreated = 0;
-        for (const outcome of current.duel.packOutcomes) {
+        for (const outcome of current.duel.packOutcomes.filter((candidate) =>
+          resolution.inventorySides.includes(candidate.side),
+        )) {
           const existing = await transaction.houseInventoryAsset.findUnique({
             where: { outcomeId: outcome.id },
           });
@@ -173,7 +185,7 @@ export class HouseTreasuryService {
               acquisitionValueCurrency: outcome.insuredValueCurrency,
               acquisitionValueDecimals: outcome.insuredValueDecimals,
               assetReference: outcome.assetReference,
-              custodyWallet: current.duel.opponentWallet ?? '',
+              custodyWallet: resolution.custodyWallet,
               displayName: outcome.displayName,
               disposition: HouseInventoryDisposition.MANUAL_REVIEW,
               duelId: current.duelId,
@@ -188,6 +200,7 @@ export class HouseTreasuryService {
             duelId: current.duelId,
             idempotencyKey: `house-win-inventory:${outcome.id}`,
             inventoryId,
+            metadata: { reason: resolution.reason, side: outcome.side.toLowerCase() },
             reservationId: current.id,
             type: HouseTreasuryLedgerType.HOUSE_WIN_INVENTORY,
           });
@@ -590,6 +603,95 @@ export function reservationTarget(status: DuelStatus): HouseTreasuryReservationS
     default:
       return null;
   }
+}
+
+export function houseReservationResolution(duel: {
+  creatorWallet: string;
+  opponentWallet: string | null;
+  packOutcomes: Array<{ side: DuelSide }>;
+  status: DuelStatus;
+  winnerWallet: string | null;
+}): {
+  custodyWallet: string | null;
+  inventorySides: DuelSide[];
+  ledgerType: HouseTreasuryLedgerType | null;
+  reason: 'house_win' | 'player_win' | 'post_open_refund' | 'tie' | null;
+  target: HouseTreasuryReservationStatus | null;
+} {
+  if (duel.status === DuelStatus.CANCELLED) {
+    return duel.packOutcomes.length === 0
+      ? unresolvedHouseReservation(HouseTreasuryReservationStatus.RELEASED)
+      : unresolvedHouseReservation(HouseTreasuryReservationStatus.RECOVERY_REQUIRED);
+  }
+  if (duel.status === DuelStatus.REFUNDED) {
+    if (duel.packOutcomes.length === 0) {
+      return unresolvedHouseReservation(HouseTreasuryReservationStatus.RELEASED);
+    }
+    if (!hasCanonicalOutcomeSides(duel.packOutcomes) || !duel.opponentWallet) {
+      return unresolvedHouseReservation(HouseTreasuryReservationStatus.RECOVERY_REQUIRED);
+    }
+    return {
+      custodyWallet: duel.opponentWallet,
+      inventorySides: [DuelSide.OPPONENT],
+      ledgerType: HouseTreasuryLedgerType.HOUSE_PACK_COST,
+      reason: 'post_open_refund',
+      target: HouseTreasuryReservationStatus.SETTLED,
+    };
+  }
+  if (duel.status !== DuelStatus.SETTLED) {
+    return unresolvedHouseReservation(reservationTarget(duel.status));
+  }
+  if (!hasCanonicalOutcomeSides(duel.packOutcomes) || !duel.opponentWallet) {
+    return unresolvedHouseReservation(HouseTreasuryReservationStatus.RECOVERY_REQUIRED);
+  }
+  if (duel.winnerWallet === duel.creatorWallet) {
+    return {
+      custodyWallet: duel.opponentWallet,
+      inventorySides: [],
+      ledgerType: HouseTreasuryLedgerType.PLAYER_WIN_LOSS,
+      reason: 'player_win',
+      target: HouseTreasuryReservationStatus.SETTLED,
+    };
+  }
+  if (duel.winnerWallet === duel.opponentWallet) {
+    return {
+      custodyWallet: duel.opponentWallet,
+      inventorySides: [DuelSide.CREATOR, DuelSide.OPPONENT],
+      ledgerType: HouseTreasuryLedgerType.HOUSE_PACK_COST,
+      reason: 'house_win',
+      target: HouseTreasuryReservationStatus.SETTLED,
+    };
+  }
+  if (duel.winnerWallet === null) {
+    return {
+      custodyWallet: duel.opponentWallet,
+      inventorySides: [DuelSide.OPPONENT],
+      ledgerType: HouseTreasuryLedgerType.HOUSE_PACK_COST,
+      reason: 'tie',
+      target: HouseTreasuryReservationStatus.SETTLED,
+    };
+  }
+  return unresolvedHouseReservation(HouseTreasuryReservationStatus.RECOVERY_REQUIRED);
+}
+
+function unresolvedHouseReservation(
+  target: HouseTreasuryReservationStatus | null,
+): ReturnType<typeof houseReservationResolution> {
+  return {
+    custodyWallet: null,
+    inventorySides: [],
+    ledgerType: null,
+    reason: null,
+    target,
+  };
+}
+
+function hasCanonicalOutcomeSides(outcomes: Array<{ side: DuelSide }>): boolean {
+  return (
+    outcomes.length === 2 &&
+    outcomes.filter((outcome) => outcome.side === DuelSide.CREATOR).length === 1 &&
+    outcomes.filter((outcome) => outcome.side === DuelSide.OPPONENT).length === 1
+  );
 }
 
 async function appendLedger(

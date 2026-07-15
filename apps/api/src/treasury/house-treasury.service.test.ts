@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { DuelStatus, HouseTreasuryReservationStatus } from '@openpacksduel/db';
+import {
+  DuelSide,
+  DuelStatus,
+  HouseTreasuryLedgerType,
+  HouseTreasuryReservationStatus,
+} from '@openpacksduel/db';
 
 import { SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
 import { ACTIVE_HOUSE_RESERVATION_STATUSES } from './house-treasury.policy.js';
@@ -71,7 +76,8 @@ describe('HouseTreasuryService', () => {
     );
     const terminal = reservation('hres_zzz', DuelStatus.CANCELLED);
     reservations.push(terminal);
-    const service = new HouseTreasuryService(lifecycleDatabase(reservations) as never, {} as never);
+    const harness = lifecycleDatabase(reservations);
+    const service = new HouseTreasuryService(harness.database as never, {} as never);
 
     const first = await service.reconcileLifecycle(100);
     const second = await service.reconcileLifecycle(100);
@@ -79,6 +85,97 @@ describe('HouseTreasuryService', () => {
     expect(first).toMatchObject({ checked: 100, released: 0 });
     expect(second.released).toBe(1);
     expect(terminal.status).toBe(HouseTreasuryReservationStatus.RELEASED);
+  });
+
+  test('persists only the house card on a tie without classifying it as a player-win loss', async () => {
+    const tied = reservation('hres_tie', DuelStatus.SETTLED, {
+      packOutcomes: outcomes(),
+      winnerWallet: null,
+    });
+    const harness = lifecycleDatabase([tied]);
+    const service = new HouseTreasuryService(harness.database as never, {} as never);
+
+    const first = await service.reconcileLifecycle();
+    const replay = await service.reconcileLifecycle();
+
+    expect(first).toMatchObject({ inventoryCreated: 1, transitioned: 1 });
+    expect(harness.inventory.map((row) => row.outcomeId)).toEqual(['outcome_opponent']);
+    expect(harness.ledger.map((row) => row.type)).toEqual([
+      HouseTreasuryLedgerType.HOUSE_PACK_COST,
+      HouseTreasuryLedgerType.HOUSE_WIN_INVENTORY,
+    ]);
+    expect(replay.checked).toBe(0);
+    expect(harness.inventory).toHaveLength(1);
+    expect(harness.ledger).toHaveLength(2);
+  });
+
+  test('persists returned house custody and pack cost after a post-open refund', async () => {
+    const refunded = reservation('hres_refund', DuelStatus.REFUNDED, {
+      packOutcomes: outcomes(),
+      winnerWallet: null,
+    });
+    const harness = lifecycleDatabase([refunded]);
+    const service = new HouseTreasuryService(harness.database as never, {} as never);
+
+    await service.reconcileLifecycle();
+
+    expect(refunded.status).toBe(HouseTreasuryReservationStatus.SETTLED);
+    expect(harness.inventory.map((row) => row.outcomeId)).toEqual(['outcome_opponent']);
+    expect(harness.ledger.map((row) => row.type)).toEqual([
+      HouseTreasuryLedgerType.HOUSE_PACK_COST,
+      HouseTreasuryLedgerType.HOUSE_WIN_INVENTORY,
+    ]);
+    expect(harness.ledger[0]?.metadata).toEqual({ reason: 'post_open_refund' });
+  });
+
+  test('holds incomplete terminal outcome evidence in recovery instead of releasing exposure', async () => {
+    const incomplete = reservation('hres_incomplete', DuelStatus.REFUNDED, {
+      packOutcomes: [outcome('incomplete_creator', DuelSide.CREATOR)],
+    });
+    const harness = lifecycleDatabase([incomplete]);
+    const service = new HouseTreasuryService(harness.database as never, {} as never);
+
+    await service.reconcileLifecycle();
+
+    expect(incomplete.status).toBe(HouseTreasuryReservationStatus.RECOVERY_REQUIRED);
+    expect(harness.inventory).toEqual([]);
+    expect(harness.ledger).toEqual([]);
+  });
+
+  test('routes player wins, house wins, and pre-open refunds to distinct terminal accounting', async () => {
+    const playerWin = reservation('hres_player_win', DuelStatus.SETTLED, {
+      packOutcomes: outcomes(),
+      winnerWallet: COLD_OWNER,
+    });
+    const houseWin = reservation('hres_house_win', DuelStatus.SETTLED, {
+      packOutcomes: outcomes('house-win'),
+      winnerWallet: HOT_WALLET,
+    });
+    const unopenedRefund = reservation('hres_unopened_refund', DuelStatus.REFUNDED);
+    const harness = lifecycleDatabase([playerWin, houseWin, unopenedRefund]);
+    const service = new HouseTreasuryService(harness.database as never, {} as never);
+
+    const result = await service.reconcileLifecycle();
+
+    expect(result).toMatchObject({ inventoryCreated: 2, released: 1, transitioned: 3 });
+    expect(harness.inventory.map((row) => row.outcomeId).sort()).toEqual([
+      'house-win_creator',
+      'house-win_opponent',
+    ]);
+    const ledgerTypes = harness.ledger.map((row) => row.type);
+    expect(ledgerTypes).toHaveLength(5);
+    expect(
+      ledgerTypes.filter((type) => type === HouseTreasuryLedgerType.PLAYER_WIN_LOSS),
+    ).toHaveLength(1);
+    expect(
+      ledgerTypes.filter((type) => type === HouseTreasuryLedgerType.HOUSE_PACK_COST),
+    ).toHaveLength(1);
+    expect(
+      ledgerTypes.filter((type) => type === HouseTreasuryLedgerType.HOUSE_WIN_INVENTORY),
+    ).toHaveLength(2);
+    expect(
+      ledgerTypes.filter((type) => type === HouseTreasuryLedgerType.RESERVATION_RELEASED),
+    ).toHaveLength(1);
   });
 });
 
@@ -143,10 +240,11 @@ interface ReservationFixture {
   currency: string;
   decimals: number;
   duel: {
-    opponentWallet: string;
-    packOutcomes: [];
+    creatorWallet: string;
+    opponentWallet: string | null;
+    packOutcomes: OutcomeFixture[];
     status: DuelStatus;
-    winnerWallet: null;
+    winnerWallet: string | null;
   };
   duelId: string;
   id: string;
@@ -155,16 +253,32 @@ interface ReservationFixture {
   version: number;
 }
 
-function reservation(id: string, duelStatus: DuelStatus): ReservationFixture {
+interface OutcomeFixture {
+  assetReference: string;
+  displayName: string;
+  id: string;
+  insuredValueAmount: string;
+  insuredValueCurrency: string;
+  insuredValueDecimals: number;
+  side: DuelSide;
+}
+
+function reservation(
+  id: string,
+  duelStatus: DuelStatus,
+  duel: Partial<ReservationFixture['duel']> = {},
+): ReservationFixture {
   return {
     amount: '50000000',
     currency: 'USDC',
     decimals: 6,
     duel: {
+      creatorWallet: COLD_OWNER,
       opponentWallet: HOT_WALLET,
       packOutcomes: [],
       status: duelStatus,
       winnerWallet: null,
+      ...duel,
     },
     duelId: `duel_${id}`,
     id,
@@ -174,16 +288,52 @@ function reservation(id: string, duelStatus: DuelStatus): ReservationFixture {
   };
 }
 
+function outcomes(prefix = 'outcome'): OutcomeFixture[] {
+  return [
+    outcome(`${prefix}_creator`, DuelSide.CREATOR),
+    outcome(`${prefix}_opponent`, DuelSide.OPPONENT),
+  ];
+}
+
+function outcome(id: string, side: DuelSide): OutcomeFixture {
+  return {
+    assetReference: `${id}_mint`,
+    displayName: `${side.toLowerCase()} card`,
+    id,
+    insuredValueAmount: '50000000',
+    insuredValueCurrency: 'USDC',
+    insuredValueDecimals: 6,
+    side,
+  };
+}
+
+interface InventoryWrite {
+  outcomeId: string;
+}
+
+interface LedgerWrite {
+  idempotencyKey: string;
+  metadata?: unknown;
+  type: HouseTreasuryLedgerType;
+}
+
 function lifecycleDatabase(reservations: ReservationFixture[]) {
   const ledgerKeys = new Set<string>();
+  const inventory: InventoryWrite[] = [];
+  const ledger: LedgerWrite[] = [];
   const transaction = {
     houseInventoryAsset: {
-      create: () => Promise.reject(new Error('inventory creation is not expected')),
-      findUnique: () => Promise.resolve(null),
+      create: ({ data }: { data: InventoryWrite }) => {
+        inventory.push(data);
+        return Promise.resolve(data);
+      },
+      findUnique: ({ where }: { where: { outcomeId: string } }) =>
+        Promise.resolve(inventory.find((row) => row.outcomeId === where.outcomeId) ?? null),
     },
     houseTreasuryLedgerEntry: {
-      create: ({ data }: { data: { idempotencyKey: string } }) => {
+      create: ({ data }: { data: LedgerWrite }) => {
         ledgerKeys.add(data.idempotencyKey);
+        ledger.push(data);
         return Promise.resolve(data);
       },
       findUnique: ({ where }: { where: { idempotencyKey: string } }) =>
@@ -217,7 +367,7 @@ function lifecycleDatabase(reservations: ReservationFixture[]) {
       },
     },
   };
-  return {
+  const database = {
     $transaction: (
       operation: (client: typeof transaction) => Promise<{
         inventoryCreated: number;
@@ -241,6 +391,7 @@ function lifecycleDatabase(reservations: ReservationFixture[]) {
         ),
     },
   };
+  return { database, inventory, ledger };
 }
 
 async function withHouseEnvironment<T>(operation: () => Promise<T>): Promise<T> {
