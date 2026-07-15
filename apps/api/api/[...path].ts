@@ -12,8 +12,58 @@ export default async function handler(
 ): Promise<void> {
   request.url = normalizeRequestUrl(request.url);
   const application = await getApplication();
-  const fastify = application.getHttpAdapter().getInstance<FastifyInstance>();
-  fastify.server.emit('request', request, response);
+  const fastify = application.getHttpAdapter().getInstance() as FastifyInstance;
+  await dispatchRequest(fastify, request, response);
+}
+
+async function dispatchRequest(
+  fastify: FastifyInstance,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  await dispatchAndWaitForResponse(response, () =>
+    fastify.server.emit('request', request, response),
+  );
+}
+
+export function dispatchAndWaitForResponse(
+  response: ServerResponse,
+  dispatch: () => boolean,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      response.off('close', onClose);
+      response.off('error', onError);
+      response.off('finish', onFinish);
+    };
+    const onFinish = () => {
+      cleanup();
+      resolve();
+    };
+    const onClose = () => {
+      cleanup();
+      if (response.writableFinished) resolve();
+      else reject(new Error('Client disconnected before the API response completed'));
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    response.once('close', onClose);
+    response.once('error', onError);
+    response.once('finish', onFinish);
+
+    try {
+      if (!dispatch()) {
+        cleanup();
+        reject(new Error('Fastify request listener is not initialized'));
+      }
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
+  });
 }
 
 async function getApplication(): Promise<NestFastifyApplication> {
@@ -27,7 +77,7 @@ async function getApplication(): Promise<NestFastifyApplication> {
 async function bootstrapApplication(): Promise<NestFastifyApplication> {
   const application = await createApp({ enableShutdownHooks: false });
   await application.init();
-  await application.getHttpAdapter().getInstance<FastifyInstance>().ready();
+  await (application.getHttpAdapter().getInstance() as FastifyInstance).ready();
   return application;
 }
 

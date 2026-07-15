@@ -78,16 +78,10 @@ Directory** is enabled in the Vercel project’s Root Directory settings. Modern
 projects enable it by default, but the API cannot import `packages/db` without
 that boundary.
 
-1. Link the monorepo checkout to the existing project:
-
-   ```bash
-   vercel link --yes --project openpacksduel-api --scope vincentshipsit
-   ```
-
-2. Configure all required API variables in the Vercel project. Do not put
+1. Configure all required API variables in the Vercel project. Do not put
    credentials in tracked files. `DATABASE_URL` must use the pooled Neon runtime
    connection when available.
-3. In a secure operator shell, set `DATABASE_URL` to the direct migration
+2. In a secure operator shell, set `DATABASE_URL` to the direct migration
    connection. The production deployment script applies only committed
    migrations and stops before deployment if migration fails:
 
@@ -97,14 +91,19 @@ that boundary.
 
    Never substitute `prisma db push`; migration history is the deployment
    contract. A failed migration stops the release before the function deploy.
-4. For a preview-only deployment after the production database is already at
+   The script sets `VERCEL_ORG_ID=team_KHSVltukbViA3Mbyd0KBdW22` and
+   `VERCEL_PROJECT_ID=prj_rX5EyAaDo5slW8ea0mUDjwVhb1Xq`, so the repository’s
+   frontend `.vercel/project.json` cannot redirect the deployment.
+3. For a preview-only deployment after the production database is already at
    the committed migration, deploy from the monorepo root:
 
    ```bash
+   VERCEL_ORG_ID=team_KHSVltukbViA3Mbyd0KBdW22 \
+   VERCEL_PROJECT_ID=prj_rX5EyAaDo5slW8ea0mUDjwVhb1Xq \
    vercel deploy --scope vincentshipsit
    ```
 
-5. Confirm the canonical alias and database readiness:
+4. Confirm the canonical alias and database readiness:
 
    ```bash
    curl --fail-with-body https://openpacksduel-api.vercel.app/v1/health
