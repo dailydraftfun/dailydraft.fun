@@ -1,178 +1,250 @@
-const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001';
-const surfaces = [
+import {
+  ArrowRightIcon,
+  CheckCircleIcon,
+  LockKeyIcon,
+  SparkleIcon,
+  SwordIcon,
+  TrophyIcon,
+  UsersThreeIcon,
+  WalletIcon,
+  XLogoIcon,
+} from '@phosphor-icons/react/dist/ssr';
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://openpacksduel.vercel.app';
+
+const steps = [
   {
-    label: 'apps/web',
-    detail: 'Public landing page',
+    number: '01',
+    title: 'Choose a pack',
+    detail: 'Pick the same eligible pack and stake on both sides of the duel.',
   },
   {
-    label: 'apps/app',
-    detail: 'Product web app',
+    number: '02',
+    title: 'Find an opponent',
+    detail: 'Match instantly with another wallet or send a direct challenge to a friend.',
+  },
+  {
+    number: '03',
+    title: 'Rip together',
+    detail: 'Both packs reveal in sync. The higher verified card value wins the round.',
+  },
+  {
+    number: '04',
+    title: 'Winner takes the cards',
+    detail: 'Settlement sends both pulls to the winner after fees and on-chain confirmation.',
   },
 ] as const;
-const routes = [
+
+const principles = [
   {
-    label: 'Overview',
-    href: '/overview',
+    icon: WalletIcon,
+    title: 'Your wallet signs',
+    detail: 'The app never asks for a seed phrase or signs a transaction on your behalf.',
+  },
+  {
+    icon: LockKeyIcon,
+    title: 'Open escrow',
+    detail: 'The Solana escrow program is public so custody and settlement rules can be audited.',
+  },
+  {
+    icon: CheckCircleIcon,
+    title: 'Verifiable outcomes',
+    detail: 'Provider results, valuation policy, fees, and final chain state stay inspectable.',
   },
 ] as const;
 
 export default function LandingPage() {
   return (
-    <main className="min-h-screen overflow-hidden bg-primary text-primary">
-      <section className="relative min-h-[92svh] px-6 py-6">
-        <div className="absolute inset-0 opacity-60">
-          <div className="h-full w-full bg-[linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[size:44px_44px]" />
-        </div>
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-[linear-gradient(0deg,var(--bg-primary),transparent)]" />
-
-        <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between gap-4">
-          <a
-            href="/"
-            className="flex min-h-10 items-center gap-2.5"
-            aria-label="openpacksduel home"
-          >
-            <span className="grid h-9 w-9 place-items-center rounded-md bg-accent font-mono text-sm font-semibold text-accent-foreground">
-              op
+    <main>
+      <section className="marketing-hero">
+        <div className="hero-grid" aria-hidden="true" />
+        <header className="marketing-nav">
+          <a href="/" className="brand" aria-label="Pack Duel home">
+            <span className="brand-mark">
+              <span />
+              <span />
             </span>
-            <span className="text-sm font-semibold text-secondary">openpacksduel</span>
+            <span>PACK DUEL</span>
           </a>
-          <nav className="hidden items-center gap-2 sm:flex" aria-label="Landing navigation">
-            <a
-              className="rounded-md px-3 py-2 text-sm text-secondary transition hover:bg-hover hover:text-primary"
-              href="#surfaces"
-            >
-              Surfaces
-            </a>
-            <a
-              className="rounded-md px-3 py-2 text-sm text-secondary transition hover:bg-hover hover:text-primary"
-              href="#routes"
-            >
-              Routes
-            </a>
-            <a
-              className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground transition hover:bg-accent-hover"
-              href={appUrl}
-            >
-              Open app
-            </a>
+          <nav aria-label="Main navigation">
+            <a href="#how-it-works">How it works</a>
+            <a href="#trust">Trust</a>
+            <a href="https://github.com/openpacksduel/escrow">Open escrow</a>
           </nav>
+          <a className="nav-cta" href={appUrl}>
+            Try the demo <ArrowRightIcon size={15} weight="bold" />
+          </a>
         </header>
 
-        <div className="relative z-10 mx-auto grid max-w-6xl gap-10 pt-24 pb-16 lg:grid-cols-[minmax(0,1fr)_440px] lg:items-end lg:pt-32">
-          <div>
-            <p className="font-mono text-xs font-semibold uppercase text-agent">
-              Public launch surface
-            </p>
-            <h1 className="mt-5 max-w-3xl text-6xl font-semibold leading-none tracking-normal text-primary md:text-8xl">
-              openpacksduel
+        <div className="hero-content">
+          <div className="hero-copy">
+            <span className="eyebrow">
+              <SparkleIcon size={14} weight="fill" /> Trading card duels on Solana
+            </span>
+            <h1>
+              Two packs.
+              <br />
+              <em>One winner.</em>
             </h1>
-            <p className="mt-6 max-w-2xl text-lg font-medium leading-8 text-secondary md:text-xl">
-              Frontend-only Solana Pokemon pack duel MVP with quick matchmaking, wallet challenges,
-              synchronized reveals, and shareable outcomes
+            <p>
+              Challenge a friend or match another wallet. Rip the same pack together, compare the
+              verified pulls, and let the higher card value take both.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <a
-                className="rounded-md bg-accent px-4 py-3 text-sm font-semibold text-accent-foreground transition hover:bg-accent-hover"
-                href={appUrl}
-              >
-                Open app
+            <div className="hero-actions">
+              <a className="primary-cta" href={appUrl}>
+                Enter the arena <SwordIcon size={18} weight="fill" />
               </a>
-              <a
-                className="rounded-md border border-border px-4 py-3 text-sm font-semibold text-secondary transition hover:border-border-strong hover:bg-hover hover:text-primary"
-                href="#surfaces"
-              >
-                View surfaces
+              <a className="secondary-cta" href="#how-it-works">
+                See how it works
               </a>
             </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-secondary p-4 shadow-2xl shadow-black/40 backdrop-blur">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <span className="text-xs font-semibold uppercase text-muted">Product snapshot</span>
-              <span className="rounded bg-tertiary px-2 py-1 font-mono text-[10px] text-agent">
-                live scaffold
+            <div className="hero-proof">
+              <span>
+                <WalletIcon size={15} /> Wallet confirmed
+              </span>
+              <span>
+                <LockKeyIcon size={15} /> Public escrow
+              </span>
+              <span>
+                <CheckCircleIcon size={15} /> Transparent fees
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-3 py-4">
-              <div className="rounded-lg bg-tertiary p-4">
-                <div className="text-3xl font-semibold">02</div>
-                <div className="mt-1 text-xs text-muted">surfaces</div>
-              </div>
-              <div className="rounded-lg bg-tertiary p-4">
-                <div className="text-3xl font-semibold">01</div>
-                <div className="mt-1 text-xs text-muted">app routes</div>
-              </div>
+          </div>
+
+          <section className="duel-visual" aria-label="Preview of a fifty dollar pack duel">
+            <div className="duel-status">
+              <span className="live-dot" /> $50 PACK DUEL
+              <span>DEMO</span>
             </div>
-            <div className="space-y-2">
-              {surfaces.slice(0, 4).map((surface) => (
-                <div
-                  key={surface.label}
-                  className="flex items-center justify-between rounded-md bg-primary px-3 py-2"
-                >
-                  <span className="font-mono text-xs text-primary">{surface.label}</span>
-                  <span className="text-xs text-muted">{surface.detail}</span>
+            <div className="duel-stage">
+              <article className="preview-pack preview-pack-left">
+                <span className="pack-owner">8xK4…p2Te</span>
+                <div className="pack-art">
+                  <SparkleIcon size={36} weight="fill" />
+                  <small>AUTHENTICATED</small>
+                  <strong>PACK</strong>
+                  <strong>DUEL</strong>
+                  <span>$50</span>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="surfaces" className="px-6 py-16">
-        <div className="mx-auto max-w-6xl">
-          <div className="max-w-2xl">
-            <p className="font-mono text-xs font-semibold uppercase text-agent">Selected outputs</p>
-            <h2 className="mt-3 text-3xl font-semibold text-primary md:text-4xl">
-              Generated surfaces have separate jobs.
-            </h2>
-          </div>
-          <div className="mt-8 grid gap-3 md:grid-cols-3">
-            {surfaces.map((surface) => (
-              <article
-                key={surface.label}
-                className="rounded-lg border border-border bg-secondary p-5"
-              >
-                <h3 className="font-mono text-sm text-primary">{surface.label}</h3>
-                <p className="mt-2 text-sm leading-6 text-secondary">{surface.detail}</p>
               </article>
-            ))}
-          </div>
+              <div className="versus">
+                <span>VS</span>
+              </div>
+              <article className="preview-pack preview-pack-right">
+                <span className="pack-owner">Boba.sol</span>
+                <div className="pack-art">
+                  <TrophyIcon size={36} weight="fill" />
+                  <small>AUTHENTICATED</small>
+                  <strong>PACK</strong>
+                  <strong>DUEL</strong>
+                  <span>$50</span>
+                </div>
+              </article>
+            </div>
+            <div className="duel-footer">
+              <span>
+                <UsersThreeIcon size={15} /> Opponent found
+              </span>
+              <span>Opening together in 03</span>
+            </div>
+          </section>
         </div>
       </section>
 
-      <section id="routes" className="px-6 py-16">
-        <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[320px_minmax(0,1fr)]">
+      <section className="signal-strip" aria-label="Product principles">
+        <span>DIRECT WALLET CHALLENGES</span>
+        <span>LIVE MATCHMAKING</span>
+        <span>SYNCHRONIZED REVEALS</span>
+        <span>SHAREABLE RESULTS</span>
+      </section>
+
+      <section id="how-it-works" className="section-shell process-section">
+        <div className="section-heading">
+          <span className="eyebrow">The duel loop</span>
+          <h2>Pack opening gets an opponent.</h2>
+          <p>
+            The thrill of a rip, the tension of a coin flip, and a result worth sharing—all in one
+            fast round.
+          </p>
+        </div>
+        <div className="step-grid">
+          {steps.map((step) => (
+            <article key={step.number} className="step-card">
+              <span>{step.number}</span>
+              <h3>{step.title}</h3>
+              <p>{step.detail}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section id="trust" className="section-shell trust-section">
+        <div className="trust-copy">
+          <span className="eyebrow">Built to be checked</span>
+          <h2>Excitement without a black box.</h2>
+          <p>
+            Every value-bearing step is designed around explicit wallet approval, public program
+            rules, and evidence you can verify independently.
+          </p>
+          <a href="https://github.com/openpacksduel/escrow">
+            Inspect the escrow repository <ArrowRightIcon size={16} />
+          </a>
+        </div>
+        <div className="principle-grid">
+          {principles.map(({ icon: Icon, title, detail }) => (
+            <article key={title} className="principle-card">
+              <Icon size={22} weight="duotone" />
+              <div>
+                <h3>{title}</h3>
+                <p>{detail}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="section-shell social-section">
+        <div className="social-card">
           <div>
-            <p className="font-mono text-xs font-semibold uppercase text-agent">App routes</p>
-            <h2 className="mt-3 text-3xl font-semibold text-primary">
-              The product app starts here.
-            </h2>
-            <p className="mt-4 text-sm leading-6 text-secondary">
-              These routes are generated in apps/app. Wire this landing page to the deployed app URL
-              with NEXT_PUBLIC_APP_URL.
+            <span className="eyebrow">
+              <XLogoIcon size={14} weight="fill" /> Built to travel
+            </span>
+            <h2>Every duel becomes a story.</h2>
+            <p>
+              Waiting, matched, opening, won, or lost—each status gets a shareable card that pulls
+              the next challenger into the arena.
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {routes.map((route) => (
-              <a
-                key={route.href}
-                href={appUrl}
-                className="rounded-lg border border-border bg-secondary p-5 transition hover:border-border-strong hover:bg-hover"
-              >
-                <span className="text-sm font-semibold text-primary">{route.label}</span>
-                <span className="mt-2 block font-mono text-xs text-muted">
-                  apps/app{route.href}
-                </span>
-              </a>
-            ))}
+          <div className="share-preview" aria-hidden="true">
+            <span className="result-chip">DUEL WON</span>
+            <strong>Umbreon VMAX</strong>
+            <b>$1,380</b>
+            <small>Beat a $615 pull · $50 pack tier</small>
           </div>
         </div>
       </section>
 
-      <footer id="waitlist" className="border-t border-border px-6 py-8">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
-          <span>{new Date().getFullYear()} openpacksduel</span>
-          <span>Generated with @shipshitdev/v0</span>
+      <section className="final-cta">
+        <span className="eyebrow">The arena is open</span>
+        <h2>Think your pack wins?</h2>
+        <p>Try the interactive duel demo. Real wallet and settlement flows are coming next.</p>
+        <a className="primary-cta" href={appUrl}>
+          Try Pack Duel <ArrowRightIcon size={18} weight="bold" />
+        </a>
+      </section>
+
+      <footer className="marketing-footer">
+        <a href="/" className="brand" aria-label="Pack Duel home">
+          <span className="brand-mark brand-mark-small">
+            <span />
+            <span />
+          </span>
+          <span>PACK DUEL</span>
+        </a>
+        <p>Preview product. No real wallet signatures or settlement are enabled in the demo.</p>
+        <div>
+          <a href="https://github.com/openpacksduel">GitHub</a>
+          <a href={appUrl}>Demo</a>
         </div>
       </footer>
     </main>
