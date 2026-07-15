@@ -953,7 +953,9 @@ paths:
       description: |
         Reports configured and independently verified state separately. It never
         returns RPC URLs, wallet addresses, API keys, cron secrets, or credentials.
-        Treasury deployment and balances remain unverified external dependencies.
+        House balances are verified only when a fresh finalized devnet token-account
+        snapshot matches the configured cold owner, mint, and bounded hot-wallet SPL
+        delegate policy.
       x-openpacksduel-availability: devnet
       security:
         - integrationKey: []
@@ -967,6 +969,137 @@ paths:
                 additionalProperties: true
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /admin/treasury:
+    get:
+      operationId: getHouseTreasurySummary
+      tags: [Operations]
+      summary: Inspect finalized devnet liquidity, reserved exposure, losses, and inventory risk
+      x-openpacksduel-availability: devnet-gated
+      security:
+        - integrationKey: []
+      responses:
+        '200':
+          description: Secret-free house treasury and concentration dashboard
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /admin/treasury/inventory:
+    get:
+      operationId: listHouseInventory
+      tags: [Operations]
+      summary: List durable house-won card inventory and reconciliation state
+      x-openpacksduel-availability: devnet-gated
+      security:
+        - integrationKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [held, listed, disposed, reconciliation_required]
+      responses:
+        '200':
+          description: House inventory ledger view
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /internal/reconciliation/treasury:
+    get:
+      operationId: reconcileHouseTreasuryFromCron
+      tags: [Operations]
+      summary: Reconcile finalized devnet liquidity, inventory custody, and reservation lifecycle
+      x-openpacksduel-availability: internal-devnet
+      security:
+        - cronSecret: []
+      responses:
+        '200':
+          description: Bounded treasury reconciliation summary
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /admin/treasury/inventory/{inventoryId}/disposition:
+    put:
+      operationId: setHouseInventoryDisposition
+      tags: [Operations]
+      summary: Select an allowed hold, buyback, list, promotion, or review workflow
+      description: Records operator intent only; it does not call an undocumented marketplace API.
+      x-openpacksduel-availability: devnet-gated
+      security:
+        - integrationKey: []
+      parameters:
+        - name: inventoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^hinv_[a-f0-9]{32}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [disposition, reason]
+              properties:
+                disposition:
+                  type: string
+                  enum: [hold, buyback, list, promotion, manual_review]
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 160
+      responses:
+        '200':
+          description: Durable disposition intent and immutable ledger evidence recorded
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/treasury/inventory/{inventoryId}/disposition/complete:
+    post:
+      operationId: completeHouseInventoryDisposition
+      tags: [Operations]
+      summary: Record verified realized USDC proceeds for a completed disposition
+      x-openpacksduel-availability: devnet-gated
+      security:
+        - integrationKey: []
+      parameters:
+        - name: inventoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^hinv_[a-f0-9]{32}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [realizedAmount, realizedCurrency, realizedDecimals, reason]
+              properties:
+                realizedAmount: { type: string, pattern: '^\d+$' }
+                realizedCurrency: { type: string, const: USDC }
+                realizedDecimals: { type: integer, const: 6 }
+                reason: { type: string, minLength: 3, maxLength: 160 }
+      responses:
+        '200':
+          description: Inventory marked disposed and realized proceeds appended to the ledger
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /admin/emergency-pause:
     get:
       operationId: getEmergencyPause

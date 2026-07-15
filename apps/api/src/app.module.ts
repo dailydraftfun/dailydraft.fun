@@ -10,6 +10,7 @@ import { MatchmakingModule } from './matchmaking/matchmaking.module.js';
 import { PacksModule } from './packs/packs.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
 import { TransactionsModule } from './transactions/transactions.module.js';
+import { HouseTreasuryModule } from './treasury/house-treasury.module.js';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { TransactionsModule } from './transactions/transactions.module.js';
     ProvidersModule,
     DuelsModule,
     TransactionsModule,
+    HouseTreasuryModule,
   ],
 })
 export class AppModule {}

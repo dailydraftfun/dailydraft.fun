@@ -7,6 +7,8 @@ import {
 
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { AnalyticsService } from '../analytics/analytics.service.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { HouseTreasuryService } from '../treasury/house-treasury.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
@@ -39,6 +41,7 @@ export class TransactionMonitorService {
     private readonly repository: TransactionMonitorRepository,
     private readonly rpc: SolanaRpcGateway,
     @Optional() private readonly analytics?: AnalyticsService,
+    @Optional() private readonly treasury?: HouseTreasuryService,
   ) {}
 
   async bindSubmission(input: {
@@ -68,7 +71,10 @@ export class TransactionMonitorService {
       await this.analytics?.recordServer({ name: 'solana_rpc_error' });
     }
     const transactions = await this.repository.findPending(limit, now);
-    if (transactions.length === 0) return summary;
+    if (transactions.length === 0) {
+      await this.treasury?.reconcileLifecycle(limit);
+      return summary;
+    }
 
     let statuses: Array<SolanaSignatureStatus | null>;
     try {
@@ -118,6 +124,7 @@ export class TransactionMonitorService {
         throw error;
       }
     }
+    await this.treasury?.reconcileLifecycle(limit);
     return summary;
   }
 

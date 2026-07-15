@@ -64,6 +64,16 @@ smoke workflow.
 | `OPENPACKSDUEL_MAX_ACTIVE_DUELS_PER_WALLET` | New-exposure wallet limit; defaults to 3. |
 | `OPENPACKSDUEL_MAX_CONCURRENT_DUELS_PER_TIER` | New-exposure tier limit; defaults to 20. |
 | `OPENPACKSDUEL_HOUSE_ENABLED` | Explicit house-entry switch; defaults to `false`. |
+| `OPENPACKSDUEL_HOUSE_DEVNET_FUNDING_SIGNER` | House hot-wallet public key; must equal the finalized token account's bounded SPL delegate. |
+| `OPENPACKSDUEL_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY` | Cold finalized token-account owner; must not equal the hot wallet or delegate. |
+| `OPENPACKSDUEL_HOUSE_DEVNET_USDC_MINT` | Devnet USDC mint verified from finalized RPC state. |
+| `OPENPACKSDUEL_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT` | House token account whose mint, owner, and finalized balance are verified. |
+| `OPENPACKSDUEL_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO` | Required integer total exposure ceiling; missing/zero disables house entry. |
+| `OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO` | Required integer UTC-day loss ceiling; missing/zero disables house entry. |
+| `OPENPACKSDUEL_HOUSE_MIN_LIQUIDITY_USDC_MICRO` | Required post-reservation liquidity floor; missing/zero disables house entry. |
+| `OPENPACKSDUEL_HOUSE_MAX_ACTIVE_PER_WALLET` | House reservation limit per player; defaults to 1. |
+| `OPENPACKSDUEL_HOUSE_MAX_CONCURRENT_PER_TIER` | House reservation limit per tier; defaults to 1. |
+| `OPENPACKSDUEL_HOUSE_ALLOWED_DISPOSITIONS` | Operator inventory workflow allowlist; defaults to `hold,manual_review`. |
 | `CORS_ORIGINS` | Explicit allowed browser origins. |
 
 The transaction worker runs every five minutes in production and can be invoked
@@ -74,6 +84,17 @@ stored data hash and exact ordered account constraints. The public RPC
 fallback is appropriate only for this devnet preview and may rate-limit calls.
 Funding requires distinct finalized deposits from both duel participants; the
 first side remains `committing`, and only the second completes `funded`.
+
+The treasury worker at `GET|POST /v1/internal/reconciliation/treasury` first
+advances durable reservation/refund/settlement lifecycle state, then verifies
+the configured finalized devnet USDC balance and legacy-SPL house inventory.
+House creation and explicit queue fallback reserve micro-USDC inside a
+serializable, advisory-locked transaction. Funding preparation fails closed if
+that durable reservation is absent, stale, released, or already terminal.
+The USDC snapshot is accepted only when the cold withdrawal authority owns the
+account and the hot funding signer is its delegate with a remaining allowance no
+larger than the configured total-exposure ceiling. Pending worst-case exposure is
+included in both daily-loss and total-exposure admission checks.
 
 Provider result commitments, settlement, and per-asset refunds are prepared as
 durable unsigned intents and use the same submission/reconciliation path. Card

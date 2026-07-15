@@ -34,6 +34,10 @@ import {
   CANONICAL_VALUATION_POLICY_HASH,
   requireCanonicalValuationPolicyHash,
 } from '../providers/valuation-policy.js';
+import {
+  reserveHouseExposure,
+  shouldRetryTreasuryTransaction,
+} from '../treasury/house-treasury.policy.js';
 import type { ListDuelsQuery } from './duel.dto.js';
 import {
   type CreateDuelRecord,
@@ -122,63 +126,82 @@ export class PrismaDuelRepository extends DuelRepository {
     const replay = await this.replay(scope, idempotencyKey, requestHash);
     if (replay) return replay;
 
-    try {
-      const row = await this.database.$transaction(async (transaction) => {
-        const created = await transaction.duel.create({
-          data: {
-            creatorWallet: input.creatorWallet,
-            expiresAt: input.expiresAt,
-            houseOpponent: input.houseOpponent,
-            id: input.id,
-            mode: toDatabaseMode(input.matchmakingMode),
-            ...(input.opponentJoinedAt
-              ? { matchedAt: input.opponentJoinedAt, opponentJoinedAt: input.opponentJoinedAt }
-              : {}),
-            ...(input.opponentWallet ? { opponentWallet: input.opponentWallet } : {}),
-            packId: input.pack.id,
-            packName: input.pack.name,
-            packProvider: input.pack.provider,
-            providerMode: toDatabaseProviderMode(input.providerMode),
-            ...(input.pack.providerPackId ? { providerPackId: input.pack.providerPackId } : {}),
-            stakeAmount: input.pack.price.amount,
-            stakeCurrency: input.pack.price.currency,
-            stakeDecimals: input.pack.price.decimals,
-            status: input.houseOpponent ? DatabaseDuelStatus.MATCHED : DatabaseDuelStatus.WAITING,
-            ...(input.pack.valuationPolicyHash
-              ? { valuationPolicyHash: input.pack.valuationPolicyHash }
-              : {}),
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const row = await this.database.$transaction(
+          async (transaction) => {
+            const created = await transaction.duel.create({
+              data: {
+                creatorWallet: input.creatorWallet,
+                expiresAt: input.expiresAt,
+                houseOpponent: input.houseOpponent,
+                id: input.id,
+                mode: toDatabaseMode(input.matchmakingMode),
+                ...(input.opponentJoinedAt
+                  ? { matchedAt: input.opponentJoinedAt, opponentJoinedAt: input.opponentJoinedAt }
+                  : {}),
+                ...(input.opponentWallet ? { opponentWallet: input.opponentWallet } : {}),
+                packId: input.pack.id,
+                packName: input.pack.name,
+                packProvider: input.pack.provider,
+                providerMode: toDatabaseProviderMode(input.providerMode),
+                ...(input.pack.providerPackId ? { providerPackId: input.pack.providerPackId } : {}),
+                stakeAmount: input.pack.price.amount,
+                stakeCurrency: input.pack.price.currency,
+                stakeDecimals: input.pack.price.decimals,
+                status: input.houseOpponent
+                  ? DatabaseDuelStatus.MATCHED
+                  : DatabaseDuelStatus.WAITING,
+                ...(input.pack.valuationPolicyHash
+                  ? { valuationPolicyHash: input.pack.valuationPolicyHash }
+                  : {}),
+              },
+            });
+            if (input.houseOpponent) {
+              await reserveHouseExposure(transaction, {
+                amount: input.pack.price.amount,
+                currency: input.pack.price.currency,
+                decimals: input.pack.price.decimals,
+                duelId: created.id,
+                playerWallet: input.creatorWallet,
+                tier: Number(input.pack.price.amount) / 10 ** input.pack.price.decimals,
+              });
+            }
+            await transaction.duelEvent.create({
+              data: {
+                data: {
+                  environment: 'solana-devnet',
+                  houseOpponent: input.houseOpponent,
+                  valuationPolicyHash: input.pack.valuationPolicyHash,
+                },
+                duelId: created.id,
+                id: createId('evt'),
+                sequence: 1,
+                toStatus: created.status,
+                type: 'duel.created',
+              },
+            });
+            await this.storeIdempotency(
+              transaction,
+              scope,
+              idempotencyKey,
+              requestHash,
+              created.id,
+              201,
+            );
+            return created;
           },
-        });
-        await transaction.duelEvent.create({
-          data: {
-            data: {
-              environment: 'solana-devnet',
-              houseOpponent: input.houseOpponent,
-              valuationPolicyHash: input.pack.valuationPolicyHash,
-            },
-            duelId: created.id,
-            id: createId('evt'),
-            sequence: 1,
-            toStatus: created.status,
-            type: 'duel.created',
-          },
-        });
-        await this.storeIdempotency(
-          transaction,
-          scope,
-          idempotencyKey,
-          requestHash,
-          created.id,
-          201,
+          { isolationLevel: 'Serializable' },
         );
-        return created;
-      });
-      return toDuel(row);
-    } catch (error) {
-      const concurrentReplay = await this.replay(scope, idempotencyKey, requestHash);
-      if (concurrentReplay) return concurrentReplay;
-      throw error;
+        return toDuel(row);
+      } catch (error) {
+        const concurrentReplay = await this.replay(scope, idempotencyKey, requestHash);
+        if (concurrentReplay) return concurrentReplay;
+        if (shouldRetryTreasuryTransaction(error, attempt)) continue;
+        throw error;
+      }
     }
+    throw new ConflictException('House treasury reservation could not be serialized');
   }
 
   async join(

@@ -23,6 +23,13 @@ import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type { MatchmakingMode } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
+import {
+  HOUSE_TREASURY_SNAPSHOT_ID,
+  type HouseTreasurySnapshotEvidence,
+  houseTreasuryConfigurationErrors,
+  houseTreasurySnapshotIsUsable,
+  readHouseTreasuryConfig,
+} from '../treasury/house-treasury.policy.js';
 import type {
   AdminDuelQuery,
   EmergencyPauseRequest,
@@ -394,14 +401,30 @@ export class AdminService {
   async getReadiness() {
     let databaseReady = true;
     let unboundEscrowAlerts: number | null = null;
+    let treasurySnapshot: HouseTreasurySnapshotEvidence | null = null;
     try {
-      const [, alertCount] = await Promise.all([
+      const [, alertCount, snapshot] = await Promise.all([
         this.database.duel.count({ where: { id: '__readiness__' } }),
         this.database.duelTransaction.count({
           where: { recoveredAt: null, recoveryCandidateAt: { not: null } },
         }),
+        this.database.houseTreasurySnapshot.findUnique({
+          select: {
+            balanceAmount: true,
+            balanceDecimals: true,
+            delegate: true,
+            delegatedAmount: true,
+            mint: true,
+            network: true,
+            tokenAccount: true,
+            verifiedAt: true,
+            wallet: true,
+          },
+          where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
+        }),
       ]);
       unboundEscrowAlerts = alertCount;
+      treasurySnapshot = snapshot;
     } catch {
       databaseReady = false;
     }
@@ -414,6 +437,11 @@ export class AdminService {
     const providerMode = process.env.OPENPACKSDUEL_PROVIDER_MODE ?? 'mock';
     const collectorRequired = providerMode === 'collector-crypt-sandbox';
     const limits = readRiskLimits();
+    const treasuryConfig = readHouseTreasuryConfig();
+    const treasuryConfigurationErrors = houseTreasuryConfigurationErrors(treasuryConfig);
+    const treasurySnapshotFresh = Boolean(
+      treasurySnapshot && houseTreasurySnapshotIsUsable(treasurySnapshot, treasuryConfig),
+    );
     return {
       database: { reachable: databaseReady },
       recovery: {
@@ -435,14 +463,23 @@ export class AdminService {
         verifiedDevnet: rpcVerifiedDevnet,
       },
       treasury: {
-        configured:
-          Boolean(process.env.ESCROW_PROGRAM_ID) &&
-          Boolean(process.env.OPENPACKSDUEL_HOUSE_DEVNET_WALLET),
+        configured: treasuryConfigurationErrors.length === 0,
+        configurationErrors: treasuryConfigurationErrors,
         entryEnabled: limits.houseEnabled,
         escrowProgramIdConfigured: Boolean(process.env.ESCROW_PROGRAM_ID),
+        finalizedBalanceSnapshotFresh: treasurySnapshotFresh,
+        finalizedBalanceVerifiedAt: treasurySnapshot?.verifiedAt.toISOString() ?? null,
+        fundingSignerConfigured: Boolean(treasuryConfig.fundingSigner),
         houseEnabled: limits.houseEnabled,
         houseWalletConfigured: Boolean(process.env.OPENPACKSDUEL_HOUSE_DEVNET_WALLET),
-        verified: false,
+        separationOfDuties: Boolean(
+          treasuryConfig.withdrawalAuthority &&
+            treasuryConfig.withdrawalAuthority !== treasuryConfig.houseWallet &&
+            treasuryConfig.withdrawalAuthority !== treasuryConfig.fundingSigner,
+        ),
+        usdcTokenAccountConfigured: Boolean(treasuryConfig.tokenAccount),
+        verified: treasuryConfigurationErrors.length === 0 && treasurySnapshotFresh,
+        withdrawalAuthorityConfigured: Boolean(treasuryConfig.withdrawalAuthority),
       },
       workers: { cronSecretConfigured: Boolean(process.env.CRON_SECRET) },
     };
