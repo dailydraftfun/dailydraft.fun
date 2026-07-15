@@ -60,6 +60,32 @@ enum DuelTransactionStatus {
   EXPIRED
 }
 
+enum ProductEventName {
+  LOBBY_VIEWED
+  TIER_SELECTED
+  WALLET_CONNECTED
+  WALLET_AUTHENTICATED
+  DUEL_CREATED
+  DUEL_MATCHED
+  DUEL_FUNDED
+  PACK_REVEAL_STARTED
+  PACK_REVEALED
+  DUEL_SHARED
+  DUEL_REMATCHED
+  DUEL_CANCELLED
+  DUEL_REFUNDED
+  DUEL_SETTLED
+  SETTLEMENT_FAILED
+  PROVIDER_ERROR
+  SOLANA_RPC_ERROR
+  UI_ERROR
+}
+
+enum ProductEventSource {
+  CLIENT
+  SERVER
+}
+
 model Duel {
   id                  String            @id
   mode                DuelMode
@@ -224,4 +250,20 @@ model WalletSession {
 
   @@index([wallet, expiresAt])
   @@index([expiresAt, revokedAt])
+}
+
+model ProductEvent {
+  id        String             @id
+  name      ProductEventName
+  source    ProductEventSource
+  sessionId String?
+  duelId    String?
+  status    DuelStatus?
+  tier      Int?
+  mode      DuelMode?
+  createdAt DateTime           @default(now())
+
+  @@index([createdAt, name])
+  @@index([sessionId, createdAt])
+  @@index([duelId, createdAt])
 }

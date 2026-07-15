@@ -4,11 +4,14 @@ import {
   type ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 @Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
+  readonly #logger = new Logger(ProblemDetailsFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const context = host.switchToHttp();
     const request = context.getRequest<FastifyRequest>();
@@ -16,6 +19,16 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     const status = exception instanceof HttpException ? exception.getStatus() : 500;
     const detail = getDetail(exception, status);
     const title = getTitle(status);
+    const log = JSON.stringify({
+      duelId: getDuelId(request.params),
+      event: 'http_request_failed',
+      method: request.method,
+      requestId: request.id,
+      route: request.routeOptions.url,
+      status,
+    });
+    if (status >= 500) this.#logger.error(log);
+    else this.#logger.warn(log);
 
     response
       .status(status)
@@ -28,6 +41,13 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         requestId: request.id,
       });
   }
+}
+
+function getDuelId(params: unknown): string | null {
+  if (!params || typeof params !== 'object' || !('duelId' in params)) return null;
+  return typeof params.duelId === 'string' && /^duel_[A-Za-z0-9]{12,64}$/.test(params.duelId)
+    ? params.duelId
+    : null;
 }
 
 function getDetail(exception: unknown, status: number): string {

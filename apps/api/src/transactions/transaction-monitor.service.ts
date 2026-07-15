@@ -1,5 +1,7 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
 
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { AnalyticsService } from '../analytics/analytics.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
@@ -21,6 +23,7 @@ export class TransactionMonitorService {
   constructor(
     private readonly repository: TransactionMonitorRepository,
     private readonly rpc: SolanaRpcGateway,
+    @Optional() private readonly analytics?: AnalyticsService,
   ) {}
 
   async bindSubmission(input: {
@@ -34,7 +37,7 @@ export class TransactionMonitorService {
     if (!requiredProgramId) {
       throw new ServiceUnavailableException('Escrow program is not configured');
     }
-    await this.assertDevnet();
+    await this.assertDevnet(input.duelId);
     return this.repository.bindSubmission({ ...input, requiredProgramId });
   }
 
@@ -46,9 +49,17 @@ export class TransactionMonitorService {
     const summary = emptySummary();
     if (transactions.length === 0) return summary;
 
-    const statuses = await this.rpc.getSignatureStatuses(
-      transactions.map((transaction) => transaction.signature),
-    );
+    let statuses: Array<SolanaSignatureStatus | null>;
+    try {
+      statuses = await this.rpc.getSignatureStatuses(
+        transactions.map((transaction) => transaction.signature),
+      );
+    } catch (error) {
+      if (error instanceof SolanaRpcUnavailableError) {
+        await this.analytics?.recordServer({ name: 'solana_rpc_error' });
+      }
+      throw error;
+    }
     if (statuses.length !== transactions.length) {
       throw new ServiceUnavailableException('Solana devnet RPC returned an incomplete response');
     }
@@ -69,11 +80,17 @@ export class TransactionMonitorService {
         ) {
           await this.repository.recordTerminal(transaction.id, 'expired', 'BLOCKHASH_EXPIRED', now);
           summary.expired += 1;
+          await this.recordSettlementFailure(transaction);
           continue;
         }
         await this.reconcileOne(transaction, status, now, summary);
       } catch (error) {
         if (error instanceof SolanaRpcUnavailableError) {
+          await this.analytics?.recordServer({
+            duelId: transaction.duelId,
+            name: 'solana_rpc_error',
+            status: transaction.duelStatus,
+          });
           await this.recordPending(transaction, now, summary);
           continue;
         }
@@ -97,6 +114,7 @@ export class TransactionMonitorService {
         now,
       );
       summary.failed += 1;
+      await this.recordSettlementFailure(transaction);
       return;
     }
     if (
@@ -129,8 +147,13 @@ export class TransactionMonitorService {
       return;
     }
     const advanced = await this.repository.recordFinalized(transaction.id, now);
-    if (advanced) summary.finalized += 1;
-    else summary.failed += 1;
+    if (advanced) {
+      summary.finalized += 1;
+      await this.recordFinalizedLifecycle(transaction.duelId);
+    } else {
+      summary.failed += 1;
+      await this.recordSettlementFailure(transaction);
+    }
   }
 
   private async recordPending(
@@ -144,15 +167,46 @@ export class TransactionMonitorService {
     if (markStuck) summary.stuck += 1;
   }
 
-  private async assertDevnet(): Promise<void> {
+  private async assertDevnet(duelId?: string): Promise<void> {
     try {
       await this.rpc.assertDevnet();
     } catch (error) {
       if (error instanceof SolanaRpcUnavailableError) {
+        await this.analytics?.recordServer({
+          ...(duelId ? { duelId } : {}),
+          name: 'solana_rpc_error',
+        });
         throw new ServiceUnavailableException(error.message);
       }
       throw error;
     }
+  }
+
+  private async recordFinalizedLifecycle(duelId: string): Promise<void> {
+    const duel = await this.repository.getDuelAnalytics(duelId);
+    if (!duel || !['funded', 'refunded', 'settled'].includes(duel.status)) return;
+    const name =
+      duel.status === 'funded'
+        ? 'duel_funded'
+        : duel.status === 'refunded'
+          ? 'duel_refunded'
+          : 'duel_settled';
+    await this.analytics?.recordServer({
+      duelId,
+      mode: duel.mode,
+      name,
+      status: duel.status,
+      tier: duel.tier,
+    });
+  }
+
+  private async recordSettlementFailure(transaction: MonitoredTransaction): Promise<void> {
+    if (transaction.action !== 'settle') return;
+    await this.analytics?.recordServer({
+      duelId: transaction.duelId,
+      name: 'settlement_failed',
+      status: transaction.duelStatus,
+    });
   }
 }
 

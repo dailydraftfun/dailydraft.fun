@@ -1,5 +1,7 @@
-import { BadGatewayException, ConflictException, Injectable } from '@nestjs/common';
+import { BadGatewayException, ConflictException, Injectable, Optional } from '@nestjs/common';
 
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { AnalyticsService } from '../analytics/analytics.service.js';
 import type { Duel } from '../domain.js';
 import type { DuelSide, ProviderPackSnapshot } from '../providers/pack-provider.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
@@ -17,6 +19,7 @@ export class DuelOpeningService {
     private readonly duels: DuelsService,
     private readonly repository: DuelRepository,
     private readonly providers: PackProviderService,
+    @Optional() private readonly analytics?: AnalyticsService,
   ) {}
 
   async open(duelId: string, idempotencyKey: string): Promise<Duel> {
@@ -52,10 +55,27 @@ export class DuelOpeningService {
     if (duel.status !== 'opening') {
       throw new ConflictException(`Duel packs cannot open from ${duel.status}`);
     }
+    const tier = Number(duel.stake.amount) / 10 ** duel.stake.decimals;
+    await this.analytics?.recordServer({
+      duelId,
+      mode: duel.matchmakingMode,
+      name: 'pack_reveal_started',
+      status: 'opening',
+      tier,
+    });
     const [creator, opponent] = await Promise.all([
       this.openSide(duel, 'creator', provider, providerPackId, escrowAddress),
       this.openSide(duel, 'opponent', provider, providerPackId, escrowAddress),
-    ]);
+    ]).catch(async (error: unknown) => {
+      await this.analytics?.recordServer({
+        duelId,
+        mode: duel.matchmakingMode,
+        name: 'provider_error',
+        status: 'failed',
+        tier,
+      });
+      throw error;
+    });
     const comparison = compareInsuredValues(creator, opponent, {
       creatorWallet: duel.creatorWallet,
       duelId,
@@ -65,7 +85,7 @@ export class DuelOpeningService {
       providerMode: duel.providerMode,
     });
 
-    return this.repository.resolveOpenedPacks({
+    const resolved = await this.repository.resolveOpenedPacks({
       comparison,
       creator,
       duelId,
@@ -80,6 +100,14 @@ export class DuelOpeningService {
         opponentResultHash: opponent.resultHash,
       }),
     });
+    await this.analytics?.recordServer({
+      duelId,
+      mode: duel.matchmakingMode,
+      name: 'pack_revealed',
+      status: resolved.status,
+      tier,
+    });
+    return resolved;
   }
 
   private async openSide(

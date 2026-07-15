@@ -1,3 +1,4 @@
+import { getAnalyticsSessionId } from '../analytics-client';
 import { SOLANA_CHAIN, SOLANA_CLUSTER } from './config';
 
 export type DuelOpponentType = 'direct' | 'matchmaking' | 'house';
@@ -34,7 +35,20 @@ export type DurableDuel = {
   id: string;
   matchmakingMode: 'direct' | 'house' | 'open';
   opponentWallet?: string | null;
-  status: string;
+  status:
+    | 'waiting'
+    | 'matched'
+    | 'committing'
+    | 'funded'
+    | 'opening'
+    | 'awaiting_assets'
+    | 'settling'
+    | 'settled'
+    | 'cancelling'
+    | 'cancelled'
+    | 'refunding'
+    | 'refunded'
+    | 'failed';
 };
 
 export function createPreviewIntent(request: DuelIntentRequest): DuelTransactionIntent {
@@ -95,6 +109,7 @@ export async function createDuel(
 ): Promise<DurableDuel> {
   return authenticatedMutation<DurableDuel>('/duels', sessionToken, {
     ...input,
+    analyticsSessionId: getAnalyticsSessionId(),
     expiresAt: new Date(Date.now() + 15 * 60 * 1_000).toISOString(),
     packId: 'pokemon_50',
   });
@@ -109,6 +124,7 @@ export async function joinDuel(
     `/duels/${encodeURIComponent(duelId)}/join`,
     sessionToken,
     {
+      analyticsSessionId: getAnalyticsSessionId(),
       wallet,
     },
   );
@@ -124,6 +140,7 @@ export async function cancelDuel(
     `/duels/${encodeURIComponent(duelId)}/cancel`,
     sessionToken,
     {
+      analyticsSessionId: getAnalyticsSessionId(),
       reason,
       wallet,
     },

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
+import { trackProductEvent } from '../analytics-client';
 import {
   createWalletSession,
   requestWalletChallenge,
@@ -106,6 +107,7 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
       const signature = await wallet.signMessage(challenge.message);
       const nextSession = await createWalletSession(challenge, signature);
       setSession(nextSession);
+      trackProductEvent({ name: 'wallet_authenticated' });
       setChallenge(null);
       setStatus('authenticated');
       return true;

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   type DatabaseClient,
+  DuelMode as DatabaseDuelMode,
   DuelStatus as DatabaseDuelStatus,
   DuelTransactionAction,
   DuelTransactionStatus,
@@ -23,6 +24,7 @@ import {
 import {
   type BindSubmissionInput,
   type BoundSubmission,
+  type TransactionDuelAnalytics,
   TransactionMonitorRepository,
 } from './transaction-monitor.repository.js';
 import type {
@@ -193,6 +195,24 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
         },
       ];
     });
+  }
+
+  async getDuelAnalytics(duelId: string): Promise<TransactionDuelAnalytics | null> {
+    const duel = await this.database.duel.findUnique({
+      select: { mode: true, stakeAmount: true, stakeDecimals: true, status: true },
+      where: { id: duelId },
+    });
+    if (!duel) return null;
+    return {
+      mode:
+        duel.mode === DatabaseDuelMode.DIRECT
+          ? 'direct'
+          : duel.mode === DatabaseDuelMode.HOUSE
+            ? 'house'
+            : 'open',
+      status: toApiStatus(duel.status),
+      tier: Number(duel.stakeAmount) / 10 ** duel.stakeDecimals,
+    };
   }
 
   async recordConfirmed(transactionId: string, now: Date, nextCheckAt: Date): Promise<void> {
