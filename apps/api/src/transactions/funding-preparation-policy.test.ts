@@ -10,6 +10,8 @@ import {
 } from './duel-funding.service.js';
 import {
   isIdempotentSubmissionReplay,
+  recoveryAlertRouting,
+  recoveryAlertTarget,
   recoveryStatusForTerminalTransaction,
   shouldEnterCommittingOnCreatorSubmission,
 } from './prisma-transaction-monitor.repository.js';
@@ -129,5 +131,36 @@ describe('funding preparation policy', () => {
         wallet: 'operator',
       }),
     ).toBeNull();
+  });
+
+  test('routes exact unbound funding from cancelled custody into refunding only', () => {
+    expect(recoveryAlertTarget(DuelStatus.CANCELLED)).toBe(DuelStatus.REFUNDING);
+    expect(recoveryAlertTarget(DuelStatus.REFUNDED)).toBe(DuelStatus.REFUNDED);
+    expect(recoveryAlertTarget(DuelStatus.SETTLED)).toBe(DuelStatus.SETTLED);
+  });
+
+  test('persists a validated missing escrow PDA and never overwrites a conflicting PDA', () => {
+    expect(
+      recoveryAlertRouting({
+        currentStatus: DuelStatus.CANCELLED,
+        storedEscrowAddress: null,
+        validatedEscrowAddress: 'validated-escrow',
+      }),
+    ).toEqual({
+      escrowAddress: 'validated-escrow',
+      escrowConflict: false,
+      targetStatus: DuelStatus.REFUNDING,
+    });
+    expect(
+      recoveryAlertRouting({
+        currentStatus: DuelStatus.CANCELLED,
+        storedEscrowAddress: 'different-escrow',
+        validatedEscrowAddress: 'validated-escrow',
+      }),
+    ).toEqual({
+      escrowAddress: 'different-escrow',
+      escrowConflict: true,
+      targetStatus: DuelStatus.CANCELLED,
+    });
   });
 });

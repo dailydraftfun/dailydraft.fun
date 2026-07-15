@@ -1,5 +1,9 @@
 import type { DuelStatus } from '../domain.js';
-import type { MonitoredTransaction } from './transaction-monitor.types.js';
+import type {
+  MonitoredTransaction,
+  PreparedRecoveryIntent,
+  RecoveryAlertCode,
+} from './transaction-monitor.types.js';
 
 export interface TransactionDuelAnalytics {
   mode: 'direct' | 'house' | 'open';
@@ -14,6 +18,7 @@ export interface BindSubmissionInput {
   requiredProgramId: string;
   signature: string;
   transactionId: string;
+  recovery?: boolean;
 }
 
 export interface BoundSubmission {
@@ -25,7 +30,30 @@ export interface BoundSubmission {
 
 export abstract class TransactionMonitorRepository {
   abstract bindSubmission(input: BindSubmissionInput): Promise<BoundSubmission>;
+  abstract bindRecoveredSubmission(input: {
+    duelId: string;
+    requiredProgramId: string;
+    signature: string;
+    transactionId: string;
+  }): Promise<BoundSubmission>;
   abstract findPending(limit: number, now: Date): Promise<MonitoredTransaction[]>;
+  abstract findPreparedForRecovery(
+    limit: number,
+    preparedAfter: Date,
+    now: Date,
+  ): Promise<PreparedRecoveryIntent[]>;
+  abstract recordRecoveryAttempt(
+    transactionId: string,
+    now: Date,
+    nextRecoveryCheckAt: Date,
+  ): Promise<void>;
+  abstract recordRecoveryAlert(input: {
+    code: RecoveryAlertCode;
+    nextRecoveryCheckAt: Date;
+    now: Date;
+    signature: string;
+    transactionId: string;
+  }): Promise<void>;
   getDuelAnalytics(_duelId: string): Promise<TransactionDuelAnalytics | null> {
     return Promise.resolve(null);
   }

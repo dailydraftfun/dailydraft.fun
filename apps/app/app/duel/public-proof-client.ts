@@ -70,11 +70,23 @@ export type PublicDuelReceipt = {
     }>;
     solana: Array<{
       action: string;
+      bindingSource: 'api-submission' | 'rpc-recovery';
       explorerUrl: string;
       finalizedAt: string | null;
+      recoveredAt: string | null;
       signature: string;
       status: string;
     }>;
+  };
+  recovery: {
+    alerts: Array<{
+      action: 'fund';
+      code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH';
+      detectedAt: string;
+      explorerUrl: string;
+      signature: string;
+    }>;
+    status: 'attention-required' | 'none' | 'recovered';
   };
   result: {
     comparisonMetric: 'insured-value';

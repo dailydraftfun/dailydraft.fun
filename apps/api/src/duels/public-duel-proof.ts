@@ -59,6 +59,10 @@ export interface PublicDuelReceipt {
     provider: PublicProviderReference[];
     solana: PublicSolanaReference[];
   };
+  recovery: {
+    alerts: PublicRecoveryAlert[];
+    status: 'attention-required' | 'none' | 'recovered';
+  };
   result: PublicDuelResult | null;
   schemaVersion: 'openpacksduel.receipt.v1';
 }
@@ -78,10 +82,20 @@ export interface PublicProviderReference {
 
 export interface PublicSolanaReference {
   action: DuelTransactionRecord['action'];
+  bindingSource: 'api-submission' | 'rpc-recovery';
   explorerUrl: string;
   finalizedAt: string | null;
+  recoveredAt: string | null;
   signature: string;
   status: DuelTransactionRecord['status'];
+}
+
+export interface PublicRecoveryAlert {
+  action: 'fund';
+  code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH';
+  detectedAt: string;
+  explorerUrl: string;
+  signature: string;
 }
 
 export interface PublicDuelResult {
@@ -168,11 +182,35 @@ export function buildPublicDuelReceipt(
   );
   const solana = publicTransactions.map((transaction) => ({
     action: transaction.action,
+    bindingSource: transaction.recoveredAt
+      ? ('rpc-recovery' as const)
+      : ('api-submission' as const),
     explorerUrl: `https://explorer.solana.com/tx/${encodeURIComponent(transaction.signature)}?cluster=devnet`,
     finalizedAt: transaction.finalizedAt ?? null,
+    recoveredAt: transaction.recoveredAt ?? null,
     signature: transaction.signature,
     status: transaction.status,
   }));
+  const recoveryAlerts = transactions.flatMap((transaction): PublicRecoveryAlert[] => {
+    if (
+      transaction.action !== 'fund' ||
+      transaction.recoveryAlertCode !== 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH' ||
+      !transaction.recoveryCandidateAt ||
+      !transaction.recoveryCandidateSignature ||
+      transaction.recoveredAt
+    ) {
+      return [];
+    }
+    return [
+      {
+        action: 'fund',
+        code: transaction.recoveryAlertCode,
+        detectedAt: transaction.recoveryCandidateAt,
+        explorerUrl: `https://explorer.solana.com/tx/${encodeURIComponent(transaction.recoveryCandidateSignature)}?cluster=devnet`,
+        signature: transaction.recoveryCandidateSignature,
+      },
+    ];
+  });
   const funding = transactions.filter(
     (transaction) => transaction.action === 'fund' && transaction.status === 'finalized',
   );
@@ -259,6 +297,15 @@ export function buildPublicDuelReceipt(
       reason: 'No explicit player publication consent is stored for this duel.',
     },
     references: { provider, solana },
+    recovery: {
+      alerts: recoveryAlerts,
+      status:
+        recoveryAlerts.length > 0
+          ? 'attention-required'
+          : transactions.some((transaction) => transaction.recoveredAt)
+            ? 'recovered'
+            : 'none',
+    },
     result,
     schemaVersion: 'openpacksduel.receipt.v1',
   };

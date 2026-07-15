@@ -30,6 +30,8 @@ import {
 import type {
   ExpectedAccountConstraint,
   MonitoredTransaction,
+  PreparedRecoveryIntent,
+  RecoveryAlertCode,
 } from './transaction-monitor.types.js';
 
 const ACTIVE_STATUS_VALUES: DuelTransactionStatus[] = [
@@ -108,6 +110,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
         throw new ConflictException('Expected signer is not bound to the target instruction');
       }
       let duelStatus = transaction.duel.status;
+      let recoveryEventRecorded = false;
       if (shouldEnterCommittingOnCreatorSubmission(transaction)) {
         const metadata = parseFundingSubmissionMetadata(transaction.metadata);
         if (!metadata) {
@@ -136,6 +139,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
               feeAmountLamports: metadata.feeAmountLamports,
               feeAsset: 'WSOL',
               signature: input.signature,
+              ...(input.recovery ? { submissionSource: 'rpc-discovery' } : {}),
               transactionId: transaction.id,
             },
             duelId: transaction.duel.id,
@@ -143,10 +147,13 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
             id: createId('evt'),
             sequence: transaction.duel.version + 1,
             toStatus: DatabaseDuelStatus.COMMITTING,
-            type: 'duel.funding_submitted',
+            type: input.recovery
+              ? 'duel.transaction_submission_recovered'
+              : 'duel.funding_submitted',
           },
         });
         duelStatus = DatabaseDuelStatus.COMMITTING;
+        recoveryEventRecorded = input.recovery === true;
       }
       if (duelStatus !== transaction.expectedFromStatus) {
         throw new ConflictException('Duel state does not match the transaction intent');
@@ -167,9 +174,44 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       }
 
       const submittedAt = new Date();
+      if (input.recovery && !recoveryEventRecorded) {
+        const changed = await database.duel.updateMany({
+          data: { version: { increment: 1 } },
+          where: {
+            id: transaction.duel.id,
+            status: duelStatus,
+            version: transaction.duel.version,
+          },
+        });
+        if (changed.count !== 1) {
+          throw new ConflictException('Duel changed during recovered submission binding');
+        }
+        await database.duelEvent.create({
+          data: {
+            actorWallet: transaction.wallet,
+            data: {
+              signature: input.signature,
+              submissionSource: 'rpc-discovery',
+              transactionId: transaction.id,
+            },
+            duelId: transaction.duel.id,
+            fromStatus: duelStatus,
+            id: createId('evt'),
+            sequence: transaction.duel.version + 1,
+            toStatus: duelStatus,
+            type: 'duel.transaction_submission_recovered',
+          },
+        });
+      }
       const updated = await database.duelTransaction.updateMany({
         data: {
+          ...(input.recovery ? { lastRecoveryCheckedAt: submittedAt } : {}),
           nextCheckAt: submittedAt,
+          nextRecoveryCheckAt: null,
+          recoveryAlertCode: null,
+          recoveryCandidateAt: null,
+          recoveryCandidateSignature: null,
+          recoveredAt: input.recovery ? submittedAt : null,
           signature: input.signature,
           status: DuelTransactionStatus.SUBMITTED,
           submissionIdempotencyKey: input.idempotencyKey,
@@ -180,6 +222,19 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       if (updated.count !== 1)
         throw new ConflictException('Transaction state changed during submit');
       return toBoundSubmission(transaction.id, transaction.duelId, input.signature);
+    });
+  }
+
+  async bindRecoveredSubmission(input: {
+    duelId: string;
+    requiredProgramId: string;
+    signature: string;
+    transactionId: string;
+  }): Promise<BoundSubmission> {
+    return this.bindSubmission({
+      ...input,
+      idempotencyKey: recoveredSubmissionKey(input.transactionId, input.signature),
+      recovery: true,
     });
   }
 
@@ -235,6 +290,187 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           wallet: row.wallet,
         },
       ];
+    });
+  }
+
+  async findPreparedForRecovery(
+    limit: number,
+    preparedAfter: Date,
+    now: Date,
+  ): Promise<PreparedRecoveryIntent[]> {
+    const rows = await this.database.duelTransaction.findMany({
+      include: {
+        duel: {
+          select: {
+            creatorWallet: true,
+            opponentWallet: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: [{ nextRecoveryCheckAt: 'asc' }, { createdAt: 'asc' }],
+      take: limit,
+      where: {
+        action: DuelTransactionAction.FUND,
+        createdAt: { gte: preparedAfter },
+        OR: [{ nextRecoveryCheckAt: null }, { nextRecoveryCheckAt: { lte: now } }],
+        recoveredAt: null,
+        signature: null,
+        status: DuelTransactionStatus.PREPARED,
+      },
+    });
+
+    return rows.flatMap((row) => {
+      const expectedAccounts = parseExpectedAccounts(row.expectedAccounts);
+      const expectedInstructionAccounts = parseExpectedAccounts(row.expectedInstructionAccounts);
+      const metadata = parseFundingSubmissionMetadata(row.metadata);
+      if (
+        !row.expectedSigner ||
+        row.expectedSigner !== row.wallet ||
+        ![row.duel.creatorWallet, row.duel.opponentWallet].includes(row.wallet) ||
+        !row.expectedProgramId ||
+        !row.expectedMessageHash ||
+        !expectedAccounts ||
+        !row.expectedInstructionDataHash ||
+        !expectedInstructionAccounts ||
+        !row.expectedFromStatus ||
+        !row.expectedToStatus ||
+        row.expectedFromStatus !== DatabaseDuelStatus.COMMITTING ||
+        row.expectedToStatus !== DatabaseDuelStatus.FUNDED ||
+        !row.serializedTransaction ||
+        !row.recentBlockhash ||
+        row.lastValidBlockHeight === null ||
+        !metadata ||
+        !containsWritableAddress(expectedAccounts, metadata.escrowAddress) ||
+        !containsWritableAddress(expectedInstructionAccounts, metadata.escrowAddress) ||
+        !expectedInstructionAccounts.some(
+          (account) => account.address === row.expectedSigner && account.isSigner === true,
+        )
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          action: 'fund' as const,
+          allowMultipleInstructionMatches: row.allowMultipleInstructionMatches,
+          checkAttempts: row.checkAttempts,
+          duelId: row.duelId,
+          duelStatus: toApiStatus(row.duel.status),
+          escrowAddress: metadata.escrowAddress,
+          expectedAccounts,
+          expectedFromStatus: toApiStatus(row.expectedFromStatus),
+          expectedInstructionAccounts,
+          expectedInstructionDataHash: row.expectedInstructionDataHash,
+          expectedMessageHash: row.expectedMessageHash,
+          expectedProgramId: row.expectedProgramId,
+          expectedSigner: row.expectedSigner,
+          expectedToStatus: toApiStatus(row.expectedToStatus),
+          id: row.id,
+          lastValidBlockHeight: row.lastValidBlockHeight,
+          preparedAt: row.createdAt,
+          recentBlockhash: row.recentBlockhash,
+          recoveryCheckAttempts: row.recoveryCheckAttempts,
+          wallet: row.wallet,
+        },
+      ];
+    });
+  }
+
+  async recordRecoveryAttempt(
+    transactionId: string,
+    now: Date,
+    nextRecoveryCheckAt: Date,
+  ): Promise<void> {
+    await this.database.duelTransaction.updateMany({
+      data: {
+        lastRecoveryCheckedAt: now,
+        nextRecoveryCheckAt,
+        recoveryCheckAttempts: { increment: 1 },
+      },
+      where: {
+        id: transactionId,
+        signature: null,
+        status: DuelTransactionStatus.PREPARED,
+      },
+    });
+  }
+
+  async recordRecoveryAlert(input: {
+    code: RecoveryAlertCode;
+    nextRecoveryCheckAt: Date;
+    now: Date;
+    signature: string;
+    transactionId: string;
+  }): Promise<void> {
+    await this.database.$transaction(async (database) => {
+      const monitored = await database.duelTransaction.findUnique({
+        include: { duel: true },
+        where: { id: input.transactionId },
+      });
+      if (
+        !monitored ||
+        monitored.signature ||
+        monitored.status !== DuelTransactionStatus.PREPARED
+      ) {
+        return;
+      }
+      const isReplay =
+        monitored.recoveryAlertCode === input.code &&
+        monitored.recoveryCandidateSignature === input.signature;
+      const metadata = parseFundingSubmissionMetadata(monitored.metadata);
+      const routing = recoveryAlertRouting({
+        currentStatus: monitored.duel.status,
+        storedEscrowAddress: monitored.duel.escrowAddress,
+        validatedEscrowAddress: metadata?.escrowAddress ?? null,
+      });
+      await database.duelTransaction.update({
+        data: {
+          lastRecoveryCheckedAt: input.now,
+          nextRecoveryCheckAt: input.nextRecoveryCheckAt,
+          recoveryAlertCode: input.code,
+          recoveryCandidateAt: monitored.recoveryCandidateAt ?? input.now,
+          recoveryCandidateSignature: input.signature,
+          recoveryCheckAttempts: { increment: 1 },
+        },
+        where: { id: monitored.id },
+      });
+      if (isReplay && routing.targetStatus === monitored.duel.status) return;
+      const changed = await database.duel.updateMany({
+        data: {
+          escrowAddress: routing.escrowAddress,
+          status: routing.targetStatus,
+          version: { increment: 1 },
+        },
+        where: {
+          id: monitored.duel.id,
+          status: monitored.duel.status,
+          version: monitored.duel.version,
+        },
+      });
+      if (changed.count !== 1) {
+        throw new ConflictException('Duel changed during recovery alert recording');
+      }
+      await database.duelEvent.create({
+        data: {
+          data: {
+            action: 'fund',
+            code: input.code,
+            escrowConflict: routing.escrowConflict,
+            signature: input.signature,
+            transactionId: monitored.id,
+          },
+          duelId: monitored.duel.id,
+          fromStatus: monitored.duel.status,
+          id: createId('evt'),
+          sequence: monitored.duel.version + 1,
+          toStatus: routing.targetStatus,
+          type:
+            routing.targetStatus === DatabaseDuelStatus.REFUNDING
+              ? 'duel.unbound_funding_recovery_started'
+              : 'duel.transaction_recovery_alert',
+        },
+      });
     });
   }
 
@@ -642,6 +878,72 @@ function parseFundingSubmissionMetadata(
     return null;
   }
   return { escrowAddress: value.escrowAddress, feeAmountLamports: value.feeAmountLamports };
+}
+
+function containsWritableAddress(
+  constraints: ExpectedAccountConstraint[],
+  address: string,
+): boolean {
+  return constraints.some(
+    (constraint) => constraint.address === address && constraint.isWritable === true,
+  );
+}
+
+function recoveredSubmissionKey(transactionId: string, signature: string): string {
+  return `rpc-recovery:${transactionId}:${signature}`;
+}
+
+export function recoveryAlertTarget(status: DatabaseDuelStatus): DatabaseDuelStatus {
+  const recoverableStatuses = new Set<DatabaseDuelStatus>([
+    DatabaseDuelStatus.MATCHED,
+    DatabaseDuelStatus.COMMITTING,
+    DatabaseDuelStatus.FUNDED,
+    DatabaseDuelStatus.OPENING,
+    DatabaseDuelStatus.AWAITING_ASSETS,
+    DatabaseDuelStatus.SETTLING,
+    DatabaseDuelStatus.CANCELLING,
+    DatabaseDuelStatus.CANCELLED,
+    DatabaseDuelStatus.FAILED,
+  ]);
+  if (recoverableStatuses.has(status)) {
+    return DatabaseDuelStatus.REFUNDING;
+  }
+  return status;
+}
+
+export function recoveryAlertRouting(input: {
+  currentStatus: DatabaseDuelStatus;
+  storedEscrowAddress: string | null;
+  validatedEscrowAddress: string | null;
+}): {
+  escrowAddress: string | null;
+  escrowConflict: boolean;
+  targetStatus: DatabaseDuelStatus;
+} {
+  const targetStatus = recoveryAlertTarget(input.currentStatus);
+  if (targetStatus !== DatabaseDuelStatus.REFUNDING) {
+    return {
+      escrowAddress: input.storedEscrowAddress,
+      escrowConflict: false,
+      targetStatus,
+    };
+  }
+  const escrowConflict =
+    !input.validatedEscrowAddress ||
+    (Boolean(input.storedEscrowAddress) &&
+      input.storedEscrowAddress !== input.validatedEscrowAddress);
+  if (escrowConflict) {
+    return {
+      escrowAddress: input.storedEscrowAddress,
+      escrowConflict: true,
+      targetStatus: input.currentStatus,
+    };
+  }
+  return {
+    escrowAddress: input.validatedEscrowAddress,
+    escrowConflict: false,
+    targetStatus,
+  };
 }
 
 function toBoundSubmission(

@@ -206,6 +206,8 @@ export class AdminService {
             errorCode: true,
             id: true,
             providerReference: true,
+            recoveredAt: true,
+            recoveryCandidateAt: true,
             signature: true,
             status: true,
             stuckAt: true,
@@ -312,7 +314,17 @@ export class AdminService {
         id: transaction.id,
         lastCheckedAt: transaction.lastCheckedAt?.toISOString() ?? null,
         providerReference: transaction.providerReference,
+        recoveredAt: transaction.recoveredAt?.toISOString() ?? null,
+        recoveryAlertCode: transaction.recoveryAlertCode,
+        recoveryCandidateAt: transaction.recoveryCandidateAt?.toISOString() ?? null,
+        recoveryCandidateSignature: transaction.recoveryCandidateSignature,
+        recoveryCheckAttempts: transaction.recoveryCheckAttempts,
         signature: transaction.signature,
+        submissionSource: transaction.recoveredAt
+          ? 'rpc-recovery'
+          : transaction.submittedAt && transaction.signature
+            ? 'api-submission'
+            : null,
         status: transaction.status.toLowerCase(),
         stuckAt: transaction.stuckAt?.toISOString() ?? null,
         wallet: transaction.wallet,
@@ -332,7 +344,7 @@ export class AdminService {
 
   async getRiskSummary() {
     const limits = readRiskLimits();
-    const [duels, failedDuels, stuckTransactions] = await Promise.all([
+    const [duels, failedDuels, stuckTransactions, unboundEscrowAlerts] = await Promise.all([
       this.database.duel.findMany({
         select: {
           creatorWallet: true,
@@ -345,6 +357,9 @@ export class AdminService {
       }),
       this.database.duel.count({ where: { status: DuelStatus.FAILED } }),
       this.database.duelTransaction.count({ where: { stuckAt: { not: null } } }),
+      this.database.duelTransaction.count({
+        where: { recoveredAt: null, recoveryCandidateAt: { not: null } },
+      }),
     ]);
     const tiers = new Map<number, number>();
     const wallets = new Map<string, number>();
@@ -367,6 +382,7 @@ export class AdminService {
       failedDuels,
       limits,
       stuckTransactions,
+      unboundEscrowAlerts,
       tiers: [...tiers.entries()]
         .sort(([left], [right]) => left - right)
         .map(([tier, activeDuels]) => ({ activeDuels, tier })),
@@ -375,8 +391,15 @@ export class AdminService {
 
   async getReadiness() {
     let databaseReady = true;
+    let unboundEscrowAlerts: number | null = null;
     try {
-      await this.database.duel.count({ where: { id: '__readiness__' } });
+      const [, alertCount] = await Promise.all([
+        this.database.duel.count({ where: { id: '__readiness__' } }),
+        this.database.duelTransaction.count({
+          where: { recoveredAt: null, recoveryCandidateAt: { not: null } },
+        }),
+      ]);
+      unboundEscrowAlerts = alertCount;
     } catch {
       databaseReady = false;
     }
@@ -391,6 +414,10 @@ export class AdminService {
     const limits = readRiskLimits();
     return {
       database: { reachable: databaseReady },
+      recovery: {
+        ready: unboundEscrowAlerts === 0,
+        unboundEscrowAlerts,
+      },
       provider: {
         configured:
           providerMode === 'mock' ||
@@ -488,6 +515,11 @@ function buildAttentionWhere(query: AdminDuelQuery, stuckBefore: Date): Prisma.D
     OR: [
       { fundedAt: { lt: stuckBefore }, status: DuelStatus.FUNDED },
       { transactions: { some: { stuckAt: { not: null } } } },
+      {
+        transactions: {
+          some: { recoveredAt: null, recoveryCandidateAt: { not: null } },
+        },
+      },
     ],
   };
   const failed: Prisma.DuelWhereInput = {
@@ -533,7 +565,12 @@ function attentionReasons(
   duel: {
     fundedAt: Date | null;
     status: DuelStatus;
-    transactions: Array<{ status: DuelTransactionStatus; stuckAt: Date | null }>;
+    transactions: Array<{
+      recoveredAt: Date | null;
+      recoveryCandidateAt: Date | null;
+      status: DuelTransactionStatus;
+      stuckAt: Date | null;
+    }>;
   },
   stuckBefore: Date,
 ): string[] {
@@ -544,6 +581,13 @@ function attentionReasons(
   }
   if (duel.transactions.some((transaction) => transaction.stuckAt))
     reasons.add('transaction_stuck');
+  if (
+    duel.transactions.some(
+      (transaction) => transaction.recoveryCandidateAt && !transaction.recoveredAt,
+    )
+  ) {
+    reasons.add('unbound_finalized_escrow');
+  }
   if (
     duel.transactions.some(
       (transaction) =>

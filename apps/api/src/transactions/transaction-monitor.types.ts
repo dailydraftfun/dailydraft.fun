@@ -38,6 +38,15 @@ export interface MonitoredTransaction {
   wallet: string;
 }
 
+export interface PreparedRecoveryIntent
+  extends Omit<MonitoredTransaction, 'signature' | 'status' | 'submittedAt'> {
+  escrowAddress: string;
+  preparedAt: Date;
+  recoveryCheckAttempts: number;
+}
+
+export type RecoveryAlertCode = 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH';
+
 export interface ReconciliationSummary {
   checked: number;
   confirmed: number;
@@ -45,7 +54,20 @@ export interface ReconciliationSummary {
   failed: number;
   finalized: number;
   pending: number;
+  recoveryCandidates: number;
+  recoveryChecked: number;
+  recoveryDeferred: number;
+  recoveryErrors: number;
+  recoveryAlerts: number;
+  recoveryRejected: number;
+  recovered: number;
   stuck: number;
+}
+
+export interface SolanaAddressSignature {
+  blockTime: number | null;
+  confirmationStatus: 'finalized';
+  signature: string;
 }
 
 export interface SolanaSignatureStatus {

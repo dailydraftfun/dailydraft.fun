@@ -1,4 +1,9 @@
-import { Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { AnalyticsService } from '../analytics/analytics.service.js';
@@ -8,8 +13,11 @@ import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client
 import { TransactionMonitorRepository } from './transaction-monitor.repository.js';
 import type {
   MonitoredTransaction,
+  PreparedRecoveryIntent,
   ReconciliationSummary,
+  SolanaAddressSignature,
   SolanaSignatureStatus,
+  SolanaTransactionEnvelope,
 } from './transaction-monitor.types.js';
 import { TransactionVerificationError, verifyTransactionEnvelope } from './transaction-verifier.js';
 
@@ -17,6 +25,13 @@ const DEFAULT_BATCH_LIMIT = 50;
 const MAX_BATCH_LIMIT = 100;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_STUCK_THRESHOLD_MS = 10 * 60 * 1_000;
+const DEFAULT_RECOVERY_RETENTION_MS = 24 * 60 * 60 * 1_000;
+const DEFAULT_RECOVERY_SIGNATURE_LIMIT = 10;
+const DEFAULT_RECOVERY_INTENT_BUDGET = 20;
+const DEFAULT_RECOVERY_CANDIDATE_BUDGET = 50;
+const DEFAULT_RECOVERY_RETRY_MS = 60_000;
+const MAX_RECOVERY_RETRY_MS = 60 * 60 * 1_000;
+const RECOVERY_BLOCK_TIME_SKEW_MS = 2 * 60 * 1_000;
 
 @Injectable()
 export class TransactionMonitorService {
@@ -45,8 +60,14 @@ export class TransactionMonitorService {
     await this.assertDevnet();
     const now = new Date();
     const limit = Math.max(1, Math.min(requestedLimit, MAX_BATCH_LIMIT));
-    const transactions = await this.repository.findPending(limit, now);
     const summary = emptySummary();
+    try {
+      await this.recoverUnboundBroadcasts(limit, now, summary);
+    } catch {
+      summary.recoveryErrors += 1;
+      await this.analytics?.recordServer({ name: 'solana_rpc_error' });
+    }
+    const transactions = await this.repository.findPending(limit, now);
     if (transactions.length === 0) return summary;
 
     let statuses: Array<SolanaSignatureStatus | null>;
@@ -98,6 +119,149 @@ export class TransactionMonitorService {
       }
     }
     return summary;
+  }
+
+  private async recoverUnboundBroadcasts(
+    limit: number,
+    now: Date,
+    summary: ReconciliationSummary,
+  ): Promise<void> {
+    const requiredProgramId = process.env.ESCROW_PROGRAM_ID?.trim();
+    if (!requiredProgramId) return;
+    const preparedAfter = new Date(now.getTime() - recoveryRetentionMs());
+    const intents = await this.repository.findPreparedForRecovery(
+      Math.min(limit, recoveryIntentBudget()),
+      preparedAfter,
+      now,
+    );
+    let remainingCandidateBudget = recoveryCandidateBudget();
+
+    for (const intent of intents) {
+      summary.recoveryChecked += 1;
+      if (intent.expectedProgramId !== requiredProgramId) {
+        summary.recoveryRejected += 1;
+        await this.repository.recordRecoveryAttempt(
+          intent.id,
+          now,
+          nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
+        );
+        continue;
+      }
+      let signatures: SolanaAddressSignature[];
+      try {
+        signatures = await this.rpc.getFinalizedSignaturesForAddress(
+          intent.escrowAddress,
+          recoverySignatureLimit(),
+        );
+      } catch (error) {
+        if (error instanceof SolanaRpcUnavailableError) {
+          await this.analytics?.recordServer({
+            duelId: intent.duelId,
+            name: 'solana_rpc_error',
+            status: intent.duelStatus,
+          });
+        }
+        summary.recoveryErrors += 1;
+        await this.repository.recordRecoveryAttempt(
+          intent.id,
+          now,
+          nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
+        );
+        continue;
+      }
+      let handled = false;
+      for (const candidate of signatures) {
+        if (
+          candidate.blockTime !== null &&
+          candidate.blockTime * 1_000 < intent.preparedAt.getTime() - RECOVERY_BLOCK_TIME_SKEW_MS
+        ) {
+          continue;
+        }
+        if (remainingCandidateBudget === 0) {
+          summary.recoveryDeferred += 1;
+          await this.repository.recordRecoveryAttempt(
+            intent.id,
+            now,
+            nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
+          );
+          handled = true;
+          break;
+        }
+        remainingCandidateBudget -= 1;
+        summary.recoveryCandidates += 1;
+        let envelope: SolanaTransactionEnvelope | null;
+        try {
+          envelope = await this.rpc.getTransaction(candidate.signature, 'finalized');
+        } catch (error) {
+          summary.recoveryErrors += 1;
+          if (error instanceof SolanaRpcUnavailableError) {
+            await this.analytics?.recordServer({
+              duelId: intent.duelId,
+              name: 'solana_rpc_error',
+              status: intent.duelStatus,
+            });
+          }
+          continue;
+        }
+        if (!envelope) {
+          summary.recoveryRejected += 1;
+          continue;
+        }
+        try {
+          verifyTransactionEnvelope(
+            recoveredMonitoredTransaction(intent, candidate.signature),
+            envelope,
+          );
+        } catch (error) {
+          if (!(error instanceof TransactionVerificationError)) throw error;
+          summary.recoveryRejected += 1;
+          continue;
+        }
+        if (!canBindRecoveredFunding(intent.duelStatus)) {
+          await this.repository.recordRecoveryAlert({
+            code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH',
+            nextRecoveryCheckAt: nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
+            now,
+            signature: candidate.signature,
+            transactionId: intent.id,
+          });
+          summary.recoveryAlerts += 1;
+          handled = true;
+          break;
+        }
+        try {
+          await this.repository.bindRecoveredSubmission({
+            duelId: intent.duelId,
+            requiredProgramId,
+            signature: candidate.signature,
+            transactionId: intent.id,
+          });
+        } catch (error) {
+          if (!(error instanceof ConflictException)) throw error;
+          await this.repository.recordRecoveryAlert({
+            code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH',
+            nextRecoveryCheckAt: nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
+            now,
+            signature: candidate.signature,
+            transactionId: intent.id,
+          });
+          summary.recoveryAlerts += 1;
+          handled = true;
+          break;
+        }
+        summary.recovered += 1;
+        handled = true;
+        break;
+      }
+      if (!handled) {
+        await this.repository.recordRecoveryAttempt(
+          intent.id,
+          now,
+          nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
+        );
+      }
+      if (remainingCandidateBudget === 0) break;
+    }
   }
 
   private async reconcileOne(
@@ -211,7 +375,34 @@ export class TransactionMonitorService {
 }
 
 function emptySummary(): ReconciliationSummary {
-  return { checked: 0, confirmed: 0, expired: 0, failed: 0, finalized: 0, pending: 0, stuck: 0 };
+  return {
+    checked: 0,
+    confirmed: 0,
+    expired: 0,
+    failed: 0,
+    finalized: 0,
+    pending: 0,
+    recoveryCandidates: 0,
+    recoveryChecked: 0,
+    recoveryDeferred: 0,
+    recoveryErrors: 0,
+    recoveryAlerts: 0,
+    recoveryRejected: 0,
+    recovered: 0,
+    stuck: 0,
+  };
+}
+
+function recoveredMonitoredTransaction(
+  intent: PreparedRecoveryIntent,
+  signature: string,
+): MonitoredTransaction {
+  return {
+    ...intent,
+    signature,
+    status: 'submitted',
+    submittedAt: intent.preparedAt,
+  };
 }
 
 function nextCheckAt(now: Date): Date {
@@ -234,6 +425,52 @@ function stuckThresholdMs(): number {
     60_000,
     24 * 60 * 60 * 1_000,
   );
+}
+
+function recoveryRetentionMs(): number {
+  return boundedInteger(
+    process.env.SOLANA_RECOVERY_RETENTION_MS,
+    DEFAULT_RECOVERY_RETENTION_MS,
+    60 * 60 * 1_000,
+    7 * 24 * 60 * 60 * 1_000,
+  );
+}
+
+function recoverySignatureLimit(): number {
+  return boundedInteger(
+    process.env.SOLANA_RECOVERY_SIGNATURE_LIMIT,
+    DEFAULT_RECOVERY_SIGNATURE_LIMIT,
+    1,
+    100,
+  );
+}
+
+function recoveryIntentBudget(): number {
+  return boundedInteger(
+    process.env.SOLANA_RECOVERY_INTENT_BUDGET,
+    DEFAULT_RECOVERY_INTENT_BUDGET,
+    1,
+    100,
+  );
+}
+
+function recoveryCandidateBudget(): number {
+  return boundedInteger(
+    process.env.SOLANA_RECOVERY_CANDIDATE_BUDGET,
+    DEFAULT_RECOVERY_CANDIDATE_BUDGET,
+    1,
+    500,
+  );
+}
+
+export function nextRecoveryCheckAt(now: Date, attempts: number): Date {
+  const exponent = Math.max(0, Math.min(attempts, 6));
+  const delay = Math.min(DEFAULT_RECOVERY_RETRY_MS * 2 ** exponent, MAX_RECOVERY_RETRY_MS);
+  return new Date(now.getTime() + delay);
+}
+
+export function canBindRecoveredFunding(status: PreparedRecoveryIntent['duelStatus']): boolean {
+  return status === 'matched' || status === 'committing';
 }
 
 function boundedInteger(

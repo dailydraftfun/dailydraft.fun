@@ -377,6 +377,13 @@ export class PrismaDuelRepository extends DuelRepository {
       network: 'solana-devnet',
       providerReference: transaction.providerReference,
       recentBlockhash: transaction.recentBlockhash,
+      recoveredAt: transaction.recoveredAt?.toISOString() ?? null,
+      recoveryAlertCode:
+        transaction.recoveryAlertCode === 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH'
+          ? transaction.recoveryAlertCode
+          : null,
+      recoveryCandidateAt: transaction.recoveryCandidateAt?.toISOString() ?? null,
+      recoveryCandidateSignature: transaction.recoveryCandidateSignature,
       signature: transaction.signature,
       status: toApiTransactionStatus(transaction.status),
       submittedAt: transaction.submittedAt?.toISOString() ?? null,

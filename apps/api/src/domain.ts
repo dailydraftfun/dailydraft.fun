@@ -105,6 +105,10 @@ export interface DuelTransactionRecord {
   network: 'solana-devnet';
   providerReference?: string | null;
   recentBlockhash?: string | null;
+  recoveredAt?: string | null;
+  recoveryAlertCode?: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH' | null;
+  recoveryCandidateAt?: string | null;
+  recoveryCandidateSignature?: string | null;
   signature?: string | null;
   status: 'confirmed' | 'expired' | 'failed' | 'finalized' | 'prepared' | 'submitted';
   submittedAt?: string | null;

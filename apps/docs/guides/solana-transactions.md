@@ -44,6 +44,46 @@ Real-card preparation fails closed unless Collector Crypt evidence, canonical
 insured values, legacy SPL mint metadata, and escrow vault custody all match.
 The monitor never reconstructs or trusts an intent from an arbitrary submitted signature.
 
+## Lost submission recovery
+
+The reconciliation worker also covers one narrow failure window: a wallet can
+broadcast the exact prepared transaction successfully and then lose the HTTP
+request that binds its signature to the API intent. Recovery starts from
+persisted `PREPARED` funding intents only. For each bounded intent it queries
+recent finalized signatures for that intent's recorded escrow PDA—not general
+wallet history—and then fetches each candidate transaction.
+
+A candidate is bound only when the transaction's complete unsigned-message
+hash, recent blockhash, expected participant signer, escrow v2 program,
+instruction-data hash, and exact ordered signer/write account constraints all
+match the persisted intent. Merely mentioning the wallet or escrow PDA is never
+enough. Malformed, expired-retention, non-funding, already bound, or wrong-program
+intents are not eligible. If an exact finalized funding message is found after
+the duel became stale or cancelled, the worker records a durable public/admin
+custody alert and atomically moves recoverable states into `refunding`; it never
+silently advances the duel as funded. Payment-refund preparation remains
+permissionless and requires only devnet plus the audited escrow program config,
+while card/result operations retain provider and asset-standard gates. Recovery is idempotent and a
+successful binding is recorded as `rpc-recovery` in the admin timeline and
+public receipt; private preparation metadata remains private.
+
+Recovery retains prepared intents for 24 hours by default
+(`SOLANA_RECOVERY_RETENTION_MS`, bounded from one hour to seven days) and reads
+at most 10 finalized escrow-PDA signatures per intent
+(`SOLANA_RECOVERY_SIGNATURE_LIMIT`, bounded from 1 to 100). The configured RPC
+or indexing provider must preserve `getSignaturesForAddress` and
+`getTransaction` history for at least that retention window. The default
+devnet RPC offers no durability SLA, so production operations require a paid
+RPC/indexer with documented transaction-history retention. Missing indexed
+history leaves the intent prepared for operator investigation; it never causes
+the service to widen the scan to participant wallets or unrelated addresses.
+
+Each run scans at most 20 due intents and fetches at most 50 candidate
+transactions globally (`SOLANA_RECOVERY_INTENT_BUDGET` and
+`SOLANA_RECOVERY_CANDIDATE_BUDGET`). Persisted exponential backoff rotates old
+intents instead of repeatedly selecting the same rows. Discovery failures are
+isolated per intent and do not prevent normal bound-signature reconciliation.
+
 An API `duelId` is not an escrow address. Use `escrowAddress` and
 `transactionSignature` from the duel representation when verifying on-chain
 state.
