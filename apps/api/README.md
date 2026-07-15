@@ -24,5 +24,16 @@ configured.
 `DATABASE_URL` is mandatory. `OPENPACKSDUEL_PROVIDER_MODE` defaults to `mock` and
 every duel is explicitly labeled `solana-devnet`; this API is not mainnet-ready.
 
+## Vercel
+
+The Vercel project uses `apps/api` as its Root Directory, but CLI deploys must be
+started from the monorepo root so the `@openpacksduel/db` workspace is uploaded.
+`api/[...path].ts` caches one initialized Nest/Fastify application per warm Node
+24 function instance and disables process shutdown hooks in serverless mode.
+
+The build generates Prisma Client and explicitly includes it in the function
+trace. Database migrations are never run during a Vercel build. Follow the
+ordered migration and deploy procedure in `docs/devnet-runbook.md`.
+
 Never expose an integration API key in browser code. Wallet authentication and
 signed sessions remain separate from server-to-server integration keys.

@@ -18,5 +18,5 @@
     "types": ["bun"],
     "useDefineForClassFields": false
   },
-  "include": ["src/**/*.ts"]
+  "include": ["api/**/*.ts", "src/**/*.ts"]
 }

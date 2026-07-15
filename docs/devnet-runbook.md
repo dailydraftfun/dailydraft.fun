@@ -65,6 +65,54 @@ smoke workflow.
    refund, reveal, settlement, social card, and rematch states with valueless
    test assets.
 
+## API deployment from the monorepo
+
+The `openpacksduel-api` Vercel project is configured with Root Directory
+`apps/api`, Framework `Other`, and Node.js 24. Run Vercel CLI from the monorepo
+root—not `apps/api`—so Bun workspaces and `packages/db` are uploaded together.
+Vercel CLI 20.1 or newer is required for shared monorepo source; the current
+deployment baseline is 54.9.1.
+
+Before the first deploy, verify **Include source files outside of the Root
+Directory** is enabled in the Vercel project’s Root Directory settings. Modern
+projects enable it by default, but the API cannot import `packages/db` without
+that boundary.
+
+1. Configure all required API variables in the Vercel project. Do not put
+   credentials in tracked files. `DATABASE_URL` must use the pooled Neon runtime
+   connection when available.
+2. In a secure operator shell, set `DATABASE_URL` to the direct migration
+   connection. The production deployment script applies only committed
+   migrations and stops before deployment if migration fails:
+
+   ```bash
+   bun run deploy:api:prod
+   ```
+
+   Never substitute `prisma db push`; migration history is the deployment
+   contract. A failed migration stops the release before the function deploy.
+   The script sets `VERCEL_ORG_ID=team_KHSVltukbViA3Mbyd0KBdW22` and
+   `VERCEL_PROJECT_ID=prj_rX5EyAaDo5slW8ea0mUDjwVhb1Xq`, so the repository’s
+   frontend `.vercel/project.json` cannot redirect the deployment.
+3. For a preview-only deployment after the production database is already at
+   the committed migration, deploy from the monorepo root:
+
+   ```bash
+   VERCEL_ORG_ID=team_KHSVltukbViA3Mbyd0KBdW22 \
+   VERCEL_PROJECT_ID=prj_rX5EyAaDo5slW8ea0mUDjwVhb1Xq \
+   vercel deploy --scope vincentshipsit
+   ```
+
+4. Confirm the canonical alias and database readiness:
+
+   ```bash
+   curl --fail-with-body https://openpacksduel-api.vercel.app/v1/health
+   ```
+
+The function fails closed during bootstrap when `DATABASE_URL` is missing. Its
+health endpoint returns `503` when PostgreSQL is unavailable or migrations are
+pending. Vercel builds generate Prisma Client but never mutate the database.
+
 ## Promotion gate
 
 Devnet readiness does not imply mainnet readiness. Mainnet remains blocked on

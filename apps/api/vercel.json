@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd ../.. && bun --filter @openpacksduel/db db:generate",
+  "framework": null,
+  "functions": {
+    "api/[...path].ts": {
+      "includeFiles": "../../packages/db/generated/**",
+      "maxDuration": 60,
+      "supportsCancellation": true
+    }
+  },
+  "installCommand": "cd ../.. && bun install --frozen-lockfile",
+  "rewrites": [
+    {
+      "source": "/v1",
+      "destination": "/api/v1"
+    },
+    {
+      "source": "/v1/:path*",
+      "destination": "/api/v1/:path*"
+    }
+  ]
+}

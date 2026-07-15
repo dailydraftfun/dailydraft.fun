@@ -7,7 +7,11 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { AppModule } from './app.module.js';
 import { ProblemDetailsFilter } from './common/problem-details.filter.js';
 
-export async function createApp(): Promise<NestFastifyApplication> {
+export interface CreateAppOptions {
+  enableShutdownHooks?: boolean;
+}
+
+export async function createApp(options: CreateAppOptions = {}): Promise<NestFastifyApplication> {
   const adapter = new FastifyAdapter({ trustProxy: true });
   adapter.getInstance().addHook('onRequest', (request, response, done) => {
     response.header('x-request-id', request.id);
@@ -31,7 +35,7 @@ export async function createApp(): Promise<NestFastifyApplication> {
     .filter(Boolean);
   if (origins.length > 0) app.enableCors({ origin: origins });
 
-  app.enableShutdownHooks();
+  if (options.enableShutdownHooks ?? true) app.enableShutdownHooks();
   return app;
 }
 
