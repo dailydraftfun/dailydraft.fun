@@ -78,11 +78,13 @@ export class DuelsController {
   }
 
   @Get(':duelId/events')
+  @UseGuards(IntegrationKeyGuard)
   listEvents(@Param() params: DuelIdParams) {
     return this.duels.listEvents(params.duelId);
   }
 
   @Get(':duelId/transactions')
+  @UseGuards(IntegrationKeyGuard)
   listTransactions(@Param() params: DuelIdParams) {
     return this.duels.listTransactions(params.duelId);
   }

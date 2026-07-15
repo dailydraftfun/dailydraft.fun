@@ -23,6 +23,7 @@ import type {
   DuelStatus,
   DuelTransactionRecord,
   MatchmakingMode,
+  Money,
   Page,
 } from '../domain.js';
 import type { ListDuelsQuery } from './duel.dto.js';
@@ -508,6 +509,7 @@ function toDuel(row: {
   version: number;
   winnerWallet: string | null;
 }): Duel {
+  const stake = toMoney(row.stakeAmount, row.stakeCurrency, row.stakeDecimals);
   return {
     cancellationReason: row.cancellationReason,
     createdAt: row.createdAt.toISOString(),
@@ -524,18 +526,25 @@ function toDuel(row: {
       active: true,
       id: row.packId,
       name: row.packName,
-      price: { amount: row.stakeAmount, currency: 'USDC', decimals: 6 },
+      price: stake,
       provider: row.packProvider,
       ...(row.providerPackId ? { providerPackId: row.providerPackId } : {}),
       ...(row.valuationPolicyHash ? { valuationPolicyHash: row.valuationPolicyHash } : {}),
     },
     providerMode: row.providerMode === ProviderMode.MOCK ? 'mock' : 'collector-crypt-sandbox',
-    stake: { amount: row.stakeAmount, currency: 'USDC', decimals: 6 },
+    stake,
     status: toApiStatus(row.status),
     updatedAt: row.updatedAt.toISOString(),
     version: row.version,
     winnerWallet: row.winnerWallet,
   };
+}
+
+function toMoney(amount: string, currency: string, decimals: number): Money {
+  if (currency !== 'USDC' || decimals !== 6) {
+    throw new Error(`Unsupported persisted money invariant: ${currency}/${decimals}`);
+  }
+  return { amount, currency, decimals };
 }
 
 function toDatabaseMode(mode: MatchmakingMode): DuelMode {

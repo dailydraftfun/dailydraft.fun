@@ -248,8 +248,11 @@ paths:
     get:
       operationId: listDuelEvents
       tags: [Duels]
-      summary: List the immutable duel state timeline
+      summary: List the authenticated immutable duel state timeline
+      description: Internal event data is never exposed by an unauthenticated endpoint.
       x-openpacksduel-availability: devnet
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
       responses:
@@ -263,12 +266,17 @@ paths:
                   $ref: '#/components/schemas/DuelEvent'
         '404':
           $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /duels/{duelId}/transactions:
     get:
       operationId: listDuelTransactions
       tags: [Transactions]
-      summary: List reconciliation-safe Solana transaction records
+      summary: List authenticated reconciliation-safe Solana transaction records
+      description: Raw provider errors and transaction metadata require an integration key.
       x-openpacksduel-availability: devnet
+      security:
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
       responses:
@@ -282,6 +290,8 @@ paths:
                   $ref: '#/components/schemas/DuelTransactionRecord'
         '404':
           $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     post:
       operationId: prepareDuelTransaction
       tags: [Transactions]

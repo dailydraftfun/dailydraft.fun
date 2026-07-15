@@ -71,6 +71,9 @@ describe('DuelsService', () => {
     expect(duel.houseOpponent).toBe(true);
     expect(duel.status).toBe('matched');
     expect(duel.opponentWallet).toBe(OPPONENT);
+    expect((await service.getSocialCard(duel.id)).imageUrl).toEndWith(
+      `/duel/${duel.id}/social/matched`,
+    );
   });
 
   test('joins an open duel once and records the opponent wallet', async () => {

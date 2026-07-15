@@ -113,14 +113,23 @@ export class DuelsService {
       '',
     );
     const encodedId = encodeURIComponent(duel.id);
+    const socialStatus = toSocialStatus(duel.status);
     return {
       duelId: duel.id,
-      imageUrl: `${appUrl}/duel/${encodedId}/opengraph-image`,
+      imageUrl: `${appUrl}/duel/${encodedId}/social/${socialStatus}`,
       pageUrl: `${appUrl}/duel/${encodedId}`,
       shareText: `Watch my ${duel.pack.name} duel on OpenPacks Duel.`,
       status: duel.status,
     };
   }
+}
+
+function toSocialStatus(status: Duel['status']): string {
+  if (status === 'committing') return 'matched';
+  if (status === 'settling') return 'awaiting_assets';
+  if (status === 'cancelling') return 'cancelled';
+  if (status === 'refunding') return 'refunded';
+  return status;
 }
 
 function validateCreation(input: CreateDuelRequest): void {
