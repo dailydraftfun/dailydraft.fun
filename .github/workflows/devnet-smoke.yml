@@ -1,0 +1,70 @@
+name: Devnet smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: Product app origin
+        required: true
+        default: https://openpacksduel.vercel.app
+        type: string
+      api_url:
+        description: API origin; leave empty until the API is deployed
+        required: false
+        default: ''
+        type: string
+      rpc_url:
+        description: Solana devnet RPC
+        required: true
+        default: https://api.devnet.solana.com
+        type: string
+      program_id:
+        description: Expected devnet escrow program
+        required: true
+        default: Co198eFfQcmn1WzZRnHV6jxcSLBDCv1qNfPfiBYdCLfS
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  public-surfaces:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check product app
+        env:
+          APP_URL: ${{ inputs.app_url }}
+        run: curl --fail --silent --show-error --location --max-time 20 "$APP_URL/overview" > /dev/null
+      - name: Check API health when provided
+        if: inputs.api_url != ''
+        env:
+          API_URL: ${{ inputs.api_url }}
+        run: curl --fail --silent --show-error --location --max-time 20 "$API_URL/v1/health" | jq -e '.status == "ok"'
+
+  escrow-program:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify RPC is devnet
+        env:
+          RPC_URL: ${{ inputs.rpc_url }}
+        run: |
+          response=$(curl --fail --silent --show-error --max-time 20 \
+            -H 'content-type: application/json' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"getGenesisHash"}' \
+            "$RPC_URL")
+          test "$(jq -r '.result' <<< "$response")" = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
+      - name: Verify escrow program is executable
+        env:
+          PROGRAM_ID: ${{ inputs.program_id }}
+          RPC_URL: ${{ inputs.rpc_url }}
+        run: |
+          payload=$(jq -nc --arg program "$PROGRAM_ID" \
+            '{jsonrpc:"2.0",id:1,method:"getAccountInfo",params:[$program,{encoding:"base64",commitment:"confirmed"}]}')
+          response=$(curl --fail --silent --show-error --max-time 20 \
+            -H 'content-type: application/json' \
+            --data "$payload" \
+            "$RPC_URL")
+          jq -e '.result.value != null and .result.value.executable == true' <<< "$response"
+
