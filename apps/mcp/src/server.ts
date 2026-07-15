@@ -149,8 +149,6 @@ export function createOpenPacksDuelServer(
   );
 
   registerTransactionPreparationTool(server, client, access, 'fund');
-  registerTransactionPreparationTool(server, client, access, 'cancel');
-  registerTransactionPreparationTool(server, client, access, 'refund');
 
   server.registerTool(
     'get_duel',
@@ -215,7 +213,7 @@ function registerTransactionPreparationTool(
   server: McpServer,
   client: OpenPacksApiClient,
   access: McpAccess,
-  action: 'cancel' | 'fund' | 'refund',
+  action: 'fund',
 ): void {
   server.registerTool(
     `prepare_${action}_duel`,

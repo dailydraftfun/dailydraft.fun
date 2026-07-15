@@ -80,7 +80,10 @@ The deterministic mock provider refuses to run unless `OPENPACKSDUEL_NETWORK`
 is `solana-devnet`. Its asset references and values are valueless test data.
 `SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every
 worker validates the official devnet genesis hash before reading transaction
-state. Set `ESCROW_PROGRAM_ID` and a long random `CRON_SECRET` in Vercel.
+state. Funding preparation additionally requires `ESCROW_PROGRAM_ID`,
+`ESCROW_PROVIDER_SIGNER`, `ESCROW_FEE_RECIPIENT`, and
+`OPENPACKSDUEL_DEVNET_FEE_LAMPORTS`; it fails closed if any value is missing or invalid. Set a long
+random `CRON_SECRET` in Vercel.
 
 `collector-crypt-sandbox` is a fail-closed adapter stub: no undocumented HTTP
 paths or response shapes are assumed. It remains unavailable until Collector

@@ -2,7 +2,6 @@
 
 import {
   CheckCircleIcon,
-  InfoIcon,
   LockKeyIcon,
   SpinnerGapIcon,
   WarningCircleIcon,
@@ -58,31 +57,41 @@ export function TransactionIntentReview({
         <div className="intent-title">
           <LockKeyIcon size={22} weight="fill" />
           <div>
-            <strong>{intent.title}</strong>
-            <p>{intent.description}</p>
+            <strong>Fund your duel platform fee</strong>
+            <p>
+              Wrap and deposit exactly {intent.feeAmountSol} SOL into the verified devnet escrow.
+            </p>
           </div>
         </div>
 
         <dl className="intent-details">
           <div>
-            <dt>Pack</dt>
-            <dd>${intent.packTierUsd.toFixed(2)}</dd>
+            <dt>Funding side</dt>
+            <dd>{intent.fundingSide}</dd>
           </div>
           <div>
             <dt>Platform fee</dt>
-            <dd>${intent.platformFeeUsd.toFixed(2)}</dd>
+            <dd>{intent.feeAmountSol} WSOL</dd>
           </div>
           <div className="intent-total">
-            <dt>Maximum approval</dt>
-            <dd>${intent.totalUsd.toFixed(2)} USDC</dd>
+            <dt>Pack purchase</dt>
+            <dd>Not included</dd>
           </div>
           <div>
-            <dt>Opponent</dt>
-            <dd>{intent.counterparty}</dd>
+            <dt>Wallet</dt>
+            <dd>{shorten(intent.wallet)}</dd>
           </div>
           <div>
-            <dt>Recipient</dt>
-            <dd>{intent.recipientLabel}</dd>
+            <dt>Escrow PDA</dt>
+            <dd>{shorten(intent.escrowAddress)}</dd>
+          </div>
+          <div>
+            <dt>Program</dt>
+            <dd>{shorten(intent.programId)}</dd>
+          </div>
+          <div>
+            <dt>Fee recipient</dt>
+            <dd>{shorten(intent.feeRecipient)}</dd>
           </div>
           <div>
             <dt>Expires</dt>
@@ -95,23 +104,19 @@ export function TransactionIntentReview({
           </div>
         </dl>
 
-        {intent.simulation ? (
-          <div className="intent-notice intent-notice-preview">
-            <InfoIcon size={18} weight="fill" />
-            <span>
-              Devnet simulation: the API did not supply a serialized transaction. No wallet request
-              opens and no funds move.
-            </span>
-          </div>
-        ) : (
-          <div className="intent-notice">
-            <CheckCircleIcon size={18} weight="fill" />
-            <span>
-              A prepared devnet transaction is ready. Your wallet will show the final transaction
-              before you approve it.
-            </span>
-          </div>
-        )}
+        <div className="intent-notice">
+          <CheckCircleIcon size={18} weight="fill" />
+          <span>
+            The full unsigned message is integrity-bound. Your wallet will broadcast it only after
+            your approval.
+          </span>
+        </div>
+
+        <ul className="intent-warnings">
+          {intent.warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
 
         {error ? (
           <div className="intent-error" role="alert">
@@ -126,11 +131,7 @@ export function TransactionIntentReview({
           </Button>
           <Button type="button" className="intent-confirm" onClick={onConfirm} disabled={pending}>
             {pending ? <SpinnerGapIcon className="wallet-spinner" size={17} /> : null}
-            {pending
-              ? 'Waiting for wallet'
-              : intent.simulation
-                ? 'Continue devnet preview'
-                : 'Review in wallet'}
+            {pending ? 'Waiting for wallet' : 'Review and broadcast'}
           </Button>
         </div>
         <p className="intent-safety">
@@ -139,4 +140,8 @@ export function TransactionIntentReview({
       </section>
     </div>
   );
+}
+
+function shorten(value: string): string {
+  return value.length > 14 ? `${value.slice(0, 6)}…${value.slice(-6)}` : value;
 }

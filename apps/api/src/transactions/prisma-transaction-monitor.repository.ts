@@ -53,11 +53,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       if (!transaction || transaction.duelId !== input.duelId) {
         throw new NotFoundException(`Transaction ${input.transactionId} was not found`);
       }
-      if (
-        transaction.submissionIdempotencyKey === input.idempotencyKey &&
-        transaction.signature === input.signature &&
-        ACTIVE_STATUSES.has(transaction.status)
-      ) {
+      if (isIdempotentSubmissionReplay(transaction, input)) {
         return toBoundSubmission(transaction.id, transaction.duelId, input.signature);
       }
       if (
@@ -75,6 +71,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       if (
         !transaction.expectedSigner ||
         !transaction.expectedProgramId ||
+        !transaction.expectedMessageHash ||
         !transaction.expectedFromStatus ||
         !transaction.expectedToStatus ||
         !parseExpectedAccounts(transaction.expectedAccounts) ||
@@ -110,7 +107,48 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       ) {
         throw new ConflictException('Expected signer is not bound to the target instruction');
       }
-      if (transaction.duel.status !== transaction.expectedFromStatus) {
+      let duelStatus = transaction.duel.status;
+      if (shouldEnterCommittingOnCreatorSubmission(transaction)) {
+        const metadata = parseFundingSubmissionMetadata(transaction.metadata);
+        if (!metadata) {
+          throw new ConflictException('Funding intent is missing escrow submission metadata');
+        }
+        const changed = await database.duel.updateMany({
+          data: {
+            escrowAddress: metadata.escrowAddress,
+            status: DatabaseDuelStatus.COMMITTING,
+            version: { increment: 1 },
+          },
+          where: {
+            id: transaction.duel.id,
+            status: DatabaseDuelStatus.MATCHED,
+            version: transaction.duel.version,
+          },
+        });
+        if (changed.count !== 1) {
+          throw new ConflictException('Duel changed during creator submission');
+        }
+        await database.duelEvent.create({
+          data: {
+            actorWallet: transaction.wallet,
+            data: {
+              escrowAddress: metadata.escrowAddress,
+              feeAmountLamports: metadata.feeAmountLamports,
+              feeAsset: 'WSOL',
+              signature: input.signature,
+              transactionId: transaction.id,
+            },
+            duelId: transaction.duel.id,
+            fromStatus: DatabaseDuelStatus.MATCHED,
+            id: createId('evt'),
+            sequence: transaction.duel.version + 1,
+            toStatus: DatabaseDuelStatus.COMMITTING,
+            type: 'duel.funding_submitted',
+          },
+        });
+        duelStatus = DatabaseDuelStatus.COMMITTING;
+      }
+      if (duelStatus !== transaction.expectedFromStatus) {
         throw new ConflictException('Duel state does not match the transaction intent');
       }
       if (
@@ -163,6 +201,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
         !row.submittedAt ||
         !row.expectedSigner ||
         !row.expectedProgramId ||
+        !row.expectedMessageHash ||
         !expectedAccounts ||
         !row.expectedInstructionDataHash ||
         !expectedInstructionAccounts ||
@@ -181,6 +220,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           expectedAccounts,
           expectedInstructionAccounts,
           expectedInstructionDataHash: row.expectedInstructionDataHash,
+          expectedMessageHash: row.expectedMessageHash,
           expectedFromStatus: toApiStatus(row.expectedFromStatus),
           expectedProgramId: row.expectedProgramId,
           expectedSigner: row.expectedSigner,
@@ -290,11 +330,22 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       });
 
       const fromStatus = toApiStatus(monitored.duel.status);
-      const target = recoveryStatusAfterTransactionFailure(fromStatus);
+      const target = recoveryStatusForTerminalTransaction({
+        action: monitored.action,
+        creatorWallet: monitored.duel.creatorWallet,
+        fromStatus,
+        wallet: monitored.wallet,
+      });
       if (!target || !canTransition(fromStatus, target)) return;
       const targetStatus = toDatabaseStatus(target);
       const changed = await database.duel.updateMany({
-        data: { status: targetStatus, version: { increment: 1 } },
+        data: {
+          ...(targetStatus === DatabaseDuelStatus.CANCELLED
+            ? { cancellationReason: `creator_funding_${status}` }
+            : {}),
+          status: targetStatus,
+          version: { increment: 1 },
+        },
         where: {
           id: monitored.duel.id,
           status: monitored.duel.status,
@@ -310,7 +361,10 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           id: createId('evt'),
           sequence: monitored.duel.version + 1,
           toStatus: targetStatus,
-          type: 'duel.transaction_terminal',
+          type:
+            targetStatus === DatabaseDuelStatus.CANCELLED
+              ? 'duel.creator_funding_terminal'
+              : 'duel.transaction_terminal',
         },
       });
     });
@@ -579,6 +633,16 @@ function parseExpectedAccounts(value: Prisma.JsonValue | null): ExpectedAccountC
   return parsed;
 }
 
+function parseFundingSubmissionMetadata(
+  value: Prisma.JsonValue | null,
+): { escrowAddress: string; feeAmountLamports: string } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (typeof value.escrowAddress !== 'string' || typeof value.feeAmountLamports !== 'string') {
+    return null;
+  }
+  return { escrowAddress: value.escrowAddress, feeAmountLamports: value.feeAmountLamports };
+}
+
 function toBoundSubmission(
   transactionId: string,
   duelId: string,
@@ -620,4 +684,49 @@ export function assertWalletSubmissionActor(input: {
       'Wallet session cannot submit a transaction for another signer or duel participant',
     );
   }
+}
+
+export function isIdempotentSubmissionReplay(
+  transaction: {
+    signature: string | null;
+    status: DuelTransactionStatus;
+    submissionIdempotencyKey: string | null;
+  },
+  input: { idempotencyKey: string; signature: string },
+): boolean {
+  return (
+    transaction.submissionIdempotencyKey === input.idempotencyKey &&
+    transaction.signature === input.signature &&
+    ACTIVE_STATUSES.has(transaction.status)
+  );
+}
+
+export function shouldEnterCommittingOnCreatorSubmission(input: {
+  action: DuelTransactionAction;
+  duel: { creatorWallet: string; status: DatabaseDuelStatus };
+  expectedFromStatus: DatabaseDuelStatus | null;
+  wallet: string;
+}): boolean {
+  return (
+    input.action === DuelTransactionAction.FUND &&
+    input.wallet === input.duel.creatorWallet &&
+    input.duel.status === DatabaseDuelStatus.MATCHED &&
+    input.expectedFromStatus === DatabaseDuelStatus.COMMITTING
+  );
+}
+
+export function recoveryStatusForTerminalTransaction(input: {
+  action: DuelTransactionAction;
+  creatorWallet: string;
+  fromStatus: DuelStatus;
+  wallet: string;
+}): DuelStatus | null {
+  if (
+    input.action === DuelTransactionAction.FUND &&
+    input.wallet === input.creatorWallet &&
+    input.fromStatus === 'committing'
+  ) {
+    return 'cancelled';
+  }
+  return recoveryStatusAfterTransactionFailure(input.fromStatus);
 }

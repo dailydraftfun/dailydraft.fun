@@ -13,7 +13,7 @@ import { canTransition, isTransactionTransition } from './duel-state.js';
 import { DuelsService } from './duels.service.js';
 
 const WALLET = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
-const OPPONENT = 'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW';
+const OPPONENT = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
 
 describe('DuelsService', () => {
   test('allows only forward or recovery state transitions', () => {

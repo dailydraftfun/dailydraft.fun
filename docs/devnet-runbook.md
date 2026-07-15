@@ -47,6 +47,9 @@ smoke workflow.
 | `OPENPACKSDUEL_NETWORK` | Must be `solana-devnet`. |
 | `SOLANA_RPC_URL` | Server-side RPC endpoint. |
 | `ESCROW_PROGRAM_ID` | Published devnet escrow program address. |
+| `ESCROW_PROVIDER_SIGNER` | Public key authorized to attest provider outcomes; never a private key. |
+| `ESCROW_FEE_RECIPIENT` | Public key that receives the platform fee during settlement. |
+| `OPENPACKSDUEL_DEVNET_FEE_LAMPORTS` | Per-side platform fee deposited as WSOL; `1000000` for the MVP. |
 | `CRON_SECRET` | Long random bearer secret used by Vercel Cron. |
 | `SOLANA_RPC_TIMEOUT_MS` | Optional per-request timeout; bounded to 30 seconds. |
 | `SOLANA_RPC_RETRIES` | Optional retry count; bounded to four retries. |
@@ -67,10 +70,11 @@ fallback is appropriate only for this devnet preview and may rate-limit calls.
 Funding requires distinct finalized deposits from both duel participants; the
 first side remains `committing`, and only the second completes `funded`.
 
-No escrow or pack transaction builder is implied by the worker. The existing
-prepare route remains fail-closed until the deployed program IDL, devnet test
-mints, exact token-account constraints, and Collector Crypt builder contract are
-available.
+`POST /v1/duels/:duelId/transactions` prepares the verified escrow v2 funding transaction. It
+creates the player's wrapped-SOL associated token account idempotently, wraps exactly the configured
+per-side platform fee, and funds the duel PDA. The creator transaction also initializes the duel;
+the opponent transaction is enabled only after creator funding finalizes. This transaction does not
+pay for or purchase a pack. Solana fees and recoverable token-account rent remain additional.
 
 ## Release order
 

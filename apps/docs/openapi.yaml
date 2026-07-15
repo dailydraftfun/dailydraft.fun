@@ -386,9 +386,12 @@ paths:
       operationId: prepareDuelTransaction
       tags: [Transactions]
       summary: Prepare a wallet-signed Solana transaction
-      description: Returns an unsigned serialized transaction. The API never signs for a wallet.
-      x-openpacksduel-availability: contract-only
+      description: |
+        Returns an unsigned devnet transaction that wraps and escrows only the configured
+        per-side platform fee. The pack purchase is not included. The API never signs for a wallet.
+      x-openpacksduel-availability: devnet
       security:
+        - walletSession: []
         - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
@@ -400,7 +403,7 @@ paths:
             schema:
               $ref: '#/components/schemas/PrepareTransactionRequest'
       responses:
-        '200':
+        '201':
           description: Transaction ready for wallet inspection and signature
           content:
             application/json:
@@ -412,8 +415,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '409':
           $ref: '#/components/responses/Conflict'
-        '501':
-          $ref: '#/components/responses/NotImplemented'
         '503':
           $ref: '#/components/responses/Unavailable'
   /duels/{duelId}/transactions/{transactionId}/submissions:
@@ -713,12 +714,6 @@ components:
             $ref: '#/components/schemas/Problem'
     Conflict:
       description: Request conflicts with current duel state
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/Problem'
-    NotImplemented:
-      description: Operation is contractually reserved but not available yet
       content:
         application/problem+json:
           schema:
@@ -1196,37 +1191,68 @@ components:
         createdAt:
           type: string
           format: date-time
-    TransactionAction:
-      type: string
-      enum: [fund, cancel, refund]
     PrepareTransactionRequest:
       type: object
       additionalProperties: false
       required: [action, wallet]
       properties:
         action:
-          $ref: '#/components/schemas/TransactionAction'
+          type: string
+          const: fund
         wallet:
           $ref: '#/components/schemas/SolanaAddress'
     PreparedTransaction:
       type: object
       additionalProperties: false
-      required: [transaction, encoding, expiresAt, action, summary]
+      required:
+        - id
+        - duelId
+        - action
+        - status
+        - cluster
+        - chain
+        - wallet
+        - fundingSide
+        - feeAmountLamports
+        - feeAmountSol
+        - feeRecipient
+        - escrowAddress
+        - paymentMint
+        - programId
+        - recentBlockhash
+        - lastValidBlockHeight
+        - expiresAt
+        - serializedTransactionBase64
+        - warnings
       properties:
-        transaction:
+        id: { type: string }
+        duelId: { type: string }
+        action:
+          type: string
+          const: fund
+        status:
+          type: string
+          const: prepared
+        cluster: { type: string, const: devnet }
+        chain: { type: string, const: 'solana:devnet' }
+        wallet: { $ref: '#/components/schemas/SolanaAddress' }
+        fundingSide: { type: string, enum: [creator, opponent] }
+        feeAmountLamports: { type: string, pattern: '^\d+$' }
+        feeAmountSol: { type: string }
+        feeRecipient: { $ref: '#/components/schemas/SolanaAddress' }
+        escrowAddress: { $ref: '#/components/schemas/SolanaAddress' }
+        paymentMint: { $ref: '#/components/schemas/SolanaAddress' }
+        programId: { $ref: '#/components/schemas/SolanaAddress' }
+        recentBlockhash: { type: string }
+        lastValidBlockHeight: { type: string, pattern: '^\d+$' }
+        expiresAt: { type: string, format: date-time }
+        serializedTransactionBase64:
           type: string
           contentEncoding: base64
-        encoding:
-          type: string
-          const: base64
-        expiresAt:
-          type: string
-          format: date-time
-        action:
-          $ref: '#/components/schemas/TransactionAction'
-        summary:
-          type: string
-          description: Human-readable instructions for wallet confirmation UI.
+        warnings:
+          type: array
+          items: { type: string }
+          minItems: 1
     DuelTransactionRecord:
       type: object
       additionalProperties: false

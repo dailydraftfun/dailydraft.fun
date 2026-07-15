@@ -44,7 +44,7 @@ interface DuelListInput {
 }
 
 export interface PrepareTransactionInput {
-  action: 'cancel' | 'fund' | 'refund';
+  action: 'fund';
   duelId: string;
   idempotencyKey: string;
   wallet: string;

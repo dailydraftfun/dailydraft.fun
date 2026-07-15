@@ -195,6 +195,7 @@ model DuelTransaction {
   lastValidBlockHeight            BigInt?
   expectedSigner                  String?
   expectedProgramId               String?
+  expectedMessageHash             String?
   expectedAccounts                Json?
   expectedInstructionDataHash     String?
   expectedInstructionAccounts     Json?
@@ -221,6 +222,7 @@ model DuelTransaction {
   @@index([duelId, createdAt])
   @@index([status, updatedAt])
   @@index([status, nextCheckAt])
+  @@unique([duelId, wallet, action])
 }
 
 model WalletAuthChallenge {

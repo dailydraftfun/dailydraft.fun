@@ -20,6 +20,7 @@ export interface MonitoredTransaction {
   expectedProgramId: string;
   expectedInstructionAccounts: ExpectedAccountConstraint[];
   expectedInstructionDataHash: string;
+  expectedMessageHash: string;
   expectedSigner: string;
   expectedToStatus: DuelStatus;
   id: string;

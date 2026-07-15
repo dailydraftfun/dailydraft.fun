@@ -32,6 +32,7 @@ import {
   type DuelOpponentType,
   type DuelTransactionIntent,
   type DurableDuel,
+  getDuel,
   joinDuel,
   prepareDuelIntent,
   submitSignedDuelIntent,
@@ -280,11 +281,11 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [intent, setIntent] = useState<DuelTransactionIntent | null>(null);
   const [intentPending, setIntentPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
   const timers = useRef<number[]>([]);
   const match = useMemo(() => getMatch(tier, nonce), [tier, nonce]);
   const winner = match.left.value >= match.right.value ? 'you' : 'opponent';
-  const fee = tier * 0.025;
 
   function chooseMode(nextMode: Mode) {
     if (nextMode === mode) return;
@@ -333,17 +334,19 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     });
   }, [actionError, mode, persistedDuel, tier]);
 
-  function startDuel(nextTier = tier) {
-    for (const timer of timers.current) window.clearTimeout(timer);
-    timers.current = [];
-    setTier(nextTier);
-    setPhase('matching');
-    timers.current.push(window.setTimeout(() => setPhase('opening'), 900));
-    timers.current.push(window.setTimeout(() => setPhase('result'), 3100));
-  }
+  useEffect(() => {
+    if (!persistedDuel || persistedDuel.status !== 'waiting') return;
+    const interval = window.setInterval(() => {
+      getDuel(persistedDuel.id)
+        .then((duel) => setPersistedDuel(duel))
+        .catch(() => undefined);
+    }, 5_000);
+    return () => window.clearInterval(interval);
+  }, [persistedDuel]);
 
   async function reviewDuel(nextTier = tier, nextMode = mode) {
     setActionError(null);
+    setActionNotice(null);
     setTier(nextTier);
     setMode(nextMode);
     if (!walletConnection.address) {
@@ -390,19 +393,43 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 authentication.sessionToken,
               );
         setPersistedDuel(duel);
+        if (duel.status === 'matched' && duel.creatorWallet === walletConnection.address) {
+          setIntent(
+            await prepareDuelIntent(duel.id, walletConnection.address, authentication.sessionToken),
+          );
+        } else if (duel.status === 'matched') {
+          setActionNotice('Challenge accepted. The creator must initialize and fund escrow first.');
+        }
         return;
       }
-      const preparedIntent = await prepareDuelIntent({
-        walletAddress: walletConnection.address,
-        opponentType: nextMode,
-        opponentAddress: nextMode === 'direct' ? wallet.trim() : undefined,
-        packTierUsd: nextTier,
-        platformFeeUsd: nextTier * 0.025,
-      });
-      setIntent(preparedIntent);
+      throw new Error('The devnet duel API is not configured. No transaction was prepared.');
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : 'Could not prepare the devnet transaction intent.',
+      );
+    } finally {
+      setIntentPending(false);
+    }
+  }
+
+  async function reviewPersistedFunding(): Promise<void> {
+    if (!persistedDuel || !authentication.sessionToken || !walletConnection.address) return;
+    setIntentPending(true);
+    setActionError(null);
+    setActionNotice(null);
+    try {
+      const refreshed = await getDuel(persistedDuel.id);
+      setPersistedDuel(refreshed);
+      setIntent(
+        await prepareDuelIntent(
+          refreshed.id,
+          walletConnection.address,
+          authentication.sessionToken,
+        ),
+      );
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : 'Could not prepare the funding transaction.',
       );
     } finally {
       setIntentPending(false);
@@ -431,18 +458,24 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }
 
   async function approveIntent() {
-    if (!intent) return;
+    if (!intent || !authentication.sessionToken) return;
     setIntentPending(true);
     setActionError(null);
     try {
-      if (intent.serializedTransactionBase64) {
-        const binary = window.atob(intent.serializedTransactionBase64);
-        const transaction = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-        const signedTransaction = await walletConnection.signTransaction(transaction);
-        await submitSignedDuelIntent(intent.id, signedTransaction);
-      }
+      const binary = window.atob(intent.serializedTransactionBase64);
+      const transaction = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      const signature = await walletConnection.signAndSendTransaction(transaction);
+      await submitSignedDuelIntent(
+        intent.duelId,
+        intent.id,
+        signature,
+        authentication.sessionToken,
+      );
       setIntent(null);
-      startDuel(intent.packTierUsd);
+      setPersistedDuel(await getDuel(intent.duelId));
+      setActionNotice(
+        'Funding broadcast on Solana devnet. The duel advances only after finalized verification.',
+      );
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : 'The wallet did not approve the transaction.',
@@ -770,13 +803,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
               <div className="fee-summary">
                 <span>
-                  Pack <strong>${tier.toFixed(2)}</strong>
+                  Pack tier <strong>${tier.toFixed(2)}</strong>
                 </span>
                 <span>
-                  Platform fee <strong>${fee.toFixed(2)}</strong>
+                  Pack purchase <strong>Later</strong>
                 </span>
                 <span>
-                  You fund <strong>${(tier + fee).toFixed(2)}</strong>
+                  Escrow now <strong>Fee only</strong>
                 </span>
               </div>
 
@@ -816,6 +849,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                   <WarningCircleIcon size={14} weight="fill" /> {actionError}
                 </p>
               ) : null}
+              {actionNotice ? <p className="signing-note">{actionNotice}</p> : null}
             </div>
           </CardContent>
         </Card>
@@ -832,14 +866,28 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 ? 'Challenge created and waiting'
                 : persistedDuel.status === 'matched'
                   ? 'Both wallets are matched'
-                  : 'Duel cancelled before funding'}
+                  : persistedDuel.status === 'committing'
+                    ? 'Escrow funding in progress'
+                    : persistedDuel.status === 'funded'
+                      ? 'Both platform fees finalized'
+                      : 'Duel cancelled before funding'}
             </h2>
             <p>
-              <code>{persistedDuel.id}</code> is persisted by the API. Escrow transaction
-              preparation is not live yet, so no funds moved and no pack was opened.
+              <code>{persistedDuel.id}</code> is persisted by the API. Funding deposits only the
+              disclosed platform fee as WSOL. Pack purchase and opening are separate and have not
+              happened yet.
             </p>
           </div>
           <div className="persisted-duel-actions">
+            {(persistedDuel.status === 'matched' &&
+              persistedDuel.creatorWallet === walletConnection.address) ||
+            (persistedDuel.status === 'committing' &&
+              persistedDuel.opponentWallet === walletConnection.address) ? (
+              <Button type="button" onClick={reviewPersistedFunding} disabled={intentPending}>
+                {intentPending ? <SpinnerGapIcon className="wallet-spinner" size={16} /> : null}
+                Review platform fee
+              </Button>
+            ) : null}
             {persistedDuel.status === 'waiting' ? (
               <Button
                 type="button"

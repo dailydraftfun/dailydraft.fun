@@ -6,7 +6,7 @@ import type {
 } from './transaction-monitor.types.js';
 
 const DEFAULT_DEVNET_RPC_URL = 'https://api.devnet.solana.com';
-const DEVNET_GENESIS_HASH = 'GH7ome3EiwEr7tu9JuTh2dpYWBJK3z69Xm1ZE3MEE6JC';
+const DEVNET_GENESIS_HASH = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_RETRIES = 2;
 
@@ -20,6 +20,7 @@ export class SolanaRpcUnavailableError extends Error {
 export abstract class SolanaRpcGateway {
   abstract assertDevnet(): Promise<void>;
   abstract getBlockHeight(): Promise<bigint>;
+  abstract getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: bigint }>;
   abstract getSignatureStatuses(signatures: string[]): Promise<Array<SolanaSignatureStatus | null>>;
   abstract getTransaction(
     signature: string,
@@ -51,6 +52,23 @@ export class SolanaRpcClient extends SolanaRpcGateway {
     const result = await this.request('getBlockHeight', [{ commitment: 'finalized' }]);
     if (!Number.isSafeInteger(result) || Number(result) < 0) throw new SolanaRpcUnavailableError();
     return BigInt(Number(result));
+  }
+
+  async getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: bigint }> {
+    const result = await this.request('getLatestBlockhash', [{ commitment: 'finalized' }]);
+    if (
+      !isObject(result) ||
+      !isObject(result.value) ||
+      typeof result.value.blockhash !== 'string' ||
+      !Number.isSafeInteger(result.value.lastValidBlockHeight) ||
+      Number(result.value.lastValidBlockHeight) < 0
+    ) {
+      throw new SolanaRpcUnavailableError();
+    }
+    return {
+      blockhash: result.value.blockhash,
+      lastValidBlockHeight: BigInt(Number(result.value.lastValidBlockHeight)),
+    };
   }
 
   async getSignatureStatuses(signatures: string[]): Promise<Array<SolanaSignatureStatus | null>> {

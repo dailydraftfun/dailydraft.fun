@@ -21,7 +21,7 @@ import type {
 import { DuelRepository } from './duel.repository.js';
 import { hashDuelRequest } from './prisma-duel.repository.js';
 
-const DEFAULT_HOUSE_DEVNET_WALLET = 'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW';
+const DEFAULT_HOUSE_DEVNET_WALLET = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
 const MAX_DUEL_LIFETIME_MS = 24 * 60 * 60 * 1_000;
 
 @Injectable()

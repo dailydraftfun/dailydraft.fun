@@ -4,6 +4,7 @@ import type {
   MonitoredTransaction,
   SolanaTransactionEnvelope,
 } from './transaction-monitor.types.js';
+import { hashTransactionMessage } from './transaction-verifier.js';
 
 const SIGNATURE = '4'.repeat(88);
 const SIGNER = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
@@ -14,6 +15,7 @@ const INSTRUCTION_DATA = '3Bxs4NN8M2Yn4TLb';
 export function monitoredTransaction(
   overrides: Partial<MonitoredTransaction> = {},
 ): MonitoredTransaction {
+  const envelope = transactionEnvelope();
   return {
     action: 'settle',
     allowMultipleInstructionMatches: false,
@@ -30,12 +32,13 @@ export function monitoredTransaction(
       { address: ESCROW, isWritable: true },
     ],
     expectedInstructionDataHash: createHash('sha256').update(INSTRUCTION_DATA).digest('hex'),
+    expectedMessageHash: hashTransactionMessage(envelope),
     expectedProgramId: PROGRAM,
     expectedSigner: SIGNER,
     expectedToStatus: 'settled',
     id: 'tx_123456789012',
     lastValidBlockHeight: 2_000n,
-    recentBlockhash: 'recent-blockhash',
+    recentBlockhash: '11111111111111111111111111111111',
     signature: SIGNATURE,
     status: 'submitted',
     submittedAt: new Date('2026-07-15T20:00:00.000Z'),
@@ -56,7 +59,7 @@ export function transactionEnvelope(): SolanaTransactionEnvelope {
           numRequiredSignatures: 1,
         },
         instructions: [{ accounts: [0, 1], data: INSTRUCTION_DATA, programIdIndex: 2 }],
-        recentBlockhash: 'recent-blockhash',
+        recentBlockhash: '11111111111111111111111111111111',
       },
       signatures: [SIGNATURE],
     },
