@@ -252,7 +252,7 @@ describe('public duel proof', () => {
       }),
     );
     expect(first.cardActions.cards).toHaveLength(2);
-    expect(first.cardActions.cards.map((card) => card.owner.address)).toEqual(expectedOwners);
+    expect(first.cardActions.cards.map((card) => card.owner.address)).toEqual([...expectedOwners]);
     expect(new Set(first.cardActions.cards.map((card) => card.actionStateId)).size).toBe(2);
     for (const card of first.cardActions.cards) {
       expect(card).toEqual(
