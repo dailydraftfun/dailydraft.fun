@@ -31,6 +31,11 @@ export const productEventNames = [
   'provider_error',
   'solana_rpc_error',
   'ui_error',
+  'matchmaking_wait_started',
+  'matchmaking_matched',
+  'matchmaking_abandoned',
+  'matchmaking_commitment_failed',
+  'house_fallback_selected',
 ] as const;
 
 export type ProductEventName = (typeof productEventNames)[number];

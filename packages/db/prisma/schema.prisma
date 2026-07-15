@@ -80,6 +80,11 @@ enum ProductEventName {
   PROVIDER_ERROR
   SOLANA_RPC_ERROR
   UI_ERROR
+  MATCHMAKING_WAIT_STARTED
+  MATCHMAKING_MATCHED
+  MATCHMAKING_ABANDONED
+  MATCHMAKING_COMMITMENT_FAILED
+  HOUSE_FALLBACK_SELECTED
 }
 
 enum ProductEventSource {
@@ -105,16 +110,26 @@ enum OperatorReasonCode {
   MANUAL_REVIEW
 }
 
+enum MatchmakingTicketRole {
+  CREATOR
+  OPPONENT
+}
+
+enum MatchmakingTicketStatus {
+  SEARCHING
+  MATCHED
+}
+
 model Duel {
-  id                  String            @id
+  id                  String              @id
   mode                DuelMode
   status              DuelStatus
-  network             SolanaNetwork     @default(DEVNET)
-  providerMode        ProviderMode      @default(MOCK)
+  network             SolanaNetwork       @default(DEVNET)
+  providerMode        ProviderMode        @default(MOCK)
   creatorWallet       String
   opponentWallet      String?
   opponentJoinedAt    DateTime?
-  houseOpponent       Boolean           @default(false)
+  houseOpponent       Boolean             @default(false)
   winnerWallet        String?
   escrowAddress       String?
   packId              String
@@ -122,22 +137,24 @@ model Duel {
   packProvider        String
   providerPackId      String?
   stakeAmount         String
-  stakeCurrency       String            @default("USDC")
-  stakeDecimals       Int               @default(6)
+  stakeCurrency       String              @default("USDC")
+  stakeDecimals       Int                 @default(6)
   valuationPolicyHash String?
   expiresAt           DateTime
   cancellationReason  String?
-  version             Int               @default(1)
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  version             Int                 @default(1)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
   matchedAt           DateTime?
   fundedAt            DateTime?
   settledAt           DateTime?
   resultHash          String?
   resultReadyAt       DateTime?
+  commitmentExpiresAt DateTime?
   events              DuelEvent[]
   transactions        DuelTransaction[]
   packOutcomes        DuelPackOutcome[]
+  matchmakingTickets  MatchmakingTicket[]
 
   @@index([status, expiresAt])
   @@index([mode, status, packId, createdAt])
@@ -146,23 +163,56 @@ model Duel {
   @@index([winnerWallet, createdAt])
 }
 
+model MatchmakingTicket {
+  id                  String                  @id
+  wallet              String                  @unique
+  duelId              String
+  role                MatchmakingTicketRole
+  status              MatchmakingTicketStatus
+  queueKey            String
+  packId              String
+  tier                Int
+  valuationPolicyHash String
+  providerMode        ProviderMode
+  regionSegment       String
+  riskSegment         String
+  commitmentExpiresAt DateTime?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  duel                Duel                    @relation(fields: [duelId], references: [id], onDelete: Cascade)
+
+  @@unique([duelId, role])
+  @@index([queueKey, status, createdAt])
+  @@index([commitmentExpiresAt, status])
+}
+
+model MatchmakingBehavior {
+  wallet                 String    @id
+  failedCommitments      Int       @default(0)
+  failureWindowStartedAt DateTime
+  blockedUntil           DateTime?
+  updatedAt              DateTime  @updatedAt
+
+  @@index([blockedUntil])
+}
+
 model DuelPackOutcome {
   id                   String   @id
   duelId               String
   side                 DuelSide
-  provider              String
-  providerReference     String
-  assetReference        String
-  displayName           String
-  insuredValueAmount    String
-  insuredValueCurrency  String   @default("USDC")
-  insuredValueDecimals  Int      @default(6)
-  valuationPolicyHash   String
-  resultHash            String
-  isMock                Boolean
-  openedAt              DateTime
-  createdAt             DateTime @default(now())
-  duel                  Duel     @relation(fields: [duelId], references: [id], onDelete: Cascade)
+  provider             String
+  providerReference    String
+  assetReference       String
+  displayName          String
+  insuredValueAmount   String
+  insuredValueCurrency String   @default("USDC")
+  insuredValueDecimals Int      @default(6)
+  valuationPolicyHash  String
+  resultHash           String
+  isMock               Boolean
+  openedAt             DateTime
+  createdAt            DateTime @default(now())
+  duel                 Duel     @relation(fields: [duelId], references: [id], onDelete: Cascade)
 
   @@unique([duelId, side])
   @@unique([provider, providerReference])
@@ -200,15 +250,15 @@ model IdempotencyRecord {
 }
 
 model DuelTransaction {
-  id                              String                 @id
+  id                              String                @id
   duelId                          String
   action                          DuelTransactionAction
-  status                          DuelTransactionStatus  @default(PREPARED)
-  network                         SolanaNetwork          @default(DEVNET)
+  status                          DuelTransactionStatus @default(PREPARED)
+  network                         SolanaNetwork         @default(DEVNET)
   wallet                          String
-  signature                       String?                @unique
-  idempotencyKey                  String?                @unique
-  submissionIdempotencyKey        String?                @unique
+  signature                       String?               @unique
+  idempotencyKey                  String?               @unique
+  submissionIdempotencyKey        String?               @unique
   serializedTransaction           String?
   recentBlockhash                 String?
   lastValidBlockHeight            BigInt?
@@ -218,7 +268,7 @@ model DuelTransaction {
   expectedAccounts                Json?
   expectedInstructionDataHash     String?
   expectedInstructionAccounts     Json?
-  allowMultipleInstructionMatches Boolean                @default(false)
+  allowMultipleInstructionMatches Boolean               @default(false)
   expectedFromStatus              DuelStatus?
   expectedToStatus                DuelStatus?
   providerReference               String?
@@ -226,7 +276,7 @@ model DuelTransaction {
   errorMessage                    String?
   metadata                        Json?
   confirmationStatus              String?
-  checkAttempts                   Int                    @default(0)
+  checkAttempts                   Int                   @default(0)
   lastCheckedAt                   DateTime?
   nextCheckAt                     DateTime?
   stuckAt                         DateTime?
@@ -234,10 +284,11 @@ model DuelTransaction {
   confirmedAt                     DateTime?
   finalizedAt                     DateTime?
   expiresAt                       DateTime?
-  createdAt                       DateTime               @default(now())
-  updatedAt                       DateTime               @updatedAt
-  duel                            Duel                   @relation(fields: [duelId], references: [id], onDelete: Cascade)
+  createdAt                       DateTime              @default(now())
+  updatedAt                       DateTime              @updatedAt
+  duel                            Duel                  @relation(fields: [duelId], references: [id], onDelete: Cascade)
 
+  @@unique([duelId, wallet, action])
   @@index([duelId, createdAt])
   @@index([duelId, wallet, action])
   @@index([status, updatedAt])
@@ -245,29 +296,29 @@ model DuelTransaction {
 }
 
 model WalletAuthChallenge {
-  id          String   @id
-  wallet      String
-  nonceHash   String   @unique
-  domain      String
-  uri         String
-  chain       String
-  message     String
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  createdAt   DateTime @default(now())
+  id         String    @id
+  wallet     String
+  nonceHash  String    @unique
+  domain     String
+  uri        String
+  chain      String
+  message    String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
 
   @@index([wallet, expiresAt])
   @@index([expiresAt, consumedAt])
 }
 
 model WalletSession {
-  id          String   @id
-  wallet      String
-  tokenHash   String   @unique
-  expiresAt   DateTime
-  revokedAt   DateTime?
-  createdAt   DateTime @default(now())
-  lastUsedAt  DateTime @default(now())
+  id         String    @id
+  wallet     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime  @default(now())
 
   @@index([wallet, expiresAt])
   @@index([expiresAt, revokedAt])
@@ -290,25 +341,25 @@ model ProductEvent {
 }
 
 model RuntimeControl {
-  key         String                 @id
-  paused      Boolean                @default(false)
-  reasonCode  OperatorReasonCode?
-  actorClass  OperatorActorClass     @default(INTEGRATION_KEY)
-  actorLabel  String                 @default("integration-key")
-  version     Int                    @default(1)
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
+  key        String              @id
+  paused     Boolean             @default(false)
+  reasonCode OperatorReasonCode?
+  actorClass OperatorActorClass  @default(INTEGRATION_KEY)
+  actorLabel String              @default("integration-key")
+  version    Int                 @default(1)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
 }
 
 model OperatorAuditEvent {
-  id             String                 @id
+  id             String             @id
   action         OperatorAction
   actorClass     OperatorActorClass
   actorLabel     String
   reasonCode     OperatorReasonCode
   previousPaused Boolean
   nextPaused     Boolean
-  createdAt      DateTime               @default(now())
+  createdAt      DateTime           @default(now())
 
   @@index([createdAt, id])
 }

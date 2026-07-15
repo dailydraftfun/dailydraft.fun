@@ -57,6 +57,27 @@ transaction routes and must never be shipped to browser code.
 `DATABASE_URL` is mandatory. `OPENPACKSDUEL_PROVIDER_MODE` defaults to `mock` and
 every duel is explicitly labeled `solana-devnet`; this API is not mainnet-ready.
 
+## Open matchmaking
+
+`POST /v1/matchmaking/search` is the canonical public queue. It creates one durable
+ticket per wallet and matches only an exact pack tier, valuation policy, provider
+mode, server-verified region segment, and risk segment. Duplicate tabs and reconnects
+receive the same ticket. Assignment uses wallet and duel-role unique constraints plus
+status/version compare-and-swap updates inside the database client's serializable
+transaction policy; a general duel join cannot claim a ticket-backed queue duel.
+Matches have a bounded funding commitment window; timeouts
+record a behavior failure and requeue the creator unless repeated failures trigger a
+temporary block. Search expiry, cancellation, match, commitment failure, wait time,
+and house fallback are recorded as server-side product events.
+
+The queue fails closed until `OPENPACKSDUEL_MATCHMAKING_REGION_SEGMENT` and
+`OPENPACKSDUEL_MATCHMAKING_RISK_SEGMENT` are provided by an upstream verified policy;
+the API does not infer geolocation from user input. House fallback is a separate,
+explicit endpoint, includes disclosure in the session response, and remains disabled
+by default through `OPENPACKSDUEL_HOUSE_ENABLED=false`. It is never an automatic queue
+conversion. Wallet-level limits do not prevent coordinated multi-wallet abuse, which
+still requires upstream identity/risk controls before mainnet.
+
 ## Privacy-safe observability
 
 `POST /v1/analytics/events` accepts only allowlisted names and bounded

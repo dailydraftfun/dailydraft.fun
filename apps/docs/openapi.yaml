@@ -27,6 +27,8 @@ tags:
     description: Duel-eligible pack definitions and current inventory metadata.
   - name: Duels
     description: Public matchmaking intents and canonical duel state.
+  - name: Matchmaking
+    description: Exact-segment open matchmaking with durable reconnect and explicit fallback choices.
   - name: Transactions
     description: Unsigned Solana transactions for wallet inspection and approval.
   - name: Operations
@@ -240,6 +242,135 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /matchmaking/search:
+    post:
+      operationId: searchOpenMatchmaking
+      tags: [Matchmaking]
+      summary: Start or reconnect to an exact-segment open search
+      description: |
+        Queues by exact pack tier, valuation policy, provider mode, server-verified
+        region, and risk segment. A wallet has at most one active ticket, so retries
+        and duplicate tabs reconnect to the same durable state. The endpoint fails
+        closed when verified region or risk segmentation is unavailable.
+      security:
+        - walletSession: []
+        - integrationKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchmakingSearchRequest'
+      responses:
+        '200':
+          description: Current searching or matched session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchmakingSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /matchmaking/continue:
+    post:
+      operationId: continueOpenMatchmaking
+      tags: [Matchmaking]
+      summary: Explicitly continue or reconnect to the open search
+      security:
+        - walletSession: []
+        - integrationKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchmakingSearchRequest'
+      responses:
+        '200':
+          description: Current searching or matched session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchmakingSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /matchmaking/status:
+    post:
+      operationId: getOpenMatchmakingStatus
+      tags: [Matchmaking]
+      summary: Reconnect to a wallet's durable active session
+      security:
+        - walletSession: []
+        - integrationKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchmakingWalletRequest'
+      responses:
+        '200':
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchmakingSession'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /matchmaking/cancel:
+    post:
+      operationId: cancelOpenMatchmaking
+      tags: [Matchmaking]
+      summary: Explicitly abandon an unfunded search or matched slot
+      security:
+        - walletSession: []
+        - integrationKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchmakingWalletRequest'
+      responses:
+        '200':
+          description: Search cancelled
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /matchmaking/house-fallback:
+    post:
+      operationId: selectHouseFallback
+      tags: [Matchmaking]
+      summary: Explicitly select the disclosed house opponent
+      description: Never selected automatically. Disabled by default and subject to treasury risk controls.
+      security:
+        - walletSession: []
+        - integrationKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchmakingWalletRequest'
+      responses:
+        '200':
+          description: House match selected with a bounded commitment deadline
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchmakingSession'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '503':
@@ -1288,6 +1419,97 @@ components:
     MatchmakingMode:
       type: string
       enum: [direct, house, open]
+    MatchmakingSearchRequest:
+      type: object
+      additionalProperties: false
+      required: [wallet, packId]
+      properties:
+        wallet:
+          $ref: '#/components/schemas/SolanaAddress'
+        packId:
+          $ref: '#/components/schemas/PackId'
+    MatchmakingWalletRequest:
+      type: object
+      additionalProperties: false
+      required: [wallet]
+      properties:
+        wallet:
+          $ref: '#/components/schemas/SolanaAddress'
+    MatchmakingSession:
+      type: object
+      additionalProperties: false
+      required:
+        - duelId
+        - wallet
+        - role
+        - state
+        - houseOpponent
+        - queue
+        - searchExpiresAt
+        - availableActions
+        - cancellationRule
+      properties:
+        duelId:
+          type: string
+          pattern: '^duel_[A-Za-z0-9]{12,64}$'
+        wallet:
+          $ref: '#/components/schemas/SolanaAddress'
+        role:
+          type: string
+          enum: [creator, opponent]
+        state:
+          type: string
+          enum: [searching, matched]
+        houseOpponent:
+          type: boolean
+        opponentWallet:
+          oneOf:
+            - $ref: '#/components/schemas/SolanaAddress'
+            - type: 'null'
+        searchExpiresAt:
+          type: string
+          format: date-time
+        commitmentExpiresAt:
+          type: [string, 'null']
+          format: date-time
+        cancellationRule:
+          type: string
+        availableActions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required: [action, available]
+            properties:
+              action:
+                type: string
+                enum: [continue_search, cancel_search, house_fallback]
+              available:
+                type: boolean
+              disclosure:
+                type: string
+        queue:
+          type: object
+          additionalProperties: false
+          required: [packId, tier, valuationPolicyHash, providerMode, regionSegment, riskSegment, queueKey]
+          properties:
+            packId:
+              $ref: '#/components/schemas/PackId'
+            tier:
+              type: integer
+            valuationPolicyHash:
+              type: string
+              pattern: '^[a-f0-9]{64}$'
+            providerMode:
+              type: string
+              enum: [mock, collector-crypt-sandbox]
+            regionSegment:
+              type: string
+            riskSegment:
+              type: string
+            queueKey:
+              type: string
+              pattern: '^[a-f0-9]{64}$'
     DuelStatus:
       type: string
       enum:

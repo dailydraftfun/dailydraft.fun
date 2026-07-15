@@ -49,6 +49,32 @@ export type DurableDuel = {
     | 'failed';
 };
 
+export type MatchmakingSession = {
+  availableActions: Array<{
+    action: 'cancel_search' | 'continue_search' | 'house_fallback';
+    available: boolean;
+    disclosure?: string;
+  }>;
+  cancellationRule: string;
+  commitmentExpiresAt: string | null;
+  duelId: string;
+  houseOpponent: boolean;
+  opponentWallet: string | null;
+  queue: {
+    packId: string;
+    providerMode: 'collector-crypt-sandbox' | 'mock';
+    queueKey: string;
+    regionSegment: string;
+    riskSegment: string;
+    tier: number;
+    valuationPolicyHash: string;
+  };
+  role: 'creator' | 'opponent';
+  searchExpiresAt: string;
+  state: 'matched' | 'searching';
+  wallet: string;
+};
+
 export async function prepareDuelIntent(
   duelId: string,
   wallet: string,
@@ -64,7 +90,7 @@ export async function prepareDuelIntent(
 export async function createDuel(
   input: {
     creatorWallet: string;
-    matchmakingMode: 'direct' | 'house' | 'open';
+    matchmakingMode: 'direct' | 'house';
     opponentWallet?: string;
   },
   sessionToken: string,
@@ -74,6 +100,59 @@ export async function createDuel(
     analyticsSessionId: getAnalyticsSessionId(),
     expiresAt: new Date(Date.now() + 15 * 60 * 1_000).toISOString(),
     packId: 'pokemon_50',
+  });
+}
+
+export function searchOpenMatchmaking(
+  wallet: string,
+  sessionToken: string,
+): Promise<MatchmakingSession> {
+  return authenticatedMutation<MatchmakingSession>('/matchmaking/search', sessionToken, {
+    packId: 'pokemon_50',
+    wallet,
+  });
+}
+
+export function continueOpenMatchmaking(
+  wallet: string,
+  sessionToken: string,
+): Promise<MatchmakingSession> {
+  return authenticatedMutation<MatchmakingSession>('/matchmaking/continue', sessionToken, {
+    packId: 'pokemon_50',
+    wallet,
+  });
+}
+
+export async function getOpenMatchmakingStatus(
+  wallet: string,
+  sessionToken: string,
+): Promise<MatchmakingSession | null> {
+  if (!apiBaseUrl) throw new Error('The duel API is not configured.');
+  const response = await fetch(`${apiBaseUrl}/matchmaking/status`, {
+    body: JSON.stringify({ wallet }),
+    headers: {
+      authorization: `Bearer ${sessionToken}`,
+      'content-type': 'application/json',
+    },
+    method: 'POST',
+  });
+  if (response.status === 404) return null;
+  return parseMutationResponse<MatchmakingSession>(response);
+}
+
+export function cancelOpenMatchmaking(
+  wallet: string,
+  sessionToken: string,
+): Promise<{ cancelled: true; duelId: string; reason: string }> {
+  return authenticatedMutation('/matchmaking/cancel', sessionToken, { wallet });
+}
+
+export function selectHouseFallback(
+  wallet: string,
+  sessionToken: string,
+): Promise<MatchmakingSession> {
+  return authenticatedMutation<MatchmakingSession>('/matchmaking/house-fallback', sessionToken, {
+    wallet,
   });
 }
 
@@ -152,6 +231,10 @@ async function authenticatedMutation<T>(
     },
     method: 'POST',
   });
+  return parseMutationResponse<T>(response);
+}
+
+async function parseMutationResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const problem = await response.json().catch(() => null);
     const detail = getProblemDetail(problem);

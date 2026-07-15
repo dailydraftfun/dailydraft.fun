@@ -146,6 +146,11 @@ export function buildFunnelReport(input: {
   const counts = eventCounts(input.events);
   const serverEvents = input.events.filter((event) => event.source === 'server');
   const matchLatencyMs = latencySamples(serverEvents, 'duel_created', 'duel_matched');
+  const matchmakingWaitMs = latencySamples(
+    serverEvents,
+    'matchmaking_wait_started',
+    'matchmaking_matched',
+  );
   const providerLatencyMs = latencySamples(serverEvents, 'pack_reveal_started', 'pack_revealed');
   const abandoned = abandonedDuels(serverEvents, input.generatedAt);
   const eligibleForAbandonment = serverEvents.filter(
@@ -189,7 +194,20 @@ export function buildFunnelReport(input: {
     generatedAt: input.generatedAt.toISOString(),
     latencyMs: {
       match: distribution(matchLatencyMs),
+      matchmakingWait: distribution(matchmakingWaitMs),
       provider: distribution(providerLatencyMs),
+    },
+    matchmaking: {
+      abandoned: counts.matchmaking_abandoned,
+      commitmentFailed: counts.matchmaking_commitment_failed,
+      fallbackSelected: counts.house_fallback_selected,
+      matched: counts.matchmaking_matched,
+      rates: {
+        abandonment: ratio(counts.matchmaking_abandoned, counts.matchmaking_wait_started),
+        fallback: ratio(counts.house_fallback_selected, counts.matchmaking_wait_started),
+        matched: ratio(counts.matchmaking_matched, counts.matchmaking_wait_started),
+      },
+      waitStarted: counts.matchmaking_wait_started,
     },
     rates: {
       abandonment: ratio(
@@ -275,6 +293,11 @@ function eventCounts(events: NormalizedEvent[]): Record<ProductEventName, number
     ui_error: uniqueCount(events, 'ui_error'),
     wallet_authenticated: uniqueCount(events, 'wallet_authenticated'),
     wallet_connected: uniqueCount(events, 'wallet_connected'),
+    matchmaking_wait_started: uniqueCount(events, 'matchmaking_wait_started'),
+    matchmaking_matched: uniqueCount(events, 'matchmaking_matched'),
+    matchmaking_abandoned: uniqueCount(events, 'matchmaking_abandoned'),
+    matchmaking_commitment_failed: uniqueCount(events, 'matchmaking_commitment_failed'),
+    house_fallback_selected: uniqueCount(events, 'house_fallback_selected'),
   };
 }
 
@@ -374,6 +397,11 @@ const eventNameToDatabase: Record<ProductEventName, DatabaseEventName> = {
   ui_error: DatabaseEventName.UI_ERROR,
   wallet_authenticated: DatabaseEventName.WALLET_AUTHENTICATED,
   wallet_connected: DatabaseEventName.WALLET_CONNECTED,
+  matchmaking_wait_started: DatabaseEventName.MATCHMAKING_WAIT_STARTED,
+  matchmaking_matched: DatabaseEventName.MATCHMAKING_MATCHED,
+  matchmaking_abandoned: DatabaseEventName.MATCHMAKING_ABANDONED,
+  matchmaking_commitment_failed: DatabaseEventName.MATCHMAKING_COMMITMENT_FAILED,
+  house_fallback_selected: DatabaseEventName.HOUSE_FALLBACK_SELECTED,
 };
 
 const eventNameToApi: Record<DatabaseEventName, ProductEventName> = {
@@ -395,6 +423,11 @@ const eventNameToApi: Record<DatabaseEventName, ProductEventName> = {
   UI_ERROR: 'ui_error',
   WALLET_AUTHENTICATED: 'wallet_authenticated',
   WALLET_CONNECTED: 'wallet_connected',
+  MATCHMAKING_WAIT_STARTED: 'matchmaking_wait_started',
+  MATCHMAKING_MATCHED: 'matchmaking_matched',
+  MATCHMAKING_ABANDONED: 'matchmaking_abandoned',
+  MATCHMAKING_COMMITMENT_FAILED: 'matchmaking_commitment_failed',
+  HOUSE_FALLBACK_SELECTED: 'house_fallback_selected',
 };
 
 const eventCountSource: Record<ProductEventName, NormalizedEvent['source']> = {
@@ -416,6 +449,11 @@ const eventCountSource: Record<ProductEventName, NormalizedEvent['source']> = {
   ui_error: 'client',
   wallet_authenticated: 'client',
   wallet_connected: 'client',
+  matchmaking_wait_started: 'server',
+  matchmaking_matched: 'server',
+  matchmaking_abandoned: 'server',
+  matchmaking_commitment_failed: 'server',
+  house_fallback_selected: 'server',
 };
 
 const statusToDatabase: Record<NonNullable<ProductEventRequest['status']>, DuelStatus> = {
