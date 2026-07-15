@@ -56,6 +56,26 @@ transaction routes and must never be shipped to browser code.
 
 `DATABASE_URL` is mandatory. `OPENPACKSDUEL_PROVIDER_MODE` defaults to `mock` and
 every duel is explicitly labeled `solana-devnet`; this API is not mainnet-ready.
+
+## Privacy-safe observability
+
+`POST /v1/analytics/events` accepts only allowlisted names and bounded
+duel/status/tier/mode fields under a random per-tab `anon_*` session. The schema
+has no wallet, signature, bearer-token, private-key, metadata, or free-form error
+field. The public allowlist contains UI intent only; lifecycle transitions and
+operational failures are recorded server-side. Payloads are capped at 20 events
+and each anonymous session is capped at 120 events per five minutes. Those caps
+are defense-in-depth, not abuse resistance: session churn bypasses them. A public
+production deployment must configure Vercel Firewall/IP rate limiting while the
+API continues not to persist network identifiers.
+
+`GET /v1/analytics/funnel` requires an integration key and returns only
+aggregates: funnel conversion, match/provider latency percentiles, abandonment,
+refund and settlement-failure rates, provider/RPC error totals, duel-status
+counts, and the stuck-funded alert configured by
+`OPENPACKSDUEL_STUCK_FUNDED_MINUTES`.
+Canonical funnel transitions and operational alerts use `SERVER` rows only;
+client UI errors are reported separately under `experience`.
 The deterministic mock provider refuses to run unless `OPENPACKSDUEL_NETWORK`
 is `solana-devnet`. Its asset references and values are valueless test data.
 `SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every

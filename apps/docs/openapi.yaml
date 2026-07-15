@@ -33,6 +33,8 @@ tags:
     description: Authenticated devnet reconciliation workers and operator controls.
   - name: Social
     description: Canonical share pages and generated social-card images.
+  - name: Analytics
+    description: Privacy-safe anonymous funnel events and integration-only operational health.
 security: []
 paths:
   /health:
@@ -552,6 +554,75 @@ paths:
           $ref: '#/components/responses/Unavailable'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /analytics/events:
+    post:
+      operationId: ingestProductEvents
+      tags: [Analytics]
+      summary: Accept a bounded anonymous product-event batch
+      description: |
+        Accepts at most 20 allowlisted events. The contract has no wallet,
+        signature, token, private-key, metadata, or free-form error fields.
+        Only UI-intent events are accepted; canonical lifecycle and operational
+        events are server-authored. The 120-event anonymous-session cap is
+        defense-in-depth and can be bypassed through session churn. Production
+        must enforce Vercel Firewall/IP rate limiting before exposing this route.
+      x-openpacksduel-availability: devnet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestProductEventsRequest'
+      responses:
+        '202':
+          description: Event batch accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [accepted]
+                properties:
+                  accepted:
+                    type: integer
+                    minimum: 1
+                    maximum: 20
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /analytics/funnel:
+    get:
+      operationId: getAnalyticsFunnel
+      tags: [Analytics]
+      summary: Get aggregate funnel and operational health
+      description: |
+        Deduplicates UI steps by anonymous session and server-authored lifecycle
+        steps by duel, derives match
+        and provider latency percentiles, and reports stuck-funded, refund,
+        abandonment, settlement-failure, provider-error, and RPC-error health.
+      x-openpacksduel-availability: devnet
+      security:
+        - integrationKey: []
+      parameters:
+        - name: windowHours
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 720
+            default: 24
+      responses:
+        '200':
+          description: Aggregate privacy-safe analytics report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsFunnelReport'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 components:
   securitySchemes:
     cronSecret:
@@ -665,6 +736,90 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    ClientProductEventName:
+      type: string
+      enum:
+        - lobby_viewed
+        - tier_selected
+        - wallet_connected
+        - wallet_authenticated
+        - pack_reveal_started
+        - duel_shared
+        - duel_rematched
+        - ui_error
+    ProductEventInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          $ref: '#/components/schemas/ClientProductEventName'
+        duelId:
+          type: string
+          pattern: '^duel_[A-Za-z0-9]{12,64}$'
+        status:
+          $ref: '#/components/schemas/DuelStatus'
+        tier:
+          type: integer
+          enum: [25, 50, 100]
+        mode:
+          $ref: '#/components/schemas/MatchmakingMode'
+    IngestProductEventsRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionId, events]
+      properties:
+        sessionId:
+          type: string
+          pattern: '^anon_[a-f0-9]{32}$'
+          description: Random per-tab correlation ID. It is not derived from a wallet.
+        events:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ProductEventInput'
+    AnalyticsFunnelReport:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, window, sampled, funnel, rates, latencyMs, errors, experience, alerts, statusCounts]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        window:
+          type: object
+          additionalProperties: true
+        sampled:
+          type: boolean
+          description: True when the bounded 10,000-event reporting window was truncated.
+        funnel:
+          type: object
+          additionalProperties: true
+        rates:
+          type: object
+          additionalProperties:
+            type: number
+        latencyMs:
+          type: object
+          additionalProperties: true
+        errors:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Server-authored provider, settlement, and Solana RPC failures only.
+        experience:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Client UI errors and reveal-animation starts; never operational alerts.
+        alerts:
+          type: object
+          additionalProperties: true
+        statusCounts:
+          type: object
+          additionalProperties:
+            type: integer
     CreateWalletChallengeRequest:
       type: object
       additionalProperties: false
@@ -830,6 +985,9 @@ components:
       additionalProperties: false
       required: [creatorWallet, packId, matchmakingMode, expiresAt]
       properties:
+        analyticsSessionId:
+          type: string
+          pattern: '^anon_[a-f0-9]{32}$'
         creatorWallet:
           $ref: '#/components/schemas/SolanaAddress'
         opponentWallet:
@@ -849,6 +1007,9 @@ components:
       additionalProperties: false
       required: [wallet]
       properties:
+        analyticsSessionId:
+          type: string
+          pattern: '^anon_[a-f0-9]{32}$'
         wallet:
           $ref: '#/components/schemas/SolanaAddress'
     CancelDuelRequest:
@@ -856,6 +1017,9 @@ components:
       additionalProperties: false
       required: [wallet]
       properties:
+        analyticsSessionId:
+          type: string
+          pattern: '^anon_[a-f0-9]{32}$'
         wallet:
           $ref: '#/components/schemas/SolanaAddress'
         reason:

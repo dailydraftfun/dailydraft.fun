@@ -55,6 +55,7 @@ smoke workflow.
 | `OPENPACKSDUEL_API_KEYS` | Server-to-server integration keys; never expose to the browser. |
 | `OPENPACKSDUEL_APP_URL` | Canonical product URL. |
 | `OPENPACKSDUEL_AUTH_DOMAIN` | Host matching the canonical product URL in wallet sign-in messages. |
+| `OPENPACKSDUEL_STUCK_FUNDED_MINUTES` | Alert threshold for funded duels that have not progressed; defaults to 5. |
 | `CORS_ORIGINS` | Explicit allowed browser origins. |
 
 The transaction worker runs every five minutes in production and can be invoked
@@ -79,6 +80,9 @@ available.
 3. Deploy the escrow using explicit devnet RPC and keypair arguments.
 4. Apply the devnet database migration and deploy `openpacksduel-api`.
 5. Configure the product app variables and deploy `apps/app` to Vercel.
+   Before exposing `/v1/analytics/events`, enable Vercel Firewall/IP rate
+   limiting. Its anonymous-session cap is defense-in-depth and session churn
+   can bypass it.
 6. Run the `Devnet smoke` GitHub workflow with the final API URL.
 7. Exercise direct challenge, public queue, disclosed house, cancellation,
    refund, reveal, settlement, social card, and rematch states with valueless

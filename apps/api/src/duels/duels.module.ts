@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AnalyticsModule } from '../analytics/analytics.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
 import { PacksModule } from '../packs/packs.module.js';
@@ -12,7 +13,7 @@ import { PrismaDuelRepository } from './prisma-duel.repository.js';
 
 @Module({
   controllers: [DuelsController],
-  imports: [AuthModule, PacksModule, ProvidersModule],
+  imports: [AnalyticsModule, AuthModule, PacksModule, ProvidersModule],
   providers: [
     DuelsService,
     DuelOpeningService,

@@ -25,6 +25,7 @@ import {
 import { Button, Card, CardContent, Input, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { trackProductEvent } from './analytics-client';
 import {
   cancelDuel,
   createDuel,
@@ -294,14 +295,43 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   function chooseTier(nextTier: number) {
     setTier(nextTier);
+    const trackedTier = toTrackedTier(nextTier);
+    if (trackedTier) trackProductEvent({ name: 'tier_selected', tier: trackedTier });
     if (activeEntry?.action === 'accept') setActiveEntry(undefined);
   }
 
   useEffect(() => {
+    trackProductEvent({ name: 'lobby_viewed' });
     return () => {
       for (const timer of timers.current) window.clearTimeout(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!persistedDuel) return;
+    const trackedTier = toTrackedTier(tier);
+    const trackedMode = toTrackedMode(mode);
+    if (phase === 'opening') {
+      trackProductEvent({
+        duelId: persistedDuel.id,
+        mode: trackedMode,
+        name: 'pack_reveal_started',
+        status: 'opening',
+        ...(trackedTier ? { tier: trackedTier } : {}),
+      });
+    }
+  }, [mode, persistedDuel, phase, tier]);
+
+  useEffect(() => {
+    if (!actionError) return;
+    const trackedTier = toTrackedTier(tier);
+    trackProductEvent({
+      ...(persistedDuel ? { duelId: persistedDuel.id, status: persistedDuel.status } : {}),
+      mode: toTrackedMode(mode),
+      name: 'ui_error',
+      ...(trackedTier ? { tier: trackedTier } : {}),
+    });
+  }, [actionError, mode, persistedDuel, tier]);
 
   function startDuel(nextTier = tier) {
     for (const timer of timers.current) window.clearTimeout(timer);
@@ -427,8 +457,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     timers.current = [];
     setNonce((value) => value + 1);
     setPhase('lobby');
-    if (rematch)
+    if (rematch) {
+      const trackedTier = toTrackedTier(tier);
+      trackProductEvent({
+        ...(persistedDuel ? { duelId: persistedDuel.id } : {}),
+        mode: toTrackedMode(mode),
+        name: 'duel_rematched',
+        ...(trackedTier ? { tier: trackedTier } : {}),
+      });
       setActionError('Rematch ready. Review and approve a fresh transaction to continue.');
+    }
   }
 
   async function copyChallenge() {
@@ -451,6 +489,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       '_blank',
       'noopener,noreferrer',
     );
+    const trackedTier = toTrackedTier(tier);
+    trackProductEvent({
+      ...(persistedDuel ? { duelId: persistedDuel.id, status: persistedDuel.status } : {}),
+      mode: toTrackedMode(mode),
+      name: 'duel_shared',
+      ...(trackedTier ? { tier: trackedTier } : {}),
+    });
   }
 
   if (phase !== 'lobby') {
@@ -802,6 +847,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 onClick={async () => {
                   const challengeUrl = `${window.location.origin}/overview?challenge=${encodeURIComponent(persistedDuel.id)}`;
                   await navigator.clipboard.writeText(challengeUrl);
+                  trackProductEvent({
+                    duelId: persistedDuel.id,
+                    mode: persistedDuel.matchmakingMode,
+                    name: 'duel_shared',
+                    status: persistedDuel.status,
+                    tier: 50,
+                  });
                   setCopied(true);
                   window.setTimeout(() => setCopied(false), 1800);
                 }}
@@ -904,4 +956,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       ) : null}
     </main>
   );
+}
+
+function toTrackedMode(mode: Mode): 'direct' | 'house' | 'open' {
+  return mode === 'matchmaking' ? 'open' : mode;
+}
+
+function toTrackedTier(tier: number): 25 | 50 | 100 | undefined {
+  if (tier === 25 || tier === 50 || tier === 100) return tier;
+  return undefined;
 }

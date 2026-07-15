@@ -3,8 +3,11 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { AnalyticsService } from '../analytics/analytics.service.js';
 import type { Duel, DuelEvent, DuelTransactionRecord, Page } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { PacksService } from '../packs/packs.service.js';
@@ -26,6 +29,7 @@ export class DuelsService {
   constructor(
     private readonly repository: DuelRepository,
     private readonly packs: PacksService,
+    @Optional() private readonly analytics?: AnalyticsService,
   ) {}
 
   async findAll(query: ListDuelsQuery): Promise<Page<Duel>> {
@@ -50,7 +54,7 @@ export class DuelsService {
     }
     const request = { ...input, environment: 'solana-devnet', providerMode };
 
-    return this.repository.create(
+    const duel = await this.repository.create(
       {
         creatorWallet: input.creatorWallet,
         expiresAt: new Date(input.expiresAt),
@@ -65,12 +69,46 @@ export class DuelsService {
       idempotencyKey,
       hashDuelRequest(request),
     );
+    await this.analytics?.recordServer({
+      duelId: duel.id,
+      mode: duel.matchmakingMode,
+      name: 'duel_created',
+      ...(input.analyticsSessionId ? { sessionId: input.analyticsSessionId } : {}),
+      status: duel.status,
+      tier: moneyToTier(duel.stake.amount, duel.stake.decimals),
+    });
+    if (duel.status === 'matched') {
+      await this.analytics?.recordServer({
+        duelId: duel.id,
+        mode: duel.matchmakingMode,
+        name: 'duel_matched',
+        ...(input.analyticsSessionId ? { sessionId: input.analyticsSessionId } : {}),
+        status: duel.status,
+        tier: moneyToTier(duel.stake.amount, duel.stake.decimals),
+      });
+    }
+    return duel;
   }
 
   async join(duelId: string, input: JoinDuelRequest, idempotencyKey: string): Promise<Duel> {
     const now = new Date();
     await this.repository.expireTimedOut(now);
-    return this.repository.join(duelId, input.wallet, idempotencyKey, hashDuelRequest(input), now);
+    const duel = await this.repository.join(
+      duelId,
+      input.wallet,
+      idempotencyKey,
+      hashDuelRequest(input),
+      now,
+    );
+    await this.analytics?.recordServer({
+      duelId: duel.id,
+      mode: duel.matchmakingMode,
+      name: 'duel_matched',
+      ...(input.analyticsSessionId ? { sessionId: input.analyticsSessionId } : {}),
+      status: duel.status,
+      tier: moneyToTier(duel.stake.amount, duel.stake.decimals),
+    });
+    return duel;
   }
 
   async cancel(duelId: string, input: CancelDuelRequest, idempotencyKey: string): Promise<Duel> {
@@ -80,7 +118,7 @@ export class DuelsService {
     if (!current) throw new NotFoundException(`Duel ${duelId} was not found`);
     if (current.status === 'cancelled' && current.cancellationReason === 'timeout') return current;
 
-    return this.repository.cancel(
+    const duel = await this.repository.cancel(
       duelId,
       input.wallet,
       normalizeReason(input.reason),
@@ -88,6 +126,15 @@ export class DuelsService {
       hashDuelRequest(input),
       now,
     );
+    await this.analytics?.recordServer({
+      duelId: duel.id,
+      mode: duel.matchmakingMode,
+      name: 'duel_cancelled',
+      ...(input.analyticsSessionId ? { sessionId: input.analyticsSessionId } : {}),
+      status: duel.status,
+      tier: moneyToTier(duel.stake.amount, duel.stake.decimals),
+    });
+    return duel;
   }
 
   async listEvents(duelId: string): Promise<DuelEvent[]> {
@@ -170,4 +217,8 @@ function normalizeReason(reason?: string): string {
 
 function createDuelId(): string {
   return `duel_${crypto.randomUUID().replaceAll('-', '')}`;
+}
+
+function moneyToTier(amount: string, decimals: number): number {
+  return Number(amount) / 10 ** decimals;
 }

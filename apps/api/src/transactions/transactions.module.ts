@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AnalyticsModule } from '../analytics/analytics.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
 import { SolanaRpcClient, SolanaRpcGateway } from './solana-rpc.client.js';
@@ -13,7 +14,7 @@ import { WorkerKeyGuard } from './worker-key.guard.js';
 
 @Module({
   controllers: [TransactionSubmissionController, TransactionReconciliationController],
-  imports: [AuthModule],
+  imports: [AnalyticsModule, AuthModule],
   providers: [
     WorkerKeyGuard,
     TransactionMonitorService,

@@ -1,4 +1,11 @@
+import type { DuelStatus } from '../domain.js';
 import type { MonitoredTransaction } from './transaction-monitor.types.js';
+
+export interface TransactionDuelAnalytics {
+  mode: 'direct' | 'house' | 'open';
+  status: DuelStatus;
+  tier: number;
+}
 
 export interface BindSubmissionInput {
   actorWallet?: string;
@@ -19,6 +26,9 @@ export interface BoundSubmission {
 export abstract class TransactionMonitorRepository {
   abstract bindSubmission(input: BindSubmissionInput): Promise<BoundSubmission>;
   abstract findPending(limit: number, now: Date): Promise<MonitoredTransaction[]>;
+  getDuelAnalytics(_duelId: string): Promise<TransactionDuelAnalytics | null> {
+    return Promise.resolve(null);
+  }
   abstract recordConfirmed(transactionId: string, now: Date, nextCheckAt: Date): Promise<void>;
   abstract recordFinalized(transactionId: string, now: Date): Promise<boolean>;
   abstract recordPending(

@@ -9,6 +9,8 @@ export {
   DuelStatus,
   DuelTransactionAction,
   DuelTransactionStatus,
+  ProductEventName,
+  ProductEventSource,
   ProviderMode,
   SolanaNetwork,
 } from '../generated/client.js';

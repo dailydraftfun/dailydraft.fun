@@ -17,6 +17,7 @@ import {
   type StandardEventsFeature,
 } from '@wallet-standard/features';
 import { createContext, useContext, useEffect, useEffectEvent, useState } from 'react';
+import { trackProductEvent } from '../analytics-client';
 import { SOLANA_CHAIN, SOLANA_CLUSTER, SOLANA_RPC_URL, shortenAddress } from './config';
 
 type CompatibleWallet = WalletWithFeatures<
@@ -94,6 +95,10 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   }, []);
 
   useEffect(() => {
+    if (account) trackProductEvent({ name: 'wallet_connected' });
+  }, [account]);
+
+  useEffect(() => {
     const controller = new AbortController();
     fetch(SOLANA_RPC_URL, {
       method: 'POST',
@@ -107,6 +112,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
       .catch((networkError) => {
         if (!(networkError instanceof DOMException && networkError.name === 'AbortError')) {
           setNetworkStatus('offline');
+          trackProductEvent({ name: 'ui_error' });
         }
       });
     return () => controller.abort();

@@ -64,6 +64,10 @@ export class ListDuelsQuery {
 }
 
 export class CreateDuelRequest {
+  @IsOptional()
+  @Matches(/^anon_[a-f0-9]{32}$/)
+  analyticsSessionId?: string;
+
   @Matches(SOLANA_ADDRESS)
   creatorWallet!: string;
 
@@ -83,11 +87,19 @@ export class CreateDuelRequest {
 }
 
 export class JoinDuelRequest {
+  @IsOptional()
+  @Matches(/^anon_[a-f0-9]{32}$/)
+  analyticsSessionId?: string;
+
   @Matches(SOLANA_ADDRESS)
   wallet!: string;
 }
 
 export class CancelDuelRequest {
+  @IsOptional()
+  @Matches(/^anon_[a-f0-9]{32}$/)
+  analyticsSessionId?: string;
+
   @Matches(SOLANA_ADDRESS)
   wallet!: string;
 
