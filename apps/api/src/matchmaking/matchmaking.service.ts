@@ -115,7 +115,7 @@ export class MatchmakingService {
       where: { wallet },
     });
     if (!ticket) throw new NotFoundException('Wallet has no active matchmaking session');
-    if (![DuelStatus.WAITING, DuelStatus.MATCHED].includes(ticket.duel.status)) {
+    if (ticket.duel.status !== DuelStatus.WAITING && ticket.duel.status !== DuelStatus.MATCHED) {
       throw new ConflictException('Committed matches must use cancellation or refund recovery');
     }
     await this.database.$transaction(async (transaction) => {
@@ -596,7 +596,8 @@ function toSession(ticket: TicketWithDuel) {
       { action: 'continue_search', available: searching },
       {
         action: 'cancel_search',
-        available: [DuelStatus.WAITING, DuelStatus.MATCHED].includes(ticket.duel.status),
+        available:
+          ticket.duel.status === DuelStatus.WAITING || ticket.duel.status === DuelStatus.MATCHED,
       },
       {
         action: 'house_fallback',
