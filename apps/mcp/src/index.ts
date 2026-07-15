@@ -2,10 +2,15 @@
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
+import { OpenPacksApiClient } from './api-client.js';
 import { createOpenPacksDuelServer } from './server.js';
 
 async function main(): Promise<void> {
-  const server = createOpenPacksDuelServer();
+  const client = new OpenPacksApiClient();
+  const server = createOpenPacksDuelServer(client, {
+    canPrepareTransactions:
+      process.env.OPENPACKSDUEL_MCP_ENABLE_PREPARE === 'true' && client.hasIntegrationCredential,
+  });
   await server.connect(new StdioServerTransport());
   console.error('OpenPacks Duel MCP server running over stdio');
 }

@@ -1,15 +1,17 @@
 # OpenPacks Duel MCP
 
-Read-only-first Model Context Protocol server for OpenPacks Duel integrations.
+Authenticated Model Context Protocol server for non-custodial OpenPacks Duel
+integrations. It supports local stdio and stateless Streamable HTTP at `/mcp`.
 
 The server wraps the public v1 API contract with agent-safe tools for pack
-discovery, open-duel discovery, duel status, and canonical social-card URLs. It
-does not sign Solana transactions, accept seed phrases, or settle duels.
+discovery, duel status, proof references, and canonical social-card URLs. Its
+prepare tools return off-chain intents or unsigned devnet transactions only. It
+never signs, submits, accepts wallet secrets, holds keys, or settles duels.
 
 > [!IMPORTANT]
-> The backing API contract is preview-only. The server is ready for local
-> integration work against `apps/api`. Production availability still depends on
-> the persistent datastore, authentication, and Solana integration milestones.
+> The backing API and Solana transaction builder are devnet-preview contracts.
+> Mock card outcomes are valueless. A prepared intent is not proof of funding or
+> settlement.
 
 ## Tools
 
@@ -19,11 +21,17 @@ does not sign Solana transactions, accept seed phrases, or settle duels.
 | `get_pack` | Read one pack definition |
 | `list_duels` | Discover open or wallet-related duels |
 | `get_duel` | Read canonical duel status and chain references |
+| `get_duel_proof` | Read result commitments and Solana proof references |
 | `get_duel_social_card` | Get canonical page, image, and share text |
+| `prepare_create_duel` | Validate an off-chain creation intent without creating it |
+| `prepare_fund_duel` | Request an unsigned devnet funding transaction |
+| `prepare_cancel_duel` | Request an unsigned devnet cancellation transaction |
+| `prepare_refund_duel` | Request an unsigned devnet refund transaction |
 
-All tools declare `readOnlyHint: true`. Transaction preparation and mutation
-tools will not be added until API authentication, wallet confirmation, and the
-escrow settlement contract are production-ready.
+Prepare tools require the `prepare` MCP credential scope and always return
+`walletConfirmation.required: true`. The transaction-preparation API is allowed
+to return `501` until its escrow transaction builder is live; the MCP does not
+substitute a mock transaction.
 
 ## Run over stdio
 
@@ -48,7 +56,50 @@ Example client configuration for a local checkout:
 }
 ```
 
-`OPENPACKSDUEL_API_KEY` is optional for public reads and is never logged.
+`OPENPACKSDUEL_API_KEY` is optional for public reads and is never returned or
+logged. Local stdio is read-only unless the operator explicitly sets
+`OPENPACKSDUEL_MCP_ENABLE_PREPARE=true`.
+
+## Deploy Streamable HTTP on Vercel
+
+Create a Vercel project with `apps/mcp` as its root, then configure the values
+shown in `.env.example`. `OPENPACKSDUEL_MCP_KEYS` is a JSON array of scoped
+credentials:
+
+```json
+[
+  {
+    "id": "agent-read",
+    "token": "generate-a-random-secret-with-at-least-32-characters",
+    "scopes": ["read"]
+  },
+  {
+    "id": "agent-prepare",
+    "token": "generate-a-different-random-secret-at-least-32-characters",
+    "scopes": ["read", "prepare"]
+  }
+]
+```
+
+Generate tokens with `openssl rand -base64 32`. Call `POST /mcp` with
+`Authorization: Bearer <token>`. Browser `Origin` values must exactly match the
+comma-separated `OPENPACKSDUEL_MCP_ALLOWED_ORIGINS`; requests without an Origin
+remain available to normal server-to-server MCP clients. Missing authentication
+configuration fails closed with `503`.
+
+The function enforces a per-instance, per-credential limit of 60 requests per
+minute by default. Set `OPENPACKSDUEL_MCP_RATE_LIMIT` to change it, and configure
+Vercel Firewall rate limiting for a deployment-wide limit across instances. The
+in-memory limiter is best-effort defense in depth only; it does not coordinate
+limits across serverless instances or cold starts.
+
+The HTTP server creates a fresh stateless MCP server for each request, uses JSON
+responses instead of long-lived SSE, and preserves standard GET/DELETE method
+behavior. It validates every supplied Origin before authentication.
+
+`OPENPACKSDUEL_API_URL` has no production default and is required. Prepare scope
+also fails closed unless the server has `OPENPACKSDUEL_API_KEY`; that upstream
+credential is redacted from all tool errors and is never returned to clients.
 
 ## Development
 
@@ -58,9 +109,8 @@ bun run typecheck
 bun test
 ```
 
-The MCP v1 SDK is intentionally used while the official v2 SDK remains
-pre-release. See the canonical API contract in
-[`apps/docs`](https://github.com/openpacksduel/app/tree/main/apps/docs).
+CI owns tests, typechecking, and builds for this repository. See the canonical
+API contract in [`apps/docs`](https://github.com/openpacksduel/app/tree/main/apps/docs).
 
 ## License
 
