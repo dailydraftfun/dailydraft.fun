@@ -1,5 +1,8 @@
 # Integration quickstart
 
+Run `bun run dev:api` from the monorepo root, then use
+`http://localhost:3003/v1` as the local base URL.
+
 ## 1. Discover packs
 
 Use `GET /v1/packs` to show the pack definitions currently eligible for duels.

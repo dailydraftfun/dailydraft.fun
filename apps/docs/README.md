@@ -3,8 +3,8 @@
 Contract-first integration documentation for OpenPacks Duel.
 
 The canonical API contract is [`openapi.yaml`](openapi.yaml). The included
-Scalar reference is a static Vercel site, so the contract can be reviewed before
-the API implementation is deployed.
+Scalar reference is a static Vercel site. The initial API implementation lives
+in `apps/api`; production persistence and Solana settlement remain preview work.
 
 > [!IMPORTANT]
 > The v1 API is a preview contract. Endpoints marked with

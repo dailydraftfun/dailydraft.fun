@@ -8,8 +8,8 @@ does not sign Solana transactions, accept seed phrases, or settle duels.
 
 > [!IMPORTANT]
 > The backing API contract is preview-only. The server is ready for local
-> integration work, but requests will fail clearly until an API implementation
-> is available at `OPENPACKSDUEL_API_URL`.
+> integration work against `apps/api`. Production availability still depends on
+> the persistent datastore, authentication, and Solana integration milestones.
 
 ## Tools
 
@@ -29,7 +29,7 @@ escrow settlement contract are production-ready.
 
 ```bash
 bun install
-OPENPACKSDUEL_API_URL=http://localhost:3000/api/v1 bun run start
+OPENPACKSDUEL_API_URL=http://localhost:3003/v1 bun run start
 ```
 
 Example client configuration for a local checkout:
@@ -41,7 +41,7 @@ Example client configuration for a local checkout:
       "command": "bun",
       "args": ["run", "/absolute/path/to/openpacksduel/app/apps/mcp/src/index.ts"],
       "env": {
-        "OPENPACKSDUEL_API_URL": "http://localhost:3000/api/v1"
+        "OPENPACKSDUEL_API_URL": "http://localhost:3003/v1"
       }
     }
   }

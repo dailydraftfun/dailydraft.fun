@@ -13,6 +13,7 @@ bun run dev:app
 
 - `apps/web` - public landing page
 - `apps/app` - interactive duel product
+- `apps/api` - contract-first NestJS HTTP API
 - `apps/docs` - static developer reference and OpenAPI contract
 - `apps/mcp` - read-only-first MCP server for agent integrations
 - [`openpacksduel/escrow`](https://github.com/openpacksduel/escrow) - public Solana escrow program
@@ -23,13 +24,14 @@ bun run dev:app
 - `bun run dev:web` - starts the public landing page at http://localhost:3000
 - `bun run dev:app` - starts the product web app at http://localhost:3001
 - `bun run dev:docs` - starts the developer reference at http://localhost:3002
+- `bun run dev:api` - starts the NestJS API at http://localhost:3003/v1
 - `bun run dev:mcp` - starts the MCP server over stdio
 
 ## Vercel
 
-Deploy the interactive MVP with the Vercel root directory set to `apps/app`. Deploy the developer reference separately with the root directory set to `apps/docs`. The `apps/web` surface is an optional public landing page; `apps/mcp` remains a Bun service rather than a static Vercel project.
+Deploy the interactive MVP with the Vercel root directory set to `apps/app`. Deploy the developer reference separately with the root directory set to `apps/docs`. The `apps/web` surface is an optional public landing page; `apps/api` and `apps/mcp` remain Bun services rather than static Vercel projects.
 
-This is a frontend-only demo. Wallet connection, matchmaking, pack results, card values, escrow proof, and settlement are mocked; the UI never requests a real signature or transaction.
+The product UI is still an MVP and does not request real wallet signatures or transactions. The API foundation serves preview data and keeps duel intents in memory; persistent matchmaking, provider inventory, wallet sessions, escrow proof, and settlement remain implementation milestones.
 
 ## Update Dependencies
 
@@ -48,4 +50,4 @@ bun run deps:update
 
 ## Scope
 
-Frontend-only Solana Pokemon pack duel MVP with quick matchmaking, wallet challenges, synchronized reveals, and shareable outcomes
+Solana Pokémon pack duel workspace with a frontend MVP, preview API, integration docs, and agent tooling.

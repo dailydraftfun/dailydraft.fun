@@ -14,7 +14,7 @@ info:
     name: OpenPacks Duel
     url: https://github.com/openpacksduel
 servers:
-  - url: http://localhost:3000/api/v1
+  - url: http://localhost:3003/v1
     description: Local development
   - url: https://api.openpacksduel.com/v1
     description: Planned production endpoint (not live)
@@ -29,6 +29,20 @@ tags:
     description: Canonical share pages and generated social-card images.
 security: []
 paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check API process health
+      x-openpacksduel-availability: preview
+      responses:
+        '200':
+          description: API process is accepting requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /packs:
     get:
       operationId: listPacks
@@ -128,6 +142,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '409':
           $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /duels/{duelId}:
     get:
       operationId: getDuel
@@ -176,6 +192,10 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '409':
           $ref: '#/components/responses/Conflict'
+        '501':
+          $ref: '#/components/responses/NotImplemented'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /duels/{duelId}/social-card:
     get:
       operationId: getDuelSocialCard
@@ -220,8 +240,7 @@ components:
       in: path
       required: true
       schema:
-        type: string
-        pattern: '^[a-z0-9][a-z0-9_-]{2,63}$'
+        $ref: '#/components/schemas/PackId'
     DuelId:
       name: duelId
       in: path
@@ -262,11 +281,45 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+    NotImplemented:
+      description: Operation is contractually reserved but not available yet
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RateLimited:
+      description: Too many requests
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unavailable:
+      description: Required server configuration or dependency is unavailable
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
   schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [service, status, version]
+      properties:
+        service:
+          type: string
+          const: openpacksduel-api
+        status:
+          type: string
+          const: ok
+        version:
+          type: string
     SolanaAddress:
       type: string
       pattern: '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
       examples: [9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1]
+    PackId:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9_-]{2,63}$'
     Money:
       type: object
       additionalProperties: false
@@ -337,7 +390,7 @@ components:
             - $ref: '#/components/schemas/SolanaAddress'
             - type: 'null'
         packId:
-          type: string
+          $ref: '#/components/schemas/PackId'
         matchmakingMode:
           $ref: '#/components/schemas/MatchmakingMode'
         expiresAt:

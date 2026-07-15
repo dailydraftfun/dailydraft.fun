@@ -1,0 +1,31 @@
+{
+  "name": "@openpacksduel/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Contract-first HTTP API for OpenPacks Duel",
+  "type": "module",
+  "packageManager": "bun@1.3.13",
+  "scripts": {
+    "build": "bun build src/main.ts --target=bun --outdir=dist",
+    "clean": "rm -rf dist",
+    "dev": "bun --watch src/main.ts",
+    "start": "bun run src/main.ts",
+    "lint": "biome check src/",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.1.28",
+    "@nestjs/core": "11.1.28",
+    "@nestjs/platform-fastify": "11.1.28",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.15.1",
+    "fastify": "5.10.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.8",
+    "typescript": "6.0.3"
+  }
+}

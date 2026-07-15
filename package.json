@@ -9,6 +9,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:api": "turbo run dev --filter=@openpacksduel/api",
     "dev:web": "turbo run dev --filter=@openpacksduel/web",
     "dev:app": "turbo run dev --filter=@openpacksduel/app",
     "dev:docs": "turbo run dev --filter=@openpacksduel/docs",
