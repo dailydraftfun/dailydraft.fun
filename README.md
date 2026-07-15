@@ -31,7 +31,7 @@ bun run dev:app
 
 Deploy the interactive MVP with the Vercel root directory set to `apps/app`. Deploy the developer reference separately with the root directory set to `apps/docs`. The `apps/web` surface is an optional public landing page; `apps/api` and `apps/mcp` remain Bun services rather than static Vercel projects.
 
-The product UI is still an MVP and does not request real wallet signatures or transactions. The API foundation serves preview data and keeps duel intents in memory; persistent matchmaking, provider inventory, wallet sessions, escrow proof, and settlement remain implementation milestones.
+The product UI connects Solana wallets and requests signatures only when the API supplies a serialized devnet transaction. Without one, the review remains an explicit simulation and moves no funds. Persistent provider inventory, escrow proof, and production settlement remain implementation milestones.
 
 ## Devnet
 

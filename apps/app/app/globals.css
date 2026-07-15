@@ -620,6 +620,13 @@
   border-color: var(--color-border-strong);
   transform: translateY(-1px);
 }
+.tier-card:disabled {
+  cursor: not-allowed;
+}
+.tier-card:disabled:hover {
+  border-color: rgba(184, 255, 90, 0.5);
+  transform: none;
+}
 .tier-card-selected {
   border-color: rgba(184, 255, 90, 0.5);
   background: rgba(184, 255, 90, 0.07);

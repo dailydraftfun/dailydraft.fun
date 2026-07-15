@@ -99,8 +99,8 @@ export function TransactionIntentReview({
           <div className="intent-notice intent-notice-preview">
             <InfoIcon size={18} weight="fill" />
             <span>
-              Devnet preview: the API has not supplied a transaction, so this continues the demo
-              without opening a wallet signature request or moving funds.
+              Devnet simulation: the API did not supply a serialized transaction. No wallet request
+              opens and no funds move.
             </span>
           </div>
         ) : (

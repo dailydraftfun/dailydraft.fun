@@ -37,6 +37,15 @@ import { useSolanaWallet } from './solana/wallet-provider';
 type Mode = DuelOpponentType;
 type Phase = 'lobby' | 'matching' | 'opening' | 'result';
 
+export type DuelLobbyEntry = {
+  action: 'accept' | 'rematch';
+  duelId: string;
+  mode: Mode;
+  opponentAddress?: string;
+  opponentLabel: string;
+  tier: number;
+};
+
 type Pull = {
   id: string;
   name: string;
@@ -142,10 +151,12 @@ function Avatar({ color, label }: { color: string; label: string }) {
 function TierCard({
   value,
   selected,
+  disabled,
   onSelect,
 }: {
   value: number;
   selected: boolean;
+  disabled?: boolean;
   onSelect: () => void;
 }) {
   return (
@@ -154,6 +165,7 @@ function TierCard({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
+      disabled={disabled}
     >
       <span className="tier-orb" aria-hidden="true">
         <SparkleIcon size={value === 100 ? 25 : 21} weight="fill" />
@@ -248,12 +260,13 @@ function DuelCard({
   );
 }
 
-export function DuelArena() {
+export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const walletConnection = useSolanaWallet();
-  const [mode, setMode] = useState<Mode>('matchmaking');
-  const [tier, setTier] = useState(50);
+  const [activeEntry, setActiveEntry] = useState(entry);
+  const [mode, setMode] = useState<Mode>(entry?.mode ?? 'matchmaking');
+  const [tier, setTier] = useState(entry?.tier ?? 50);
   const [phase, setPhase] = useState<Phase>('lobby');
-  const [wallet, setWallet] = useState('');
+  const [wallet, setWallet] = useState(entry?.opponentAddress ?? '');
   const [nonce, setNonce] = useState(0);
   const [copied, setCopied] = useState(false);
   const [intent, setIntent] = useState<DuelTransactionIntent | null>(null);
@@ -263,6 +276,18 @@ export function DuelArena() {
   const match = useMemo(() => getMatch(tier, nonce), [tier, nonce]);
   const winner = match.left.value >= match.right.value ? 'you' : 'opponent';
   const fee = tier * 0.025;
+
+  function chooseMode(nextMode: Mode) {
+    if (nextMode === mode) return;
+    setActiveEntry(undefined);
+    setMode(nextMode);
+    if (nextMode !== 'direct') setWallet('');
+  }
+
+  function chooseTier(nextTier: number) {
+    setTier(nextTier);
+    if (activeEntry?.action === 'accept') setActiveEntry(undefined);
+  }
 
   useEffect(() => {
     return () => {
@@ -349,7 +374,7 @@ export function DuelArena() {
   }
 
   async function copyChallenge() {
-    const value = `${window.location.origin}/duel/demo-50?status=waiting`;
+    const value = `${window.location.origin}/duel/devnet-${tier}?status=waiting`;
     try {
       await navigator.clipboard.writeText(value);
     } catch {
@@ -379,7 +404,7 @@ export function DuelArena() {
           </button>
           <div className="duel-proof">
             <ShieldCheckIcon size={15} weight="fill" />
-            <span>Demo settlement</span>
+            <span>Devnet settlement</span>
             <code>5tE4…7qkP</code>
           </div>
         </div>
@@ -516,7 +541,7 @@ export function DuelArena() {
                 type="button"
                 role="tab"
                 aria-selected={mode === 'direct'}
-                onClick={() => setMode('direct')}
+                onClick={() => chooseMode('direct')}
               >
                 <UserPlusIcon size={17} weight="bold" />
                 <span className="mode-tab-copy">
@@ -528,7 +553,7 @@ export function DuelArena() {
                 type="button"
                 role="tab"
                 aria-selected={mode === 'matchmaking'}
-                onClick={() => setMode('matchmaking')}
+                onClick={() => chooseMode('matchmaking')}
               >
                 <UsersThreeIcon size={17} weight="fill" />
                 <span className="mode-tab-copy">
@@ -540,7 +565,7 @@ export function DuelArena() {
                 type="button"
                 role="tab"
                 aria-selected={mode === 'house'}
-                onClick={() => setMode('house')}
+                onClick={() => chooseMode('house')}
               >
                 <LightningIcon size={17} weight="fill" />
                 <span className="mode-tab-copy">
@@ -561,14 +586,32 @@ export function DuelArena() {
                     key={value}
                     value={value}
                     selected={tier === value}
-                    onSelect={() => setTier(value)}
+                    disabled={activeEntry?.action === 'accept'}
+                    onSelect={() => chooseTier(value)}
                   />
                 ))}
               </div>
 
               {mode === 'direct' ? (
                 <div className="wallet-challenge-panel">
-                  <label htmlFor="opponent-wallet">Opponent wallet</label>
+                  {activeEntry ? (
+                    <div className="opponent-disclosure">
+                      <UserPlusIcon size={18} weight="fill" />
+                      <span>
+                        <strong>
+                          {activeEntry.action === 'accept'
+                            ? `Challenge from ${activeEntry.opponentLabel}`
+                            : `Rematch against ${activeEntry.opponentLabel}`}
+                        </strong>
+                        {activeEntry.action === 'accept'
+                          ? `This link reserves the $${activeEntry.tier} direct-wallet seat. Choose another mode to leave it.`
+                          : `The original $${activeEntry.tier} tier and opponent are ready for a fresh commitment.`}
+                      </span>
+                    </div>
+                  ) : null}
+                  <label htmlFor="opponent-wallet">
+                    {activeEntry ? 'Opponent from shared duel' : 'Opponent wallet'}
+                  </label>
                   <div className="wallet-input-row">
                     <Input
                       id="opponent-wallet"
@@ -576,19 +619,22 @@ export function DuelArena() {
                       onChange={(event) => setWallet(event.target.value)}
                       placeholder="Solana wallet address"
                       className="wallet-input"
+                      readOnly={Boolean(activeEntry)}
                     />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={copyChallenge}
-                      title="Copy challenge link"
-                    >
-                      {copied ? (
-                        <CheckCircleIcon size={18} weight="fill" />
-                      ) : (
-                        <CopyIcon size={18} />
-                      )}
-                    </Button>
+                    {!activeEntry ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={copyChallenge}
+                        title="Copy devnet challenge preview"
+                      >
+                        {copied ? (
+                          <CheckCircleIcon size={18} weight="fill" />
+                        ) : (
+                          <CopyIcon size={18} />
+                        )}
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -597,8 +643,14 @@ export function DuelArena() {
                 <div className="opponent-disclosure">
                   <ShieldCheckIcon size={18} weight="fill" />
                   <span>
-                    <strong>Instant house opponent</strong>
-                    The house funds the matching pack and must precommit before either reveal.
+                    <strong>
+                      {activeEntry?.action === 'rematch'
+                        ? 'House rematch ready'
+                        : 'Instant house opponent'}
+                    </strong>
+                    {activeEntry?.action === 'rematch'
+                      ? `The original $${activeEntry.tier} house tier is preselected for a fresh commitment.`
+                      : 'The house funds the matching pack and must precommit before either reveal.'}
                   </span>
                 </div>
               ) : null}
@@ -641,9 +693,15 @@ export function DuelArena() {
                 {intentPending
                   ? 'Preparing devnet intent'
                   : mode === 'direct'
-                    ? `Create $${tier} challenge`
+                    ? activeEntry?.action === 'accept'
+                      ? `Accept $${tier} challenge`
+                      : activeEntry?.action === 'rematch'
+                        ? `Review $${tier} rematch`
+                        : `Create $${tier} challenge`
                     : mode === 'house'
-                      ? `Play house for $${tier}`
+                      ? activeEntry?.action === 'rematch'
+                        ? `Review $${tier} house rematch`
+                        : `Play house for $${tier}`
                       : `Find a $${tier} duel`}
               </Button>
               <p className="signing-note">
