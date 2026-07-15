@@ -9,6 +9,8 @@ export {
   DuelStatus,
   DuelTransactionAction,
   DuelTransactionStatus,
+  MatchmakingTicketRole,
+  MatchmakingTicketStatus,
   OperatorAction,
   OperatorActorClass,
   OperatorReasonCode,
@@ -29,7 +31,6 @@ export function createDatabaseClient(connectionString = process.env.DATABASE_URL
     adapter: new PrismaPg({ connectionString }),
     errorFormat: 'minimal',
     transactionOptions: {
-      isolationLevel: 'Serializable',
       maxWait: 5_000,
       timeout: 10_000,
     },

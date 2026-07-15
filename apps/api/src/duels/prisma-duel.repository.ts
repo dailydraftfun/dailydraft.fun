@@ -193,6 +193,13 @@ export class PrismaDuelRepository extends DuelRepository {
         if (duel.status !== DatabaseDuelStatus.WAITING) {
           throw new ConflictException(`Duel cannot be joined from ${duel.status.toLowerCase()}`);
         }
+        const queueTicket = await transaction.matchmakingTicket.findFirst({
+          select: { id: true },
+          where: { duelId },
+        });
+        if (queueTicket) {
+          throw new ConflictException('Open queue duels must be assigned through matchmaking');
+        }
         if (duel.mode === DuelMode.DIRECT && duel.opponentWallet !== wallet) {
           throw new ConflictException('Only the invited wallet can join this duel');
         }

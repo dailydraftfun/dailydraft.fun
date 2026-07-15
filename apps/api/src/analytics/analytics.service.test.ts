@@ -89,6 +89,21 @@ describe('analytics funnel report', () => {
     expect(JSON.stringify(report)).not.toContain('token');
     expect(JSON.stringify(report)).not.toContain('signature');
   });
+
+  test('reports matchmaking wait, match, abandonment, fallback, and commitment failures', () => {
+    const report = reportFor([
+      event('matchmaking_wait_started', 0),
+      event('matchmaking_matched', 1_500),
+      event('matchmaking_commitment_failed', 2_000),
+      event('matchmaking_abandoned', 2_500),
+      event('house_fallback_selected', 3_000),
+    ]);
+
+    expect(report.matchmaking.matched).toBe(1);
+    expect(report.matchmaking.commitmentFailed).toBe(1);
+    expect(report.matchmaking.rates.matched).toBe(1);
+    expect(report.latencyMs.matchmakingWait).toEqual({ count: 1, p50: 1_500, p95: 1_500 });
+  });
 });
 
 function reportFor(events: NormalizedEvent[]) {
