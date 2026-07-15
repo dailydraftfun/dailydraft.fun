@@ -38,6 +38,11 @@ enum ProviderMode {
   COLLECTOR_CRYPT_SANDBOX
 }
 
+enum DuelSide {
+  CREATOR
+  OPPONENT
+}
+
 enum DuelTransactionAction {
   FUND
   CANCEL
@@ -82,14 +87,40 @@ model Duel {
   matchedAt           DateTime?
   fundedAt            DateTime?
   settledAt           DateTime?
+  resultHash          String?
+  resultReadyAt       DateTime?
   events              DuelEvent[]
   transactions        DuelTransaction[]
+  packOutcomes        DuelPackOutcome[]
 
   @@index([status, expiresAt])
   @@index([mode, status, packId, createdAt])
   @@index([creatorWallet, createdAt])
   @@index([opponentWallet, createdAt])
   @@index([winnerWallet, createdAt])
+}
+
+model DuelPackOutcome {
+  id                   String   @id
+  duelId               String
+  side                 DuelSide
+  provider              String
+  providerReference     String
+  assetReference        String
+  displayName           String
+  insuredValueAmount    String
+  insuredValueCurrency  String   @default("USDC")
+  insuredValueDecimals  Int      @default(6)
+  valuationPolicyHash   String
+  resultHash            String
+  isMock                Boolean
+  openedAt              DateTime
+  createdAt             DateTime @default(now())
+  duel                  Duel     @relation(fields: [duelId], references: [id], onDelete: Cascade)
+
+  @@unique([duelId, side])
+  @@unique([provider, providerReference])
+  @@index([duelId, openedAt])
 }
 
 model DuelEvent {

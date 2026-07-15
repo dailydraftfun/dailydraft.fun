@@ -5,6 +5,7 @@ import { PrismaClient } from '../generated/client.js';
 export type { Prisma } from '../generated/client.js';
 export {
   DuelMode,
+  DuelSide,
   DuelStatus,
   DuelTransactionAction,
   DuelTransactionStatus,

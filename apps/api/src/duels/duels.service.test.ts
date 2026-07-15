@@ -6,6 +6,7 @@ import type { ListDuelsQuery } from './duel.dto.js';
 import {
   type CreateDuelRecord,
   DuelRepository,
+  type ResolveOpenedPacksRecord,
   type TransitionDuelRecord,
 } from './duel.repository.js';
 import { DuelsService } from './duels.service.js';
@@ -197,6 +198,10 @@ class FakeDuelRepository extends DuelRepository {
 
   async listTransactions(_duelId: string): Promise<DuelTransactionRecord[]> {
     return [];
+  }
+
+  async resolveOpenedPacks(_input: ResolveOpenedPacksRecord): Promise<Duel> {
+    throw new Error('Not implemented by this test fake');
   }
 
   async transition(input: TransitionDuelRecord): Promise<Duel> {

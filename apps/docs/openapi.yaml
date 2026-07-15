@@ -343,6 +343,38 @@ paths:
                 $ref: '#/components/schemas/SocialCard'
         '404':
           $ref: '#/components/responses/NotFound'
+  /duels/{duelId}/open-packs:
+    post:
+      operationId: openDuelPacks
+      tags: [Duels]
+      summary: Generate, open, and normalize both funded duel packs
+      description: |
+        Server-side orchestration for a funded duel. Both house and wallet
+        opponents use this same path. The deterministic mock provider is
+        devnet-only and returns valueless test assets; it does not settle NFTs.
+      x-openpacksduel-availability: devnet
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Both results are normalized and ready for settlement orchestration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Duel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/Unavailable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
     bearerAuth:
@@ -597,7 +629,7 @@ components:
         providerMode:
           type: string
           enum: [mock, collector-crypt-sandbox]
-          description: Mock mode never represents a funded or settled game.
+          description: Mock outcomes are valueless and never represent transferred assets.
         houseOpponent:
           type: boolean
         opponentWallet:
@@ -618,6 +650,10 @@ components:
           oneOf:
             - $ref: '#/components/schemas/SolanaAddress'
             - type: 'null'
+        result:
+          oneOf:
+            - $ref: '#/components/schemas/DuelResult'
+            - type: 'null'
         opponentJoinedAt:
           type: [string, 'null']
           format: date-time
@@ -635,6 +671,59 @@ components:
         updatedAt:
           type: string
           format: date-time
+    DuelPackOutcome:
+      type: object
+      additionalProperties: false
+      required: [side, assetReference, displayName, insuredValue, resultHash, isMock]
+      properties:
+        side:
+          type: string
+          enum: [creator, opponent]
+        assetReference:
+          type: string
+          description: Public asset identity; provider request references remain server-only.
+        displayName:
+          type: string
+          maxLength: 160
+        insuredValue:
+          $ref: '#/components/schemas/Money'
+        resultHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        isMock:
+          type: boolean
+    DuelResult:
+      type: object
+      additionalProperties: false
+      required:
+        - comparisonMetric
+        - outcomes
+        - resultHash
+        - settlementReady
+        - valuationPolicyHash
+        - winnerSide
+      properties:
+        comparisonMetric:
+          type: string
+          const: insured-value
+        outcomes:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/DuelPackOutcome'
+        resultHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        settlementReady:
+          type: boolean
+          description: Results can be passed to settlement; assets are not yet transferred.
+        valuationPolicyHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        winnerSide:
+          type: [string, 'null']
+          enum: [creator, opponent, null]
     DuelList:
       type: object
       additionalProperties: false

@@ -8,6 +8,7 @@ import type {
   Pack,
   Page,
 } from '../domain.js';
+import type { ComparedPackOutcomes, NormalizedPackOutcome } from '../providers/provider-result.js';
 import type { ListDuelsQuery } from './duel.dto.js';
 
 export interface CreateDuelRecord {
@@ -30,6 +31,17 @@ export interface TransitionDuelRecord {
   idempotencyKey: string;
   requestHash: string;
   toStatus: Duel['status'];
+}
+
+export interface ResolveOpenedPacksRecord {
+  comparison: ComparedPackOutcomes;
+  creator: NormalizedPackOutcome & { providerReference: string };
+  duelId: string;
+  idempotencyKey: string;
+  isMock: boolean;
+  opponent: NormalizedPackOutcome & { providerReference: string };
+  provider: string;
+  requestHash: string;
 }
 
 export abstract class DuelRepository {
@@ -60,6 +72,7 @@ export abstract class DuelRepository {
   ): Promise<Duel>;
   abstract listEvents(duelId: string): Promise<DuelEvent[]>;
   abstract listTransactions(duelId: string): Promise<DuelTransactionRecord[]>;
+  abstract resolveOpenedPacks(input: ResolveOpenedPacksRecord): Promise<Duel>;
   abstract transition(input: TransitionDuelRecord): Promise<Duel>;
 }
 

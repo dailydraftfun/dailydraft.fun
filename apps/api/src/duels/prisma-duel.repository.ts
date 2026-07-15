@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   type DatabaseClient,
+  DuelSide as DatabaseDuelSide,
   DuelStatus as DatabaseDuelStatus,
   DuelMode,
   type DuelTransactionAction,
@@ -30,6 +31,7 @@ import type { ListDuelsQuery } from './duel.dto.js';
 import {
   type CreateDuelRecord,
   DuelRepository,
+  type ResolveOpenedPacksRecord,
   type TransactionClient,
   type TransitionDuelRecord,
 } from './duel.repository.js';
@@ -55,6 +57,7 @@ export class PrismaDuelRepository extends DuelRepository {
     }
 
     const rows = await this.database.duel.findMany({
+      include: { packOutcomes: { orderBy: { side: 'asc' } } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: query.limit + 1,
       where: {
@@ -95,7 +98,10 @@ export class PrismaDuelRepository extends DuelRepository {
   }
 
   async findOne(duelId: string): Promise<Duel | null> {
-    const row = await this.database.duel.findUnique({ where: { id: duelId } });
+    const row = await this.database.duel.findUnique({
+      include: { packOutcomes: { orderBy: { side: 'asc' } } },
+      where: { id: duelId },
+    });
     return row ? toDuel(row) : null;
   }
 
@@ -409,7 +415,104 @@ export class PrismaDuelRepository extends DuelRepository {
           duel.id,
           200,
         );
-        return transaction.duel.findUniqueOrThrow({ where: { id: duel.id } });
+        return transaction.duel.findUniqueOrThrow({
+          include: { packOutcomes: { orderBy: { side: 'asc' } } },
+          where: { id: duel.id },
+        });
+      });
+      return toDuel(row);
+    } catch (error) {
+      const concurrentReplay = await this.replay(scope, input.idempotencyKey, input.requestHash);
+      if (concurrentReplay) return concurrentReplay;
+      throw error;
+    }
+  }
+
+  async resolveOpenedPacks(input: ResolveOpenedPacksRecord): Promise<Duel> {
+    const scope = `duels:${input.duelId}:resolve-packs`;
+    const replay = await this.replay(scope, input.idempotencyKey, input.requestHash);
+    if (replay) return replay;
+
+    try {
+      const row = await this.database.$transaction(async (transaction) => {
+        const duel = await transaction.duel.findUnique({ where: { id: input.duelId } });
+        if (!duel) throw new NotFoundException(`Duel ${input.duelId} was not found`);
+        if (duel.resultHash === input.comparison.resultHash && duel.resultReadyAt) {
+          return transaction.duel.findUniqueOrThrow({
+            include: { packOutcomes: { orderBy: { side: 'asc' } } },
+            where: { id: duel.id },
+          });
+        }
+        if (duel.status !== DatabaseDuelStatus.OPENING) {
+          throw new ConflictException(
+            `Duel packs cannot resolve from ${duel.status.toLowerCase()}`,
+          );
+        }
+        if (!duel.opponentWallet) throw new ConflictException('Duel has no committed opponent');
+
+        const winnerWallet =
+          input.comparison.winnerSide === 'creator'
+            ? duel.creatorWallet
+            : input.comparison.winnerSide === 'opponent'
+              ? duel.opponentWallet
+              : null;
+        const target = winnerWallet
+          ? DatabaseDuelStatus.AWAITING_ASSETS
+          : DatabaseDuelStatus.REFUNDING;
+        const now = new Date();
+
+        await transaction.duelPackOutcome.createMany({
+          data: [
+            toPackOutcomeCreate(input.duelId, input.creator, input.provider, input.isMock, now),
+            toPackOutcomeCreate(input.duelId, input.opponent, input.provider, input.isMock, now),
+          ],
+        });
+        const updated = await transaction.duel.updateMany({
+          data: {
+            resultHash: input.comparison.resultHash,
+            resultReadyAt: now,
+            status: target,
+            version: { increment: 1 },
+            winnerWallet,
+          },
+          where: {
+            id: duel.id,
+            resultHash: null,
+            status: DatabaseDuelStatus.OPENING,
+            version: duel.version,
+          },
+        });
+        if (updated.count !== 1) {
+          throw new ConflictException('Duel state changed while pack results were recorded');
+        }
+        await transaction.duelEvent.create({
+          data: {
+            data: {
+              comparisonMetric: input.comparison.comparisonMetric,
+              isMock: input.isMock,
+              resultHash: input.comparison.resultHash,
+              winnerSide: input.comparison.winnerSide,
+            },
+            duelId: duel.id,
+            fromStatus: duel.status,
+            id: createId('evt'),
+            sequence: duel.version + 1,
+            toStatus: target,
+            type: winnerWallet ? 'duel.pack_results_ready' : 'duel.pack_results_tied',
+          },
+        });
+        await this.storeIdempotency(
+          transaction,
+          scope,
+          input.idempotencyKey,
+          input.requestHash,
+          duel.id,
+          200,
+        );
+        return transaction.duel.findUniqueOrThrow({
+          include: { packOutcomes: { orderBy: { side: 'asc' } } },
+          where: { id: duel.id },
+        });
       });
       return toDuel(row);
     } catch (error) {
@@ -495,11 +598,24 @@ function toDuel(row: {
   mode: DuelMode;
   opponentJoinedAt: Date | null;
   opponentWallet: string | null;
+  packOutcomes?: Array<{
+    assetReference: string;
+    displayName: string;
+    insuredValueAmount: string;
+    insuredValueCurrency: string;
+    insuredValueDecimals: number;
+    isMock: boolean;
+    resultHash: string;
+    side: DatabaseDuelSide;
+    valuationPolicyHash: string;
+  }>;
   packId: string;
   packName: string;
   packProvider: string;
   providerMode: ProviderMode;
   providerPackId: string | null;
+  resultHash: string | null;
+  resultReadyAt: Date | null;
   stakeAmount: string;
   stakeCurrency: string;
   stakeDecimals: number;
@@ -532,11 +648,84 @@ function toDuel(row: {
       ...(row.valuationPolicyHash ? { valuationPolicyHash: row.valuationPolicyHash } : {}),
     },
     providerMode: row.providerMode === ProviderMode.MOCK ? 'mock' : 'collector-crypt-sandbox',
+    result: toDuelResult(row),
     stake,
     status: toApiStatus(row.status),
     updatedAt: row.updatedAt.toISOString(),
     version: row.version,
     winnerWallet: row.winnerWallet,
+  };
+}
+
+function toDuelResult(row: {
+  creatorWallet: string;
+  opponentWallet: string | null;
+  packOutcomes?: Array<{
+    assetReference: string;
+    displayName: string;
+    insuredValueAmount: string;
+    insuredValueCurrency: string;
+    insuredValueDecimals: number;
+    isMock: boolean;
+    resultHash: string;
+    side: DatabaseDuelSide;
+    valuationPolicyHash: string;
+  }>;
+  resultHash: string | null;
+  resultReadyAt: Date | null;
+  winnerWallet: string | null;
+}): NonNullable<Duel['result']> | null {
+  if (!row.resultHash || !row.resultReadyAt || row.packOutcomes?.length !== 2) return null;
+  const outcomes = row.packOutcomes.map((outcome) => ({
+    assetReference: outcome.assetReference,
+    displayName: outcome.displayName,
+    insuredValue: toMoney(
+      outcome.insuredValueAmount,
+      outcome.insuredValueCurrency,
+      outcome.insuredValueDecimals,
+    ),
+    isMock: outcome.isMock,
+    resultHash: outcome.resultHash,
+    side: outcome.side === DatabaseDuelSide.CREATOR ? ('creator' as const) : ('opponent' as const),
+  }));
+  const winnerSide =
+    row.winnerWallet === row.creatorWallet
+      ? ('creator' as const)
+      : row.winnerWallet && row.winnerWallet === row.opponentWallet
+        ? ('opponent' as const)
+        : null;
+  return {
+    comparisonMetric: 'insured-value',
+    outcomes,
+    resultHash: row.resultHash,
+    settlementReady: winnerSide !== null,
+    valuationPolicyHash: row.packOutcomes[0]?.valuationPolicyHash ?? '',
+    winnerSide,
+  };
+}
+
+function toPackOutcomeCreate(
+  duelId: string,
+  outcome: ResolveOpenedPacksRecord['creator'],
+  provider: string,
+  isMock: boolean,
+  openedAt: Date,
+) {
+  return {
+    assetReference: outcome.assetReference,
+    displayName: outcome.displayName,
+    duelId,
+    id: createId('outcome'),
+    insuredValueAmount: outcome.insuredValue.amount,
+    insuredValueCurrency: outcome.insuredValue.currency,
+    insuredValueDecimals: outcome.insuredValue.decimals,
+    isMock,
+    openedAt,
+    provider,
+    providerReference: outcome.providerReference,
+    resultHash: outcome.resultHash,
+    side: outcome.side === 'creator' ? DatabaseDuelSide.CREATOR : DatabaseDuelSide.OPPONENT,
+    valuationPolicyHash: outcome.valuationPolicyHash,
   };
 }
 
