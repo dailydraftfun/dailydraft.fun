@@ -25,9 +25,13 @@ export abstract class SolanaRpcGateway {
   getLegacyMint(_address: string): Promise<{ decimals: number; supply: bigint }> {
     throw new SolanaRpcUnavailableError('Legacy SPL mint reads are not implemented');
   }
-  getLegacyTokenAccount(
-    _address: string,
-  ): Promise<{ amount: bigint; mint: string; owner: string }> {
+  getLegacyTokenAccount(_address: string): Promise<{
+    amount: bigint;
+    delegate: string | null;
+    delegatedAmount: bigint;
+    mint: string;
+    owner: string;
+  }> {
     throw new SolanaRpcUnavailableError('Legacy SPL token-account reads are not implemented');
   }
   abstract getFinalizedSignaturesForAddress(
@@ -94,9 +98,13 @@ export class SolanaRpcClient extends SolanaRpcGateway {
     return { decimals: info.info.decimals, supply: BigInt(info.info.supply) };
   }
 
-  async getLegacyTokenAccount(
-    address: string,
-  ): Promise<{ amount: bigint; mint: string; owner: string }> {
+  async getLegacyTokenAccount(address: string): Promise<{
+    amount: bigint;
+    delegate: string | null;
+    delegatedAmount: bigint;
+    mint: string;
+    owner: string;
+  }> {
     const parsed = await this.getParsedTokenInfo(address);
     const info = parsed.info;
     if (
@@ -110,7 +118,14 @@ export class SolanaRpcClient extends SolanaRpcGateway {
     ) {
       throw new SolanaRpcUnavailableError('RPC returned an invalid legacy SPL token account');
     }
-    return { amount: BigInt(info.tokenAmount.amount), mint: info.mint, owner: info.owner };
+    const delegation = parseDelegation(info);
+    return {
+      amount: BigInt(info.tokenAmount.amount),
+      delegate: delegation.delegate,
+      delegatedAmount: delegation.amount,
+      mint: info.mint,
+      owner: info.owner,
+    };
   }
 
   async getFinalizedSignaturesForAddress(
@@ -194,6 +209,26 @@ export class SolanaRpcClient extends SolanaRpcGateway {
     }
     return { info: result.value.data.parsed.info, type: result.value.data.parsed.type };
   }
+}
+
+function parseDelegation(info: Record<string, unknown>): {
+  amount: bigint;
+  delegate: string | null;
+} {
+  const delegate = info.delegate;
+  const delegatedAmount = info.delegatedAmount;
+  if (delegate === undefined && delegatedAmount === undefined) {
+    return { amount: 0n, delegate: null };
+  }
+  if (
+    typeof delegate !== 'string' ||
+    !isObject(delegatedAmount) ||
+    typeof delegatedAmount.amount !== 'string' ||
+    !/^\d+$/.test(delegatedAmount.amount)
+  ) {
+    throw new SolanaRpcUnavailableError('RPC returned an invalid legacy SPL delegation');
+  }
+  return { amount: BigInt(delegatedAmount.amount), delegate };
 }
 
 function parseSignatureStatus(value: unknown): SolanaSignatureStatus | null {

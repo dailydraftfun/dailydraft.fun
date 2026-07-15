@@ -31,6 +31,18 @@ export interface HouseTreasuryConfig {
   withdrawalAuthority: string | null;
 }
 
+export interface HouseTreasurySnapshotEvidence {
+  balanceAmount: string;
+  balanceDecimals: number;
+  delegate: string;
+  delegatedAmount: string;
+  mint: string;
+  network: string;
+  tokenAccount: string;
+  verifiedAt: Date;
+  wallet: string;
+}
+
 export async function reserveHouseExposure(
   transaction: Prisma.TransactionClient,
   input: {
@@ -61,15 +73,7 @@ export async function reserveHouseExposure(
   const snapshot = await transaction.houseTreasurySnapshot.findUnique({
     where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
   });
-  if (
-    !snapshot ||
-    snapshot.wallet !== config.houseWallet ||
-    snapshot.tokenAccount !== config.tokenAccount ||
-    snapshot.mint !== config.usdcMint ||
-    snapshot.balanceDecimals !== input.decimals ||
-    snapshot.verifiedAt.getTime() > now.getTime() + 60_000 ||
-    now.getTime() - snapshot.verifiedAt.getTime() > config.snapshotMaxAgeMs
-  ) {
+  if (!snapshot || !houseTreasurySnapshotIsUsable(snapshot, config, now, input.decimals)) {
     throw new ServiceUnavailableException('House tier is disabled: treasury snapshot is stale');
   }
 
@@ -97,6 +101,7 @@ export async function reserveHouseExposure(
   const totalExposure = sumAmounts(active);
   const dailyLoss = sumAmounts(dailyLossEntries);
   const verifiedBalance = parseStoredAmount(snapshot.balanceAmount);
+  const delegatedAmount = parseStoredAmount(snapshot.delegatedAmount);
 
   if (walletActive >= config.maxActivePerWallet) {
     throw new HttpException(
@@ -110,7 +115,7 @@ export async function reserveHouseExposure(
       HttpStatus.TOO_MANY_REQUESTS,
     );
   }
-  if (dailyLoss + requested > config.dailyLossLimit) {
+  if (dailyLoss + totalExposure + requested > config.dailyLossLimit) {
     throw new ServiceUnavailableException('House tier is disabled: daily loss limit');
   }
   if (totalExposure + requested > config.maxTotalExposure) {
@@ -118,6 +123,9 @@ export async function reserveHouseExposure(
   }
   if (verifiedBalance < totalExposure + requested + config.minimumLiquidity) {
     throw new ServiceUnavailableException('House tier is disabled: minimum liquidity');
+  }
+  if (delegatedAmount < totalExposure + requested) {
+    throw new ServiceUnavailableException('House tier is disabled: delegated allowance');
   }
 
   const reservationId = createId('hres');
@@ -145,6 +153,33 @@ export async function reserveHouseExposure(
       type: HouseTreasuryLedgerType.RESERVATION_CREATED,
     },
   });
+}
+
+export function houseTreasurySnapshotIsUsable(
+  snapshot: HouseTreasurySnapshotEvidence,
+  config: HouseTreasuryConfig,
+  now = new Date(),
+  decimals = 6,
+): boolean {
+  try {
+    const balance = parseStoredAmount(snapshot.balanceAmount);
+    const delegated = parseStoredAmount(snapshot.delegatedAmount);
+    return (
+      snapshot.network === 'DEVNET' &&
+      snapshot.wallet === config.withdrawalAuthority &&
+      snapshot.delegate === config.fundingSigner &&
+      snapshot.tokenAccount === config.tokenAccount &&
+      snapshot.mint === config.usdcMint &&
+      snapshot.balanceDecimals === decimals &&
+      snapshot.verifiedAt.getTime() <= now.getTime() + 60_000 &&
+      now.getTime() - snapshot.verifiedAt.getTime() <= config.snapshotMaxAgeMs &&
+      delegated > 0n &&
+      delegated <= config.maxTotalExposure &&
+      delegated <= balance
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function shouldRetryTreasuryTransaction(error: unknown, attempt: number): boolean {

@@ -30,6 +30,7 @@ import {
   ACTIVE_HOUSE_RESERVATION_STATUSES,
   HOUSE_TREASURY_SNAPSHOT_ID,
   houseTreasuryConfigurationErrors,
+  houseTreasurySnapshotIsUsable,
   readHouseTreasuryConfig,
 } from './house-treasury.policy.js';
 
@@ -74,7 +75,7 @@ export class HouseTreasuryService {
       include: {
         duel: { include: { packOutcomes: { orderBy: { side: 'asc' } } } },
       },
-      orderBy: { updatedAt: 'asc' },
+      orderBy: [{ lastReconciledAt: { nulls: 'first', sort: 'asc' } }, { id: 'asc' }],
       take: Math.max(1, Math.min(limit, LIFECYCLE_BATCH_LIMIT)),
       where: { status: { in: [...ACTIVE_HOUSE_RESERVATION_STATUSES] } },
     });
@@ -89,16 +90,21 @@ export class HouseTreasuryService {
         if (!current || !ACTIVE_HOUSE_RESERVATION_STATUSES.includes(current.status)) {
           return { inventoryCreated: 0, released: false, transitioned: false };
         }
+        const now = new Date();
         const target = reservationTarget(current.duel.status);
         if (!target || target === current.status) {
+          await transaction.houseTreasuryReservation.updateMany({
+            data: { lastReconciledAt: now, version: { increment: 1 } },
+            where: { id: current.id, status: current.status, version: current.version },
+          });
           return { inventoryCreated: 0, released: false, transitioned: false };
         }
-        const now = new Date();
         const changed = await transaction.houseTreasuryReservation.updateMany({
           data: {
             ...(target === HouseTreasuryReservationStatus.FUNDED ? { fundedAt: now } : {}),
             ...(target === HouseTreasuryReservationStatus.RELEASED ? { releasedAt: now } : {}),
             ...(target === HouseTreasuryReservationStatus.SETTLED ? { settledAt: now } : {}),
+            lastReconciledAt: now,
             status: target,
             version: { increment: 1 },
           },
@@ -210,15 +216,24 @@ export class HouseTreasuryService {
     if (
       mint.decimals !== 6 ||
       account.mint !== config.usdcMint ||
-      account.owner !== config.houseWallet
+      account.owner !== config.withdrawalAuthority ||
+      !account.delegate ||
+      account.delegate !== config.fundingSigner ||
+      account.delegatedAmount <= 0n ||
+      account.delegatedAmount > config.maxTotalExposure ||
+      account.delegatedAmount > account.amount
     ) {
-      throw new ServiceUnavailableException('Finalized house USDC account does not match policy');
+      throw new ServiceUnavailableException(
+        'Finalized house USDC account owner or bounded delegate does not match policy',
+      );
     }
     const verifiedAt = new Date();
     await this.database.houseTreasurySnapshot.upsert({
       create: {
         balanceAmount: account.amount.toString(),
         balanceDecimals: mint.decimals,
+        delegate: account.delegate,
+        delegatedAmount: account.delegatedAmount.toString(),
         id: HOUSE_TREASURY_SNAPSHOT_ID,
         mint: account.mint,
         tokenAccount: config.tokenAccount ?? '',
@@ -228,6 +243,8 @@ export class HouseTreasuryService {
       update: {
         balanceAmount: account.amount.toString(),
         balanceDecimals: mint.decimals,
+        delegate: account.delegate,
+        delegatedAmount: account.delegatedAmount.toString(),
         mint: account.mint,
         tokenAccount: config.tokenAccount ?? '',
         verifiedAt,
@@ -328,7 +345,9 @@ export class HouseTreasuryService {
     );
     const totalExposure = sum(active.map((row) => row.amount));
     const balance = snapshot ? storedAmount(snapshot.balanceAmount) : 0n;
-    const available = balance > totalExposure ? balance - totalExposure : 0n;
+    const delegated = snapshot ? storedAmount(snapshot.delegatedAmount) : 0n;
+    const usableCapacity = balance < delegated ? balance : delegated;
+    const available = usableCapacity > totalExposure ? usableCapacity - totalExposure : 0n;
     const tierCounts = new Map<number, number>();
     for (const reservation of active) {
       tierCounts.set(reservation.tier, (tierCounts.get(reservation.tier) ?? 0) + 1);
@@ -358,9 +377,7 @@ export class HouseTreasuryService {
         .map((asset) => asset.acquisitionValueAmount),
     );
     const configurationErrors = houseTreasuryConfigurationErrors(config);
-    const snapshotFresh = Boolean(
-      snapshot && Date.now() - snapshot.verifiedAt.getTime() <= config.snapshotMaxAgeMs,
-    );
+    const snapshotFresh = Boolean(snapshot && houseTreasurySnapshotIsUsable(snapshot, config));
     return {
       configuration: {
         allowedDispositions: config.allowedDispositions,
@@ -389,6 +406,7 @@ export class HouseTreasuryService {
         availableAmount: available.toString(),
         balanceAmount: snapshot?.balanceAmount ?? null,
         decimals: snapshot?.balanceDecimals ?? 6,
+        delegatedAmount: snapshot?.delegatedAmount ?? null,
         minimumAmount: config.minimumLiquidity.toString(),
         snapshotFresh,
         verifiedAt: snapshot?.verifiedAt.toISOString() ?? null,

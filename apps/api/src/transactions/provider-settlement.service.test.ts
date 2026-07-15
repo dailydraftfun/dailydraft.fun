@@ -453,6 +453,8 @@ class FixtureRpc extends SolanaRpcGateway {
     const opponentVault = deriveEscrowV2CardVault(duel, 'opponent').toBase58();
     return {
       amount: this.vaultAmount,
+      delegate: null,
+      delegatedAmount: 0n,
       mint: address === opponentVault ? OPPONENT.toBase58() : CREATOR.toBase58(),
       owner: duel.toBase58(),
     };

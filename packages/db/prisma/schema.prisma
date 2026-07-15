@@ -431,6 +431,8 @@ model HouseTreasurySnapshot {
   mint            String
   balanceAmount   String
   balanceDecimals Int
+  delegate        String
+  delegatedAmount String
   verifiedAt      DateTime
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -439,25 +441,27 @@ model HouseTreasurySnapshot {
 }
 
 model HouseTreasuryReservation {
-  id            String                         @id
-  duelId        String                         @unique
-  playerWallet  String
-  tier          Int
-  amount        String
-  currency      String                         @default("USDC")
-  decimals      Int                            @default(6)
-  status        HouseTreasuryReservationStatus @default(RESERVED)
-  reservedAt    DateTime                       @default(now())
-  fundedAt      DateTime?
-  releasedAt    DateTime?
-  settledAt     DateTime?
-  version       Int                            @default(1)
-  createdAt     DateTime                       @default(now())
-  updatedAt     DateTime                       @updatedAt
-  duel          Duel                           @relation(fields: [duelId], references: [id], onDelete: Restrict)
-  ledgerEntries HouseTreasuryLedgerEntry[]
+  id               String                         @id
+  duelId           String                         @unique
+  playerWallet     String
+  tier             Int
+  amount           String
+  currency         String                         @default("USDC")
+  decimals         Int                            @default(6)
+  status           HouseTreasuryReservationStatus @default(RESERVED)
+  reservedAt       DateTime                       @default(now())
+  fundedAt         DateTime?
+  releasedAt       DateTime?
+  settledAt        DateTime?
+  lastReconciledAt DateTime?
+  version          Int                            @default(1)
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @updatedAt
+  duel             Duel                           @relation(fields: [duelId], references: [id], onDelete: Restrict)
+  ledgerEntries    HouseTreasuryLedgerEntry[]
 
   @@index([status, tier, reservedAt])
+  @@index([status, lastReconciledAt, id])
   @@index([playerWallet, status])
 }
 

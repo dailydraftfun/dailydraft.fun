@@ -954,7 +954,8 @@ paths:
         Reports configured and independently verified state separately. It never
         returns RPC URLs, wallet addresses, API keys, cron secrets, or credentials.
         House balances are verified only when a fresh finalized devnet token-account
-        snapshot matches the configured wallet, mint, and separation-of-duties policy.
+        snapshot matches the configured cold owner, mint, and bounded hot-wallet SPL
+        delegate policy.
       x-openpacksduel-availability: devnet
       security:
         - integrationKey: []

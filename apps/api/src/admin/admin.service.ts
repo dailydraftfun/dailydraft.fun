@@ -25,7 +25,9 @@ import type { MatchmakingMode } from '../domain.js';
 import { SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
 import {
   HOUSE_TREASURY_SNAPSHOT_ID,
+  type HouseTreasurySnapshotEvidence,
   houseTreasuryConfigurationErrors,
+  houseTreasurySnapshotIsUsable,
   readHouseTreasuryConfig,
 } from '../treasury/house-treasury.policy.js';
 import type {
@@ -399,7 +401,7 @@ export class AdminService {
   async getReadiness() {
     let databaseReady = true;
     let unboundEscrowAlerts: number | null = null;
-    let treasurySnapshot: { verifiedAt: Date } | null = null;
+    let treasurySnapshot: HouseTreasurySnapshotEvidence | null = null;
     try {
       const [, alertCount, snapshot] = await Promise.all([
         this.database.duel.count({ where: { id: '__readiness__' } }),
@@ -407,7 +409,17 @@ export class AdminService {
           where: { recoveredAt: null, recoveryCandidateAt: { not: null } },
         }),
         this.database.houseTreasurySnapshot.findUnique({
-          select: { verifiedAt: true },
+          select: {
+            balanceAmount: true,
+            balanceDecimals: true,
+            delegate: true,
+            delegatedAmount: true,
+            mint: true,
+            network: true,
+            tokenAccount: true,
+            verifiedAt: true,
+            wallet: true,
+          },
           where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
         }),
       ]);
@@ -428,8 +440,7 @@ export class AdminService {
     const treasuryConfig = readHouseTreasuryConfig();
     const treasuryConfigurationErrors = houseTreasuryConfigurationErrors(treasuryConfig);
     const treasurySnapshotFresh = Boolean(
-      treasurySnapshot &&
-        Date.now() - treasurySnapshot.verifiedAt.getTime() <= treasuryConfig.snapshotMaxAgeMs,
+      treasurySnapshot && houseTreasurySnapshotIsUsable(treasurySnapshot, treasuryConfig),
     );
     return {
       database: { reachable: databaseReady },

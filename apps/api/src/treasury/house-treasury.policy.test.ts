@@ -71,6 +71,30 @@ describe('house treasury policy', () => {
     ).rejects.toThrow('minimum liquidity');
   });
 
+  test('includes unresolved reservations in atomic daily-loss headroom', async () => {
+    const environment = configuredEnvironment();
+    environment.OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO = '50000000';
+    const transaction = fakeTransaction({
+      created: [],
+      existingExposure: [{ amount: '50000000' }],
+    });
+    await expect(
+      reserveHouseExposure(
+        transaction,
+        {
+          amount: '50000000',
+          currency: 'USDC',
+          decimals: 6,
+          duelId: 'duel_daily_loss_limit',
+          playerWallet: WITHDRAWAL,
+          tier: 50,
+        },
+        environment,
+        new Date('2026-07-15T12:00:00.000Z'),
+      ),
+    ).rejects.toThrow('daily loss limit');
+  });
+
   test('maps reconciliation lifecycle states without reopening terminal exposure', () => {
     expect(reservationTarget(DuelStatus.FUNDED)).toBe(HouseTreasuryReservationStatus.FUNDED);
     expect(reservationTarget(DuelStatus.SETTLING)).toBe(
@@ -128,10 +152,13 @@ function fakeTransaction(input: {
         Promise.resolve({
           balanceAmount: '100000000',
           balanceDecimals: 6,
+          delegate: HOUSE,
+          delegatedAmount: '100000000',
           mint: USDC_MINT,
+          network: 'DEVNET',
           tokenAccount: TOKEN_ACCOUNT,
           verifiedAt: new Date('2026-07-15T11:59:00.000Z'),
-          wallet: HOUSE,
+          wallet: WITHDRAWAL,
         }),
     },
   } as unknown as Prisma.TransactionClient;

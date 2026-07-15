@@ -120,10 +120,12 @@ House mode has a second, stricter treasury gate. A serializable, advisory-locked
 reservation must exist before either participant can prepare funding. Reservations
 use integer micro-USDC only and require a recent finalized devnet token-account
 snapshot, per-player and per-tier concurrency headroom, total-exposure headroom,
-daily-loss headroom, and the configured liquidity floor. Missing configuration
-disables the tier. The funding hot wallet/signing authority and withdrawal authority
-must be distinct, and house entry remains off unless `OPENPACKSDUEL_HOUSE_ENABLED`
-is explicitly `true`.
+daily-loss headroom including unresolved worst-case exposure, and the configured
+liquidity floor. Missing configuration disables the tier. The finalized USDC token
+account must be owned by the separate cold withdrawal authority and delegate only a
+bounded amount to the hot funding signer. The delegate allowance may not exceed the
+configured total-exposure ceiling. House entry remains off unless
+`OPENPACKSDUEL_HOUSE_ENABLED` is explicitly `true`.
 
 `GET /v1/admin/treasury` exposes secret-free liquidity, exposure, loss, inventory,
 and concentration summaries. Inventory disposition is an operator-recorded workflow;
