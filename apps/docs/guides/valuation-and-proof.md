@@ -19,7 +19,9 @@ There is no floating-point conversion and no rounding. Higher wins. The result
 must fit the escrow program's unsigned 64-bit integer representation. The result
 source timestamp may be at most 300 seconds old at ingestion, with at most 30
 seconds of future clock skew. Both outcomes must name the same immutable
-provider `poolVersion`.
+provider `poolVersion`. The distinct provider opening time is encoded in whole
+seconds for escrow and must fall between finalized funding and duel expiry. It
+may be at most 30 seconds ahead of the API server when the result is recorded.
 
 The policy hash is snapshotted on the pack, duel, exact matchmaking queue,
 funding transaction, escrow account, each outcome, comparison result, and

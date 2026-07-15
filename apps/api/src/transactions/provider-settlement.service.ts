@@ -35,6 +35,7 @@ import {
   deriveEscrowV2CardVault,
   ESCROW_V2_PROGRAM_ID,
   type EscrowV2Role,
+  toEscrowV2UnixSeconds,
 } from '../contracts/openpacksduel-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import {
@@ -221,7 +222,7 @@ export class ProviderSettlementService {
         creatorCardMint: evidence.creator.mint,
         creatorValue: evidence.creator.value,
         duel: addresses.duel,
-        openedAt: BigInt(Math.floor(openedAt.getTime() / 1_000)),
+        openedAt: toEscrowV2UnixSeconds(openedAt),
         opponent,
         opponentCardMint: evidence.opponent.mint,
         opponentValue: evidence.opponent.value,
@@ -249,7 +250,7 @@ export class ProviderSettlementService {
         creatorCardMint: evidence.creator.mint,
         creatorValue: evidence.creator.value,
         duel: addresses.duel,
-        openedAt: BigInt(Math.floor(canonicalOpenedAt(evidence).getTime() / 1_000)),
+        openedAt: toEscrowV2UnixSeconds(canonicalOpenedAt(evidence)),
         opponent,
         opponentCardMint: evidence.opponent.mint,
         opponentValue: evidence.opponent.value,

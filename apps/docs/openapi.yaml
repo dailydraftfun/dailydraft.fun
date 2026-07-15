@@ -1780,7 +1780,7 @@ components:
         openedAt:
           type: string
           format: date-time
-          description: Provider-reported completion time for this pack opening, committed as escrow opened_at.
+          description: Provider-reported completion time committed as escrow opened_at; its whole-second value must be between finalized funding and expiry and no more than 30 seconds ahead of server time.
         poolVersion:
           type: string
           pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'

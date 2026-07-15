@@ -16,7 +16,10 @@ import {
   type Prisma,
   ProviderMode,
 } from '@openpacksduel/db';
-
+import {
+  ESCROW_V2_MAX_OPENING_FUTURE_SKEW_SECONDS,
+  toEscrowV2UnixSeconds,
+} from '../contracts/openpacksduel-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type {
   Duel,
@@ -498,12 +501,14 @@ export class PrismaDuelRepository extends DuelRepository {
         ) {
           throw new ConflictException('Pack results do not share one immutable pool version');
         }
-        if (
-          new Date(input.creator.openedAt) < duel.fundedAt ||
-          new Date(input.opponent.openedAt) < duel.fundedAt
-        ) {
-          throw new ConflictException('Pack opening predates finalized duel funding');
-        }
+        const now = new Date();
+        assertOpeningTimesWithinEscrowWindow({
+          creatorOpenedAt: input.creator.openedAt,
+          expiresAt: duel.expiresAt,
+          fundedAt: duel.fundedAt,
+          now,
+          opponentOpenedAt: input.opponent.openedAt,
+        });
 
         const winnerWallet =
           input.comparison.winnerSide === 'creator'
@@ -512,7 +517,6 @@ export class PrismaDuelRepository extends DuelRepository {
               ? duel.opponentWallet
               : null;
         const target = resolvedPackTargetStatus(input.comparison.winnerSide);
-        const now = new Date();
 
         await transaction.duelPackOutcome.createMany({
           data: [
@@ -627,6 +631,32 @@ export function resolvedPackTargetStatus(
   _winnerSide: ResolveOpenedPacksRecord['comparison']['winnerSide'],
 ): typeof DatabaseDuelStatus.AWAITING_ASSETS {
   return DatabaseDuelStatus.AWAITING_ASSETS;
+}
+
+export function assertOpeningTimesWithinEscrowWindow(input: {
+  creatorOpenedAt: string;
+  expiresAt: Date;
+  fundedAt: Date;
+  now: Date;
+  opponentOpenedAt: string;
+}): void {
+  const openingTimes = [input.creatorOpenedAt, input.opponentOpenedAt].map((openedAt) =>
+    toEscrowV2UnixSeconds(new Date(openedAt)),
+  );
+  const fundedAt = toEscrowV2UnixSeconds(input.fundedAt);
+  const expiresAt = toEscrowV2UnixSeconds(input.expiresAt);
+  const latestAllowed =
+    toEscrowV2UnixSeconds(input.now) + ESCROW_V2_MAX_OPENING_FUTURE_SKEW_SECONDS;
+
+  if (openingTimes.some((openedAt) => openedAt < fundedAt)) {
+    throw new ConflictException('Pack opening predates finalized duel funding');
+  }
+  if (openingTimes.some((openedAt) => openedAt > expiresAt)) {
+    throw new ConflictException('Pack opening occurred after duel expiry');
+  }
+  if (openingTimes.some((openedAt) => openedAt > latestAllowed)) {
+    throw new ConflictException('Pack opening exceeds escrow future-skew allowance');
+  }
 }
 
 function matchesQuery(
