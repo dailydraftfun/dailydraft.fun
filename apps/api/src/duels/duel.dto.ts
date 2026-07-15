@@ -34,15 +34,29 @@ export class ListDuelsQuery {
   @IsOptional()
   @IsIn([
     'waiting',
+    'matched',
+    'committing',
     'funded',
     'opening',
     'awaiting_assets',
+    'settling',
     'settled',
+    'cancelling',
     'cancelled',
+    'refunding',
     'refunded',
     'failed',
   ])
   status?: string;
+
+  @IsOptional()
+  @IsIn(['direct', 'house', 'open'])
+  matchmakingMode?: 'direct' | 'house' | 'open';
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z0-9][a-z0-9_-]{2,63}$/)
+  packId?: string;
 
   @IsOptional()
   @Matches(SOLANA_ADDRESS)
@@ -56,8 +70,8 @@ export class CreateDuelRequest {
   @IsDateString()
   expiresAt!: string;
 
-  @IsIn(['open', 'direct'])
-  matchmakingMode!: 'direct' | 'open';
+  @IsIn(['direct', 'house', 'open'])
+  matchmakingMode!: 'direct' | 'house' | 'open';
 
   @IsOptional()
   @Matches(SOLANA_ADDRESS)
@@ -66,6 +80,21 @@ export class CreateDuelRequest {
   @IsString()
   @Matches(/^[a-z0-9][a-z0-9_-]{2,63}$/)
   packId!: string;
+}
+
+export class JoinDuelRequest {
+  @Matches(SOLANA_ADDRESS)
+  wallet!: string;
+}
+
+export class CancelDuelRequest {
+  @Matches(SOLANA_ADDRESS)
+  wallet!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  reason?: string;
 }
 
 export class PrepareTransactionRequest {

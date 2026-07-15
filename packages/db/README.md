@@ -1,0 +1,26 @@
+# OpenPacks Duel database
+
+Prisma 7 schema and PostgreSQL migrations for durable devnet duel state.
+
+## Deploy migrations
+
+Set the target database URL explicitly, then deploy the checked-in migrations:
+
+```bash
+export DATABASE_URL='postgresql://...'
+bun --filter @openpacksduel/db db:deploy
+```
+
+Generate the client without connecting to PostgreSQL:
+
+```bash
+bun --filter @openpacksduel/db db:generate
+```
+
+Client generation uses an inert localhost URL when `DATABASE_URL` is absent.
+The API does not: startup fails closed with `DATABASE_URL is required for durable
+duel state`, and `/v1/health` returns `503` when PostgreSQL is unavailable or the
+migrations have not been deployed.
+
+The current schema supports Solana devnet only. Adding mainnet requires a new
+network enum migration, audited settlement integration, and an explicit release.
