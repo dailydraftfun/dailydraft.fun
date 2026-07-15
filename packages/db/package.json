@@ -13,7 +13,7 @@
     "db:generate": "bunx --bun prisma generate",
     "db:migrate": "bunx --bun prisma migrate dev",
     "lint": "biome check src/ prisma.config.ts",
-    "test": "bun test",
+    "test": "bun test --pass-with-no-tests",
     "typecheck": "bun run db:generate && tsc --noEmit"
   },
   "dependencies": {
