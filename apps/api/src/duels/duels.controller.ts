@@ -27,6 +27,7 @@ import {
   JoinDuelRequest,
   ListDuelsQuery,
   PrepareTransactionRequest,
+  WalletParams,
 } from './duel.dto.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { DuelOpeningService } from './duel-opening.service.js';
@@ -127,6 +128,14 @@ export class DuelsController {
     return this.duels.getSocialCard(params.duelId);
   }
 
+  @Get(':duelId/receipt')
+  getReceipt(@Param() params: DuelIdParams, @Res({ passthrough: true }) response: FastifyReply) {
+    response.header('content-disposition', `attachment; filename="${params.duelId}.receipt.json"`);
+    response.header('cache-control', 'private, no-store');
+    response.header('x-robots-tag', 'noindex, nofollow, noarchive');
+    return this.duels.getPublicReceipt(params.duelId);
+  }
+
   @Post(':duelId/open-packs')
   @HttpCode(200)
   @UseGuards(IntegrationKeyGuard)
@@ -135,6 +144,18 @@ export class DuelsController {
     @IdempotencyKey() idempotencyKey: string,
   ): Promise<Duel> {
     return this.opening.open(params.duelId, idempotencyKey);
+  }
+}
+
+@Controller('profiles')
+export class DuelProfilesController {
+  constructor(private readonly duels: DuelsService) {}
+
+  @Get(':wallet')
+  getProfile(@Param() params: WalletParams, @Res({ passthrough: true }) response: FastifyReply) {
+    response.header('cache-control', 'private, no-store');
+    response.header('x-robots-tag', 'noindex, nofollow, noarchive');
+    return this.duels.getPublicProfile(params.wallet);
   }
 }
 

@@ -18,6 +18,11 @@ export class DuelIdParams {
   duelId!: string;
 }
 
+export class WalletParams {
+  @Matches(SOLANA_ADDRESS)
+  wallet!: string;
+}
+
 export class ListDuelsQuery {
   @IsOptional()
   @IsString()

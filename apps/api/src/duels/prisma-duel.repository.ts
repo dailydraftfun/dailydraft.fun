@@ -362,6 +362,7 @@ export class PrismaDuelRepository extends DuelRepository {
       errorCode: transaction.errorCode,
       errorMessage: transaction.errorMessage,
       expiresAt: transaction.expiresAt?.toISOString() ?? null,
+      feeAmountLamports: readStringMetadata(transaction.metadata, 'feeAmountLamports'),
       id: transaction.id,
       finalizedAt: transaction.finalizedAt?.toISOString() ?? null,
       lastCheckedAt: transaction.lastCheckedAt?.toISOString() ?? null,
@@ -615,6 +616,8 @@ function toDuel(row: {
     insuredValueCurrency: string;
     insuredValueDecimals: number;
     isMock: boolean;
+    provider: string;
+    providerReference: string;
     resultHash: string;
     side: DatabaseDuelSide;
     valuationPolicyHash: string;
@@ -677,6 +680,8 @@ function toDuelResult(row: {
     insuredValueCurrency: string;
     insuredValueDecimals: number;
     isMock: boolean;
+    provider: string;
+    providerReference: string;
     resultHash: string;
     side: DatabaseDuelSide;
     valuationPolicyHash: string;
@@ -695,6 +700,8 @@ function toDuelResult(row: {
       outcome.insuredValueDecimals,
     ),
     isMock: outcome.isMock,
+    provider: outcome.provider,
+    providerReference: outcome.providerReference,
     resultHash: outcome.resultHash,
     side: outcome.side === DatabaseDuelSide.CREATOR ? ('creator' as const) : ('opponent' as const),
   }));
@@ -780,6 +787,11 @@ function toJsonObject(value: Prisma.JsonValue | null): Record<string, unknown> |
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function readStringMetadata(value: Prisma.JsonValue | null, key: string): string | null {
+  const metadata = toJsonObject(value);
+  return metadata && typeof metadata[key] === 'string' ? metadata[key] : null;
 }
 
 function createId(prefix: string): string {
