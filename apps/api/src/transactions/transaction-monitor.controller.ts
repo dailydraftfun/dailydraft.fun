@@ -66,7 +66,11 @@ export class ProviderSettlementController {
 
   @Post()
   @HttpCode(201)
-  prepare(@Param() params: DuelIdParams, @Body() input: PrepareProviderEscrowRequest) {
-    return this.settlement.prepare({ duelId: params.duelId, ...input });
+  prepare(
+    @Param() params: DuelIdParams,
+    @Body() input: PrepareProviderEscrowRequest,
+    @IdempotencyKey() idempotencyKey: string,
+  ) {
+    return this.settlement.prepare({ duelId: params.duelId, idempotencyKey, ...input });
   }
 }

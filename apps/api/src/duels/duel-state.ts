@@ -31,6 +31,8 @@ export function recoveryStatusAfterTransactionFailure(status: DuelStatus): DuelS
 export function isTransactionTransition(action: string, from: DuelStatus, to: DuelStatus): boolean {
   if (action === 'fund') return from === 'committing' && to === 'funded';
   if (action === 'settle') return from === 'settling' && to === 'settled';
+  if (action === 'commit_result') return from === 'awaiting_assets' && to === 'settling';
+  if (action === 'refund' && from === 'refunding' && to === 'refunding') return true;
   if (action === 'refund') return from === 'refunding' && to === 'refunded';
   if (action === 'cancel') return from === 'cancelling' && to === 'cancelled';
   return false;

@@ -152,10 +152,11 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
         throw new ConflictException('Duel state does not match the transaction intent');
       }
       if (
-        !canTransition(
+        (!canTransition(
           toApiStatus(transaction.expectedFromStatus),
           toApiStatus(transaction.expectedToStatus),
-        ) ||
+        ) &&
+          transaction.expectedFromStatus !== transaction.expectedToStatus) ||
         !isTransactionTransition(
           transaction.action.toLowerCase(),
           toApiStatus(transaction.expectedFromStatus),
@@ -387,7 +388,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       const to = toApiStatus(monitored.expectedToStatus);
       if (
         monitored.duel.status !== monitored.expectedFromStatus ||
-        !canTransition(from, to) ||
+        (!canTransition(from, to) && from !== to) ||
         !isTransactionTransition(monitored.action.toLowerCase(), from, to)
       ) {
         await rejectFinalization(database, monitored.id, now, 'DUEL_STATE_MISMATCH');
@@ -721,6 +722,9 @@ export function recoveryStatusForTerminalTransaction(input: {
   fromStatus: DuelStatus;
   wallet: string;
 }): DuelStatus | null {
+  if (input.action === DuelTransactionAction.REFUND && input.fromStatus === 'refunding') {
+    return null;
+  }
   if (
     input.action === DuelTransactionAction.FUND &&
     input.wallet === input.creatorWallet &&

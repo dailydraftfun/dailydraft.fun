@@ -1,6 +1,12 @@
 import type { DuelStatus } from '../domain.js';
 
-export type MonitoredAction = 'cancel' | 'fund' | 'open_pack' | 'refund' | 'settle';
+export type MonitoredAction =
+  | 'cancel'
+  | 'commit_result'
+  | 'fund'
+  | 'open_pack'
+  | 'refund'
+  | 'settle';
 export type MonitoredStatus = 'confirmed' | 'submitted';
 
 export interface ExpectedAccountConstraint {

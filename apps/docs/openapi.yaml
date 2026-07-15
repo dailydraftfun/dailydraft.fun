@@ -880,6 +880,7 @@ paths:
         - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -1597,7 +1598,9 @@ components:
                 additionalProperties: false
                 required: [action, signature, status, finalizedAt, explorerUrl]
                 properties:
-                  action: { type: string, enum: [fund, cancel, refund, open_pack, settle] }
+                  action:
+                    type: string
+                    enum: [fund, cancel, refund, open_pack, commit_result, settle]
                   signature: { type: string }
                   status: { type: string, enum: [prepared, submitted, confirmed, finalized, failed, expired] }
                   finalizedAt: { type: [string, 'null'], format: date-time }
@@ -1803,11 +1806,13 @@ components:
         - duelId
         - expectedSigner
         - instruction
+        - intentId
         - lastValidBlockHeight
         - messageSha256
         - programId
         - proof
         - recentBlockhash
+        - reconciliation
         - serializedTransactionBase64
         - status
         - warnings
@@ -1819,11 +1824,17 @@ components:
         duelId: { type: string }
         expectedSigner: { $ref: '#/components/schemas/SolanaAddress' }
         instruction: { type: object, additionalProperties: true }
+        intentId:
+          type: [string, 'null']
+          description: Durable monitor intent ID; null only for card deposits pending operator proof.
         lastValidBlockHeight: { type: string, pattern: '^\d+$' }
         messageSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
         programId: { $ref: '#/components/schemas/SolanaAddress' }
         proof: { type: object, additionalProperties: { type: [string, 'null'] } }
         recentBlockhash: { type: string }
+        reconciliation:
+          type: string
+          enum: [operator-proof, submission-monitor]
         serializedTransactionBase64: { type: string, contentEncoding: base64 }
         status: { type: string, const: prepared }
         warnings:
@@ -1892,7 +1903,7 @@ components:
           type: string
         action:
           type: string
-          enum: [fund, cancel, refund, open_pack, settle]
+          enum: [fund, cancel, refund, open_pack, commit_result, settle]
         status:
           type: string
           enum: [prepared, submitted, confirmed, finalized, failed, expired]

@@ -119,4 +119,15 @@ describe('funding preparation policy', () => {
       }),
     ).toBe('refunding');
   });
+
+  test('keeps custody recovery open when one tracked refund expires or fails', () => {
+    expect(
+      recoveryStatusForTerminalTransaction({
+        action: DuelTransactionAction.REFUND,
+        creatorWallet: 'creator',
+        fromStatus: 'refunding',
+        wallet: 'operator',
+      }),
+    ).toBeNull();
+  });
 });

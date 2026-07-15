@@ -9,6 +9,7 @@ import {
   createRefundExpiredPaymentInstruction,
   createSubmitResultInstruction,
   deriveEscrowV2Addresses,
+  deriveEscrowV2CardVault,
   ESCROW_V2_PROGRAM_ID,
 } from '../contracts/openpacksduel-escrow-v2.js';
 import {
@@ -17,9 +18,9 @@ import {
 } from './provider-settlement.service.js';
 import { SolanaRpcGateway } from './solana-rpc.client.js';
 
-const CREATOR = new PublicKey('9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1');
-const OPPONENT = new PublicKey('Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW');
-const PROVIDER = new PublicKey('Hk2BD9SiMsePPgbiX85BDuZRX9BbVsde7sdYR7RYgZVo');
+const CREATOR = fixturePublicKey(1);
+const OPPONENT = fixturePublicKey(2);
+const PROVIDER = fixturePublicKey(3);
 const POLICY = 'ab'.repeat(32);
 const REQUEST = 'cd'.repeat(32);
 
@@ -134,6 +135,7 @@ describe('ProviderSettlementService', () => {
         assetStandard: 'legacy-spl-nft',
         callerWallet: PROVIDER.toBase58(),
         duelId: duel.id,
+        idempotencyKey: 'missing-vault-commit',
         operation: 'commit_result',
         providerRequestId: REQUEST,
       }),
@@ -146,14 +148,82 @@ describe('ProviderSettlementService', () => {
     const prepared = await service.prepare({
       callerWallet: CREATOR.toBase58(),
       duelId: duel.id,
+      idempotencyKey: 'expired-creator-payment-refund',
       operation: 'refund_payment',
       side: 'creator',
     });
 
     expect(prepared.action).toBe('refund_payment');
     expect(prepared.expectedSigner).toBe(CREATOR.toBase58());
+    expect(prepared.intentId).toStartWith('tx_');
     expect(prepared.instruction.name).toBe('refund_expired_payment');
+    expect(prepared.reconciliation).toBe('submission-monitor');
     expect(prepared.serializedTransactionBase64.length).toBeGreaterThan(100);
+  });
+
+  test('persists and replays a provider result intent by idempotency key', async () => {
+    const duel = databaseDuel(new Date(Date.now() + 60_000));
+    const service = new ProviderSettlementService(database(duel), new FixtureRpc());
+    const input = {
+      assetStandard: 'legacy-spl-nft' as const,
+      callerWallet: PROVIDER.toBase58(),
+      duelId: duel.id,
+      idempotencyKey: 'provider-result-commitment',
+      operation: 'commit_result' as const,
+      providerRequestId: REQUEST,
+    };
+
+    const first = await service.prepare(input);
+    const replay = await service.prepare(input);
+
+    expect(first.intentId).toStartWith('tx_');
+    expect(first.proof.creatorMint).toBe(CREATOR.toBase58());
+    expect(first.proof.opponentMint).toBe(OPPONENT.toBase58());
+    expect(replay.intentId).toBe(first.intentId);
+    expect(replay.serializedTransactionBase64).toBe(first.serializedTransactionBase64);
+    expect(first.reconciliation).toBe('submission-monitor');
+    await expect(service.prepare({ ...input, providerRequestId: 'ef'.repeat(32) })).rejects.toThrow(
+      'Idempotency-Key was already used for another transaction',
+    );
+  });
+
+  test('persists settlement as a monitored settling-to-settled intent', async () => {
+    const duel = {
+      ...databaseDuel(new Date(Date.now() + 60_000)),
+      status: 'SETTLING',
+    };
+    const service = new ProviderSettlementService(database(duel), new FixtureRpc());
+
+    const prepared = await service.prepare({
+      assetStandard: 'legacy-spl-nft',
+      callerWallet: CREATOR.toBase58(),
+      duelId: duel.id,
+      idempotencyKey: 'duel-settlement',
+      operation: 'settle',
+      providerRequestId: REQUEST,
+    });
+
+    expect(prepared.action).toBe('settle');
+    expect(prepared.intentId).toStartWith('tx_');
+    expect(prepared.instruction.name).toBe('settle_duel');
+    expect(prepared.reconciliation).toBe('submission-monitor');
+  });
+
+  test('rejects operations outside their duel lifecycle state', async () => {
+    const duel = { ...databaseDuel(new Date(Date.now() + 60_000)), status: 'SETTLED' };
+    const service = new ProviderSettlementService(database(duel), new FixtureRpc());
+
+    await expect(
+      service.prepare({
+        assetStandard: 'legacy-spl-nft',
+        callerWallet: CREATOR.toBase58(),
+        duelId: duel.id,
+        idempotencyKey: 'settled-deposit',
+        operation: 'deposit_card',
+        side: 'creator',
+        sourceTokenAccount: CREATOR.toBase58(),
+      }),
+    ).rejects.toThrow('deposit_card cannot be prepared from settled');
   });
 });
 
@@ -190,10 +260,7 @@ function requireOutcome(value: ReturnType<typeof evidence>, index: number) {
 
 function databaseDuel(expiresAt: Date) {
   const id = 'duel_provider_settlement_01';
-  const nonce = createHash('sha256')
-    .update(`openpacksduel:escrow-v2:${id}`)
-    .digest()
-    .readBigUInt64LE(0);
+  const nonce = createHash('sha256').update(id).digest().readBigUInt64LE(0);
   return {
     ...evidence(),
     creatorWallet: CREATOR.toBase58(),
@@ -201,11 +268,33 @@ function databaseDuel(expiresAt: Date) {
     expiresAt,
     id,
     opponentWallet: OPPONENT.toBase58(),
+    status: expiresAt.getTime() < Date.now() ? 'REFUNDING' : 'AWAITING_ASSETS',
   };
 }
 
+function fixturePublicKey(byte: number): PublicKey {
+  const candidate = Uint8Array.from({ length: 32 }, () => byte);
+  for (let suffix = 0; suffix <= 255; suffix += 1) {
+    candidate[31] = suffix;
+    if (PublicKey.isOnCurve(candidate)) return new PublicKey(candidate);
+  }
+  throw new Error(`Could not produce on-curve fixture ${byte}`);
+}
+
 function database(duel: ReturnType<typeof databaseDuel>): never {
-  return { duel: { findUnique: () => Promise.resolve(duel) } } as never;
+  const transactions = new Map<string, Record<string, unknown>>();
+  return {
+    duel: { findUnique: () => Promise.resolve(duel) },
+    duelTransaction: {
+      upsert: ({ create }: { create: Record<string, unknown> }) => {
+        const key = String(create.idempotencyKey);
+        const existing = transactions.get(key);
+        if (existing) return Promise.resolve(existing);
+        transactions.set(key, create);
+        return Promise.resolve(create);
+      },
+    },
+  } as never;
 }
 
 class FixtureRpc extends SolanaRpcGateway {
@@ -221,17 +310,16 @@ class FixtureRpc extends SolanaRpcGateway {
     return { decimals: 0, supply: 1n };
   }
   async getLegacyTokenAccount(address: string) {
-    const isCreator = address.includes('never-matches');
+    const nonce = createHash('sha256')
+      .update('duel_provider_settlement_01')
+      .digest()
+      .readBigUInt64LE(0);
+    const duel = deriveEscrowV2Addresses(CREATOR, nonce).duel;
+    const opponentVault = deriveEscrowV2CardVault(duel, 'opponent').toBase58();
     return {
       amount: this.vaultAmount,
-      mint: isCreator ? CREATOR.toBase58() : CREATOR.toBase58(),
-      owner: deriveEscrowV2Addresses(
-        CREATOR,
-        createHash('sha256')
-          .update('openpacksduel:escrow-v2:duel_provider_settlement_01')
-          .digest()
-          .readBigUInt64LE(0),
-      ).duel.toBase58(),
+      mint: address === opponentVault ? OPPONENT.toBase58() : CREATOR.toBase58(),
+      owner: duel.toBase58(),
     };
   }
   async getSignatureStatuses() {

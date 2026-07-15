@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -7,7 +7,15 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { type DatabaseClient, DuelSide, ProviderMode } from '@openpacksduel/db';
+import {
+  type DatabaseClient,
+  DuelSide,
+  DuelStatus,
+  DuelTransactionAction,
+  DuelTransactionStatus,
+  type Prisma,
+  ProviderMode,
+} from '@openpacksduel/db';
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
@@ -17,7 +25,6 @@ import {
 } from '@solana/spl-token';
 import { PublicKey, Transaction, type TransactionInstruction } from '@solana/web3.js';
 import bs58 from 'bs58';
-
 import {
   createDepositCardAssetInstruction,
   createRefundExpiredCardInstruction,
@@ -30,6 +37,7 @@ import {
   type EscrowV2Role,
 } from '../contracts/openpacksduel-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
+import { nonceFromDuelId } from './duel-funding.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
 
@@ -50,6 +58,30 @@ interface CanonicalEvidence {
   winner: EscrowV2Role | null;
 }
 
+interface PersistTrackedIntentInput {
+  action:
+    | typeof DuelTransactionAction.COMMIT_RESULT
+    | typeof DuelTransactionAction.REFUND
+    | typeof DuelTransactionAction.SETTLE;
+  caller: PublicKey;
+  duelId: string;
+  expectedFromStatus:
+    | typeof DuelStatus.AWAITING_ASSETS
+    | typeof DuelStatus.REFUNDING
+    | typeof DuelStatus.SETTLING;
+  expectedToStatus:
+    | typeof DuelStatus.REFUNDING
+    | typeof DuelStatus.SETTLED
+    | typeof DuelStatus.SETTLING;
+  idempotencyKey: string;
+  instruction: TransactionInstruction;
+  lastValidBlockHeight: bigint;
+  messageSha256: string;
+  proof: Record<string, string | null>;
+  recentBlockhash: string;
+  serializedTransaction: string;
+}
+
 export interface PreparedProviderEscrowTransaction {
   action: 'commit_result' | 'deposit_card' | 'refund_card' | 'refund_payment' | 'settle';
   chain: 'solana:devnet';
@@ -61,11 +93,13 @@ export interface PreparedProviderEscrowTransaction {
     dataBase58Sha256: string;
     name: string;
   };
+  intentId: string | null;
   lastValidBlockHeight: string;
   messageSha256: string;
   programId: string;
   proof: Record<string, string | null>;
   recentBlockhash: string;
+  reconciliation: 'operator-proof' | 'submission-monitor';
   serializedTransactionBase64: string;
   status: 'prepared';
   warnings: string[];
@@ -82,6 +116,7 @@ export class ProviderSettlementService {
     assetStandard?: 'legacy-spl-nft';
     callerWallet: string;
     duelId: string;
+    idempotencyKey: string;
     operation: PreparedProviderEscrowTransaction['action'];
     providerRequestId?: string;
     side?: EscrowV2Role;
@@ -104,6 +139,7 @@ export class ProviderSettlementService {
     }
 
     if (input.operation === 'refund_payment') {
+      assertOperationState(input.operation, duel.status);
       requireExpired(duel.expiresAt);
       const side = requireSide(input.side);
       const player = side === 'creator' ? creator : opponent;
@@ -112,6 +148,7 @@ export class ProviderSettlementService {
         action: input.operation,
         caller,
         duelId: duel.id,
+        idempotencyKey: input.idempotencyKey,
         instruction: createRefundExpiredPaymentInstruction({
           caller,
           destination,
@@ -132,6 +169,7 @@ export class ProviderSettlementService {
     }
 
     if (input.operation === 'deposit_card') {
+      assertOperationState(input.operation, duel.status);
       const side = requireSide(input.side);
       const outcome = evidence[side];
       const source = parsePublicKey(input.sourceTokenAccount ?? '', 'sourceTokenAccount');
@@ -144,6 +182,7 @@ export class ProviderSettlementService {
         action: input.operation,
         caller,
         duelId: duel.id,
+        idempotencyKey: input.idempotencyKey,
         instruction: createDepositCardAssetInstruction({
           cardMint: outcome.mint,
           depositor: caller,
@@ -160,15 +199,14 @@ export class ProviderSettlementService {
       });
     }
 
-    const requestId = parseBytes32(input.providerRequestId, 'providerRequestId');
-    await this.assertVaults(addresses.duel, evidence);
     if (input.operation === 'commit_result') {
+      assertOperationState(input.operation, duel.status);
+      const requestId = parseBytes32(input.providerRequestId, 'providerRequestId');
+      await this.assertVaults(addresses.duel, evidence);
       if (!caller.equals(configuration.providerSigner)) {
         throw new ConflictException('Result commitment must be signed by the provider signer');
       }
-      const openedAt = new Date(
-        Math.max(evidence.creator.openedAt.getTime(), evidence.opponent.openedAt.getTime()),
-      );
+      const openedAt = canonicalOpenedAt(evidence);
       const built = createSubmitResultInstruction({
         creator,
         creatorCardMint: evidence.creator.mint,
@@ -186,6 +224,7 @@ export class ProviderSettlementService {
         action: input.operation,
         caller,
         duelId: duel.id,
+        idempotencyKey: input.idempotencyKey,
         instruction: built.instruction,
         instructionName: 'submit_result',
         proof: proof(evidence, input.providerRequestId ?? '', built.resultCommitment.toBase58()),
@@ -193,12 +232,15 @@ export class ProviderSettlementService {
     }
 
     if (input.operation === 'settle') {
+      assertOperationState(input.operation, duel.status);
+      const requestId = parseBytes32(input.providerRequestId, 'providerRequestId');
+      await this.assertVaults(addresses.duel, evidence);
       const builtResult = createSubmitResultInstruction({
         creator,
         creatorCardMint: evidence.creator.mint,
         creatorValue: evidence.creator.value,
         duel: addresses.duel,
-        openedAt: BigInt(Math.floor(evidence.opponent.openedAt.getTime() / 1_000)),
+        openedAt: BigInt(Math.floor(canonicalOpenedAt(evidence).getTime() / 1_000)),
         opponent,
         opponentCardMint: evidence.opponent.mint,
         opponentValue: evidence.opponent.value,
@@ -219,6 +261,7 @@ export class ProviderSettlementService {
         action: input.operation,
         caller,
         duelId: duel.id,
+        idempotencyKey: input.idempotencyKey,
         instruction: createSettleDuelInstruction({
           caller,
           creatorCardDestination: destinations.creatorCard,
@@ -249,15 +292,18 @@ export class ProviderSettlementService {
       });
     }
 
+    assertOperationState('refund_card', duel.status);
     requireExpired(duel.expiresAt);
     const side = requireSide(input.side);
     const outcome = evidence[side];
+    await this.assertVault(addresses.duel, side, outcome);
     const player = side === 'creator' ? creator : opponent;
     const destination = getAssociatedTokenAddressSync(outcome.mint, player);
     return this.prepareTransaction({
       action: 'refund_card',
       caller,
       duelId: duel.id,
+      idempotencyKey: input.idempotencyKey,
       instruction: createRefundExpiredCardInstruction({
         caller,
         cardMint: outcome.mint,
@@ -275,6 +321,7 @@ export class ProviderSettlementService {
     action: PreparedProviderEscrowTransaction['action'];
     caller: PublicKey;
     duelId: string;
+    idempotencyKey: string;
     instruction: TransactionInstruction;
     instructionName: string;
     prefix?: TransactionInstruction[];
@@ -287,6 +334,27 @@ export class ProviderSettlementService {
       lastValidBlockHeight: Number(latest.lastValidBlockHeight),
     }).add(...(input.prefix ?? []), input.instruction);
     const dataBase58 = bs58.encode(input.instruction.data);
+    const serializedTransaction = transaction
+      .serialize({ requireAllSignatures: false, verifySignatures: false })
+      .toString('base64');
+    const messageSha256 = digest(transaction.serializeMessage());
+    const tracked = trackedTransition(input.action);
+    const intent = tracked
+      ? await this.persistTrackedIntent({
+          action: tracked.action,
+          caller: input.caller,
+          duelId: input.duelId,
+          expectedFromStatus: tracked.from,
+          expectedToStatus: tracked.to,
+          idempotencyKey: input.idempotencyKey,
+          instruction: input.instruction,
+          lastValidBlockHeight: latest.lastValidBlockHeight,
+          messageSha256,
+          proof: input.proof,
+          recentBlockhash: latest.blockhash,
+          serializedTransaction,
+        })
+      : null;
     return {
       action: input.action,
       chain: 'solana:devnet',
@@ -303,19 +371,105 @@ export class ProviderSettlementService {
         dataBase58Sha256: digest(dataBase58),
         name: input.instructionName,
       },
-      lastValidBlockHeight: latest.lastValidBlockHeight.toString(),
-      messageSha256: digest(transaction.serializeMessage()),
+      intentId: intent?.id ?? null,
+      lastValidBlockHeight: (
+        intent?.lastValidBlockHeight ?? latest.lastValidBlockHeight
+      ).toString(),
+      messageSha256: intent?.expectedMessageHash ?? messageSha256,
       programId: ESCROW_V2_PROGRAM_ID.toBase58(),
       proof: input.proof,
-      recentBlockhash: latest.blockhash,
-      serializedTransactionBase64: transaction
-        .serialize({ requireAllSignatures: false, verifySignatures: false })
-        .toString('base64'),
+      recentBlockhash: intent?.recentBlockhash ?? latest.blockhash,
+      reconciliation: intent ? 'submission-monitor' : 'operator-proof',
+      serializedTransactionBase64: intent?.serializedTransaction ?? serializedTransaction,
       status: 'prepared',
       warnings: [
         'Unsigned devnet transaction: inspect, sign externally, submit, then verify finalized chain state.',
+        ...(input.action === 'deposit_card'
+          ? ['Card deposit remains operator-proof and does not advance the duel database state.']
+          : []),
+        ...(input.action === 'refund_card' || input.action === 'refund_payment'
+          ? [
+              'Finalization records this per-asset refund proof; the duel remains refunding pending full custody quorum.',
+            ]
+          : []),
       ],
     };
+  }
+
+  private async persistTrackedIntent(input: PersistTrackedIntentInput) {
+    const requestHash = digest(
+      stableJson({
+        action: input.action,
+        caller: input.caller.toBase58(),
+        duelId: input.duelId,
+        instructionAccounts: input.instruction.keys.map((account) => ({
+          address: account.pubkey.toBase58(),
+          isSigner: account.isSigner,
+          isWritable: account.isWritable,
+        })),
+        instructionData: bs58.encode(input.instruction.data),
+        programId: input.instruction.programId.toBase58(),
+        proof: input.proof,
+      }),
+    );
+    const accounts = input.instruction.keys.map((account) => ({
+      address: account.pubkey.toBase58(),
+      isSigner: account.isSigner,
+      isWritable: account.isWritable,
+    }));
+    const intent = await this.database.duelTransaction.upsert({
+      create: {
+        action: input.action,
+        allowMultipleInstructionMatches: false,
+        duelId: input.duelId,
+        expectedAccounts: accounts as unknown as Prisma.InputJsonValue,
+        expectedFromStatus: input.expectedFromStatus,
+        expectedInstructionAccounts: accounts as unknown as Prisma.InputJsonValue,
+        expectedInstructionDataHash: digest(bs58.encode(input.instruction.data)),
+        expectedMessageHash: input.messageSha256,
+        expectedProgramId: ESCROW_V2_PROGRAM_ID.toBase58(),
+        expectedSigner: input.caller.toBase58(),
+        expectedToStatus: input.expectedToStatus,
+        expiresAt: new Date(Date.now() + 75_000),
+        id: `tx_${randomUUID().replaceAll('-', '')}`,
+        idempotencyKey: input.idempotencyKey,
+        lastValidBlockHeight: input.lastValidBlockHeight,
+        metadata: {
+          operation: input.action.toLowerCase(),
+          prepareRequestHash: requestHash,
+          proof: input.proof,
+        } as unknown as Prisma.InputJsonValue,
+        network: 'DEVNET',
+        providerReference:
+          typeof input.proof.providerRequestId === 'string' ? input.proof.providerRequestId : null,
+        recentBlockhash: input.recentBlockhash,
+        serializedTransaction: input.serializedTransaction,
+        status: DuelTransactionStatus.PREPARED,
+        wallet: input.caller.toBase58(),
+      },
+      update: {},
+      where: { idempotencyKey: input.idempotencyKey },
+    });
+    const metadata = parsePreparationMetadata(intent.metadata);
+    if (
+      intent.duelId !== input.duelId ||
+      intent.wallet !== input.caller.toBase58() ||
+      metadata?.prepareRequestHash !== requestHash
+    ) {
+      throw new ConflictException('Idempotency-Key was already used for another transaction');
+    }
+    if (
+      intent.status !== DuelTransactionStatus.PREPARED ||
+      !intent.serializedTransaction ||
+      !intent.recentBlockhash ||
+      intent.lastValidBlockHeight === null ||
+      !intent.expectedMessageHash ||
+      !intent.expiresAt ||
+      intent.expiresAt <= new Date()
+    ) {
+      throw new ConflictException('Idempotent transaction intent is no longer reusable');
+    }
+    return intent;
   }
 
   private async assertCanonicalSource(
@@ -336,18 +490,25 @@ export class ProviderSettlementService {
 
   private async assertVaults(duel: PublicKey, evidence: CanonicalEvidence): Promise<void> {
     for (const side of ['creator', 'opponent'] as const) {
-      const outcome = evidence[side];
-      await this.assertMint(outcome.mint);
-      const vault = await this.rpc.getLegacyTokenAccount(
-        deriveEscrowV2CardVault(duel, side).toBase58(),
-      );
-      if (
-        vault.mint !== outcome.mint.toBase58() ||
-        vault.owner !== duel.toBase58() ||
-        vault.amount !== 1n
-      ) {
-        throw new ConflictException(`Missing canonical ${side} card in escrow vault`);
-      }
+      await this.assertVault(duel, side, evidence[side]);
+    }
+  }
+
+  private async assertVault(
+    duel: PublicKey,
+    side: EscrowV2Role,
+    outcome: CanonicalOutcome,
+  ): Promise<void> {
+    await this.assertMint(outcome.mint);
+    const vault = await this.rpc.getLegacyTokenAccount(
+      deriveEscrowV2CardVault(duel, side).toBase58(),
+    );
+    if (
+      vault.mint !== outcome.mint.toBase58() ||
+      vault.owner !== duel.toBase58() ||
+      vault.amount !== 1n
+    ) {
+      throw new ConflictException(`Missing canonical ${side} card in escrow vault`);
     }
   }
 
@@ -492,9 +653,67 @@ function requireExpired(expiresAt: Date): void {
   if (expiresAt.getTime() > Date.now()) throw new ConflictException('Duel has not expired');
 }
 
-function nonceFromDuelId(duelId: string): bigint {
-  const hash = createHash('sha256').update(`openpacksduel:escrow-v2:${duelId}`).digest();
-  return hash.readBigUInt64LE(0);
+export function assertOperationState(
+  operation: PreparedProviderEscrowTransaction['action'],
+  status: string,
+): void {
+  const allowed =
+    operation === 'deposit_card' || operation === 'commit_result'
+      ? ['AWAITING_ASSETS']
+      : operation === 'settle'
+        ? ['SETTLING']
+        : ['REFUNDING'];
+  if (!allowed.includes(status)) {
+    throw new ConflictException(`${operation} cannot be prepared from ${status.toLowerCase()}`);
+  }
+}
+
+function trackedTransition(action: PreparedProviderEscrowTransaction['action']): {
+  action: PersistTrackedIntentInput['action'];
+  from: PersistTrackedIntentInput['expectedFromStatus'];
+  to: PersistTrackedIntentInput['expectedToStatus'];
+} | null {
+  if (action === 'commit_result') {
+    return {
+      action: DuelTransactionAction.COMMIT_RESULT,
+      from: DuelStatus.AWAITING_ASSETS,
+      to: DuelStatus.SETTLING,
+    };
+  }
+  if (action === 'settle') {
+    return {
+      action: DuelTransactionAction.SETTLE,
+      from: DuelStatus.SETTLING,
+      to: DuelStatus.SETTLED,
+    };
+  }
+  if (action === 'refund_card' || action === 'refund_payment') {
+    return {
+      action: DuelTransactionAction.REFUND,
+      from: DuelStatus.REFUNDING,
+      to: DuelStatus.REFUNDING,
+    };
+  }
+  return null;
+}
+
+function parsePreparationMetadata(
+  value: Prisma.JsonValue | null,
+): { prepareRequestHash: string } | null {
+  if (!value || Array.isArray(value) || typeof value !== 'object') return null;
+  const prepareRequestHash = value.prepareRequestHash;
+  return typeof prepareRequestHash === 'string' ? { prepareRequestHash } : null;
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
 }
 
 function ata(payer: PublicKey, address: PublicKey, owner: PublicKey, mint: PublicKey) {
@@ -525,6 +744,12 @@ function proof(
     valuationPolicyHash: Buffer.from(evidence.policyHash).toString('hex'),
     winner: evidence.winner,
   };
+}
+
+function canonicalOpenedAt(evidence: CanonicalEvidence): Date {
+  return new Date(
+    Math.max(evidence.creator.openedAt.getTime(), evidence.opponent.openedAt.getTime()),
+  );
 }
 
 function digest(value: string | Uint8Array): string {

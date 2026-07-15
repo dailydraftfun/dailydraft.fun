@@ -48,6 +48,7 @@ enum DuelTransactionAction {
   CANCEL
   REFUND
   OPEN_PACK
+  COMMIT_RESULT
   SETTLE
 }
 
@@ -238,9 +239,9 @@ model DuelTransaction {
   duel                            Duel                   @relation(fields: [duelId], references: [id], onDelete: Cascade)
 
   @@index([duelId, createdAt])
+  @@index([duelId, wallet, action])
   @@index([status, updatedAt])
   @@index([status, nextCheckAt])
-  @@unique([duelId, wallet, action])
 }
 
 model WalletAuthChallenge {
