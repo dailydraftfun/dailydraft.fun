@@ -38,7 +38,7 @@ describe('verifyTransactionEnvelope', () => {
     if (!target) throw new Error('Missing fixture instruction');
     envelope.transaction.message.instructions = [
       { accounts: [], data: target.data, programIdIndex: target.programIdIndex },
-      { accounts: [0, 1], data: 'unrelated', programIdIndex: 1 },
+      { accounts: [0, 1], data: '2', programIdIndex: 1 },
     ];
 
     expectVerificationCode(envelope, 'INSTRUCTION_MISMATCH');
@@ -57,7 +57,7 @@ describe('verifyTransactionEnvelope', () => {
     const envelope = transactionEnvelope();
     envelope.transaction.message.instructions.unshift({
       accounts: [0],
-      data: 'mutated-initialize-args',
+      data: '3',
       programIdIndex: 2,
     });
 
