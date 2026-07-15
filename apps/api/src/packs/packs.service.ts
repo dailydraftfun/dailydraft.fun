@@ -27,7 +27,7 @@ export class PacksService {
     return {
       data,
       hasMore,
-      nextCursor: hasMore ? data.at(-1)?.id : null,
+      nextCursor: hasMore ? (data.at(-1)?.id ?? null) : null,
     };
   }
 

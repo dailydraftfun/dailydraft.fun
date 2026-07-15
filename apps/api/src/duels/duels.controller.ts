@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpCode,
   NotImplementedException,
   Param,
@@ -13,7 +12,7 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 
-import { IdempotencyKeyPipe } from '../common/idempotency-key.pipe.js';
+import { IdempotencyKey } from '../common/idempotency-key.decorator.js';
 import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
 import type { Duel, Page } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
@@ -40,7 +39,7 @@ export class DuelsController {
   @UseGuards(IntegrationKeyGuard)
   create(
     @Body() input: CreateDuelRequest,
-    @Headers('idempotency-key', IdempotencyKeyPipe) idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Res({ passthrough: true }) response: FastifyReply,
   ): Duel {
     const duel = this.duels.create(input, idempotencyKey);
@@ -58,7 +57,7 @@ export class DuelsController {
   prepareTransaction(
     @Param() params: DuelIdParams,
     @Body() _input: PrepareTransactionRequest,
-    @Headers('idempotency-key', IdempotencyKeyPipe) _idempotencyKey: string,
+    @IdempotencyKey() _idempotencyKey: string,
   ): never {
     this.duels.findOne(params.duelId);
     throw new NotImplementedException(
