@@ -138,8 +138,9 @@ is `solana-devnet`. Its asset references and values are valueless test data.
 All new duels snapshot the published `collector-crypt-insured-value-usdc-v1`
 policy before funding. Provider outcomes must match that exact SHA-256, use
 integer micro-USDC insured values, share one pool version, and carry a source
-timestamp no more than five minutes old. Equal values enter refund recovery so
-each player receives the original card and both platform fees are refunded.
+timestamp no more than five minutes old. Equal values follow the normal result
+commitment and settlement path, which returns each original card and refunds both
+platform fees immediately without waiting for expiry or entering recovery.
 Recorded result inputs are immutable; provider corrections require a dispute or
 refund and never rewrite the winner. See the public valuation/proof guide and
 `GET /v1/valuation-policies/current`.

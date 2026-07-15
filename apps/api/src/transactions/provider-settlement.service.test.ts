@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { DuelSide, DuelStatus, DuelTransactionStatus, ProviderMode } from '@openpacksduel/db';
+import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { PublicKey } from '@solana/web3.js';
 
 import {
@@ -47,6 +48,11 @@ describe('provider settlement evidence', () => {
     const wrongMint = evidence();
     requireOutcome(wrongMint, 0).assetReference = 'not-a-mint';
     expect(() => validateCanonicalEvidence(wrongMint)).toThrow('not a valid Solana address');
+    const wrongValue = evidence();
+    requireOutcome(wrongValue, 0).insuredValueAmount = '199';
+    expect(() => validateCanonicalEvidence(wrongValue)).toThrow(
+      'result hash does not match its proof inputs',
+    );
     const overflow = evidence();
     requireOutcome(overflow, 0).insuredValueAmount = 18_446_744_073_709_551_616n.toString();
     expect(() => validateCanonicalEvidence(overflow)).toThrow('exceeds u64');
@@ -200,6 +206,32 @@ describe('ProviderSettlementService', () => {
     expect(prepared.serializedTransactionBase64.length).toBeGreaterThan(100);
   });
 
+  test('prepares an independently monitored expired card refund to its original owner', async () => {
+    const duel = databaseDuel(new Date(Date.now() - 60_000));
+    const service = new ProviderSettlementService(database(duel), new FixtureRpc());
+
+    const prepared = await service.prepare({
+      assetStandard: 'legacy-spl-nft',
+      callerWallet: CREATOR.toBase58(),
+      duelId: duel.id,
+      idempotencyKey: 'expired-opponent-card-refund',
+      operation: 'refund_card',
+      side: 'opponent',
+    });
+
+    const opponentDestination = getAssociatedTokenAddressSync(OPPONENT, OPPONENT).toBase58();
+    expect(prepared.action).toBe('refund_card');
+    expect(prepared.intentId).toStartWith('tx_');
+    expect(prepared.instruction.name).toBe('refund_expired_card');
+    expect(prepared.instruction.accounts.map((account) => account.address)).toContain(
+      opponentDestination,
+    );
+    expect(prepared.proof).toEqual(
+      expect.objectContaining({ cardMint: OPPONENT.toBase58(), side: 'opponent' }),
+    );
+    expect(prepared.reconciliation).toBe('submission-monitor');
+  });
+
   test('keeps card and result operations fail-closed when asset standard is unset', async () => {
     delete process.env.OPENPACKSDUEL_PROVIDER_ASSET_STANDARD;
     const duel = databaseDuel(new Date(Date.now() + 60_000));
@@ -243,9 +275,14 @@ describe('ProviderSettlementService', () => {
     );
   });
 
-  test('persists settlement as a monitored settling-to-settled intent', async () => {
+  test.each([
+    ['creator', '200', '100', CREATOR, CREATOR],
+    ['opponent', '100', '200', OPPONENT, OPPONENT],
+    [null, '100', '100', CREATOR, OPPONENT],
+  ] as const)('routes a %s result to exact card destinations in a monitored settlement intent', async (winner, creatorValue, opponentValue, creatorCardOwner, opponentCardOwner) => {
     const duel = {
       ...databaseDuel(new Date(Date.now() + 60_000)),
+      ...evidence(creatorValue, opponentValue),
       status: 'SETTLING',
     };
     const service = new ProviderSettlementService(database(duel), new FixtureRpc());
@@ -254,14 +291,20 @@ describe('ProviderSettlementService', () => {
       assetStandard: 'legacy-spl-nft',
       callerWallet: CREATOR.toBase58(),
       duelId: duel.id,
-      idempotencyKey: 'duel-settlement',
+      idempotencyKey: `duel-settlement-${winner ?? 'tie'}`,
       operation: 'settle',
       providerRequestId: REQUEST,
     });
 
+    const accounts = prepared.instruction.accounts.map((account) => account.address);
     expect(prepared.action).toBe('settle');
     expect(prepared.intentId).toStartWith('tx_');
     expect(prepared.instruction.name).toBe('settle_duel');
+    expect(prepared.proof.winner).toBe(winner);
+    expect(accounts).toContain(getAssociatedTokenAddressSync(CREATOR, creatorCardOwner).toBase58());
+    expect(accounts).toContain(
+      getAssociatedTokenAddressSync(OPPONENT, opponentCardOwner).toBase58(),
+    );
     expect(prepared.reconciliation).toBe('submission-monitor');
   });
 
