@@ -100,7 +100,7 @@ async function handleAuthenticatedRequest(
   try {
     // @ts-expect-error SDK 1.29's HTTP transport accessor types conflict with exactOptionalPropertyTypes.
     await server.connect(transport);
-    await transport.handleRequest(request, response);
+    await transport.handleRequest(request, response, Reflect.get(request, 'body'));
   } catch {
     if (!response.headersSent) {
       sendJsonRpcError(response, 500, -32603, 'OpenPacks Duel MCP request failed');

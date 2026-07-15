@@ -60,6 +60,20 @@ describe('MCP Streamable HTTP transport', () => {
     expect(body.result?.serverInfo?.name).toBe('openpacksduel');
   });
 
+  test('accepts a platform-preparsed JSON body', async () => {
+    const url = await listen({ preparseBody: true });
+    const response = await fetch(url, {
+      body: JSON.stringify(initializeRequest()),
+      headers: { ...protocolHeaders(), authorization: `Bearer ${TOKEN}` },
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      result: { serverInfo: { name: 'openpacksduel' } },
+    });
+  });
+
   test('rejects GET and DELETE explicitly in stateless mode', async () => {
     const url = await listen();
     for (const method of ['GET', 'DELETE']) {
@@ -104,7 +118,7 @@ describe('MCP Streamable HTTP transport', () => {
   });
 });
 
-async function listen(): Promise<string> {
+async function listen(options: { preparseBody?: boolean } = {}): Promise<string> {
   const handler = createMcpHttpHandler({
     allowedOrigins: new Set(['https://openpacksduel.vercel.app']),
     apiClientFactory: () =>
@@ -118,7 +132,12 @@ async function listen(): Promise<string> {
     ),
     rateLimiter: new FixedWindowRateLimiter(10),
   });
-  const server = createServer(handler);
+  const server = createServer(async (request, response) => {
+    if (options.preparseBody) {
+      Reflect.set(request, 'body', JSON.parse(await readRequestBody(request)));
+    }
+    await handler(request, response);
+  });
   servers.push(server);
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -127,6 +146,12 @@ async function listen(): Promise<string> {
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Expected an ephemeral TCP port');
   return `http://127.0.0.1:${address.port}/mcp`;
+}
+
+async function readRequestBody(request: AsyncIterable<Uint8Array>): Promise<string> {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of request) chunks.push(chunk);
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 function initializeRequest() {
