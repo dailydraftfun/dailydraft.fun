@@ -50,6 +50,7 @@ smoke workflow.
 | `OPENPACKSDUEL_PROVIDER_MODE` | Must be `mock` until the Collector Crypt contract is confirmed. |
 | `OPENPACKSDUEL_API_KEYS` | Server-to-server integration keys; never expose to the browser. |
 | `OPENPACKSDUEL_APP_URL` | Canonical product URL. |
+| `OPENPACKSDUEL_AUTH_DOMAIN` | Host matching the canonical product URL in wallet sign-in messages. |
 | `CORS_ORIGINS` | Explicit allowed browser origins. |
 
 ## Release order

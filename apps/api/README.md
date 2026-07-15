@@ -23,9 +23,15 @@ bun --filter @openpacksduel/db db:deploy
 bun run dev
 ```
 
-The API listens on `http://localhost:3003/v1`. Mutation routes require a bearer
-key listed in `OPENPACKSDUEL_API_KEYS`; the server fails closed when no keys are
-configured.
+The API listens on `http://localhost:3003/v1`. Browser players authenticate by
+signing a five-minute, domain/URI/chain-bound Wallet Standard message. The API
+stores the nonce in PostgreSQL, consumes it once, and returns a 15-minute opaque
+session whose SHA-256 hash is the only token material persisted server-side.
+That wallet session can create, join, or cancel only for its own address.
+
+Server integrations can still use a bearer key listed in
+`OPENPACKSDUEL_API_KEYS`. Integration keys retain access to operator event and
+transaction routes and must never be shipped to browser code.
 
 `DATABASE_URL` is mandatory. `OPENPACKSDUEL_PROVIDER_MODE` defaults to `mock` and
 every duel is explicitly labeled `solana-devnet`; this API is not mainnet-ready.
@@ -50,5 +56,7 @@ The build generates Prisma Client and explicitly includes it in the function
 trace. Database migrations are never run during a Vercel build. Follow the
 ordered migration and deploy procedure in `docs/devnet-runbook.md`.
 
-Never expose an integration API key in browser code. Wallet authentication and
-signed sessions remain separate from server-to-server integration keys.
+Set `OPENPACKSDUEL_APP_URL` to the canonical HTTPS app origin and
+`OPENPACKSDUEL_AUTH_DOMAIN` to its matching host. Only localhost may use HTTP.
+Every signed message is hard-bound to `solana:devnet`; there is no mainnet
+configuration switch.
