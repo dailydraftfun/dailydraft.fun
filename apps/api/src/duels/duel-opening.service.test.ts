@@ -82,6 +82,8 @@ class OpeningRepository extends DuelRepository {
           displayName: outcome.displayName,
           insuredValue: outcome.insuredValue,
           isMock: input.isMock,
+          provider: input.provider,
+          providerReference: outcome.providerReference,
           resultHash: outcome.resultHash,
           side: outcome.side,
         })),

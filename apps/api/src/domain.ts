@@ -60,6 +60,8 @@ export interface DuelPackOutcome {
   displayName: string;
   insuredValue: Money;
   isMock: boolean;
+  provider: string;
+  providerReference: string;
   resultHash: string;
   side: 'creator' | 'opponent';
 }
@@ -95,6 +97,7 @@ export interface DuelTransactionRecord {
   errorCode?: string | null;
   errorMessage?: string | null;
   expiresAt?: string | null;
+  feeAmountLamports?: string | null;
   id: string;
   finalizedAt?: string | null;
   lastCheckedAt?: string | null;

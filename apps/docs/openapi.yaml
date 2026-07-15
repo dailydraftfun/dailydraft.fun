@@ -261,6 +261,37 @@ paths:
                 $ref: '#/components/schemas/Duel'
         '404':
           $ref: '#/components/responses/NotFound'
+  /duels/{duelId}/receipt:
+    get:
+      operationId: getPublicDuelReceipt
+      tags: [Duels]
+      summary: Download the strict public proof for one duel
+      description: |
+        Returns a no-store, machine-readable snapshot built only from durable
+        public duel state. Private transaction metadata, provider errors,
+        credentials, and support notes are never included. Missing settlement
+        or custody evidence is declared in `availability` instead of inferred.
+      x-openpacksduel-availability: devnet
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+      responses:
+        '200':
+          description: Downloadable public duel receipt
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="duel_example.receipt.json"
+            X-Robots-Tag:
+              schema:
+                type: string
+                const: noindex, nofollow, noarchive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicDuelReceipt'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /duels/{duelId}/join:
     post:
       operationId: joinDuel
@@ -555,6 +586,32 @@ paths:
           $ref: '#/components/responses/Unavailable'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /profiles/{wallet}:
+    get:
+      operationId: getPublicWalletProfile
+      tags: [Duels]
+      summary: Get a bounded pseudonymous wallet duel summary
+      description: |
+        Returns recent durable duel activity, record, refunds, and biggest
+        recorded win. The wallet remains a public Solana address, while display
+        labels are shortened and consumers must not index this response.
+      x-openpacksduel-availability: devnet
+      parameters:
+        - $ref: '#/components/parameters/Wallet'
+      responses:
+        '200':
+          description: Pseudonymous wallet profile
+          headers:
+            X-Robots-Tag:
+              schema:
+                type: string
+                const: noindex, nofollow, noarchive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicWalletProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /analytics/events:
     post:
       operationId: ingestProductEvents
@@ -853,6 +910,12 @@ components:
       schema:
         type: string
         pattern: '^duel_[A-Za-z0-9]{12,64}$'
+    Wallet:
+      name: wallet
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/SolanaAddress'
     TransactionId:
       name: transactionId
       in: path
@@ -1329,7 +1392,7 @@ components:
     DuelPackOutcome:
       type: object
       additionalProperties: false
-      required: [side, assetReference, displayName, insuredValue, resultHash, isMock]
+      required: [side, assetReference, displayName, insuredValue, resultHash, isMock, provider, providerReference]
       properties:
         side:
           type: string
@@ -1347,6 +1410,11 @@ components:
           pattern: '^[a-f0-9]{64}$'
         isMock:
           type: boolean
+        provider:
+          type: string
+        providerReference:
+          type: string
+          description: Public pack-opening reference recorded for independent provider support.
     DuelResult:
       type: object
       additionalProperties: false
@@ -1379,6 +1447,253 @@ components:
         winnerSide:
           type: [string, 'null']
           enum: [creator, opponent, null]
+    PublicDuelStatus:
+      oneOf:
+        - $ref: '#/components/schemas/DuelStatus'
+        - type: string
+          const: expired
+    PublicParticipant:
+      type: object
+      additionalProperties: false
+      required: [address, display, role]
+      properties:
+        address:
+          $ref: '#/components/schemas/SolanaAddress'
+        display:
+          type: string
+        role:
+          type: string
+          enum: [creator, opponent, house]
+    PublicDuelReceipt:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, duel, pack, participants, result, fees, custody, references, availability, actions, privacy]
+      properties:
+        schemaVersion:
+          type: string
+          const: openpacksduel.receipt.v1
+        duel:
+          type: object
+          additionalProperties: false
+          required: [id, status, mode, network, createdAt, expiresAt, observedAt]
+          properties:
+            id: { type: string }
+            status: { $ref: '#/components/schemas/PublicDuelStatus' }
+            mode: { $ref: '#/components/schemas/MatchmakingMode' }
+            network: { type: string, const: solana-devnet }
+            createdAt: { type: string, format: date-time }
+            expiresAt: { type: string, format: date-time }
+            observedAt: { type: string, format: date-time }
+        pack:
+          type: object
+          additionalProperties: false
+          required: [id, name, provider, providerMode, providerPackId, tier]
+          properties:
+            id: { type: string }
+            name: { type: string }
+            provider: { type: string }
+            providerMode: { type: string, enum: [mock, collector-crypt-sandbox] }
+            providerPackId: { type: [string, 'null'] }
+            tier: { $ref: '#/components/schemas/Money' }
+        participants:
+          type: object
+          additionalProperties: false
+          required: [creator, opponent]
+          properties:
+            creator: { $ref: '#/components/schemas/PublicParticipant' }
+            opponent:
+              oneOf:
+                - $ref: '#/components/schemas/PublicParticipant'
+                - type: 'null'
+        result:
+          oneOf:
+            - $ref: '#/components/schemas/PublicDuelResult'
+            - type: 'null'
+        fees:
+          type: object
+          additionalProperties: false
+          required: [asset, perSideAmountLamports, finalizedSides, requiredSides, totalFinalizedAmountLamports]
+          properties:
+            asset: { type: string, const: WSOL }
+            perSideAmountLamports: { type: [string, 'null'], pattern: '^\d+$' }
+            finalizedSides: { type: integer, minimum: 0, maximum: 2 }
+            requiredSides: { type: integer, const: 2 }
+            totalFinalizedAmountLamports: { type: [string, 'null'], pattern: '^\d+$' }
+        custody:
+          type: object
+          additionalProperties: false
+          required: [platformFee, cardAssets]
+          properties:
+            platformFee:
+              type: object
+              additionalProperties: false
+              required: [asset, escrowAddress, status]
+              properties:
+                asset: { type: string, const: WSOL }
+                escrowAddress:
+                  oneOf:
+                    - $ref: '#/components/schemas/SolanaAddress'
+                    - type: 'null'
+                status: { type: string, enum: [not-started, partially-funded, funded] }
+            cardAssets:
+              type: object
+              additionalProperties: false
+              required: [status, detail]
+              properties:
+                status: { type: string, enum: [not-recorded, provider-results-recorded, settlement-reference-recorded] }
+                detail: { type: string }
+        references:
+          type: object
+          additionalProperties: false
+          required: [provider, solana]
+          properties:
+            provider:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [side, provider, providerReference, assetReference]
+                properties:
+                  side: { type: string, enum: [creator, opponent] }
+                  provider: { type: string }
+                  providerReference: { type: string }
+                  assetReference: { type: string }
+            solana:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [action, signature, status, finalizedAt, explorerUrl]
+                properties:
+                  action: { type: string, enum: [fund, cancel, refund, open_pack, settle] }
+                  signature: { type: string }
+                  status: { type: string, enum: [prepared, submitted, confirmed, finalized, failed, expired] }
+                  finalizedAt: { type: [string, 'null'], format: date-time }
+                  explorerUrl: { type: string, format: uri }
+        availability:
+          type: object
+          additionalProperties: false
+          required: [complete, missing]
+          properties:
+            complete: { type: boolean }
+            missing: { type: array, items: { type: string } }
+        actions:
+          $ref: '#/components/schemas/PublicActions'
+        privacy:
+          $ref: '#/components/schemas/PublicPrivacy'
+    PublicDuelResult:
+      type: object
+      additionalProperties: false
+      required: [comparisonMetric, outcomes, resultHash, settlementReady, valuationPolicyHash, winnerSide, winner, margin, totalValue]
+      properties:
+        comparisonMetric: { type: string, const: insured-value }
+        outcomes:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: object
+            additionalProperties: false
+            required: [side, assetReference, displayName, insuredValue, isMock]
+            properties:
+              side: { type: string, enum: [creator, opponent] }
+              assetReference: { type: string }
+              displayName: { type: string }
+              insuredValue: { $ref: '#/components/schemas/Money' }
+              isMock: { type: boolean }
+        resultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        settlementReady: { type: boolean }
+        valuationPolicyHash: { type: string, pattern: '^[a-f0-9]{64}$' }
+        winnerSide: { type: [string, 'null'], enum: [creator, opponent, null] }
+        winner:
+          oneOf:
+            - $ref: '#/components/schemas/PublicParticipant'
+            - type: 'null'
+        margin: { $ref: '#/components/schemas/Money' }
+        totalValue: { $ref: '#/components/schemas/Money' }
+    PublicActions:
+      type: object
+      additionalProperties: false
+      required: [primary, rematch, share]
+      properties:
+        primary: { $ref: '#/components/schemas/PublicAction' }
+        rematch:
+          oneOf:
+            - $ref: '#/components/schemas/PublicAction'
+            - type: 'null'
+        share: { $ref: '#/components/schemas/PublicAction' }
+    PublicAction:
+      type: object
+      additionalProperties: false
+      required: [href, label]
+      properties:
+        href: { type: string }
+        label: { type: string }
+    PublicPrivacy:
+      type: object
+      additionalProperties: false
+      required: [indexable, reason]
+      properties:
+        indexable: { type: boolean, const: false }
+        reason: { type: string }
+    PublicWalletProfile:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, wallet, record, biggestWin, duels, pagination, privacy]
+      properties:
+        schemaVersion: { type: string, const: openpacksduel.profile.v1 }
+        wallet:
+          type: object
+          additionalProperties: false
+          required: [address, display]
+          properties:
+            address: { $ref: '#/components/schemas/SolanaAddress' }
+            display: { type: string }
+        record:
+          type: object
+          additionalProperties: false
+          required: [total, active, completed, wins, losses, refunded, cancelledOrExpired]
+          properties:
+            total: { type: integer, minimum: 0 }
+            active: { type: integer, minimum: 0 }
+            completed: { type: integer, minimum: 0 }
+            wins: { type: integer, minimum: 0 }
+            losses: { type: integer, minimum: 0 }
+            refunded: { type: integer, minimum: 0 }
+            cancelledOrExpired: { type: integer, minimum: 0 }
+        biggestWin:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [duelId, prizeValue]
+              properties:
+                duelId: { type: string }
+                prizeValue: { $ref: '#/components/schemas/Money' }
+            - type: 'null'
+        duels:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [duelId, status, result, packName, tier, opponentDisplay, createdAt, receiptHref, rematchHref]
+            properties:
+              duelId: { type: string }
+              status: { $ref: '#/components/schemas/PublicDuelStatus' }
+              result: { type: string, enum: [win, loss, none] }
+              packName: { type: string }
+              tier: { $ref: '#/components/schemas/Money' }
+              opponentDisplay: { type: [string, 'null'] }
+              createdAt: { type: string, format: date-time }
+              receiptHref: { type: string }
+              rematchHref: { type: [string, 'null'] }
+        pagination:
+          type: object
+          additionalProperties: false
+          required: [hasMore, sampleLimit]
+          properties:
+            hasMore: { type: boolean }
+            sampleLimit: { type: integer, minimum: 1, maximum: 100 }
+        privacy: { $ref: '#/components/schemas/PublicPrivacy' }
     DuelList:
       type: object
       additionalProperties: false

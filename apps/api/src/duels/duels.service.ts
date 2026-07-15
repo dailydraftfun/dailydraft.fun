@@ -22,6 +22,12 @@ import type {
 // biome-ignore lint/style/useImportType: Nest uses the repository class as a runtime injection token.
 import { DuelRepository } from './duel.repository.js';
 import { hashDuelRequest } from './prisma-duel.repository.js';
+import {
+  buildPublicDuelReceipt,
+  buildPublicWalletProfile,
+  type PublicDuelReceipt,
+  type PublicWalletProfile,
+} from './public-duel-proof.js';
 
 const DEFAULT_HOUSE_DEVNET_WALLET = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
 const MAX_DUEL_LIFETIME_MS = 24 * 60 * 60 * 1_000;
@@ -154,6 +160,18 @@ export class DuelsService {
   async listTransactions(duelId: string): Promise<DuelTransactionRecord[]> {
     await this.findOne(duelId);
     return this.repository.listTransactions(duelId);
+  }
+
+  async getPublicReceipt(duelId: string): Promise<PublicDuelReceipt> {
+    const duel = await this.findOne(duelId);
+    const transactions = await this.repository.listTransactions(duelId);
+    return buildPublicDuelReceipt(duel, transactions);
+  }
+
+  async getPublicProfile(wallet: string): Promise<PublicWalletProfile> {
+    const sampleLimit = 100;
+    const page = await this.findAll({ limit: sampleLimit, wallet });
+    return buildPublicWalletProfile(wallet, page.data, page.hasMore, sampleLimit);
   }
 
   async getSocialCard(duelId: string): Promise<{
