@@ -9,6 +9,12 @@ cancellation, and social-card metadata. Transaction preparation returns
 `501 Not Implemented` until the Solana escrow integration constructs verifiable
 unsigned transactions.
 
+Funded duels can use the authenticated `POST /v1/duels/{duelId}/open-packs`
+orchestrator. It generates and opens both sides through one provider boundary,
+normalizes USDC insured values, compares integer amounts, and records a public,
+sanitized result ready for the settlement service. House and wallet opponents
+use the same path.
+
 ## Local development
 
 ```bash
@@ -23,6 +29,15 @@ configured.
 
 `DATABASE_URL` is mandatory. `OPENPACKSDUEL_PROVIDER_MODE` defaults to `mock` and
 every duel is explicitly labeled `solana-devnet`; this API is not mainnet-ready.
+The deterministic mock provider refuses to run unless `OPENPACKSDUEL_NETWORK`
+is `solana-devnet`. Its asset references and values are valueless test data.
+
+`collector-crypt-sandbox` is a fail-closed adapter stub: no undocumented HTTP
+paths or response shapes are assumed. It remains unavailable until Collector
+Crypt confirms partner authentication, sandbox access, pack identifiers,
+generate/open/status schemas, idempotency, alternate-recipient custody, the
+canonical insured-value field, and buyback eligibility. Any future provider
+credential is server-only and must never use a `NEXT_PUBLIC_` variable.
 
 ## Vercel
 

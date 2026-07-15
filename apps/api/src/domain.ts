@@ -46,12 +46,31 @@ export interface Duel {
   opponentWallet?: string | null;
   pack: Pack;
   providerMode: 'collector-crypt-sandbox' | 'mock';
+  result?: DuelResult | null;
   stake: Money;
   status: DuelStatus;
   transactionSignature?: string | null;
   updatedAt?: string;
   version: number;
   winnerWallet?: string | null;
+}
+
+export interface DuelPackOutcome {
+  assetReference: string;
+  displayName: string;
+  insuredValue: Money;
+  isMock: boolean;
+  resultHash: string;
+  side: 'creator' | 'opponent';
+}
+
+export interface DuelResult {
+  comparisonMetric: 'insured-value';
+  outcomes: DuelPackOutcome[];
+  resultHash: string;
+  settlementReady: boolean;
+  valuationPolicyHash: string;
+  winnerSide: 'creator' | 'opponent' | null;
 }
 
 export interface DuelEvent {

@@ -25,11 +25,16 @@ import {
   PrepareTransactionRequest,
 } from './duel.dto.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { DuelOpeningService } from './duel-opening.service.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { DuelsService } from './duels.service.js';
 
 @Controller('duels')
 export class DuelsController {
-  constructor(private readonly duels: DuelsService) {}
+  constructor(
+    private readonly duels: DuelsService,
+    private readonly opening: DuelOpeningService,
+  ) {}
 
   @Get()
   findAll(@Query() query: ListDuelsQuery): Promise<Page<Duel>> {
@@ -105,5 +110,15 @@ export class DuelsController {
   @Get(':duelId/social-card')
   getSocialCard(@Param() params: DuelIdParams) {
     return this.duels.getSocialCard(params.duelId);
+  }
+
+  @Post(':duelId/open-packs')
+  @HttpCode(200)
+  @UseGuards(IntegrationKeyGuard)
+  openPacks(
+    @Param() params: DuelIdParams,
+    @IdempotencyKey() idempotencyKey: string,
+  ): Promise<Duel> {
+    return this.opening.open(params.duelId, idempotencyKey);
   }
 }

@@ -44,10 +44,10 @@ smoke workflow.
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | Devnet-only PostgreSQL connection. |
-| `SOLANA_NETWORK` | Must be `devnet`. |
+| `OPENPACKSDUEL_NETWORK` | Must be `solana-devnet`. |
 | `SOLANA_RPC_URL` | Server-side RPC endpoint. |
 | `ESCROW_PROGRAM_ID` | Published devnet escrow program address. |
-| `PACK_PROVIDER` | Must be `mock` without Collector Crypt credentials. |
+| `OPENPACKSDUEL_PROVIDER_MODE` | Must be `mock` until the Collector Crypt contract is confirmed. |
 | `OPENPACKSDUEL_API_KEYS` | Server-to-server integration keys; never expose to the browser. |
 | `OPENPACKSDUEL_APP_URL` | Canonical product URL. |
 | `CORS_ORIGINS` | Explicit allowed browser origins. |
