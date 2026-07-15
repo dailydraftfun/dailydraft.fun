@@ -115,6 +115,22 @@ and house availability with the `OPENPACKSDUEL_ALLOWED_TIERS`,
 `OPENPACKSDUEL_MAX_CONCURRENT_DUELS_PER_TIER`, and
 `OPENPACKSDUEL_HOUSE_ENABLED` environment variables. Conservative defaults are
 `50`, `3`, `20`, and `false` respectively.
+
+House mode has a second, stricter treasury gate. A serializable, advisory-locked
+reservation must exist before either participant can prepare funding. Reservations
+use integer micro-USDC only and require a recent finalized devnet token-account
+snapshot, per-player and per-tier concurrency headroom, total-exposure headroom,
+daily-loss headroom, and the configured liquidity floor. Missing configuration
+disables the tier. The funding hot wallet/signing authority and withdrawal authority
+must be distinct, and house entry remains off unless `OPENPACKSDUEL_HOUSE_ENABLED`
+is explicitly `true`.
+
+`GET /v1/admin/treasury` exposes secret-free liquidity, exposure, loss, inventory,
+and concentration summaries. Inventory disposition is an operator-recorded workflow;
+the API does not call undocumented buyback or marketplace endpoints. The treasury
+reconciler verifies the finalized devnet USDC token account and canonical legacy-SPL
+inventory custody, while lifecycle reconciliation keeps already-funded sessions on
+their refund or settlement path even during an emergency pause.
 The deterministic mock provider refuses to run unless `OPENPACKSDUEL_NETWORK`
 is `solana-devnet`. Its asset references and values are valueless test data.
 All new duels snapshot the published `collector-crypt-insured-value-usdc-v1`

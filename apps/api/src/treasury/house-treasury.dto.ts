@@ -1,0 +1,49 @@
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+
+export class HouseInventoryQuery {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit = 20;
+
+  @IsOptional()
+  @IsIn(['disposed', 'held', 'listed', 'reconciliation_required'])
+  status?: 'disposed' | 'held' | 'listed' | 'reconciliation_required';
+}
+
+export class HouseInventoryParams {
+  @Matches(/^hinv_[a-f0-9]{32}$/)
+  inventoryId!: string;
+}
+
+export class HouseDispositionRequest {
+  @IsIn(['buyback', 'hold', 'list', 'manual_review', 'promotion'])
+  disposition!: 'buyback' | 'hold' | 'list' | 'manual_review' | 'promotion';
+
+  @IsString()
+  @MaxLength(160)
+  @Matches(/^[A-Za-z0-9 _:-]{3,160}$/)
+  reason!: string;
+}
+
+export class CompleteHouseDispositionRequest {
+  @Matches(/^\d+$/)
+  realizedAmount!: string;
+
+  @IsIn(['USDC'])
+  realizedCurrency!: 'USDC';
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(6)
+  @Max(6)
+  realizedDecimals!: number;
+
+  @IsString()
+  @MaxLength(160)
+  @Matches(/^[A-Za-z0-9 _:-]{3,160}$/)
+  reason!: string;
+}

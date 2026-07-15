@@ -39,6 +39,8 @@ import {
 } from '../contracts/openpacksduel-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { HouseTreasuryService } from '../treasury/house-treasury.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
 import type { ExpectedAccountConstraint } from './transaction-monitor.types.js';
@@ -79,6 +81,7 @@ export class DuelFundingService {
     @Inject(DATABASE_CLIENT) private readonly database: DatabaseClient,
     private readonly rpc: SolanaRpcGateway,
     private readonly admin: AdminService,
+    private readonly treasury: HouseTreasuryService,
   ) {}
 
   async prepare(input: {
@@ -93,6 +96,7 @@ export class DuelFundingService {
     const duel = await this.database.duel.findUnique({ where: { id: input.duelId } });
     if (!duel) throw new NotFoundException(`Duel ${input.duelId} was not found`);
     const valuationPolicyHash = parsePolicyHash(duel.valuationPolicyHash);
+    await this.treasury.assertFundingAllowed(duel.id);
     const side = validateFundingDuelForPreparation(duel, input.wallet, new Date());
     if (side === 'opponent') {
       const creatorFunding = await this.database.duelTransaction.findFirst({

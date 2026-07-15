@@ -120,16 +120,59 @@ enum MatchmakingTicketStatus {
   MATCHED
 }
 
+enum HouseTreasuryReservationStatus {
+  RESERVED
+  FUNDED
+  SETTLEMENT_PENDING
+  RECOVERY_REQUIRED
+  RELEASED
+  SETTLED
+}
+
+enum HouseTreasuryLedgerType {
+  RESERVATION_CREATED
+  RESERVATION_RELEASED
+  HOUSE_FUNDING_COMMITTED
+  PLAYER_WIN_LOSS
+  HOUSE_PACK_COST
+  HOUSE_WIN_INVENTORY
+  INVENTORY_DISPOSITION_SET
+  INVENTORY_DISPOSED
+  RECONCILIATION_ALERT
+}
+
+enum HouseInventoryDisposition {
+  HOLD
+  BUYBACK
+  LIST
+  PROMOTION
+  MANUAL_REVIEW
+}
+
+enum HouseInventoryStatus {
+  HELD
+  LISTED
+  DISPOSED
+  RECONCILIATION_REQUIRED
+}
+
+enum HouseInventoryListingState {
+  UNLISTED
+  LISTED
+  SOLD
+  DELISTED
+}
+
 model Duel {
-  id                  String              @id
+  id                  String                     @id
   mode                DuelMode
   status              DuelStatus
-  network             SolanaNetwork       @default(DEVNET)
-  providerMode        ProviderMode        @default(MOCK)
+  network             SolanaNetwork              @default(DEVNET)
+  providerMode        ProviderMode               @default(MOCK)
   creatorWallet       String
   opponentWallet      String?
   opponentJoinedAt    DateTime?
-  houseOpponent       Boolean             @default(false)
+  houseOpponent       Boolean                    @default(false)
   winnerWallet        String?
   escrowAddress       String?
   packId              String
@@ -137,14 +180,14 @@ model Duel {
   packProvider        String
   providerPackId      String?
   stakeAmount         String
-  stakeCurrency       String              @default("USDC")
-  stakeDecimals       Int                 @default(6)
+  stakeCurrency       String                     @default("USDC")
+  stakeDecimals       Int                        @default(6)
   valuationPolicyHash String?
   expiresAt           DateTime
   cancellationReason  String?
-  version             Int                 @default(1)
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  version             Int                        @default(1)
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
   matchedAt           DateTime?
   fundedAt            DateTime?
   settledAt           DateTime?
@@ -155,6 +198,9 @@ model Duel {
   transactions        DuelTransaction[]
   packOutcomes        DuelPackOutcome[]
   matchmakingTickets  MatchmakingTicket[]
+  houseReservation    HouseTreasuryReservation?
+  houseInventory      HouseInventoryAsset[]
+  houseLedgerEntries  HouseTreasuryLedgerEntry[]
 
   @@index([status, expiresAt])
   @@index([mode, status, packId, createdAt])
@@ -197,7 +243,7 @@ model MatchmakingBehavior {
 }
 
 model DuelPackOutcome {
-  id                   String   @id
+  id                   String               @id
   duelId               String
   side                 DuelSide
   provider             String
@@ -205,16 +251,17 @@ model DuelPackOutcome {
   assetReference       String
   displayName          String
   insuredValueAmount   String
-  insuredValueCurrency String   @default("USDC")
-  insuredValueDecimals Int      @default(6)
+  insuredValueCurrency String               @default("USDC")
+  insuredValueDecimals Int                  @default(6)
   sourceTimestamp      DateTime?
   poolVersion          String?
   valuationPolicyHash  String
   resultHash           String
   isMock               Boolean
   openedAt             DateTime
-  createdAt            DateTime @default(now())
-  duel                 Duel     @relation(fields: [duelId], references: [id], onDelete: Cascade)
+  createdAt            DateTime             @default(now())
+  duel                 Duel                 @relation(fields: [duelId], references: [id], onDelete: Cascade)
+  houseInventoryAsset  HouseInventoryAsset?
 
   @@unique([duelId, side])
   @@unique([provider, providerReference])
@@ -286,7 +333,7 @@ model DuelTransaction {
   recoveredAt                     DateTime?
   lastRecoveryCheckedAt           DateTime?
   nextRecoveryCheckAt             DateTime?
-  recoveryCheckAttempts           Int                    @default(0)
+  recoveryCheckAttempts           Int                   @default(0)
   recoveryCandidateAt             DateTime?
   recoveryCandidateSignature      String?
   recoveryAlertCode               String?
@@ -372,4 +419,99 @@ model OperatorAuditEvent {
   createdAt      DateTime           @default(now())
 
   @@index([createdAt, id])
+}
+
+/// One mutable, finalized balance snapshot per network/wallet/mint/token account policy.
+/// The service uses the fixed `solana-devnet-usdc` id for the current devnet policy.
+model HouseTreasurySnapshot {
+  id              String        @id
+  network         SolanaNetwork @default(DEVNET)
+  wallet          String
+  tokenAccount    String
+  mint            String
+  balanceAmount   String
+  balanceDecimals Int
+  verifiedAt      DateTime
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([network, wallet, mint, tokenAccount])
+}
+
+model HouseTreasuryReservation {
+  id            String                         @id
+  duelId        String                         @unique
+  playerWallet  String
+  tier          Int
+  amount        String
+  currency      String                         @default("USDC")
+  decimals      Int                            @default(6)
+  status        HouseTreasuryReservationStatus @default(RESERVED)
+  reservedAt    DateTime                       @default(now())
+  fundedAt      DateTime?
+  releasedAt    DateTime?
+  settledAt     DateTime?
+  version       Int                            @default(1)
+  createdAt     DateTime                       @default(now())
+  updatedAt     DateTime                       @updatedAt
+  duel          Duel                           @relation(fields: [duelId], references: [id], onDelete: Restrict)
+  ledgerEntries HouseTreasuryLedgerEntry[]
+
+  @@index([status, tier, reservedAt])
+  @@index([playerWallet, status])
+}
+
+model HouseInventoryAsset {
+  id                       String                     @id
+  duelId                   String
+  outcomeId                String                     @unique
+  assetReference           String
+  displayName              String
+  acquisitionValueAmount   String
+  acquisitionValueCurrency String                     @default("USDC")
+  acquisitionValueDecimals Int                        @default(6)
+  buybackEligible          Boolean                    @default(false)
+  buybackExpiresAt         DateTime?
+  listingState             HouseInventoryListingState @default(UNLISTED)
+  custodyWallet            String
+  disposition              HouseInventoryDisposition  @default(MANUAL_REVIEW)
+  status                   HouseInventoryStatus       @default(HELD)
+  realizedAmount           String?
+  realizedCurrency         String?
+  realizedDecimals         Int?
+  disposedAt               DateTime?
+  lastReconciledAt         DateTime?
+  reconciliationError      String?
+  version                  Int                        @default(1)
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  duel                     Duel                       @relation(fields: [duelId], references: [id], onDelete: Restrict)
+  outcome                  DuelPackOutcome            @relation(fields: [outcomeId], references: [id], onDelete: Restrict)
+  ledgerEntries            HouseTreasuryLedgerEntry[]
+
+  @@index([status, disposition, createdAt])
+  @@index([duelId, createdAt])
+  @@index([assetReference])
+  @@index([custodyWallet, status])
+}
+
+model HouseTreasuryLedgerEntry {
+  id             String                    @id
+  idempotencyKey String                    @unique
+  duelId         String?
+  reservationId  String?
+  inventoryId    String?
+  type           HouseTreasuryLedgerType
+  amount         String
+  currency       String                    @default("USDC")
+  decimals       Int                       @default(6)
+  metadata       Json?
+  createdAt      DateTime                  @default(now())
+  duel           Duel?                     @relation(fields: [duelId], references: [id], onDelete: Restrict)
+  reservation    HouseTreasuryReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  inventory      HouseInventoryAsset?      @relation(fields: [inventoryId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt, type])
+  @@index([duelId, createdAt])
+  @@index([inventoryId, createdAt])
 }

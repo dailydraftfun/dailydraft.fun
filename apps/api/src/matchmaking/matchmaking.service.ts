@@ -28,6 +28,10 @@ import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type { Pack } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { PacksService } from '../packs/packs.service.js';
+import {
+  reserveHouseExposure,
+  shouldRetryTreasuryTransaction,
+} from '../treasury/house-treasury.policy.js';
 import type { MatchmakingRequest } from './matchmaking.dto.js';
 
 const FAILURE_WINDOW_MS = 60 * 60 * 1_000;
@@ -175,44 +179,67 @@ export class MatchmakingService {
     if (!houseWallet) throw new ServiceUnavailableException('House wallet is not configured');
     if (houseWallet === wallet) throw new ConflictException('House wallet cannot challenge itself');
     const commitmentExpiresAt = new Date(now.getTime() + commitmentWindowMs());
-    const updated = await this.database.$transaction(async (transaction) => {
-      const changed = await transaction.duel.updateMany({
-        data: {
-          commitmentExpiresAt,
-          houseOpponent: true,
-          matchedAt: now,
-          mode: DuelMode.HOUSE,
-          opponentJoinedAt: now,
-          opponentWallet: houseWallet,
-          status: DuelStatus.MATCHED,
-          version: { increment: 1 },
-        },
-        where: { id: ticket.duelId, status: DuelStatus.WAITING, version: ticket.duel.version },
-      });
-      if (changed.count !== 1) throw new ConflictException('Matchmaking state changed');
-      await transaction.matchmakingTicket.update({
-        data: { commitmentExpiresAt, status: MatchmakingTicketStatus.MATCHED },
-        where: { id: ticket.id },
-      });
-      await appendDuelEvent(transaction, {
-        data: { explicitDisclosure: true, opponentType: 'house' },
-        duelId: ticket.duelId,
-        fromStatus: DuelStatus.WAITING,
-        sequence: ticket.duel.version + 1,
-        toStatus: DuelStatus.MATCHED,
-        type: 'matchmaking.house_fallback_selected',
-        wallet,
-      });
-      await appendMetric(transaction, {
-        duelId: ticket.duelId,
-        mode: DuelMode.HOUSE,
-        name: ProductEventName.HOUSE_FALLBACK_SELECTED,
-        status: DuelStatus.MATCHED,
-        tier: ticket.tier,
-      });
-      return findTicketOrThrow(transaction, wallet);
-    });
-    return toSession(updated);
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const updated = await this.database.$transaction(
+          async (transaction) => {
+            await reserveHouseExposure(transaction, {
+              amount: ticket.duel.stakeAmount,
+              currency: ticket.duel.stakeCurrency,
+              decimals: ticket.duel.stakeDecimals,
+              duelId: ticket.duelId,
+              playerWallet: wallet,
+              tier: ticket.tier,
+            });
+            const changed = await transaction.duel.updateMany({
+              data: {
+                commitmentExpiresAt,
+                houseOpponent: true,
+                matchedAt: now,
+                mode: DuelMode.HOUSE,
+                opponentJoinedAt: now,
+                opponentWallet: houseWallet,
+                status: DuelStatus.MATCHED,
+                version: { increment: 1 },
+              },
+              where: {
+                id: ticket.duelId,
+                status: DuelStatus.WAITING,
+                version: ticket.duel.version,
+              },
+            });
+            if (changed.count !== 1) throw new ConflictException('Matchmaking state changed');
+            await transaction.matchmakingTicket.update({
+              data: { commitmentExpiresAt, status: MatchmakingTicketStatus.MATCHED },
+              where: { id: ticket.id },
+            });
+            await appendDuelEvent(transaction, {
+              data: { explicitDisclosure: true, opponentType: 'house' },
+              duelId: ticket.duelId,
+              fromStatus: DuelStatus.WAITING,
+              sequence: ticket.duel.version + 1,
+              toStatus: DuelStatus.MATCHED,
+              type: 'matchmaking.house_fallback_selected',
+              wallet,
+            });
+            await appendMetric(transaction, {
+              duelId: ticket.duelId,
+              mode: DuelMode.HOUSE,
+              name: ProductEventName.HOUSE_FALLBACK_SELECTED,
+              status: DuelStatus.MATCHED,
+              tier: ticket.tier,
+            });
+            return findTicketOrThrow(transaction, wallet);
+          },
+          { isolationLevel: 'Serializable' },
+        );
+        return toSession(updated);
+      } catch (error) {
+        if (shouldRetryTreasuryTransaction(error, attempt)) continue;
+        throw error;
+      }
+    }
+    throw new ServiceUnavailableException('House reservation could not be serialized');
   }
 
   async expireCommitments(now = new Date()): Promise<{ expired: number }> {

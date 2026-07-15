@@ -4,6 +4,7 @@ import { AdminModule } from '../admin/admin.module.js';
 import { AnalyticsModule } from '../analytics/analytics.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
+import { HouseTreasuryModule } from '../treasury/house-treasury.module.js';
 import { DuelFundingService } from './duel-funding.service.js';
 import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
 import { ProviderSettlementService } from './provider-settlement.service.js';
@@ -24,7 +25,7 @@ import { WorkerKeyGuard } from './worker-key.guard.js';
     ProviderSettlementController,
   ],
   exports: [DuelFundingService, SolanaRpcGateway],
-  imports: [AdminModule, AnalyticsModule, AuthModule],
+  imports: [AdminModule, AnalyticsModule, AuthModule, HouseTreasuryModule],
   providers: [
     WorkerKeyGuard,
     IntegrationKeyGuard,
