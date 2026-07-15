@@ -14,7 +14,7 @@
     "db:migrate": "bunx --bun prisma migrate dev",
     "lint": "biome check src/ prisma.config.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "bun run db:generate && tsc --noEmit"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.6.0",
