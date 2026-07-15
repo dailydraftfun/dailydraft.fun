@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { DuelStatus, HouseTreasuryReservationStatus } from '@openpacksduel/db';
 
 import { SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
+import { ACTIVE_HOUSE_RESERVATION_STATUSES } from './house-treasury.policy.js';
 import { HouseTreasuryService } from './house-treasury.service.js';
 
 const HOT_WALLET = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
@@ -228,14 +229,7 @@ function lifecycleDatabase(reservations: ReservationFixture[]) {
       findMany: ({ take }: { take: number }) =>
         Promise.resolve(
           reservations
-            .filter((row) =>
-              [
-                HouseTreasuryReservationStatus.RESERVED,
-                HouseTreasuryReservationStatus.FUNDED,
-                HouseTreasuryReservationStatus.SETTLEMENT_PENDING,
-                HouseTreasuryReservationStatus.RECOVERY_REQUIRED,
-              ].includes(row.status),
-            )
+            .filter((row) => ACTIVE_HOUSE_RESERVATION_STATUSES.includes(row.status))
             .sort((left, right) => {
               if (!left.lastReconciledAt && right.lastReconciledAt) return -1;
               if (left.lastReconciledAt && !right.lastReconciledAt) return 1;
