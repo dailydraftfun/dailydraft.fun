@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {
   duelStatuses,
   getDuelSocialSnapshot,
+  getPrimaryAction,
   getSocialDescription,
   resolveDuelStatus,
 } from '../social-card-data';
@@ -52,7 +53,14 @@ export default async function DuelPage({ params, searchParams }: DuelPageProps) 
   const [{ duelId }, query] = await Promise.all([params, searchParams]);
   const status = resolveDuelStatus(query.status);
   const snapshot = getDuelSocialSnapshot(duelId, status);
+  const primaryAction = getPrimaryAction(snapshot);
   const imageUrl = `/duel/${encodeURIComponent(duelId)}/social/${status}`;
+  const canonicalOrigin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://openpacksduel.vercel.app';
+  const canonicalUrl = `${canonicalOrigin}/duel/${encodeURIComponent(duelId)}?status=${status}`;
+  const shareUrl = `https://twitter.com/intent/tweet?${new URLSearchParams({
+    text: `${snapshot.headline} ${snapshot.subline}`,
+    url: canonicalUrl,
+  }).toString()}`;
 
   return (
     <main className="mx-auto flex min-h-[calc(100svh-4rem)] max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6">
@@ -68,13 +76,54 @@ export default async function DuelPage({ params, searchParams }: DuelPageProps) 
             {snapshot.subline}
           </p>
         </div>
-        <Link
-          href="/overview"
-          className="inline-flex min-h-11 items-center justify-center rounded-md bg-lime px-4 text-sm font-semibold text-black transition hover:brightness-110"
-        >
-          Open Pack Duel
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={primaryAction.href}
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-lime px-4 text-sm font-semibold text-black transition hover:brightness-110"
+          >
+            {primaryAction.label}
+          </Link>
+          <a
+            href={shareUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-border-strong bg-secondary px-4 text-sm font-semibold text-primary transition hover:border-lime hover:text-lime"
+          >
+            Share on X
+          </a>
+        </div>
       </div>
+
+      <section className="grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          ['Network', snapshot.network.toUpperCase()],
+          ['Pack tier', `$${snapshot.tier}`],
+          ['Winner metric', snapshot.valuationPolicy],
+          ['Duel', snapshot.duelId.slice(0, 18)],
+        ].map(([label, value]) => (
+          <div key={label} className="bg-secondary p-4">
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-secondary">
+              {label}
+            </p>
+            <p className="mt-2 truncate text-sm font-semibold text-primary" title={value}>
+              {value}
+            </p>
+          </div>
+        ))}
+      </section>
+
+      {status === 'settled' ? (
+        <section className="rounded-xl border border-lime/30 bg-lime/5 p-5">
+          <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-lime">
+            Public settlement proof
+          </p>
+          <p className="mt-3 text-sm leading-6 text-secondary">
+            {snapshot.winner} won ${snapshot.totalValue.toLocaleString()} in devnet card value. The
+            production page will attach both provider results, the committed valuation-policy hash,
+            escrow address, and Solana settlement signature from the durable API.
+          </p>
+        </section>
+      ) : null}
 
       <div className="overflow-hidden rounded-xl border border-border bg-secondary shadow-2xl shadow-black/40">
         <Image
