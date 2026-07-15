@@ -53,11 +53,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       if (!transaction || transaction.duelId !== input.duelId) {
         throw new NotFoundException(`Transaction ${input.transactionId} was not found`);
       }
-      if (
-        transaction.submissionIdempotencyKey === input.idempotencyKey &&
-        transaction.signature === input.signature &&
-        ACTIVE_STATUSES.has(transaction.status)
-      ) {
+      if (isIdempotentSubmissionReplay(transaction, input)) {
         return toBoundSubmission(transaction.id, transaction.duelId, input.signature);
       }
       if (
@@ -688,6 +684,21 @@ export function assertWalletSubmissionActor(input: {
       'Wallet session cannot submit a transaction for another signer or duel participant',
     );
   }
+}
+
+export function isIdempotentSubmissionReplay(
+  transaction: {
+    signature: string | null;
+    status: DuelTransactionStatus;
+    submissionIdempotencyKey: string | null;
+  },
+  input: { idempotencyKey: string; signature: string },
+): boolean {
+  return (
+    transaction.submissionIdempotencyKey === input.idempotencyKey &&
+    transaction.signature === input.signature &&
+    ACTIVE_STATUSES.has(transaction.status)
+  );
 }
 
 export function shouldEnterCommittingOnCreatorSubmission(input: {

@@ -85,34 +85,10 @@ export class DuelFundingService {
     const configuration = loadEscrowConfiguration();
     await this.assertDevnet();
     const wallet = parsePublicKey(input.wallet, 'wallet');
-    const currentBlockHeight = await this.rpc.getBlockHeight();
-    const activeFunding = await this.database.duelTransaction.findFirst({
-      where: {
-        action: DuelTransactionAction.FUND,
-        duelId: input.duelId,
-        status: { in: [...ACTIVE_FUNDING_STATUSES] },
-        wallet: input.wallet,
-      },
-    });
-    assertNoActiveFunding(activeFunding);
-    const reusable = await this.findReusable(input, configuration, currentBlockHeight);
-    if (reusable) return reusable;
-
     const duel = await this.database.duel.findUnique({ where: { id: input.duelId } });
     if (!duel) throw new NotFoundException(`Duel ${input.duelId} was not found`);
-    const side = resolveFundingSide(duel, input.wallet);
-    if (duel.expiresAt <= new Date()) throw new ConflictException('Duel has expired');
-    if (
-      side === 'creator' &&
-      duel.status !== DuelStatus.MATCHED &&
-      duel.status !== DuelStatus.COMMITTING
-    ) {
-      throw new ConflictException('Creator funding requires a matched duel');
-    }
+    const side = validateFundingDuelForPreparation(duel, input.wallet, new Date());
     if (side === 'opponent') {
-      if (duel.status !== DuelStatus.COMMITTING) {
-        throw new ConflictException('Opponent funding waits for creator escrow initialization');
-      }
       const creatorFunding = await this.database.duelTransaction.findFirst({
         where: {
           action: DuelTransactionAction.FUND,
@@ -125,6 +101,18 @@ export class DuelFundingService {
         throw new ConflictException('Opponent funding waits for finalized creator funding');
       }
     }
+    const currentBlockHeight = await this.rpc.getBlockHeight();
+    const activeFunding = await this.database.duelTransaction.findFirst({
+      where: {
+        action: DuelTransactionAction.FUND,
+        duelId: input.duelId,
+        status: { in: [...ACTIVE_FUNDING_STATUSES] },
+        wallet: input.wallet,
+      },
+    });
+    assertNoActiveFunding(activeFunding);
+    const reusable = await this.findReusable(input, configuration, currentBlockHeight);
+    if (reusable) return reusable;
 
     const opponent = parsePublicKey(duel.opponentWallet ?? '', 'opponent wallet');
     const nonce = nonceFromDuelId(duel.id);
@@ -411,13 +399,31 @@ function parsePolicyHash(value: string | null): Uint8Array {
   return Uint8Array.from(Buffer.from(value, 'hex'));
 }
 
-function resolveFundingSide(
-  duel: { creatorWallet: string; opponentWallet: string | null },
+export function validateFundingDuelForPreparation(
+  duel: {
+    creatorWallet: string;
+    expiresAt: Date;
+    opponentWallet: string | null;
+    status: DuelStatus;
+  },
   wallet: string,
+  now: Date,
 ): 'creator' | 'opponent' {
-  if (wallet === duel.creatorWallet) return 'creator';
-  if (wallet === duel.opponentWallet) return 'opponent';
-  throw new ConflictException('Only a matched duel participant can fund escrow');
+  const side =
+    wallet === duel.creatorWallet ? 'creator' : wallet === duel.opponentWallet ? 'opponent' : null;
+  if (!side) throw new ConflictException('Only a matched duel participant can fund escrow');
+  if (duel.expiresAt <= now) throw new ConflictException('Duel has expired');
+  if (
+    side === 'creator' &&
+    duel.status !== DuelStatus.MATCHED &&
+    duel.status !== DuelStatus.COMMITTING
+  ) {
+    throw new ConflictException('Creator funding requires a matched duel');
+  }
+  if (side === 'opponent' && duel.status !== DuelStatus.COMMITTING) {
+    throw new ConflictException('Opponent funding waits for creator escrow initialization');
+  }
+  return side;
 }
 
 export function assertNoActiveFunding(active: { id: string } | null): void {
