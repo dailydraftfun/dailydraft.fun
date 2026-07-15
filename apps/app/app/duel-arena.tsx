@@ -290,6 +290,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
   const [matchmakingSession, setMatchmakingSession] = useState<MatchmakingSession | null>(null);
+  const [matchmakingRestorePending, setMatchmakingRestorePending] = useState(false);
+  const matchmakingRestoreKey = useRef<string | null>(null);
   const timers = useRef<number[]>([]);
   const match = useMemo(() => getMatch(tier, nonce), [tier, nonce]);
   const winner = match.left.value >= match.right.value ? 'you' : 'opponent';
@@ -299,6 +301,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   function chooseMode(nextMode: Mode) {
     if (nextMode === mode) return;
+    if (matchmakingRestorePending) {
+      setActionError('Checking this wallet for an active public matchmaking ticket.');
+      return;
+    }
     if (matchmakingSession && nextMode !== 'matchmaking') {
       setActionError('Cancel the active public search before starting a different duel mode.');
       return;
@@ -382,7 +388,6 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   useEffect(() => {
     if (
-      mode !== 'matchmaking' ||
       matchmakingSession ||
       !authentication.sessionToken ||
       !walletConnection.address ||
@@ -390,10 +395,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     ) {
       return;
     }
+    const restoreKey = `${walletConnection.address}:${authentication.sessionToken}`;
+    if (matchmakingRestoreKey.current === restoreKey) return;
+    matchmakingRestoreKey.current = restoreKey;
     let active = true;
+    setMatchmakingRestorePending(true);
     getOpenMatchmakingStatus(walletConnection.address, authentication.sessionToken)
       .then((session) => {
         if (active && session) {
+          setActiveEntry(undefined);
+          setMode(session.houseOpponent ? 'house' : 'matchmaking');
           setMatchmakingSession((current) =>
             current?.duelId === session.duelId &&
             current.state === session.state &&
@@ -405,11 +416,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           setActionNotice('Your existing public matchmaking ticket was restored.');
         }
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (matchmakingRestoreKey.current === restoreKey) {
+          setMatchmakingRestorePending(false);
+        }
+      });
     return () => {
       active = false;
     };
-  }, [authentication.sessionToken, matchmakingSession, mode, walletConnection.address]);
+  }, [authentication.sessionToken, matchmakingSession, walletConnection.address]);
 
   useEffect(() => {
     if (!matchmakingSession || !authentication.sessionToken || !walletConnection.address) {
@@ -487,6 +503,26 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setActionNotice(null);
     setTier(nextTier);
     setMode(nextMode);
+    const expectedRestoreKey =
+      walletConnection.address && authentication.sessionToken
+        ? `${walletConnection.address}:${authentication.sessionToken}`
+        : null;
+    if (
+      isDuelApiConfigured() &&
+      expectedRestoreKey &&
+      matchmakingRestoreKey.current !== expectedRestoreKey
+    ) {
+      setActionError('Wait while we check this wallet for an active matchmaking ticket.');
+      return;
+    }
+    if (matchmakingRestorePending) {
+      setActionError('Wait while we restore any active public matchmaking ticket.');
+      return;
+    }
+    if (matchmakingSession) {
+      setActionError('Use or cancel the active matchmaking session before starting another duel.');
+      return;
+    }
     if (!walletConnection.address) {
       setActionError('Connect a Solana wallet from the top-right button before funding a duel.');
       return;
@@ -1013,7 +1049,12 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 type="button"
                 className="duel-cta"
                 onClick={() => reviewDuel()}
-                disabled={intentPending || (mode === 'direct' && wallet.trim().length === 0)}
+                disabled={
+                  intentPending ||
+                  matchmakingRestorePending ||
+                  Boolean(matchmakingSession) ||
+                  (mode === 'direct' && wallet.trim().length === 0)
+                }
               >
                 {intentPending ? (
                   <SpinnerGapIcon className="wallet-spinner" size={18} />
