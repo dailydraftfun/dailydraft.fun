@@ -37,15 +37,11 @@ export class SolanaRpcClient extends SolanaRpcGateway {
     30_000,
   );
   readonly #retries = resolvePositiveInteger(process.env.SOLANA_RPC_RETRIES, DEFAULT_RETRIES, 4);
-  #clusterValidated = false;
-
   async assertDevnet(): Promise<void> {
-    if (this.#clusterValidated) return;
     const genesisHash = await this.request('getGenesisHash', []);
     if (genesisHash !== DEVNET_GENESIS_HASH) {
       throw new SolanaRpcUnavailableError('Configured Solana RPC is not devnet');
     }
-    this.#clusterValidated = true;
   }
 
   async getBlockHeight(): Promise<bigint> {

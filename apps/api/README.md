@@ -76,6 +76,24 @@ counts, and the stuck-funded alert configured by
 `OPENPACKSDUEL_STUCK_FUNDED_MINUTES`.
 Canonical funnel transitions and operational alerts use `SERVER` rows only;
 client UI errors are reported separately under `experience`.
+
+## Admin and emergency controls
+
+All `/v1/admin/*` routes require an integration key and return `no-store`
+responses. Operators can paginate stuck/failed duels, inspect complete duel,
+transaction, provider, valuation, and custody timelines, view risk/configuration
+readiness, and pause or resume new exposure. The pause blocks create, join,
+funding preparation, pack opening, and house entry while reads, cancellation,
+refund/settlement recovery, and reconciliation remain available.
+
+Pause changes append an immutable database audit record containing only the
+fixed `integration-key` actor class and a bounded reason code; raw API keys are
+never persisted. Configure allowed tiers, wallet exposure, tier concurrency,
+and house availability with the `OPENPACKSDUEL_ALLOWED_TIERS`,
+`OPENPACKSDUEL_MAX_ACTIVE_DUELS_PER_WALLET`,
+`OPENPACKSDUEL_MAX_CONCURRENT_DUELS_PER_TIER`, and
+`OPENPACKSDUEL_HOUSE_ENABLED` environment variables. Conservative defaults are
+`50`, `3`, `20`, and `false` respectively.
 The deterministic mock provider refuses to run unless `OPENPACKSDUEL_NETWORK`
 is `solana-devnet`. Its asset references and values are valueless test data.
 `SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every

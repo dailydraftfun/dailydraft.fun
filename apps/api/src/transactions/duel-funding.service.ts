@@ -25,6 +25,8 @@ import {
 import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
 import bs58 from 'bs58';
 
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { AdminService } from '../admin/admin.service.js';
 import {
   createFundDuelInstruction,
   createInitializeDuelInstruction,
@@ -75,6 +77,7 @@ export class DuelFundingService {
   constructor(
     @Inject(DATABASE_CLIENT) private readonly database: DatabaseClient,
     private readonly rpc: SolanaRpcGateway,
+    private readonly admin: AdminService,
   ) {}
 
   async prepare(input: {
@@ -82,6 +85,7 @@ export class DuelFundingService {
     idempotencyKey: string;
     wallet: string;
   }): Promise<PreparedFundingIntent> {
+    await this.admin.assertNotPaused();
     const configuration = loadEscrowConfiguration();
     await this.assertDevnet();
     const wallet = parsePublicKey(input.wallet, 'wallet');

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AdminModule } from '../admin/admin.module.js';
 import { AnalyticsModule } from '../analytics/analytics.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { DuelFundingService } from './duel-funding.service.js';
@@ -15,8 +16,8 @@ import { WorkerKeyGuard } from './worker-key.guard.js';
 
 @Module({
   controllers: [TransactionSubmissionController, TransactionReconciliationController],
-  exports: [DuelFundingService],
-  imports: [AnalyticsModule, AuthModule],
+  exports: [DuelFundingService, SolanaRpcGateway],
+  imports: [AdminModule, AnalyticsModule, AuthModule],
   providers: [
     WorkerKeyGuard,
     DuelFundingService,

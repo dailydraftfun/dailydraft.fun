@@ -624,6 +624,190 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /admin/duels:
+    get:
+      operationId: listAdminAttentionDuels
+      tags: [Operations]
+      summary: Paginate stuck or failed duels requiring attention
+      x-openpacksduel-availability: devnet
+      security:
+        - integrationKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            pattern: '^duel_[A-Za-z0-9]{12,64}$'
+        - name: attention
+          in: query
+          schema:
+            type: string
+            enum: [all, failed, stuck]
+            default: all
+        - name: duelId
+          in: query
+          schema:
+            type: string
+            pattern: '^duel_[A-Za-z0-9]{12,64}$'
+        - name: wallet
+          in: query
+          schema:
+            $ref: '#/components/schemas/SolanaAddress'
+        - name: signature
+          in: query
+          schema:
+            type: string
+            pattern: '^[1-9A-HJ-NP-Za-km-z]{64,100}$'
+        - name: providerReference
+          in: query
+          schema:
+            type: string
+            maxLength: 160
+        - name: assetReference
+          in: query
+          schema:
+            type: string
+            maxLength: 160
+      responses:
+        '200':
+          description: Attention queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /admin/duels/{duelId}/timeline:
+    get:
+      operationId: getAdminDuelTimeline
+      tags: [Operations]
+      summary: Inspect canonical state, transaction, provider, valuation, and custody history
+      x-openpacksduel-availability: devnet
+      security:
+        - integrationKey: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+      responses:
+        '200':
+          description: Complete support timeline without serialized transaction bytes
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/risk:
+    get:
+      operationId: getAdminRiskSummary
+      tags: [Operations]
+      summary: Inspect bounded devnet exposure and configured limits
+      x-openpacksduel-availability: devnet
+      security:
+        - integrationKey: []
+      responses:
+        '200':
+          description: Aggregate risk summary with hashed wallet references
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /admin/readiness:
+    get:
+      operationId: getAdminReadiness
+      tags: [Operations]
+      summary: Inspect database, live devnet RPC, provider, treasury, and worker readiness
+      description: |
+        Reports configured and independently verified state separately. It never
+        returns RPC URLs, wallet addresses, API keys, cron secrets, or credentials.
+        Treasury deployment and balances remain unverified external dependencies.
+      x-openpacksduel-availability: devnet
+      security:
+        - integrationKey: []
+      responses:
+        '200':
+          description: Secret-free readiness report
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /admin/emergency-pause:
+    get:
+      operationId: getEmergencyPause
+      tags: [Operations]
+      summary: Read the global new-exposure pause state
+      x-openpacksduel-availability: devnet
+      security:
+        - integrationKey: []
+      responses:
+        '200':
+          description: Current emergency control state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergencyPauseState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      operationId: setEmergencyPause
+      tags: [Operations]
+      summary: Idempotently pause or resume new exposure with an immutable audit record
+      description: |
+        Identical state-and-reason retries are no-ops. The audit actor is the
+        fixed integration-key class; the raw bearer key is never persisted.
+      x-openpacksduel-availability: devnet
+      security:
+        - integrationKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmergencyPauseRequest'
+      responses:
+        '200':
+          description: Updated or already-current emergency state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmergencyPauseState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/audit:
+    get:
+      operationId: listOperatorAudit
+      tags: [Operations]
+      summary: Paginate immutable emergency-control audit events
+      x-openpacksduel-availability: devnet
+      security:
+        - integrationKey: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            pattern: '^oaud_[a-f0-9]{32}$'
+      responses:
+        '200':
+          description: Append-only audit history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 components:
   securitySchemes:
     cronSecret:
@@ -731,6 +915,55 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    AdminPage:
+      type: object
+      additionalProperties: false
+      required: [data, hasMore, nextCursor]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        hasMore:
+          type: boolean
+        nextCursor:
+          type: [string, 'null']
+    OperatorReasonCode:
+      type: string
+      enum:
+        - maintenance
+        - provider_degraded
+        - rpc_degraded
+        - treasury_limit
+        - security_incident
+        - manual_review
+    EmergencyPauseRequest:
+      type: object
+      additionalProperties: false
+      required: [paused, reasonCode]
+      properties:
+        paused:
+          type: boolean
+        reasonCode:
+          $ref: '#/components/schemas/OperatorReasonCode'
+    EmergencyPauseState:
+      type: object
+      additionalProperties: false
+      required: [paused, reasonCode, updatedAt, version]
+      properties:
+        paused:
+          type: boolean
+        reasonCode:
+          oneOf:
+            - $ref: '#/components/schemas/OperatorReasonCode'
+            - type: 'null'
+        updatedAt:
+          type: [string, 'null']
+          format: date-time
+        version:
+          type: integer
+          minimum: 0
     ClientProductEventName:
       type: string
       enum:

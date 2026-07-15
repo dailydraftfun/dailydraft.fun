@@ -59,6 +59,10 @@ smoke workflow.
 | `OPENPACKSDUEL_APP_URL` | Canonical product URL. |
 | `OPENPACKSDUEL_AUTH_DOMAIN` | Host matching the canonical product URL in wallet sign-in messages. |
 | `OPENPACKSDUEL_STUCK_FUNDED_MINUTES` | Alert threshold for funded duels that have not progressed; defaults to 5. |
+| `OPENPACKSDUEL_ALLOWED_TIERS` | Comma-separated enabled USD tiers; defaults to `50`. |
+| `OPENPACKSDUEL_MAX_ACTIVE_DUELS_PER_WALLET` | New-exposure wallet limit; defaults to 3. |
+| `OPENPACKSDUEL_MAX_CONCURRENT_DUELS_PER_TIER` | New-exposure tier limit; defaults to 20. |
+| `OPENPACKSDUEL_HOUSE_ENABLED` | Explicit house-entry switch; defaults to `false`. |
 | `CORS_ORIGINS` | Explicit allowed browser origins. |
 
 The transaction worker runs every five minutes in production and can be invoked
@@ -75,6 +79,24 @@ creates the player's wrapped-SOL associated token account idempotently, wraps ex
 per-side platform fee, and funds the duel PDA. The creator transaction also initializes the duel;
 the opponent transaction is enabled only after creator funding finalizes. This transaction does not
 pay for or purchase a pack. Solana fees and recoverable token-account rent remain additional.
+
+## Emergency operation
+
+Use only the integration-key-guarded admin API. Do not paste API keys into an
+issue, audit reason, or support record.
+
+```bash
+curl --fail-with-body -X PUT "$API_URL/admin/emergency-pause" \
+  -H "Authorization: Bearer $OPENPACKSDUEL_OPERATOR_KEY" \
+  -H "Content-Type: application/json" \
+  --data '{"paused":true,"reasonCode":"provider_degraded"}'
+```
+
+Confirm the returned `paused` state, then inspect `/admin/audit`, `/admin/risk`,
+`/admin/readiness`, and `/admin/duels?attention=all`. Pausing blocks new risk but
+deliberately leaves reconciliation, cancel recovery, refunds, and settlement
+available. Resume with the same endpoint and `paused:false` after the incident
+owner confirms recovery.
 
 ## Release order
 

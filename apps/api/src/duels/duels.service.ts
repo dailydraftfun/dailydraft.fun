@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { AdminService } from '../admin/admin.service.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { AnalyticsService } from '../analytics/analytics.service.js';
 import type { Duel, DuelEvent, DuelTransactionRecord, Page } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
@@ -30,6 +32,7 @@ export class DuelsService {
     private readonly repository: DuelRepository,
     private readonly packs: PacksService,
     @Optional() private readonly analytics?: AnalyticsService,
+    @Optional() private readonly admin?: AdminService,
   ) {}
 
   async findAll(query: ListDuelsQuery): Promise<Page<Duel>> {
@@ -52,6 +55,11 @@ export class DuelsService {
     if (isHouse && input.creatorWallet === resolveHouseWallet()) {
       throw new BadRequestException('The configured house wallet cannot challenge itself');
     }
+    await this.admin?.assertCreateAllowed({
+      mode: input.matchmakingMode,
+      tier: moneyToTier(pack.price.amount, pack.price.decimals),
+      wallet: input.creatorWallet,
+    });
     const request = { ...input, environment: 'solana-devnet', providerMode };
 
     const duel = await this.repository.create(
@@ -91,6 +99,7 @@ export class DuelsService {
   }
 
   async join(duelId: string, input: JoinDuelRequest, idempotencyKey: string): Promise<Duel> {
+    await this.admin?.assertJoinAllowed(duelId, input.wallet);
     const now = new Date();
     await this.repository.expireTimedOut(now);
     const duel = await this.repository.join(
