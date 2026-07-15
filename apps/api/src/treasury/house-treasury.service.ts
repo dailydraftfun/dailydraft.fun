@@ -51,12 +51,11 @@ export class HouseTreasuryService {
     const reservation = await this.database.houseTreasuryReservation.findUnique({
       where: { duelId },
     });
-    if (
-      !reservation ||
-      ![HouseTreasuryReservationStatus.RESERVED, HouseTreasuryReservationStatus.FUNDED].includes(
-        reservation.status,
-      )
-    ) {
+    const fundingStatuses = new Set<HouseTreasuryReservationStatus>([
+      HouseTreasuryReservationStatus.RESERVED,
+      HouseTreasuryReservationStatus.FUNDED,
+    ]);
+    if (!reservation || !fundingStatuses.has(reservation.status)) {
       throw new ServiceUnavailableException(
         'House funding is disabled: no active treasury reservation',
       );
@@ -346,15 +345,12 @@ export class HouseTreasuryService {
     const realizedProceeds = sum(
       inventory.flatMap((asset) => (asset.realizedAmount ? [asset.realizedAmount] : [])),
     );
+    const costTypes = new Set<HouseTreasuryLedgerType>([
+      HouseTreasuryLedgerType.PLAYER_WIN_LOSS,
+      HouseTreasuryLedgerType.HOUSE_PACK_COST,
+    ]);
     const realizedCosts = sum(
-      ledger
-        .filter((entry) =>
-          [
-            HouseTreasuryLedgerType.PLAYER_WIN_LOSS,
-            HouseTreasuryLedgerType.HOUSE_PACK_COST,
-          ].includes(entry.type),
-        )
-        .map((entry) => entry.amount),
+      ledger.filter((entry) => costTypes.has(entry.type)).map((entry) => entry.amount),
     );
     const heldValue = sum(
       inventory
@@ -557,20 +553,25 @@ export class HouseTreasuryService {
 }
 
 export function reservationTarget(status: DuelStatus): HouseTreasuryReservationStatus | null {
-  if ([DuelStatus.CANCELLED, DuelStatus.REFUNDED].includes(status)) {
-    return HouseTreasuryReservationStatus.RELEASED;
+  switch (status) {
+    case DuelStatus.CANCELLED:
+    case DuelStatus.REFUNDED:
+      return HouseTreasuryReservationStatus.RELEASED;
+    case DuelStatus.CANCELLING:
+    case DuelStatus.REFUNDING:
+    case DuelStatus.FAILED:
+      return HouseTreasuryReservationStatus.RECOVERY_REQUIRED;
+    case DuelStatus.FUNDED:
+    case DuelStatus.OPENING:
+      return HouseTreasuryReservationStatus.FUNDED;
+    case DuelStatus.AWAITING_ASSETS:
+    case DuelStatus.SETTLING:
+      return HouseTreasuryReservationStatus.SETTLEMENT_PENDING;
+    case DuelStatus.SETTLED:
+      return HouseTreasuryReservationStatus.SETTLED;
+    default:
+      return null;
   }
-  if ([DuelStatus.CANCELLING, DuelStatus.REFUNDING, DuelStatus.FAILED].includes(status)) {
-    return HouseTreasuryReservationStatus.RECOVERY_REQUIRED;
-  }
-  if ([DuelStatus.FUNDED, DuelStatus.OPENING].includes(status)) {
-    return HouseTreasuryReservationStatus.FUNDED;
-  }
-  if ([DuelStatus.AWAITING_ASSETS, DuelStatus.SETTLING].includes(status)) {
-    return HouseTreasuryReservationStatus.SETTLEMENT_PENDING;
-  }
-  if (status === DuelStatus.SETTLED) return HouseTreasuryReservationStatus.SETTLED;
-  return null;
 }
 
 async function appendLedger(
