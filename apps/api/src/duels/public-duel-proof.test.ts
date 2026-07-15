@@ -72,6 +72,56 @@ describe('public duel proof', () => {
     expect(receipt.actions.primary.label).toBe('Open a new duel');
   });
 
+  test('publishes a settlement-ready receipt for an equal-value tie', () => {
+    const duel = settledDuel();
+    const result = requireResult(duel);
+    const creator = result.outcomes.find((outcome) => outcome.side === 'creator');
+    if (!creator) throw new Error('Test fixture requires a creator outcome');
+    const opponent = normalizeProviderResult(
+      'opponent',
+      providerResult(
+        'mock:card:opponent',
+        'Equal-value opponent',
+        creator.insuredValue.amount,
+        creator.sourceTimestamp,
+      ),
+      CANONICAL_VALUATION_POLICY_HASH,
+      'mock:pack:opponent',
+      new Date(creator.openedAt),
+    );
+    const comparison = compareInsuredValues(
+      { ...creator, valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH },
+      opponent,
+      {
+        creatorWallet: CREATOR,
+        duelId: duel.id,
+        escrowAddress: ESCROW,
+        network: 'solana-devnet',
+        opponentWallet: OPPONENT,
+        providerMode: 'mock',
+        valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
+      },
+    );
+    const receipt = buildPublicDuelReceipt(
+      {
+        ...duel,
+        result: {
+          ...result,
+          outcomes: [creator, toDuelOutcome(opponent)],
+          resultHash: comparison.resultHash,
+          winnerSide: null,
+        },
+        status: 'settling',
+        winnerWallet: null,
+      },
+      fundingTransactions(),
+    );
+
+    expect(receipt.result).toEqual(
+      expect.objectContaining({ settlementReady: true, winner: null, winnerSide: null }),
+    );
+  });
+
   test('publishes only exact verified unbound custody alerts', () => {
     const signature = '4'.repeat(88);
     const receipt = buildPublicDuelReceipt(settledDuel(), [
@@ -100,13 +150,31 @@ describe('public duel proof', () => {
   test('does not treat an unfinalized settlement signature as custody proof', () => {
     const duel = settledDuel();
     const result = requireResult(duel);
+    const outcomes = result.outcomes.map((outcome) => ({ ...outcome, isMock: false }));
+    const creator = outcomes.find((outcome) => outcome.side === 'creator');
+    const opponent = outcomes.find((outcome) => outcome.side === 'opponent');
+    if (!creator || !opponent) throw new Error('Test fixture requires both outcomes');
+    const comparison = compareInsuredValues(
+      { ...creator, valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH },
+      { ...opponent, valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH },
+      {
+        creatorWallet: CREATOR,
+        duelId: duel.id,
+        escrowAddress: ESCROW,
+        network: 'solana-devnet',
+        opponentWallet: OPPONENT,
+        providerMode: 'collector-crypt-sandbox',
+        valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
+      },
+    );
     const receipt = buildPublicDuelReceipt(
       {
         ...duel,
         providerMode: 'collector-crypt-sandbox',
         result: {
           ...result,
-          outcomes: result.outcomes.map((outcome) => ({ ...outcome, isMock: false })),
+          outcomes,
+          resultHash: comparison.resultHash,
         },
       },
       [
@@ -315,6 +383,7 @@ function toDuelOutcome(
     displayName: outcome.displayName,
     insuredValue: outcome.insuredValue,
     isMock: true,
+    openedAt: outcome.openedAt,
     poolVersion: outcome.poolVersion,
     provider: 'collector-crypt',
     providerReference: outcome.providerReference,

@@ -33,6 +33,7 @@ export type ProviderPackSnapshot =
   | { providerReference: string; status: 'generated' | 'opening' }
   | { errorCode: string; providerReference: string; status: 'failed' }
   | {
+      openedAt: string;
       providerReference: string;
       result: ProviderCardResult;
       status: 'opened';

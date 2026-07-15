@@ -2,14 +2,6 @@ ALTER TABLE "DuelPackOutcome"
 ADD COLUMN "poolVersion" TEXT,
 ADD COLUMN "sourceTimestamp" TIMESTAMP(3);
 
--- Existing devnet-only fixtures predate provider source snapshots. They remain
--- identifiable and cannot satisfy the canonical v1 policy after this backfill.
-UPDATE "DuelPackOutcome"
-SET
-  "poolVersion" = 'legacy-unversioned',
-  "sourceTimestamp" = "openedAt"
-WHERE "poolVersion" IS NULL OR "sourceTimestamp" IS NULL;
-
-ALTER TABLE "DuelPackOutcome"
-ALTER COLUMN "poolVersion" SET NOT NULL,
-ALTER COLUMN "sourceTimestamp" SET NOT NULL;
+-- Existing outcomes remain null because their pool snapshot and provider source
+-- time cannot be reconstructed. Reads degrade their proof to unavailable and
+-- all settlement paths continue to reject incomplete evidence.

@@ -96,6 +96,7 @@ export type PublicDuelReceipt = {
       displayName: string;
       insuredValue: PublicMoney;
       isMock: boolean;
+      openedAt: string;
       poolVersion: string;
       resultHash: string;
       side: 'creator' | 'opponent';
@@ -108,6 +109,7 @@ export type PublicDuelReceipt = {
       hash: string;
       hashAlgorithm: 'sha256';
       maxSourceAgeSeconds: number;
+      maxValueMinorUnits: string;
       policyVersion: string;
       rounding: 'none';
       tieRule: 'return-original-assets-and-refund-platform-fees';

@@ -1,7 +1,7 @@
 {
   "fixture": "stale-value",
-  "policyHash": "82b450721996820dd88f684e5e075d828070521219cd6e4146665e4cbe247fb4",
-  "observedAt": "2026-07-15T20:04:00.000Z",
+  "policyHash": "406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b",
+  "openedAt": "2026-07-15T20:04:00.000Z",
   "sourceTimestamp": "2026-07-15T19:58:59.000Z",
   "maxSourceAgeSeconds": 300,
   "expected": {

@@ -12,11 +12,15 @@ import {
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const UNSIGNED_INTEGER_PATTERN = /^(0|[1-9]\d*)$/;
 const POOL_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+export const MAX_CANONICAL_INSURED_VALUE = BigInt(
+  CANONICAL_VALUATION_POLICY.maxValueMinorUnits,
+);
 
 export interface NormalizedPackOutcome {
   assetReference: string;
   displayName: string;
   insuredValue: Money;
+  openedAt: string;
   poolVersion: string;
   providerReference: string;
   resultHash: string;
@@ -49,7 +53,7 @@ export function normalizeProviderResult(
   result: ProviderCardResult,
   expectedPolicyHash: string,
   providerReferenceInput: string,
-  observedAt = new Date(),
+  openedAt = new Date(),
 ): NormalizedPackOutcome {
   requireCanonicalValuationPolicyHash(expectedPolicyHash);
   const assetReference = normalizeText(result.assetReference, 'assetReference', 200);
@@ -70,15 +74,20 @@ export function normalizeProviderResult(
   if (result.valuationPolicyHash !== expectedPolicyHash) {
     throw new BadGatewayException('Provider result does not match the funded valuation policy');
   }
+  const amount = BigInt(providerInsuredValue.amount);
+  if (amount > MAX_CANONICAL_INSURED_VALUE) {
+    throw new BadGatewayException('Provider insured value exceeds the escrow u64 limit');
+  }
   const poolVersion = normalizeText(result.poolVersion, 'poolVersion', 128);
   if (!POOL_VERSION_PATTERN.test(poolVersion)) {
     throw new BadGatewayException('Provider returned an invalid poolVersion');
   }
-  const sourceTimestamp = normalizeSourceTimestamp(result.sourceTimestamp, observedAt);
+  const canonicalOpenedAt = canonicalOpeningTimestamp(openedAt);
+  const sourceTimestamp = normalizeSourceTimestamp(result.sourceTimestamp, openedAt);
   const providerReference = normalizeText(providerReferenceInput, 'providerReference', 200);
 
   const insuredValue: Money = {
-    amount: BigInt(providerInsuredValue.amount).toString(),
+    amount: amount.toString(),
     currency: 'USDC',
     decimals: 6,
   };
@@ -86,6 +95,7 @@ export function normalizeProviderResult(
     assetReference,
     displayName,
     insuredValue,
+    openedAt: canonicalOpenedAt,
     poolVersion,
     providerReference,
     side,
@@ -168,15 +178,18 @@ export function assertNormalizedOutcome(outcome: NormalizedPackOutcome): void {
     !POOL_VERSION_PATTERN.test(outcome.poolVersion) ||
     outcome.insuredValue.currency !== CANONICAL_VALUATION_POLICY.currency ||
     outcome.insuredValue.decimals !== CANONICAL_VALUATION_POLICY.decimals ||
-    !UNSIGNED_INTEGER_PATTERN.test(outcome.insuredValue.amount)
+    !UNSIGNED_INTEGER_PATTERN.test(outcome.insuredValue.amount) ||
+    BigInt(outcome.insuredValue.amount) > MAX_CANONICAL_INSURED_VALUE
   ) {
     throw new BadGatewayException('Pack outcome is not canonical');
   }
   canonicalTimestamp(outcome.sourceTimestamp);
+  canonicalTimestamp(outcome.openedAt, 'openedAt');
   const canonical = {
     assetReference: outcome.assetReference,
     displayName: outcome.displayName,
     insuredValue: outcome.insuredValue,
+    openedAt: outcome.openedAt,
     poolVersion: outcome.poolVersion,
     providerReference: outcome.providerReference,
     side: outcome.side,
@@ -188,15 +201,22 @@ export function assertNormalizedOutcome(outcome: NormalizedPackOutcome): void {
   }
 }
 
-function canonicalTimestamp(value: unknown): Date {
+function canonicalTimestamp(value: unknown, field = 'sourceTimestamp'): Date {
   if (typeof value !== 'string') {
-    throw new BadGatewayException('Provider returned an invalid sourceTimestamp');
+    throw new BadGatewayException(`Provider returned an invalid ${field}`);
   }
   const timestamp = new Date(value);
   if (!Number.isFinite(timestamp.getTime()) || timestamp.toISOString() !== value) {
-    throw new BadGatewayException('Provider returned an invalid sourceTimestamp');
+    throw new BadGatewayException(`Provider returned an invalid ${field}`);
   }
   return timestamp;
+}
+
+function canonicalOpeningTimestamp(value: Date): string {
+  if (!Number.isFinite(value.getTime())) {
+    throw new BadGatewayException('Provider opening time is invalid');
+  }
+  return value.toISOString();
 }
 
 function normalizeText(value: unknown, field: string, maxLength: number): string {

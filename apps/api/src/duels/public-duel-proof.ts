@@ -111,6 +111,7 @@ export interface PublicDuelResult {
     displayName: string;
     insuredValue: Money;
     isMock: boolean;
+    openedAt: string;
     poolVersion: string;
     resultHash: string;
     side: 'creator' | 'opponent';
@@ -123,6 +124,7 @@ export interface PublicDuelResult {
     hash: string;
     hashAlgorithm: 'sha256';
     maxSourceAgeSeconds: number;
+    maxValueMinorUnits: typeof CANONICAL_VALUATION_POLICY.maxValueMinorUnits;
     policyVersion: typeof CANONICAL_VALUATION_POLICY.policyVersion;
     rounding: 'none';
     tieRule: typeof CANONICAL_VALUATION_POLICY.tieRule;
@@ -466,7 +468,7 @@ function buildResult(
     comparison.resultHash !== duel.result.resultHash ||
     comparison.winnerSide !== duel.result.winnerSide ||
     comparison.tieRule !== duel.result.tieRule ||
-    duel.result.settlementReady !== (comparison.winnerSide !== null)
+    !duel.result.settlementReady
   ) {
     throw new Error('Duel result proof does not reproduce the recorded winner');
   }
@@ -488,6 +490,7 @@ function buildResult(
       displayName: outcome.displayName,
       insuredValue: outcome.insuredValue,
       isMock: outcome.isMock,
+      openedAt: outcome.openedAt,
       poolVersion: outcome.poolVersion,
       resultHash: outcome.resultHash,
       side: outcome.side,
@@ -500,6 +503,7 @@ function buildResult(
       hash: policyHash,
       hashAlgorithm: 'sha256',
       maxSourceAgeSeconds: CANONICAL_VALUATION_POLICY.maxSourceAgeSeconds,
+      maxValueMinorUnits: CANONICAL_VALUATION_POLICY.maxValueMinorUnits,
       policyVersion: CANONICAL_VALUATION_POLICY.policyVersion,
       rounding: CANONICAL_VALUATION_POLICY.rounding,
       tieRule: CANONICAL_VALUATION_POLICY.tieRule,

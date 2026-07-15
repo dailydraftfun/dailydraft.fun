@@ -8,6 +8,7 @@ export const CANONICAL_VALUATION_POLICY = Object.freeze({
   decimals: 6,
   maxFutureSkewSeconds: 30,
   maxSourceAgeSeconds: 300,
+  maxValueMinorUnits: '18446744073709551615',
   numericRepresentation: 'unsigned-integer-minor-units',
   policyVersion: 'collector-crypt-insured-value-usdc-v1',
   providerCorrectionRule: 'immutable-after-result-commit-dispute-or-refund',
@@ -19,7 +20,7 @@ export const CANONICAL_VALUATION_POLICY = Object.freeze({
 export type CanonicalValuationPolicy = typeof CANONICAL_VALUATION_POLICY;
 
 export const CANONICAL_VALUATION_POLICY_HASH =
-  '82b450721996820dd88f684e5e075d828070521219cd6e4146665e4cbe247fb4';
+  '406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b';
 
 const calculatedPolicyHash = createHash('sha256')
   .update(stableStringify(CANONICAL_VALUATION_POLICY))

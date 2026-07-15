@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { ProviderCardResult } from './pack-provider.js';
-import { compareInsuredValues, normalizeProviderResult } from './provider-result.js';
+import {
+  compareInsuredValues,
+  MAX_CANONICAL_INSURED_VALUE,
+  normalizeProviderResult,
+} from './provider-result.js';
 import { CANONICAL_VALUATION_POLICY_HASH } from './valuation-policy.js';
 
 const POLICY = CANONICAL_VALUATION_POLICY_HASH;
@@ -17,17 +21,17 @@ const CONTEXT = {
 };
 
 describe('provider result normalization', () => {
-  test('compares insured values as integers without floating-point loss', () => {
+  test('compares escrow-compatible u64 insured values without floating-point loss', () => {
     const creator = normalizeProviderResult(
       'creator',
-      providerResult('creator-asset', '900719925474099300000001'),
+      providerResult('creator-asset', MAX_CANONICAL_INSURED_VALUE.toString()),
       POLICY,
       'provider-creator',
       OBSERVED_AT,
     );
     const opponent = normalizeProviderResult(
       'opponent',
-      providerResult('opponent-asset', '900719925474099300000000'),
+      providerResult('opponent-asset', (MAX_CANONICAL_INSURED_VALUE - 1n).toString()),
       POLICY,
       'provider-opponent',
       OBSERVED_AT,
@@ -37,6 +41,18 @@ describe('provider result normalization', () => {
 
     expect(comparison.winnerSide).toBe('creator');
     expect(comparison.resultHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  test('rejects an insured value one minor unit above escrow u64 capacity', () => {
+    expect(() =>
+      normalizeProviderResult(
+        'creator',
+        providerResult('creator-asset', (MAX_CANONICAL_INSURED_VALUE + 1n).toString()),
+        POLICY,
+        'provider-creator',
+        OBSERVED_AT,
+      ),
+    ).toThrow('exceeds the escrow u64 limit');
   });
 
   test('fails closed when outcomes use different valuation policies', () => {
@@ -116,13 +132,19 @@ describe('provider result normalization', () => {
     );
 
     expect(changedReference.resultHash).not.toBe(creator.resultHash);
-    expect(() =>
-      compareInsuredValues(
-        creator,
-        { ...opponent, poolVersion: 'collector-crypt-pool-v2' },
-        CONTEXT,
-      ),
-    ).toThrow('different provider pool versions');
+    const differentPool = normalizeProviderResult(
+      'opponent',
+      {
+        ...providerResult('opponent-asset', '1'),
+        poolVersion: 'collector-crypt-pool-v2',
+      },
+      POLICY,
+      'provider-opponent-v2',
+      OBSERVED_AT,
+    );
+    expect(() => compareInsuredValues(creator, differentPool, CONTEXT)).toThrow(
+      'different provider pool versions',
+    );
   });
 
   test('routes exact equal insured values to the deterministic refund tie rule', () => {
@@ -162,6 +184,23 @@ describe('provider result normalization', () => {
         OBSERVED_AT,
       ),
     ).toThrow('insured value is stale');
+  });
+
+  test('keeps a valid opening time distinct from an older valuation snapshot', () => {
+    const openedAt = new Date('2026-07-15T20:04:00.000Z');
+    const outcome = normalizeProviderResult(
+      'creator',
+      {
+        ...providerResult('creator-asset', '50000000'),
+        sourceTimestamp: '2026-07-15T19:59:01.000Z',
+      },
+      POLICY,
+      'provider-creator',
+      openedAt,
+    );
+
+    expect(outcome.openedAt).toBe(openedAt.toISOString());
+    expect(outcome.sourceTimestamp).toBe('2026-07-15T19:59:01.000Z');
   });
 
   test('rejects a corrected provider value after the funded policy snapshot diverges', () => {

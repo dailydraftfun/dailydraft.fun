@@ -302,7 +302,7 @@ export class AdminService {
         providerReference: outcome.providerReference,
         resultHash: outcome.resultHash,
         side: outcome.side.toLowerCase(),
-        sourceTimestamp: outcome.sourceTimestamp.toISOString(),
+        sourceTimestamp: outcome.sourceTimestamp?.toISOString() ?? null,
         valuationPolicyHash: outcome.valuationPolicyHash,
       })),
       transactions: duel.transactions.map((transaction) => ({

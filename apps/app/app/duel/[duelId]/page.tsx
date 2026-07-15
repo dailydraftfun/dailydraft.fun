@@ -224,8 +224,8 @@ function ResultPanel({ receipt }: { receipt: PublicDuelReceipt }) {
               {outcome.assetReference}
             </p>
             <p className="mt-2 font-mono text-[10px] leading-4 text-secondary">
-              Value snapshot {new Date(outcome.sourceTimestamp).toLocaleString()} ·{' '}
-              {outcome.poolVersion}
+              Opened {new Date(outcome.openedAt).toLocaleString()} · value snapshot{' '}
+              {new Date(outcome.sourceTimestamp).toLocaleString()} · {outcome.poolVersion}
             </p>
           </article>
         ))}

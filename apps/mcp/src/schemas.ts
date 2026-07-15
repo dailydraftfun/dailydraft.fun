@@ -41,6 +41,7 @@ export const duelPackOutcomeSchema = z.object({
   displayName: z.string().max(160),
   insuredValue: moneySchema,
   isMock: z.boolean(),
+  openedAt: z.iso.datetime(),
   poolVersion: z.string().min(1).max(128),
   providerReference: z.string(),
   resultHash: z.string().regex(/^[a-f0-9]{64}$/),

@@ -1,7 +1,8 @@
 {
   "fixture": "provider-correction",
-  "policyHash": "82b450721996820dd88f684e5e075d828070521219cd6e4146665e4cbe247fb4",
+  "policyHash": "406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b",
   "committed": {
+    "openedAt": "2026-07-15T20:04:00.000Z",
     "providerReference": "cc-pack-example-creator",
     "assetReference": "cc-mint-example-creator",
     "insuredValue": { "amount": "51000000", "currency": "USDC", "decimals": 6 },

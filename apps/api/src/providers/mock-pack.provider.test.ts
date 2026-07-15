@@ -28,9 +28,14 @@ describe('pack providers', () => {
       idempotencyKey: 'duel_test:creator:open',
       providerReference: first.providerReference,
     });
+    const openedReplay = await provider.openPack({
+      idempotencyKey: 'duel_test:creator:open',
+      providerReference: first.providerReference,
+    });
 
     expect(replay.providerReference).toBe(first.providerReference);
     expect(opened.status).toBe('opened');
+    expect(openedReplay).toEqual(opened);
     expect(await provider.getPack(first.providerReference)).toEqual(opened);
   });
 

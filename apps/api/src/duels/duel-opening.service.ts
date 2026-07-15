@@ -139,7 +139,13 @@ export class DuelOpeningService {
     });
     const snapshot = await provider.getPack(generated.providerReference);
     const result = requireOpenedResult(snapshot);
-    return normalizeProviderResult(side, result, valuationPolicyHash, snapshot.providerReference);
+    return normalizeProviderResult(
+      side,
+      result,
+      valuationPolicyHash,
+      snapshot.providerReference,
+      new Date(snapshot.openedAt),
+    );
   }
 }
 

@@ -27,7 +27,10 @@ import type {
   Money,
   Page,
 } from '../domain.js';
-import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
+import {
+  CANONICAL_VALUATION_POLICY_HASH,
+  requireCanonicalValuationPolicyHash,
+} from '../providers/valuation-policy.js';
 import type { ListDuelsQuery } from './duel.dto.js';
 import {
   type CreateDuelRecord,
@@ -479,6 +482,7 @@ export class PrismaDuelRepository extends DuelRepository {
           );
         }
         if (!duel.opponentWallet) throw new ConflictException('Duel has no committed opponent');
+        if (!duel.fundedAt) throw new ConflictException('Duel has no finalized funding boundary');
         requireCanonicalValuationPolicyHash(duel.valuationPolicyHash);
         if (
           !duel.valuationPolicyHash ||
@@ -494,6 +498,12 @@ export class PrismaDuelRepository extends DuelRepository {
         ) {
           throw new ConflictException('Pack results do not share one immutable pool version');
         }
+        if (
+          new Date(input.creator.openedAt) < duel.fundedAt ||
+          new Date(input.opponent.openedAt) < duel.fundedAt
+        ) {
+          throw new ConflictException('Pack opening predates finalized duel funding');
+        }
 
         const winnerWallet =
           input.comparison.winnerSide === 'creator'
@@ -501,15 +511,13 @@ export class PrismaDuelRepository extends DuelRepository {
             : input.comparison.winnerSide === 'opponent'
               ? duel.opponentWallet
               : null;
-        const target = winnerWallet
-          ? DatabaseDuelStatus.AWAITING_ASSETS
-          : DatabaseDuelStatus.REFUNDING;
+        const target = resolvedPackTargetStatus(input.comparison.winnerSide);
         const now = new Date();
 
         await transaction.duelPackOutcome.createMany({
           data: [
-            toPackOutcomeCreate(input.duelId, input.creator, input.provider, input.isMock, now),
-            toPackOutcomeCreate(input.duelId, input.opponent, input.provider, input.isMock, now),
+            toPackOutcomeCreate(input.duelId, input.creator, input.provider, input.isMock),
+            toPackOutcomeCreate(input.duelId, input.opponent, input.provider, input.isMock),
           ],
         });
         const updated = await transaction.duel.updateMany({
@@ -615,6 +623,12 @@ export class PrismaDuelRepository extends DuelRepository {
   }
 }
 
+export function resolvedPackTargetStatus(
+  _winnerSide: ResolveOpenedPacksRecord['comparison']['winnerSide'],
+): typeof DatabaseDuelStatus.AWAITING_ASSETS {
+  return DatabaseDuelStatus.AWAITING_ASSETS;
+}
+
 function matchesQuery(
   duel: {
     creatorWallet: string;
@@ -653,12 +667,13 @@ function toDuel(row: {
     insuredValueCurrency: string;
     insuredValueDecimals: number;
     isMock: boolean;
+    openedAt: Date;
     provider: string;
     providerReference: string;
-    poolVersion: string;
+    poolVersion: string | null;
     resultHash: string;
     side: DatabaseDuelSide;
-    sourceTimestamp: Date;
+    sourceTimestamp: Date | null;
     valuationPolicyHash: string;
   }>;
   packId: string;
@@ -709,7 +724,7 @@ function toDuel(row: {
   };
 }
 
-function toDuelResult(row: {
+export function toDuelResult(row: {
   creatorWallet: string;
   opponentWallet: string | null;
   packOutcomes?: Array<{
@@ -719,12 +734,13 @@ function toDuelResult(row: {
     insuredValueCurrency: string;
     insuredValueDecimals: number;
     isMock: boolean;
+    openedAt: Date;
     provider: string;
     providerReference: string;
-    poolVersion: string;
+    poolVersion: string | null;
     resultHash: string;
     side: DatabaseDuelSide;
-    sourceTimestamp: Date;
+    sourceTimestamp: Date | null;
     valuationPolicyHash: string;
   }>;
   resultHash: string | null;
@@ -736,6 +752,12 @@ function toDuelResult(row: {
   const policyHashes = new Set(row.packOutcomes.map((outcome) => outcome.valuationPolicyHash));
   const poolVersions = new Set(row.packOutcomes.map((outcome) => outcome.poolVersion));
   if (
+    row.valuationPolicyHash !== CANONICAL_VALUATION_POLICY_HASH ||
+    row.packOutcomes.some((outcome) => !outcome.poolVersion || !outcome.sourceTimestamp)
+  ) {
+    return null;
+  }
+  if (
     !row.valuationPolicyHash ||
     policyHashes.size !== 1 ||
     !policyHashes.has(row.valuationPolicyHash) ||
@@ -744,22 +766,29 @@ function toDuelResult(row: {
     throw new Error('Persisted duel result violates canonical valuation proof invariants');
   }
   requireCanonicalValuationPolicyHash(row.valuationPolicyHash);
-  const outcomes = row.packOutcomes.map((outcome) => ({
-    assetReference: outcome.assetReference,
-    displayName: outcome.displayName,
-    insuredValue: toMoney(
-      outcome.insuredValueAmount,
-      outcome.insuredValueCurrency,
-      outcome.insuredValueDecimals,
-    ),
-    isMock: outcome.isMock,
-    provider: outcome.provider,
-    providerReference: outcome.providerReference,
-    poolVersion: outcome.poolVersion,
-    resultHash: outcome.resultHash,
-    side: outcome.side === DatabaseDuelSide.CREATOR ? ('creator' as const) : ('opponent' as const),
-    sourceTimestamp: outcome.sourceTimestamp.toISOString(),
-  }));
+  const outcomes = row.packOutcomes.map((outcome) => {
+    if (!outcome.poolVersion || !outcome.sourceTimestamp) {
+      throw new Error('Canonical duel result lost required provider snapshot data');
+    }
+    return {
+      assetReference: outcome.assetReference,
+      displayName: outcome.displayName,
+      insuredValue: toMoney(
+        outcome.insuredValueAmount,
+        outcome.insuredValueCurrency,
+        outcome.insuredValueDecimals,
+      ),
+      isMock: outcome.isMock,
+      openedAt: outcome.openedAt.toISOString(),
+      provider: outcome.provider,
+      providerReference: outcome.providerReference,
+      poolVersion: outcome.poolVersion,
+      resultHash: outcome.resultHash,
+      side:
+        outcome.side === DatabaseDuelSide.CREATOR ? ('creator' as const) : ('opponent' as const),
+      sourceTimestamp: outcome.sourceTimestamp.toISOString(),
+    };
+  });
   const winnerSide =
     row.winnerWallet === row.creatorWallet
       ? ('creator' as const)
@@ -770,7 +799,7 @@ function toDuelResult(row: {
     comparisonMetric: 'insured-value',
     outcomes,
     resultHash: row.resultHash,
-    settlementReady: winnerSide !== null,
+    settlementReady: true,
     tieRule: 'return-original-assets-and-refund-platform-fees',
     valuationPolicyHash: row.valuationPolicyHash,
     winnerSide,
@@ -782,7 +811,6 @@ function toPackOutcomeCreate(
   outcome: ResolveOpenedPacksRecord['creator'],
   provider: string,
   isMock: boolean,
-  openedAt: Date,
 ) {
   return {
     assetReference: outcome.assetReference,
@@ -793,7 +821,7 @@ function toPackOutcomeCreate(
     insuredValueCurrency: outcome.insuredValue.currency,
     insuredValueDecimals: outcome.insuredValue.decimals,
     isMock,
-    openedAt,
+    openedAt: new Date(outcome.openedAt),
     provider,
     providerReference: outcome.providerReference,
     poolVersion: outcome.poolVersion,

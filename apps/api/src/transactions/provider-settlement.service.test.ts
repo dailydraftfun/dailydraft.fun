@@ -16,6 +16,7 @@ import { normalizeProviderResult } from '../providers/provider-result.js';
 import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
 import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
 import {
+  canonicalOpenedAt,
   ProviderSettlementService,
   validateCanonicalEvidence,
 } from './provider-settlement.service.js';
@@ -55,6 +56,12 @@ describe('provider settlement evidence', () => {
     const stale = evidence();
     requireOutcome(stale, 0).sourceTimestamp = new Date('2026-07-15T19:54:59.000Z');
     expect(() => validateCanonicalEvidence(stale)).toThrow('snapshot is not canonical');
+  });
+
+  test('commits provider opening time instead of the older valuation snapshot time', () => {
+    const canonical = validateCanonicalEvidence(evidence());
+
+    expect(canonicalOpenedAt(canonical).toISOString()).toBe('2026-07-15T20:00:00.000Z');
   });
 });
 

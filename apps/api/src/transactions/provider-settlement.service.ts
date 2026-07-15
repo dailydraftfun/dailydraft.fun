@@ -37,7 +37,10 @@ import {
   type EscrowV2Role,
 } from '../contracts/openpacksduel-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
-import { assertNormalizedOutcome } from '../providers/provider-result.js';
+import {
+  assertNormalizedOutcome,
+  MAX_CANONICAL_INSURED_VALUE,
+} from '../providers/provider-result.js';
 import {
   CANONICAL_VALUATION_POLICY,
   CANONICAL_VALUATION_POLICY_HASH,
@@ -46,9 +49,7 @@ import { nonceFromDuelId } from './duel-funding.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
 
-const U64_MAX = 18_446_744_073_709_551_615n;
-
-interface CanonicalOutcome {
+export interface CanonicalOutcome {
   mint: PublicKey;
   openedAt: Date;
   providerReference: string;
@@ -58,7 +59,7 @@ interface CanonicalOutcome {
   value: bigint;
 }
 
-interface CanonicalEvidence {
+export interface CanonicalEvidence {
   creator: CanonicalOutcome;
   opponent: CanonicalOutcome;
   policyHash: Uint8Array;
@@ -550,11 +551,11 @@ export function validateCanonicalEvidence(duel: {
     insuredValueDecimals: number;
     isMock: boolean;
     openedAt: Date;
-    poolVersion: string;
+    poolVersion: string | null;
     providerReference: string;
     resultHash: string;
     side: DuelSide;
-    sourceTimestamp: Date;
+    sourceTimestamp: Date | null;
     valuationPolicyHash: string;
   }>;
 }): CanonicalEvidence {
@@ -578,7 +579,12 @@ export function validateCanonicalEvidence(duel: {
         throw new ServiceUnavailableException('Outcome lacks canonical integer insured value');
       }
       const value = BigInt(outcome.insuredValueAmount);
-      if (value > U64_MAX) throw new ServiceUnavailableException('Insured value exceeds u64');
+      if (value > MAX_CANONICAL_INSURED_VALUE) {
+        throw new ServiceUnavailableException('Insured value exceeds u64');
+      }
+      if (!outcome.poolVersion || !outcome.sourceTimestamp) {
+        throw new ServiceUnavailableException('Outcome lacks canonical provider snapshot data');
+      }
       if (
         outcome.valuationPolicyHash !== policyHash ||
         !/^[a-f0-9]{64}$/.test(outcome.valuationPolicyHash)
@@ -626,6 +632,9 @@ export function validateCanonicalEvidence(duel: {
     throw new ServiceUnavailableException('Outcome insured-value snapshot is not canonical');
   }
   for (const outcome of duel.packOutcomes) {
+    if (!outcome.poolVersion || !outcome.sourceTimestamp) {
+      throw new ServiceUnavailableException('Outcome lacks canonical provider snapshot data');
+    }
     assertNormalizedOutcome({
       assetReference: outcome.assetReference,
       displayName: outcome.displayName,
@@ -634,6 +643,7 @@ export function validateCanonicalEvidence(duel: {
         currency: 'USDC',
         decimals: 6,
       },
+      openedAt: outcome.openedAt.toISOString(),
       poolVersion: outcome.poolVersion,
       providerReference: outcome.providerReference,
       resultHash: outcome.resultHash,
@@ -790,10 +800,12 @@ function proof(
 ): Record<string, string | null> {
   return {
     creatorMint: evidence.creator.mint.toBase58(),
+    creatorOpenedAt: evidence.creator.openedAt.toISOString(),
     creatorProviderReference: evidence.creator.providerReference,
     creatorSourceTimestamp: evidence.creator.sourceTimestamp.toISOString(),
     creatorValue: evidence.creator.value.toString(),
     opponentMint: evidence.opponent.mint.toBase58(),
+    opponentOpenedAt: evidence.opponent.openedAt.toISOString(),
     opponentProviderReference: evidence.opponent.providerReference,
     opponentSourceTimestamp: evidence.opponent.sourceTimestamp.toISOString(),
     opponentValue: evidence.opponent.value.toString(),
@@ -805,12 +817,9 @@ function proof(
   };
 }
 
-function canonicalOpenedAt(evidence: CanonicalEvidence): Date {
+export function canonicalOpenedAt(evidence: CanonicalEvidence): Date {
   return new Date(
-    Math.max(
-      evidence.creator.sourceTimestamp.getTime(),
-      evidence.opponent.sourceTimestamp.getTime(),
-    ),
+    Math.max(evidence.creator.openedAt.getTime(), evidence.opponent.openedAt.getTime()),
   );
 }
 

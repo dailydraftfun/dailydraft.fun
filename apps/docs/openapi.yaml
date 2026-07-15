@@ -1435,7 +1435,7 @@ components:
           const: sha256
         policyHash:
           type: string
-          const: 82b450721996820dd88f684e5e075d828070521219cd6e4146665e4cbe247fb4
+          const: 406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b
         policy:
           $ref: '#/components/schemas/ValuationPolicy'
     ValuationPolicy:
@@ -1451,6 +1451,7 @@ components:
         - numericRepresentation
         - rounding
         - maxSourceAgeSeconds
+        - maxValueMinorUnits
         - maxFutureSkewSeconds
         - tieRule
         - providerCorrectionRule
@@ -1483,6 +1484,9 @@ components:
         maxSourceAgeSeconds:
           type: integer
           const: 300
+        maxValueMinorUnits:
+          type: string
+          const: '18446744073709551615'
         maxFutureSkewSeconds:
           type: integer
           const: 30
@@ -1760,7 +1764,7 @@ components:
     DuelPackOutcome:
       type: object
       additionalProperties: false
-      required: [side, assetReference, displayName, insuredValue, poolVersion, sourceTimestamp, resultHash, isMock, provider, providerReference]
+      required: [side, assetReference, displayName, insuredValue, openedAt, poolVersion, sourceTimestamp, resultHash, isMock, provider, providerReference]
       properties:
         side:
           type: string
@@ -1773,6 +1777,10 @@ components:
           maxLength: 160
         insuredValue:
           $ref: '#/components/schemas/Money'
+        openedAt:
+          type: string
+          format: date-time
+          description: Provider-reported completion time for this pack opening, committed as escrow opened_at.
         poolVersion:
           type: string
           pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
@@ -1997,20 +2005,21 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [side, assetReference, displayName, insuredValue, isMock, poolVersion, sourceTimestamp, resultHash]
+            required: [side, assetReference, displayName, insuredValue, isMock, openedAt, poolVersion, sourceTimestamp, resultHash]
             properties:
               side: { type: string, enum: [creator, opponent] }
               assetReference: { type: string }
               displayName: { type: string }
               insuredValue: { $ref: '#/components/schemas/Money' }
               isMock: { type: boolean }
+              openedAt: { type: string, format: date-time }
               poolVersion: { type: string }
               sourceTimestamp: { type: string, format: date-time }
               resultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
         policy:
           type: object
           additionalProperties: false
-          required: [authoritativeField, currency, decimals, hash, hashAlgorithm, maxSourceAgeSeconds, policyVersion, rounding, tieRule]
+          required: [authoritativeField, currency, decimals, hash, hashAlgorithm, maxSourceAgeSeconds, maxValueMinorUnits, policyVersion, rounding, tieRule]
           properties:
             authoritativeField: { type: string, const: collector-crypt.gacha.result.insuredValue }
             currency: { type: string, const: USDC }
@@ -2018,6 +2027,7 @@ components:
             hash: { type: string, pattern: '^[a-f0-9]{64}$' }
             hashAlgorithm: { type: string, const: sha256 }
             maxSourceAgeSeconds: { type: integer, const: 300 }
+            maxValueMinorUnits: { type: string, const: '18446744073709551615' }
             policyVersion: { type: string, const: collector-crypt-insured-value-usdc-v1 }
             rounding: { type: string, const: none }
             tieRule: { type: string, const: return-original-assets-and-refund-platform-fees }

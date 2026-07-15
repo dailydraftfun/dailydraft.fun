@@ -60,6 +60,7 @@ export interface DuelPackOutcome {
   displayName: string;
   insuredValue: Money;
   isMock: boolean;
+  openedAt: string;
   provider: string;
   providerReference: string;
   poolVersion: string;
