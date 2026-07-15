@@ -21,6 +21,8 @@ servers:
   - url: https://api.openpacksduel.com/v1
     description: Reserved devnet API endpoint (not live; not mainnet)
 tags:
+  - name: Authentication
+    description: Replay-safe Solana devnet wallet ownership sessions.
   - name: Packs
     description: Duel-eligible pack definitions and current inventory metadata.
   - name: Duels
@@ -87,6 +89,87 @@ paths:
                 $ref: '#/components/schemas/Pack'
         '404':
           $ref: '#/components/responses/NotFound'
+  /auth/challenges:
+    post:
+      operationId: createWalletChallenge
+      tags: [Authentication]
+      summary: Prepare a Solana devnet wallet-ownership message
+      description: Each challenge remains independently usable once and expires after five minutes.
+      x-openpacksduel-availability: devnet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWalletChallengeRequest'
+      responses:
+        '201':
+          description: Domain-bound challenge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletChallenge'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /auth/sessions:
+    post:
+      operationId: createWalletSession
+      tags: [Authentication]
+      summary: Exchange one valid Ed25519 signature for an opaque wallet session
+      x-openpacksduel-availability: devnet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWalletSessionRequest'
+      responses:
+        '201':
+          description: Short-lived browser wallet session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /auth/session:
+    get:
+      operationId: getWalletSession
+      tags: [Authentication]
+      summary: Validate the current wallet session
+      security:
+        - walletSession: []
+      responses:
+        '200':
+          description: Authenticated wallet identity
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [wallet, network]
+                properties:
+                  wallet:
+                    $ref: '#/components/schemas/SolanaAddress'
+                  network:
+                    type: string
+                    const: solana-devnet
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/session/revoke:
+    post:
+      operationId: revokeWalletSession
+      tags: [Authentication]
+      summary: Revoke an opaque wallet session
+      security:
+        - walletSession: []
+      responses:
+        '204':
+          description: Session revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /duels:
     get:
       operationId: listDuels
@@ -128,7 +211,8 @@ paths:
       description: The returned intent is not funded until its Solana transaction confirms.
       x-openpacksduel-availability: devnet
       security:
-        - bearerAuth: []
+        - walletSession: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -183,7 +267,8 @@ paths:
         duels are already matched at creation and cannot be joined.
       x-openpacksduel-availability: devnet
       security:
-        - bearerAuth: []
+        - walletSession: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -219,7 +304,8 @@ paths:
         with the `timeout` reason.
       x-openpacksduel-availability: devnet
       security:
-        - bearerAuth: []
+        - walletSession: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -252,7 +338,7 @@ paths:
       description: Internal event data is never exposed by an unauthenticated endpoint.
       x-openpacksduel-availability: devnet
       security:
-        - bearerAuth: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
       responses:
@@ -276,7 +362,7 @@ paths:
       description: Raw provider errors and transaction metadata require an integration key.
       x-openpacksduel-availability: devnet
       security:
-        - bearerAuth: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
       responses:
@@ -299,7 +385,7 @@ paths:
       description: Returns an unsigned serialized transaction. The API never signs for a wallet.
       x-openpacksduel-availability: contract-only
       security:
-        - bearerAuth: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -354,7 +440,7 @@ paths:
         devnet-only and returns valueless test assets; it does not settle NFTs.
       x-openpacksduel-availability: devnet
       security:
-        - bearerAuth: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -377,11 +463,16 @@ paths:
           $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
-    bearerAuth:
+    integrationKey:
       type: http
       scheme: bearer
       bearerFormat: opd_live_...
       description: Server-side integration key. Never expose it in browser code.
+    walletSession:
+      type: http
+      scheme: bearer
+      bearerFormat: opd_devnet_session_...
+      description: Opaque 15-minute session issued after a Solana devnet Ed25519 signature.
   parameters:
     Cursor:
       name: cursor
@@ -426,7 +517,7 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
     Unauthorized:
-      description: Missing or invalid integration key
+      description: Missing, invalid, or expired bearer credential
       content:
         application/problem+json:
           schema:
@@ -462,6 +553,66 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    CreateWalletChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [wallet]
+      properties:
+        wallet:
+          $ref: '#/components/schemas/SolanaAddress'
+    WalletChallenge:
+      type: object
+      additionalProperties: false
+      required: [challengeId, wallet, domain, uri, chain, message, expiresAt]
+      properties:
+        challengeId:
+          type: string
+          pattern: '^authc_[a-f0-9]{32}$'
+        wallet:
+          $ref: '#/components/schemas/SolanaAddress'
+        domain:
+          type: string
+        uri:
+          type: string
+          format: uri
+        chain:
+          type: string
+          const: solana:devnet
+        message:
+          type: string
+          description: Exact UTF-8 message the wallet must display and sign.
+        expiresAt:
+          type: string
+          format: date-time
+    CreateWalletSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [challengeId, wallet, signature]
+      properties:
+        challengeId:
+          type: string
+          pattern: '^authc_[a-f0-9]{32}$'
+        wallet:
+          $ref: '#/components/schemas/SolanaAddress'
+        signature:
+          type: string
+          contentEncoding: base64
+    WalletSession:
+      type: object
+      additionalProperties: false
+      required: [token, wallet, network, expiresAt]
+      properties:
+        token:
+          type: string
+          description: Opaque bearer token returned once; only its hash is stored server-side.
+        wallet:
+          $ref: '#/components/schemas/SolanaAddress'
+        network:
+          type: string
+          const: solana-devnet
+        expiresAt:
+          type: string
+          format: date-time
     Health:
       type: object
       additionalProperties: false

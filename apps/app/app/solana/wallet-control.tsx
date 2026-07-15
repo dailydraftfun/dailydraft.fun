@@ -4,6 +4,7 @@ import {
   ArrowSquareOutIcon,
   CheckCircleIcon,
   CopyIcon,
+  ShieldCheckIcon,
   SpinnerGapIcon,
   WalletIcon,
   WarningCircleIcon,
@@ -13,10 +14,12 @@ import { Button } from '@shipshitdev/ui';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { getExplorerAddressUrl } from './config';
+import { useWalletAuth } from './wallet-auth-provider';
 import { useSolanaWallet } from './wallet-provider';
 
 export function WalletControl() {
   const wallet = useSolanaWallet();
+  const authentication = useWalletAuth();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -106,11 +109,73 @@ export function WalletControl() {
                     Explorer <ArrowSquareOutIcon size={14} />
                   </a>
                 </div>
+                <div className="wallet-authentication-panel">
+                  <div className="wallet-authentication-heading">
+                    <div>
+                      <strong>
+                        {authentication.status === 'authenticated'
+                          ? 'Authenticated to play'
+                          : 'Authenticate wallet ownership'}
+                      </strong>
+                      <small>
+                        {authentication.status === 'authenticated' && authentication.expiresAt
+                          ? `Session expires ${new Date(authentication.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                          : 'One readable Ed25519 signature · no transaction'}
+                      </small>
+                    </div>
+                    <span
+                      className={
+                        authentication.status === 'authenticated'
+                          ? 'auth-status auth-status-active'
+                          : 'auth-status'
+                      }
+                    >
+                      {authentication.status === 'authenticated' ? 'Active' : 'Required'}
+                    </span>
+                  </div>
+
+                  {authentication.challenge ? (
+                    <div className="wallet-auth-message">
+                      <p>Review the exact message your wallet will sign:</p>
+                      <pre>{authentication.challenge.message}</pre>
+                      <Button
+                        type="button"
+                        onClick={authentication.signIn}
+                        disabled={authentication.status === 'signing'}
+                      >
+                        {authentication.status === 'signing' ? (
+                          <SpinnerGapIcon className="wallet-spinner" size={16} />
+                        ) : (
+                          <ShieldCheckIcon size={16} weight="fill" />
+                        )}
+                        {authentication.status === 'signing'
+                          ? 'Waiting for signature'
+                          : 'Sign authentication message'}
+                      </Button>
+                    </div>
+                  ) : authentication.status !== 'authenticated' ? (
+                    <Button
+                      type="button"
+                      onClick={authentication.prepare}
+                      disabled={authentication.status === 'preparing'}
+                    >
+                      {authentication.status === 'preparing' ? (
+                        <SpinnerGapIcon className="wallet-spinner" size={16} />
+                      ) : (
+                        <ShieldCheckIcon size={16} />
+                      )}
+                      {authentication.status === 'preparing'
+                        ? 'Preparing message'
+                        : 'Review authentication message'}
+                    </Button>
+                  ) : null}
+                </div>
                 <Button
                   type="button"
                   variant="ghost"
                   className="wallet-disconnect"
                   onClick={async () => {
+                    await authentication.signOut();
                     await wallet.disconnect();
                     setOpen(false);
                   }}
@@ -156,6 +221,20 @@ export function WalletControl() {
                 <WarningCircleIcon size={17} weight="fill" />
                 <span>{wallet.error}</span>
                 <button type="button" onClick={wallet.clearError} aria-label="Dismiss wallet error">
+                  <XIcon size={14} />
+                </button>
+              </div>
+            ) : null}
+
+            {authentication.error ? (
+              <div className="wallet-error" role="alert">
+                <WarningCircleIcon size={17} weight="fill" />
+                <span>{authentication.error}</span>
+                <button
+                  type="button"
+                  onClick={authentication.clearError}
+                  aria-label="Dismiss authentication error"
+                >
                   <XIcon size={14} />
                 </button>
               </div>

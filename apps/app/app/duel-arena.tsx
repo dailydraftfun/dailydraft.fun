@@ -26,12 +26,18 @@ import { Button, Card, CardContent, Input, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  cancelDuel,
+  createDuel,
   type DuelOpponentType,
   type DuelTransactionIntent,
+  type DurableDuel,
+  joinDuel,
   prepareDuelIntent,
   submitSignedDuelIntent,
 } from './solana/duel-client';
 import { TransactionIntentReview } from './solana/transaction-intent-review';
+import { isDuelApiConfigured } from './solana/wallet-auth-client';
+import { useWalletAuth } from './solana/wallet-auth-provider';
 import { useSolanaWallet } from './solana/wallet-provider';
 
 type Mode = DuelOpponentType;
@@ -262,6 +268,7 @@ function DuelCard({
 
 export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const walletConnection = useSolanaWallet();
+  const authentication = useWalletAuth();
   const [activeEntry, setActiveEntry] = useState(entry);
   const [mode, setMode] = useState<Mode>(entry?.mode ?? 'matchmaking');
   const [tier, setTier] = useState(entry?.tier ?? 50);
@@ -272,6 +279,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [intent, setIntent] = useState<DuelTransactionIntent | null>(null);
   const [intentPending, setIntentPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
   const timers = useRef<number[]>([]);
   const match = useMemo(() => getMatch(tier, nonce), [tier, nonce]);
   const winner = match.left.value >= match.right.value ? 'you' : 'opponent';
@@ -322,9 +330,38 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setActionError('Enter a complete Solana wallet address for the opponent.');
       return;
     }
+    if (isDuelApiConfigured() && !authentication.sessionToken) {
+      setActionError(
+        'Authenticate wallet ownership from the top-right wallet menu before creating or joining a duel.',
+      );
+      return;
+    }
+    if (isDuelApiConfigured() && nextTier !== 50) {
+      setActionError('Durable devnet matchmaking currently supports the $50 Pokémon pack only.');
+      return;
+    }
 
     setIntentPending(true);
     try {
+      if (isDuelApiConfigured() && authentication.sessionToken && walletConnection.address) {
+        const duel =
+          activeEntry?.action === 'accept'
+            ? await joinDuel(
+                activeEntry.duelId,
+                walletConnection.address,
+                authentication.sessionToken,
+              )
+            : await createDuel(
+                {
+                  creatorWallet: walletConnection.address,
+                  matchmakingMode: nextMode === 'matchmaking' ? 'open' : nextMode,
+                  ...(nextMode === 'direct' ? { opponentWallet: wallet.trim() } : {}),
+                },
+                authentication.sessionToken,
+              );
+        setPersistedDuel(duel);
+        return;
+      }
       const preparedIntent = await prepareDuelIntent({
         walletAddress: walletConnection.address,
         opponentType: nextMode,
@@ -336,6 +373,27 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : 'Could not prepare the devnet transaction intent.',
+      );
+    } finally {
+      setIntentPending(false);
+    }
+  }
+
+  async function cancelPersistedDuel(): Promise<void> {
+    if (!persistedDuel || !authentication.sessionToken || !walletConnection.address) return;
+    setIntentPending(true);
+    setActionError(null);
+    try {
+      const cancelled = await cancelDuel(
+        persistedDuel.id,
+        walletConnection.address,
+        authentication.sessionToken,
+        'player_cancelled_before_funding',
+      );
+      setPersistedDuel(cancelled);
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : 'Could not cancel the persisted devnet duel.',
       );
     } finally {
       setIntentPending(false);
@@ -718,45 +776,100 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         </Card>
       </section>
 
-      <section className="queue-section">
-        <div className="section-heading">
+      {persistedDuel ? (
+        <section className="persisted-duel-panel" role="status">
           <div>
             <span className="eyebrow">
-              <UsersThreeIcon size={14} weight="fill" /> Open duels
+              <ShieldCheckIcon size={14} weight="fill" /> Durable devnet duel
             </span>
-            <h2>Someone is ready to rip</h2>
+            <h2>
+              {persistedDuel.status === 'waiting'
+                ? 'Challenge created and waiting'
+                : persistedDuel.status === 'matched'
+                  ? 'Both wallets are matched'
+                  : 'Duel cancelled before funding'}
+            </h2>
+            <p>
+              <code>{persistedDuel.id}</code> is persisted by the API. Escrow transaction
+              preparation is not live yet, so no funds moved and no pack was opened.
+            </p>
           </div>
-          <span className="queue-count">
-            <span /> 3 waiting now
-          </span>
-        </div>
-        <div className="queue-grid">
-          {waitingDuels.map((duel) => (
-            <article className="queue-card" key={duel.wallet}>
-              <div className="queue-player">
-                <Avatar color={duel.color} label={`${duel.wallet} avatar`} />
-                <div>
-                  <strong>{duel.wallet}</strong>
-                  <small>
-                    <ClockCountdownIcon size={12} /> Waiting {duel.wait}
-                  </small>
-                </div>
-              </div>
-              <div className="queue-stake">
-                <small>Pack tier</small>
-                <strong>${duel.tier}</strong>
-              </div>
+          <div className="persisted-duel-actions">
+            {persistedDuel.status === 'waiting' ? (
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => reviewDuel(duel.tier, 'matchmaking')}
+                onClick={async () => {
+                  const challengeUrl = `${window.location.origin}/overview?challenge=${encodeURIComponent(persistedDuel.id)}`;
+                  await navigator.clipboard.writeText(challengeUrl);
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1800);
+                }}
               >
-                Join duel
+                {copied ? <CheckCircleIcon size={16} weight="fill" /> : <CopyIcon size={16} />}
+                {copied ? 'Copied challenge' : 'Copy challenge'}
               </Button>
-            </article>
-          ))}
-        </div>
-      </section>
+            ) : null}
+            {persistedDuel.status === 'waiting' || persistedDuel.status === 'matched' ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={cancelPersistedDuel}
+                disabled={intentPending}
+              >
+                {intentPending ? <SpinnerGapIcon className="wallet-spinner" size={16} /> : null}
+                Cancel duel
+              </Button>
+            ) : (
+              <Button type="button" variant="ghost" onClick={() => setPersistedDuel(null)}>
+                Start another duel
+              </Button>
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {!isDuelApiConfigured() ? (
+        <section className="queue-section">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">
+                <UsersThreeIcon size={14} weight="fill" /> Open duels
+              </span>
+              <h2>Someone is ready to rip</h2>
+            </div>
+            <span className="queue-count">
+              <span /> 3 waiting now
+            </span>
+          </div>
+          <div className="queue-grid">
+            {waitingDuels.map((duel) => (
+              <article className="queue-card" key={duel.wallet}>
+                <div className="queue-player">
+                  <Avatar color={duel.color} label={`${duel.wallet} avatar`} />
+                  <div>
+                    <strong>{duel.wallet}</strong>
+                    <small>
+                      <ClockCountdownIcon size={12} /> Waiting {duel.wait}
+                    </small>
+                  </div>
+                </div>
+                <div className="queue-stake">
+                  <small>Pack tier</small>
+                  <strong>${duel.tier}</strong>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => reviewDuel(duel.tier, 'matchmaking')}
+                >
+                  Join duel
+                </Button>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="rules-strip">
         <div>

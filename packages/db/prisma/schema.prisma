@@ -179,3 +179,32 @@ model DuelTransaction {
   @@index([duelId, createdAt])
   @@index([status, updatedAt])
 }
+
+model WalletAuthChallenge {
+  id          String   @id
+  wallet      String
+  nonceHash   String   @unique
+  domain      String
+  uri         String
+  chain       String
+  message     String
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([wallet, expiresAt])
+  @@index([expiresAt, consumedAt])
+}
+
+model WalletSession {
+  id          String   @id
+  wallet      String
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+  lastUsedAt  DateTime @default(now())
+
+  @@index([wallet, expiresAt])
+  @@index([expiresAt, revokedAt])
+}

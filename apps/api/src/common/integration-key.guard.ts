@@ -11,10 +11,7 @@ import type { FastifyRequest } from 'fastify';
 @Injectable()
 export class IntegrationKeyGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
-    const keys = (process.env.OPENPACKSDUEL_API_KEYS ?? '')
-      .split(',')
-      .map((key) => key.trim())
-      .filter(Boolean);
+    const keys = getIntegrationKeys();
 
     if (keys.length === 0) {
       throw new ServiceUnavailableException('Integration API keys are not configured');
@@ -24,12 +21,23 @@ export class IntegrationKeyGuard implements CanActivate {
     const authorization = request.headers.authorization;
     const key = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
 
-    if (!key || !keys.some((expected) => matchesKey(key, expected))) {
+    if (!key || !matchesIntegrationKey(key, keys)) {
       throw new UnauthorizedException('Missing or invalid integration key');
     }
 
     return true;
   }
+}
+
+export function getIntegrationKeys(): string[] {
+  return (process.env.OPENPACKSDUEL_API_KEYS ?? '')
+    .split(',')
+    .map((key) => key.trim())
+    .filter(Boolean);
+}
+
+export function matchesIntegrationKey(candidate: string, keys = getIntegrationKeys()): boolean {
+  return keys.some((expected) => matchesKey(candidate, expected));
 }
 
 function matchesKey(candidate: string, expected: string): boolean {

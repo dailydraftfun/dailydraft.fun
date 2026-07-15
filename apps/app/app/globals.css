@@ -384,6 +384,79 @@
   font-size: 10px;
 }
 
+.wallet-authentication-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(184, 255, 90, 0.18);
+  border-radius: 10px;
+  background: rgba(184, 255, 90, 0.04);
+  padding: 13px;
+}
+
+.wallet-authentication-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wallet-authentication-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.wallet-authentication-heading strong {
+  font-size: 11px;
+}
+
+.wallet-authentication-heading small,
+.wallet-auth-message p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.auth-status {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  padding: 3px 6px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.auth-status-active {
+  border-color: rgba(184, 255, 90, 0.34);
+  color: var(--lime);
+}
+
+.wallet-authentication-panel > button,
+.wallet-auth-message > button {
+  width: 100%;
+}
+
+.wallet-auth-message {
+  display: grid;
+  gap: 9px;
+}
+
+.wallet-auth-message pre {
+  max-height: 190px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.24);
+  padding: 9px;
+  color: var(--text-secondary);
+  font-size: 8px;
+  line-height: 1.55;
+}
+
 .wallet-disconnect {
   color: var(--danger);
 }
@@ -931,6 +1004,41 @@
 
 .queue-section {
   margin-top: 86px;
+}
+
+.persisted-duel-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border: 1px solid rgba(184, 255, 90, 0.28);
+  border-radius: 14px;
+  background: rgba(184, 255, 90, 0.05);
+  padding: 20px;
+}
+
+.persisted-duel-panel h2 {
+  margin: 8px 0 6px;
+  font-size: 20px;
+  letter-spacing: -0.03em;
+}
+
+.persisted-duel-panel p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.persisted-duel-panel code {
+  color: var(--lime);
+}
+
+.persisted-duel-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
 }
 .section-heading {
   display: flex;
@@ -1609,6 +1717,11 @@
   }
   .lobby-hero {
     gap: 42px;
+  }
+  .persisted-duel-panel,
+  .persisted-duel-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
   .hero-copy h1 {
     font-size: clamp(45px, 14vw, 68px);

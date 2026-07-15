@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
+import { WalletAuthProvider } from './solana/wallet-auth-provider';
 import { SolanaWalletProvider } from './solana/wallet-provider';
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -18,7 +19,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SolanaWalletProvider>{children}</SolanaWalletProvider>
+      <SolanaWalletProvider>
+        <WalletAuthProvider>{children}</WalletAuthProvider>
+      </SolanaWalletProvider>
     </QueryClientProvider>
   );
 }

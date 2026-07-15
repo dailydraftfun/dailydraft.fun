@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  SolanaSignMessage,
+  type SolanaSignMessageFeature,
   SolanaSignTransaction,
   type SolanaSignTransactionFeature,
 } from '@solana/wallet-standard-features';
@@ -21,6 +23,7 @@ type CompatibleWallet = WalletWithFeatures<
   StandardConnectFeature &
     StandardEventsFeature &
     SolanaSignTransactionFeature &
+    Partial<SolanaSignMessageFeature> &
     Partial<StandardDisconnectFeature>
 >;
 
@@ -41,6 +44,8 @@ type WalletContextValue = {
   connect: (wallet: CompatibleWallet) => Promise<boolean>;
   disconnect: () => Promise<void>;
   clearError: () => void;
+  canSignMessage: boolean;
+  signMessage: (message: string) => Promise<Uint8Array>;
   signTransaction: (serializedTransaction: Uint8Array) => Promise<Uint8Array>;
 };
 
@@ -191,6 +196,21 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     return output.signedTransaction;
   }
 
+  async function signMessage(message: string) {
+    if (!selectedWallet || !account) throw new Error('Connect a Solana wallet first.');
+    const feature = selectedWallet.features[SolanaSignMessage];
+    if (!feature) {
+      throw new Error(`${selectedWallet.name} does not support Wallet Standard message signing.`);
+    }
+    const encodedMessage = new TextEncoder().encode(message);
+    const [output] = await feature.signMessage({ account, message: encodedMessage });
+    if (!output) throw new Error('The wallet did not return a signed message.');
+    if (!bytesEqual(output.signedMessage, encodedMessage)) {
+      throw new Error('The wallet changed the authentication message. No session was created.');
+    }
+    return output.signature;
+  }
+
   const value: WalletContextValue = {
     wallets,
     selectedWallet,
@@ -200,15 +220,22 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     status,
     networkStatus,
     error,
+    canSignMessage: Boolean(selectedWallet?.features[SolanaSignMessage]),
     cluster: SOLANA_CLUSTER,
     rpcUrl: SOLANA_RPC_URL,
     connect,
     disconnect,
     clearError: () => setError(null),
     signTransaction,
+    signMessage,
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
 }
 
 export function useSolanaWallet() {
