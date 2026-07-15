@@ -428,7 +428,8 @@ paths:
         Arbitrary signatures cannot create an intent.
       x-openpacksduel-availability: devnet
       security:
-        - bearerAuth: []
+        - walletSession: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
         - $ref: '#/components/parameters/TransactionId'
@@ -465,7 +466,8 @@ paths:
         can advance duel state.
       x-openpacksduel-availability: devnet
       security:
-        - bearerAuth: []
+        - cronSecret: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/ReconciliationLimit'
       responses:
@@ -486,7 +488,8 @@ paths:
       description: Accepts the cron secret or an integration API key.
       x-openpacksduel-availability: devnet
       security:
-        - bearerAuth: []
+        - cronSecret: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/ReconciliationLimit'
       responses:
@@ -551,6 +554,11 @@ paths:
           $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
+    cronSecret:
+      type: http
+      scheme: bearer
+      bearerFormat: random server secret
+      description: Vercel Cron bearer secret; accepted only by internal worker routes.
     integrationKey:
       type: http
       scheme: bearer
