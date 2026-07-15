@@ -102,7 +102,11 @@ export class DuelFundingService {
     if (!duel) throw new NotFoundException(`Duel ${input.duelId} was not found`);
     const side = resolveFundingSide(duel, input.wallet);
     if (duel.expiresAt <= new Date()) throw new ConflictException('Duel has expired');
-    if (side === 'creator' && ![DuelStatus.MATCHED, DuelStatus.COMMITTING].includes(duel.status)) {
+    if (
+      side === 'creator' &&
+      duel.status !== DuelStatus.MATCHED &&
+      duel.status !== DuelStatus.COMMITTING
+    ) {
       throw new ConflictException('Creator funding requires a matched duel');
     }
     if (side === 'opponent') {
@@ -286,10 +290,10 @@ export class DuelFundingService {
         allowMultipleInstructionMatches: false,
         errorCode: null,
         errorMessage: null,
-        expectedAccounts: input.instructionAccounts,
+        expectedAccounts: input.instructionAccounts as unknown as Prisma.InputJsonValue,
         expectedFromStatus: DuelStatus.COMMITTING,
         expectedMessageHash: input.expectedMessageHash,
-        expectedInstructionAccounts: input.instructionAccounts,
+        expectedInstructionAccounts: input.instructionAccounts as unknown as Prisma.InputJsonValue,
         expectedInstructionDataHash: hashFundInstructionData(),
         expectedProgramId: ESCROW_V2_PROGRAM_ID.toBase58(),
         expectedSigner: input.wallet,
@@ -421,7 +425,7 @@ export function assertNoActiveFunding(active: { id: string } | null): void {
 }
 
 export function fundingPreparationStatus(status: DuelStatus): DuelStatus {
-  if (![DuelStatus.MATCHED, DuelStatus.COMMITTING].includes(status)) {
+  if (status !== DuelStatus.MATCHED && status !== DuelStatus.COMMITTING) {
     throw new ConflictException('Duel state changed before funding preparation');
   }
   return status;
