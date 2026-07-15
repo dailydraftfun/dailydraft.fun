@@ -1,6 +1,8 @@
 import { BadGatewayException, ConflictException, Injectable, Optional } from '@nestjs/common';
 
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { AdminService } from '../admin/admin.service.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { AnalyticsService } from '../analytics/analytics.service.js';
 import type { Duel } from '../domain.js';
 import type { DuelSide, ProviderPackSnapshot } from '../providers/pack-provider.js';
@@ -20,9 +22,11 @@ export class DuelOpeningService {
     private readonly repository: DuelRepository,
     private readonly providers: PackProviderService,
     @Optional() private readonly analytics?: AnalyticsService,
+    @Optional() private readonly admin?: AdminService,
   ) {}
 
   async open(duelId: string, idempotencyKey: string): Promise<Duel> {
+    await this.admin?.assertNotPaused();
     let duel = await this.duels.findOne(duelId);
     if (duel.result?.resultHash && ['awaiting_assets', 'refunding'].includes(duel.status)) {
       return duel;

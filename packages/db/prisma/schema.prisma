@@ -86,6 +86,24 @@ enum ProductEventSource {
   SERVER
 }
 
+enum OperatorAction {
+  EMERGENCY_PAUSE
+  EMERGENCY_RESUME
+}
+
+enum OperatorActorClass {
+  INTEGRATION_KEY
+}
+
+enum OperatorReasonCode {
+  MAINTENANCE
+  PROVIDER_DEGRADED
+  RPC_DEGRADED
+  TREASURY_LIMIT
+  SECURITY_INCIDENT
+  MANUAL_REVIEW
+}
+
 model Duel {
   id                  String            @id
   mode                DuelMode
@@ -268,4 +286,28 @@ model ProductEvent {
   @@index([createdAt, name])
   @@index([sessionId, createdAt])
   @@index([duelId, createdAt])
+}
+
+model RuntimeControl {
+  key         String                 @id
+  paused      Boolean                @default(false)
+  reasonCode  OperatorReasonCode?
+  actorClass  OperatorActorClass     @default(INTEGRATION_KEY)
+  actorLabel  String                 @default("integration-key")
+  version     Int                    @default(1)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+}
+
+model OperatorAuditEvent {
+  id             String                 @id
+  action         OperatorAction
+  actorClass     OperatorActorClass
+  actorLabel     String
+  reasonCode     OperatorReasonCode
+  previousPaused Boolean
+  nextPaused     Boolean
+  createdAt      DateTime               @default(now())
+
+  @@index([createdAt, id])
 }
