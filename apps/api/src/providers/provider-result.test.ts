@@ -116,13 +116,6 @@ describe('provider result normalization', () => {
       'provider-creator',
       OBSERVED_AT,
     );
-    const opponent = normalizeProviderResult(
-      'opponent',
-      providerResult('opponent-asset', '1'),
-      POLICY,
-      'provider-opponent',
-      OBSERVED_AT,
-    );
     const changedReference = normalizeProviderResult(
       'creator',
       providerResult('creator-asset', '2'),

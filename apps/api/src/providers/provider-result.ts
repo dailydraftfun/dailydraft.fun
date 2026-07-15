@@ -12,9 +12,7 @@ import {
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const UNSIGNED_INTEGER_PATTERN = /^(0|[1-9]\d*)$/;
 const POOL_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-export const MAX_CANONICAL_INSURED_VALUE = BigInt(
-  CANONICAL_VALUATION_POLICY.maxValueMinorUnits,
-);
+export const MAX_CANONICAL_INSURED_VALUE = BigInt(CANONICAL_VALUATION_POLICY.maxValueMinorUnits);
 
 export interface NormalizedPackOutcome {
   assetReference: string;
