@@ -272,7 +272,7 @@ export function DuelArena() {
   }
 
   async function copyChallenge() {
-    const value = 'https://packduel.gg/challenge/demo-50';
+    const value = `${window.location.origin}/duel/demo-50?status=waiting`;
     try {
       await navigator.clipboard.writeText(value);
     } catch {
@@ -285,8 +285,9 @@ export function DuelArena() {
   function shareResult() {
     const winningPull = winner === 'you' ? match.left : match.right;
     const text = `${winner === 'you' ? 'I just won' : 'This duel was decided'} with ${winningPull.name} worth $${winningPull.value} in a $${tier} Pack Duel. Think you can beat it?`;
+    const shareUrl = `${window.location.origin}/duel/demo-${tier}?status=${winner === 'you' ? 'won' : 'lost'}`;
     window.open(
-      `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent('https://packduel.gg/duel/demo')}`,
+      `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`,
       '_blank',
       'noopener,noreferrer',
     );
