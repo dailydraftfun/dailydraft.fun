@@ -21,6 +21,14 @@ export abstract class SolanaRpcGateway {
   abstract assertDevnet(): Promise<void>;
   abstract getBlockHeight(): Promise<bigint>;
   abstract getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: bigint }>;
+  getLegacyMint(_address: string): Promise<{ decimals: number; supply: bigint }> {
+    throw new SolanaRpcUnavailableError('Legacy SPL mint reads are not implemented');
+  }
+  getLegacyTokenAccount(
+    _address: string,
+  ): Promise<{ amount: bigint; mint: string; owner: string }> {
+    throw new SolanaRpcUnavailableError('Legacy SPL token-account reads are not implemented');
+  }
   abstract getSignatureStatuses(signatures: string[]): Promise<Array<SolanaSignatureStatus | null>>;
   abstract getTransaction(
     signature: string,
@@ -65,6 +73,39 @@ export class SolanaRpcClient extends SolanaRpcGateway {
       blockhash: result.value.blockhash,
       lastValidBlockHeight: BigInt(Number(result.value.lastValidBlockHeight)),
     };
+  }
+
+  async getLegacyMint(address: string): Promise<{ decimals: number; supply: bigint }> {
+    const info = await this.getParsedTokenInfo(address);
+    if (
+      info.type !== 'mint' ||
+      !isObject(info.info) ||
+      !isNonNegativeInteger(info.info.decimals) ||
+      typeof info.info.supply !== 'string' ||
+      !/^\d+$/.test(info.info.supply)
+    ) {
+      throw new SolanaRpcUnavailableError('RPC returned an invalid legacy SPL mint');
+    }
+    return { decimals: info.info.decimals, supply: BigInt(info.info.supply) };
+  }
+
+  async getLegacyTokenAccount(
+    address: string,
+  ): Promise<{ amount: bigint; mint: string; owner: string }> {
+    const parsed = await this.getParsedTokenInfo(address);
+    const info = parsed.info;
+    if (
+      parsed.type !== 'account' ||
+      !isObject(info) ||
+      typeof info.mint !== 'string' ||
+      typeof info.owner !== 'string' ||
+      !isObject(info.tokenAmount) ||
+      typeof info.tokenAmount.amount !== 'string' ||
+      !/^\d+$/.test(info.tokenAmount.amount)
+    ) {
+      throw new SolanaRpcUnavailableError('RPC returned an invalid legacy SPL token account');
+    }
+    return { amount: BigInt(info.tokenAmount.amount), mint: info.mint, owner: info.owner };
   }
 
   async getSignatureStatuses(signatures: string[]): Promise<Array<SolanaSignatureStatus | null>> {
@@ -114,6 +155,24 @@ export class SolanaRpcClient extends SolanaRpcGateway {
       }
     }
     throw new SolanaRpcUnavailableError();
+  }
+
+  private async getParsedTokenInfo(address: string): Promise<{ info: unknown; type: unknown }> {
+    const result = await this.request('getAccountInfo', [
+      address,
+      { commitment: 'finalized', encoding: 'jsonParsed' },
+    ]);
+    if (
+      !isObject(result) ||
+      !isObject(result.value) ||
+      result.value.owner !== 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' ||
+      !isObject(result.value.data) ||
+      result.value.data.program !== 'spl-token' ||
+      !isObject(result.value.data.parsed)
+    ) {
+      throw new SolanaRpcUnavailableError('Account is not a finalized legacy SPL account');
+    }
+    return { info: result.value.data.parsed.info, type: result.value.data.parsed.type };
   }
 }
 

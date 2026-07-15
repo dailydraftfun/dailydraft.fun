@@ -3,6 +3,12 @@ import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '
 import { CurrentDuelAuthentication, type DuelAuthentication } from '../auth/authentication.js';
 import { DuelMutationGuard } from '../auth/duel-mutation.guard.js';
 import { IdempotencyKey } from '../common/idempotency-key.decorator.js';
+import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
+import type { DuelIdParams } from '../duels/duel.dto.js';
+// biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
+import { PrepareProviderEscrowRequest } from './provider-settlement.dto.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { ProviderSettlementService } from './provider-settlement.service.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
 import {
   ReconciliationQuery,
@@ -50,5 +56,17 @@ export class TransactionReconciliationController {
   @HttpCode(200)
   reconcileManually(@Query() query: ReconciliationQuery) {
     return this.monitor.reconcile(query.limit);
+  }
+}
+
+@Controller('internal/provider/duels/:duelId/escrow/transactions')
+@UseGuards(IntegrationKeyGuard)
+export class ProviderSettlementController {
+  constructor(private readonly settlement: ProviderSettlementService) {}
+
+  @Post()
+  @HttpCode(201)
+  prepare(@Param() params: DuelIdParams, @Body() input: PrepareProviderEscrowRequest) {
+    return this.settlement.prepare({ duelId: params.duelId, ...input });
   }
 }

@@ -164,6 +164,18 @@ pending. Vercel builds generate Prisma Client but never mutate the database.
 
 ## Promotion gate
 
+Provider escrow orchestration stops at unsigned transaction preparation. Do not
+set `OPENPACKSDUEL_PROVIDER_ASSET_STANDARD=legacy-spl-nft` until Collector Crypt
+has confirmed the canonical mint, authoritative integer insured value and
+valuation policy, stable provider references, alternate-recipient custody, and
+a provider request ID. The configured provider signer signs externally; no
+private key belongs in Vercel or MCP output.
+
+Result and settlement preparation read finalized devnet accounts and require a
+legacy SPL mint with decimals `0`, supply `1`, and exactly one matching NFT in
+each role PDA vault. Mock outcomes remain valid for UI reveal testing but are
+categorically rejected from real escrow preparation.
+
 Devnet readiness does not imply mainnet readiness. Mainnet remains blocked on
 Collector Crypt approval, supported recipient and asset standards, canonical
 valuation proof, legal/compliance sign-off, production persistence, independent

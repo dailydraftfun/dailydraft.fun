@@ -3,10 +3,13 @@ import { Module } from '@nestjs/common';
 import { AdminModule } from '../admin/admin.module.js';
 import { AnalyticsModule } from '../analytics/analytics.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
 import { DuelFundingService } from './duel-funding.service.js';
 import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
+import { ProviderSettlementService } from './provider-settlement.service.js';
 import { SolanaRpcClient, SolanaRpcGateway } from './solana-rpc.client.js';
 import {
+  ProviderSettlementController,
   TransactionReconciliationController,
   TransactionSubmissionController,
 } from './transaction-monitor.controller.js';
@@ -15,11 +18,17 @@ import { TransactionMonitorService } from './transaction-monitor.service.js';
 import { WorkerKeyGuard } from './worker-key.guard.js';
 
 @Module({
-  controllers: [TransactionSubmissionController, TransactionReconciliationController],
+  controllers: [
+    TransactionSubmissionController,
+    TransactionReconciliationController,
+    ProviderSettlementController,
+  ],
   exports: [DuelFundingService, SolanaRpcGateway],
   imports: [AdminModule, AnalyticsModule, AuthModule],
   providers: [
     WorkerKeyGuard,
+    IntegrationKeyGuard,
+    ProviderSettlementService,
     DuelFundingService,
     TransactionMonitorService,
     { provide: TransactionMonitorRepository, useClass: PrismaTransactionMonitorRepository },

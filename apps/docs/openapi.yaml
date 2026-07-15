@@ -865,6 +865,38 @@ paths:
                 $ref: '#/components/schemas/AdminPage'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /internal/provider/duels/{duelId}/escrow/transactions:
+    post:
+      operationId: prepareProviderEscrowTransaction
+      tags: [Transactions]
+      summary: Prepare an unsigned provider/result/settlement escrow transaction
+      description: |
+        Integration-only, devnet-only boundary. The API never signs or submits.
+        Real card operations fail closed for mock/incomplete provider outcomes,
+        unsupported asset standards, noncanonical insured values or policies,
+        invalid legacy SPL mint metadata, and missing vault custody.
+      x-openpacksduel-availability: devnet-gated
+      security:
+        - integrationKey: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrepareProviderEscrowRequest'
+      responses:
+        '201':
+          description: Unsigned transaction and public proof binding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreparedProviderEscrowTransaction'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/Unavailable' }
 components:
   securitySchemes:
     cronSecret:
@@ -1749,6 +1781,54 @@ components:
           const: fund
         wallet:
           $ref: '#/components/schemas/SolanaAddress'
+    PrepareProviderEscrowRequest:
+      type: object
+      additionalProperties: false
+      required: [operation, callerWallet]
+      properties:
+        operation:
+          type: string
+          enum: [deposit_card, commit_result, settle, refund_card, refund_payment]
+        callerWallet: { $ref: '#/components/schemas/SolanaAddress' }
+        side: { type: string, enum: [creator, opponent] }
+        sourceTokenAccount: { $ref: '#/components/schemas/SolanaAddress' }
+        assetStandard: { type: string, const: legacy-spl-nft }
+        providerRequestId: { type: string, pattern: '^[a-f0-9]{64}$' }
+    PreparedProviderEscrowTransaction:
+      type: object
+      additionalProperties: false
+      required:
+        - action
+        - chain
+        - duelId
+        - expectedSigner
+        - instruction
+        - lastValidBlockHeight
+        - messageSha256
+        - programId
+        - proof
+        - recentBlockhash
+        - serializedTransactionBase64
+        - status
+        - warnings
+      properties:
+        action:
+          type: string
+          enum: [deposit_card, commit_result, settle, refund_card, refund_payment]
+        chain: { type: string, const: 'solana:devnet' }
+        duelId: { type: string }
+        expectedSigner: { $ref: '#/components/schemas/SolanaAddress' }
+        instruction: { type: object, additionalProperties: true }
+        lastValidBlockHeight: { type: string, pattern: '^\d+$' }
+        messageSha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        programId: { $ref: '#/components/schemas/SolanaAddress' }
+        proof: { type: object, additionalProperties: { type: [string, 'null'] } }
+        recentBlockhash: { type: string }
+        serializedTransactionBase64: { type: string, contentEncoding: base64 }
+        status: { type: string, const: prepared }
+        warnings:
+          type: array
+          items: { type: string }
     PreparedTransaction:
       type: object
       additionalProperties: false
