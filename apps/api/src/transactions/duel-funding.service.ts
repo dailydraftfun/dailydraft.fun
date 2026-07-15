@@ -448,7 +448,7 @@ export function isPreparedBlockhashReusable(
   return lastValidBlockHeight > currentBlockHeight + MIN_BLOCKHEIGHT_REVIEW_BUFFER;
 }
 
-function nonceFromDuelId(duelId: string): bigint {
+export function nonceFromDuelId(duelId: string): bigint {
   return createHash('sha256').update(duelId).digest().readBigUInt64LE(0);
 }
 

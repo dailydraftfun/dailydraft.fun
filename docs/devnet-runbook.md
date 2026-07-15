@@ -55,6 +55,7 @@ smoke workflow.
 | `SOLANA_RPC_RETRIES` | Optional retry count; bounded to four retries. |
 | `SOLANA_RECONCILIATION_STUCK_MS` | Operator alert threshold; defaults to ten minutes. |
 | `OPENPACKSDUEL_PROVIDER_MODE` | Must be `mock` until the Collector Crypt contract is confirmed. |
+| `OPENPACKSDUEL_PROVIDER_ASSET_STANDARD` | Leave unset until Collector Crypt confirms canonical legacy SPL NFT custody; then set `legacy-spl-nft`. |
 | `OPENPACKSDUEL_API_KEYS` | Server-to-server integration keys; never expose to the browser. |
 | `OPENPACKSDUEL_APP_URL` | Canonical product URL. |
 | `OPENPACKSDUEL_AUTH_DOMAIN` | Host matching the canonical product URL in wallet sign-in messages. |
@@ -73,6 +74,12 @@ stored data hash and exact ordered account constraints. The public RPC
 fallback is appropriate only for this devnet preview and may rate-limit calls.
 Funding requires distinct finalized deposits from both duel participants; the
 first side remains `committing`, and only the second completes `funded`.
+
+Provider result commitments, settlement, and per-asset refunds are prepared as
+durable unsigned intents and use the same submission/reconciliation path. Card
+deposits remain operator-proof only. Each finalized refund records its asset
+proof but intentionally leaves the duel `refunding`; a full custody quorum is
+still required before any later implementation may mark the duel `refunded`.
 
 `POST /v1/duels/:duelId/transactions` prepares the verified escrow v2 funding transaction. It
 creates the player's wrapped-SOL associated token account idempotently, wraps exactly the configured
@@ -163,6 +170,18 @@ health endpoint returns `503` when PostgreSQL is unavailable or migrations are
 pending. Vercel builds generate Prisma Client but never mutate the database.
 
 ## Promotion gate
+
+Provider escrow orchestration stops at unsigned transaction preparation. Do not
+set `OPENPACKSDUEL_PROVIDER_ASSET_STANDARD=legacy-spl-nft` until Collector Crypt
+has confirmed the canonical mint, authoritative integer insured value and
+valuation policy, stable provider references, alternate-recipient custody, and
+a provider request ID. The configured provider signer signs externally; no
+private key belongs in Vercel or MCP output.
+
+Result and settlement preparation read finalized devnet accounts and require a
+legacy SPL mint with decimals `0`, supply `1`, and exactly one matching NFT in
+each role PDA vault. Mock outcomes remain valid for UI reveal testing but are
+categorically rejected from real escrow preparation.
 
 Devnet readiness does not imply mainnet readiness. Mainnet remains blocked on
 Collector Crypt approval, supported recipient and asset standards, canonical

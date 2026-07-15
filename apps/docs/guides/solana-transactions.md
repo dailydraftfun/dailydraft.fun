@@ -2,7 +2,8 @@
 
 OpenPacks Duel uses a non-custodial transaction-preparation model.
 
-The API may construct a transaction for `fund`, `cancel`, or `refund`, but the
+The API may construct a transaction for `fund`, provider result commitment,
+`settle`, or `refund`, but the
 participant wallet must:
 
 1. decode the base64 transaction;
@@ -35,10 +36,13 @@ available at `GET|POST /internal/reconciliation/solana`. Vercel Cron uses
 key. Missing signatures are retried until blockheight proves expiry. RPC errors
 are not copied into public duel responses.
 
-Transaction preparation is intentionally unavailable until the deployed escrow
-IDL, devnet asset mints, and Collector Crypt transaction builders are known.
-The monitor never reconstructs or trusts an intent from an arbitrary submitted
-signature.
+Provider result, settlement, and refund preparation creates a durable intent
+before returning unsigned bytes. After broadcast, bind its `intentId` through
+the same submission endpoint. Card deposits remain an explicit operator-proof
+boundary: their response has `intentId: null` and does not advance duel state.
+Real-card preparation fails closed unless Collector Crypt evidence, canonical
+insured values, legacy SPL mint metadata, and escrow vault custody all match.
+The monitor never reconstructs or trusts an intent from an arbitrary submitted signature.
 
 An API `duelId` is not an escrow address. Use `escrowAddress` and
 `transactionSignature` from the duel representation when verifying on-chain

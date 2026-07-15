@@ -110,6 +110,15 @@ generate/open/status schemas, idempotency, alternate-recipient custody, the
 canonical insured-value field, and buyback eligibility. Any future provider
 credential is server-only and must never use a `NEXT_PUBLIC_` variable.
 
+The integration-only provider escrow preparation endpoint builds unsigned card
+deposit, result commitment, settlement, and per-asset expiry-refund transactions.
+It never signs or submits. Real-asset preparation remains disabled unless the
+persisted outcomes are non-mock Collector Crypt evidence with canonical Solana
+mint addresses, integer USDC insured values, one valuation policy, and
+`OPENPACKSDUEL_PROVIDER_ASSET_STANDARD=legacy-spl-nft`. Finalized RPC reads must
+also prove a zero-decimal/single-supply legacy mint and the exact card in each
+escrow PDA vault before result or settlement preparation.
+
 ## Vercel
 
 The Vercel project uses `apps/api` as its Root Directory, but CLI deploys must be

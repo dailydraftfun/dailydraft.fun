@@ -88,7 +88,7 @@ export interface DuelEvent {
 }
 
 export interface DuelTransactionRecord {
-  action: 'cancel' | 'fund' | 'open_pack' | 'refund' | 'settle';
+  action: 'cancel' | 'commit_result' | 'fund' | 'open_pack' | 'refund' | 'settle';
   checkAttempts?: number;
   confirmationStatus?: 'confirmed' | 'finalized' | null;
   confirmedAt?: string | null;
