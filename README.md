@@ -33,6 +33,13 @@ Deploy the interactive MVP with the Vercel root directory set to `apps/app`. Dep
 
 The product UI is still an MVP and does not request real wallet signatures or transactions. The API foundation serves preview data and keeps duel intents in memory; persistent matchmaking, provider inventory, wallet sessions, escrow proof, and settlement remain implementation milestones.
 
+## Devnet
+
+The public product preview is available at
+[openpacksduel.vercel.app](https://openpacksduel.vercel.app). The isolated Solana
+devnet environment, program identity, environment contract, deployment order,
+and promotion gates are documented in [`docs/devnet-runbook.md`](docs/devnet-runbook.md).
+
 ## Update Dependencies
 
 ```bash
