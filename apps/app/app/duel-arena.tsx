@@ -28,13 +28,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { trackProductEvent } from './analytics-client';
 import {
   cancelDuel,
+  cancelOpenMatchmaking,
+  continueOpenMatchmaking,
   createDuel,
   type DuelOpponentType,
   type DuelTransactionIntent,
   type DurableDuel,
   getDuel,
+  getOpenMatchmakingStatus,
   joinDuel,
+  type MatchmakingSession,
   prepareDuelIntent,
+  searchOpenMatchmaking,
+  selectHouseFallback,
   submitSignedDuelIntent,
 } from './solana/duel-client';
 import { TransactionIntentReview } from './solana/transaction-intent-review';
@@ -283,12 +289,20 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
+  const [matchmakingSession, setMatchmakingSession] = useState<MatchmakingSession | null>(null);
   const timers = useRef<number[]>([]);
   const match = useMemo(() => getMatch(tier, nonce), [tier, nonce]);
   const winner = match.left.value >= match.right.value ? 'you' : 'opponent';
+  const houseFallbackAction = matchmakingSession?.availableActions.find(
+    (action) => action.action === 'house_fallback',
+  );
 
   function chooseMode(nextMode: Mode) {
     if (nextMode === mode) return;
+    if (matchmakingSession && nextMode !== 'matchmaking') {
+      setActionError('Cancel the active public search before starting a different duel mode.');
+      return;
+    }
     setActiveEntry(undefined);
     setMode(nextMode);
     if (nextMode !== 'direct') setWallet('');
@@ -335,14 +349,138 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }, [actionError, mode, persistedDuel, tier]);
 
   useEffect(() => {
-    if (!persistedDuel || persistedDuel.status !== 'waiting') return;
+    if (!persistedDuel || persistedDuel.status !== 'waiting' || matchmakingSession) return;
     const interval = window.setInterval(() => {
       getDuel(persistedDuel.id)
         .then((duel) => setPersistedDuel(duel))
         .catch(() => undefined);
     }, 5_000);
     return () => window.clearInterval(interval);
-  }, [persistedDuel]);
+  }, [matchmakingSession, persistedDuel]);
+
+  useEffect(() => {
+    if (
+      !persistedDuel ||
+      !matchmakingSession ||
+      (persistedDuel.status !== 'matched' && persistedDuel.status !== 'committing')
+    ) {
+      return;
+    }
+    let active = true;
+    const interval = window.setInterval(() => {
+      getDuel(persistedDuel.id)
+        .then((duel) => {
+          if (active) setPersistedDuel(duel);
+        })
+        .catch(() => undefined);
+    }, 3_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [matchmakingSession, persistedDuel]);
+
+  useEffect(() => {
+    if (
+      mode !== 'matchmaking' ||
+      matchmakingSession ||
+      !authentication.sessionToken ||
+      !walletConnection.address ||
+      !isDuelApiConfigured()
+    ) {
+      return;
+    }
+    let active = true;
+    getOpenMatchmakingStatus(walletConnection.address, authentication.sessionToken)
+      .then((session) => {
+        if (active && session) {
+          setMatchmakingSession((current) =>
+            current?.duelId === session.duelId &&
+            current.state === session.state &&
+            current.opponentWallet === session.opponentWallet &&
+            current.houseOpponent === session.houseOpponent
+              ? current
+              : session,
+          );
+          setActionNotice('Your existing public matchmaking ticket was restored.');
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [authentication.sessionToken, matchmakingSession, mode, walletConnection.address]);
+
+  useEffect(() => {
+    if (!matchmakingSession || !authentication.sessionToken || !walletConnection.address) {
+      return;
+    }
+    let active = true;
+    const poll = () => {
+      getOpenMatchmakingStatus(
+        walletConnection.address as string,
+        authentication.sessionToken as string,
+      )
+        .then(async (session) => {
+          if (!active) return;
+          if (!session) {
+            const duel = await getDuel(matchmakingSession.duelId).catch(() => null);
+            if (!active) return;
+            setMatchmakingSession(null);
+            setPersistedDuel(duel);
+            setActionNotice(
+              duel && duel.status !== 'cancelled'
+                ? `Matchmaking completed with duel status: ${duel.status}.`
+                : 'The matchmaking search ended before funding. Start a new search when ready.',
+            );
+            return;
+          }
+          setMatchmakingSession((current) =>
+            current?.duelId === session.duelId &&
+            current.state === session.state &&
+            current.opponentWallet === session.opponentWallet &&
+            current.houseOpponent === session.houseOpponent
+              ? current
+              : session,
+          );
+        })
+        .catch(() => undefined);
+    };
+    const interval = window.setInterval(poll, 3_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [authentication.sessionToken, matchmakingSession, walletConnection.address]);
+
+  useEffect(() => {
+    if (!matchmakingSession || !authentication.sessionToken || !walletConnection.address) return;
+    let active = true;
+    getDuel(matchmakingSession.duelId)
+      .then(async (duel) => {
+        if (!active) return;
+        setPersistedDuel(duel);
+        if (matchmakingSession.state !== 'matched') return;
+        if (duel.creatorWallet === walletConnection.address && duel.status === 'matched') {
+          const prepared = await prepareDuelIntent(
+            duel.id,
+            walletConnection.address,
+            authentication.sessionToken as string,
+          );
+          if (active) setIntent(prepared);
+        } else if (active) {
+          setActionNotice('Opponent found. The creator must initialize and fund escrow first.');
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setActionError(error instanceof Error ? error.message : 'Could not restore matchmaking.');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [authentication.sessionToken, matchmakingSession, walletConnection.address]);
 
   async function reviewDuel(nextTier = tier, nextMode = mode) {
     setActionError(null);
@@ -377,6 +515,19 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setIntentPending(true);
     try {
       if (isDuelApiConfigured() && authentication.sessionToken && walletConnection.address) {
+        if (nextMode === 'matchmaking') {
+          const session = await searchOpenMatchmaking(
+            walletConnection.address,
+            authentication.sessionToken,
+          );
+          setMatchmakingSession(session);
+          setActionNotice(
+            session.state === 'matched'
+              ? 'Opponent found. Preparing the creator funding review.'
+              : 'Searching the exact $50 tier and valuation-policy queue.',
+          );
+          return;
+        }
         const duel =
           activeEntry?.action === 'accept'
             ? await joinDuel(
@@ -387,7 +538,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             : await createDuel(
                 {
                   creatorWallet: walletConnection.address,
-                  matchmakingMode: nextMode === 'matchmaking' ? 'open' : nextMode,
+                  matchmakingMode: nextMode,
                   ...(nextMode === 'direct' ? { opponentWallet: wallet.trim() } : {}),
                 },
                 authentication.sessionToken,
@@ -441,6 +592,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setIntentPending(true);
     setActionError(null);
     try {
+      if (persistedDuel.matchmakingMode === 'open' && matchmakingSession) {
+        await cancelOpenMatchmaking(walletConnection.address, authentication.sessionToken);
+        setMatchmakingSession(null);
+        setPersistedDuel(null);
+        setActionNotice('Public matchmaking cancelled before funding.');
+        return;
+      }
       const cancelled = await cancelDuel(
         persistedDuel.id,
         walletConnection.address,
@@ -452,6 +610,43 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setActionError(
         error instanceof Error ? error.message : 'Could not cancel the persisted devnet duel.',
       );
+    } finally {
+      setIntentPending(false);
+    }
+  }
+
+  async function continueMatchmaking(): Promise<void> {
+    if (!authentication.sessionToken || !walletConnection.address) return;
+    setIntentPending(true);
+    setActionError(null);
+    try {
+      const session = await continueOpenMatchmaking(
+        walletConnection.address,
+        authentication.sessionToken,
+      );
+      setMatchmakingSession(session);
+      setActionNotice('Search continues in the same exact queue.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not continue matchmaking.');
+    } finally {
+      setIntentPending(false);
+    }
+  }
+
+  async function chooseHouseFallback(): Promise<void> {
+    if (!authentication.sessionToken || !walletConnection.address) return;
+    setIntentPending(true);
+    setActionError(null);
+    try {
+      const session = await selectHouseFallback(
+        walletConnection.address,
+        authentication.sessionToken,
+      );
+      setMatchmakingSession(session);
+      setMode('house');
+      setActionNotice('House opponent explicitly selected. Preparing creator funding review.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'House fallback is unavailable.');
     } finally {
       setIntentPending(false);
     }
@@ -796,7 +991,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                   <UsersThreeIcon size={18} weight="fill" />
                   <span>
                     <strong>Public wallet matchmaking</strong>
-                    We match the same tier. You can cancel before both wallets commit.
+                    We match the exact tier and valuation policy. You can continue searching or
+                    cancel before funding. House play is never selected automatically.
                   </span>
                 </div>
               ) : null}
@@ -863,7 +1059,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             </span>
             <h2>
               {persistedDuel.status === 'waiting'
-                ? 'Challenge created and waiting'
+                ? matchmakingSession
+                  ? 'Searching the exact public queue'
+                  : 'Challenge created and waiting'
                 : persistedDuel.status === 'matched'
                   ? 'Both wallets are matched'
                   : persistedDuel.status === 'committing'
@@ -877,8 +1075,36 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               disclosed platform fee as WSOL. Pack purchase and opening are separate and have not
               happened yet.
             </p>
+            {matchmakingSession ? (
+              <p>
+                Queue: ${matchmakingSession.queue.tier} · {matchmakingSession.queue.regionSegment} ·{' '}
+                {matchmakingSession.queue.riskSegment}. {matchmakingSession.cancellationRule}{' '}
+                {houseFallbackAction?.disclosure}
+              </p>
+            ) : null}
           </div>
           <div className="persisted-duel-actions">
+            {matchmakingSession?.state === 'searching' ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={continueMatchmaking}
+                disabled={intentPending}
+              >
+                {intentPending ? <SpinnerGapIcon className="wallet-spinner" size={16} /> : null}
+                Continue search
+              </Button>
+            ) : null}
+            {matchmakingSession?.state === 'searching' && houseFallbackAction?.available ? (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={chooseHouseFallback}
+                disabled={intentPending}
+              >
+                <ShieldCheckIcon size={16} weight="fill" /> Select disclosed house
+              </Button>
+            ) : null}
             {(persistedDuel.status === 'matched' &&
               persistedDuel.creatorWallet === walletConnection.address) ||
             (persistedDuel.status === 'committing' &&
@@ -888,7 +1114,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 Review platform fee
               </Button>
             ) : null}
-            {persistedDuel.status === 'waiting' ? (
+            {persistedDuel.status === 'waiting' && !matchmakingSession ? (
               <Button
                 type="button"
                 variant="ghost"
