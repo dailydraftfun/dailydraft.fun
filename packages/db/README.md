@@ -18,6 +18,10 @@ bun --filter @openpacksduel/db db:generate
 ```
 
 Client generation uses an inert localhost URL when `DATABASE_URL` is absent.
+The workspace build also bundles the generated client into `dist/index.js` for
+Node serverless runtimes. Bun and TypeScript continue to resolve the source entry
+directly during local development.
+
 The API does not: startup fails closed with `DATABASE_URL is required for durable
 duel state`, and `/v1/health` returns `503` when PostgreSQL is unavailable or the
 migrations have not been deployed.
