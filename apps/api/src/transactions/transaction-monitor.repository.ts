@@ -43,6 +43,9 @@ export abstract class TransactionMonitorRepository {
     transactionId: string;
   }): Promise<BoundSubmission>;
   abstract findPending(limit: number, now: Date): Promise<MonitoredTransaction[]>;
+  findRecoverableTerminal(_limit: number): Promise<MonitoredTransaction[]> {
+    return Promise.resolve([]);
+  }
   abstract findParticipantReconciliationBatch(input: {
     actorWallet?: string;
     duelId: string;
