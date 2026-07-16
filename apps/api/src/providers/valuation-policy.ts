@@ -30,11 +30,51 @@ if (calculatedPolicyHash !== CANONICAL_VALUATION_POLICY_HASH) {
   throw new Error('Canonical valuation policy changed without an explicit hash/version update');
 }
 
+export const DEVNET_DEMO_VALUATION_POLICY = Object.freeze({
+  ...CANONICAL_VALUATION_POLICY,
+  authoritativeField: 'pokemon-tcg.tcgplayer.prices.market',
+  policyVersion: 'openpacksduel-pokemon-tcg-market-usdc-v1',
+} as const);
+
+export const DEVNET_DEMO_VALUATION_POLICY_HASH =
+  '19cbdd32ebd2418032bd989e3a095b107dadd1ac61feb7ced83088756994f1b3';
+
+const calculatedDemoPolicyHash = createHash('sha256')
+  .update(stableStringify(DEVNET_DEMO_VALUATION_POLICY))
+  .digest('hex');
+
+if (calculatedDemoPolicyHash !== DEVNET_DEMO_VALUATION_POLICY_HASH) {
+  throw new Error('Devnet demo valuation policy changed without an explicit hash/version update');
+}
+
+export type SupportedValuationPolicy =
+  | typeof CANONICAL_VALUATION_POLICY
+  | typeof DEVNET_DEMO_VALUATION_POLICY;
+
 export function requireCanonicalValuationPolicyHash(value: string | null | undefined): string {
-  if (value !== CANONICAL_VALUATION_POLICY_HASH) {
+  if (value !== CANONICAL_VALUATION_POLICY_HASH && value !== DEVNET_DEMO_VALUATION_POLICY_HASH) {
     throw new ConflictException('Duel valuation policy is unsupported or does not match');
   }
   return value;
+}
+
+export function valuationPolicyForHash(value: string): SupportedValuationPolicy {
+  requireCanonicalValuationPolicyHash(value);
+  return value === DEVNET_DEMO_VALUATION_POLICY_HASH
+    ? DEVNET_DEMO_VALUATION_POLICY
+    : CANONICAL_VALUATION_POLICY;
+}
+
+export function currentValuationPolicy(): {
+  policy: SupportedValuationPolicy;
+  policyHash: string;
+} {
+  return process.env.OPENPACKSDUEL_PROVIDER_MODE === 'openpacksduel-devnet'
+    ? {
+        policy: DEVNET_DEMO_VALUATION_POLICY,
+        policyHash: DEVNET_DEMO_VALUATION_POLICY_HASH,
+      }
+    : { policy: CANONICAL_VALUATION_POLICY, policyHash: CANONICAL_VALUATION_POLICY_HASH };
 }
 
 export function stableStringify(value: unknown): string {

@@ -1,8 +1,9 @@
 import type { Duel, DuelStatus, DuelTransactionRecord, Money } from '../domain.js';
 import { compareInsuredValues } from '../providers/provider-result.js';
 import {
-  CANONICAL_VALUATION_POLICY,
   requireCanonicalValuationPolicyHash,
+  type SupportedValuationPolicy,
+  valuationPolicyForHash,
 } from '../providers/valuation-policy.js';
 
 export type PublicDuelStatus = DuelStatus | 'expired';
@@ -86,6 +87,7 @@ export interface PublicPostDuelCardActionState {
   actions: PublicPostDuelCardAction[];
   assetReference: string;
   displayName: string;
+  imageUrl: string | null;
   duelId: string;
   insuredValue: Money;
   owner: PublicParticipant;
@@ -152,6 +154,7 @@ export interface PublicDuelResult {
   outcomes: Array<{
     assetReference: string;
     displayName: string;
+    imageUrl: string | null;
     insuredValue: Money;
     isMock: boolean;
     openedAt: string;
@@ -161,16 +164,16 @@ export interface PublicDuelResult {
     sourceTimestamp: string;
   }>;
   policy: {
-    authoritativeField: typeof CANONICAL_VALUATION_POLICY.authoritativeField;
+    authoritativeField: SupportedValuationPolicy['authoritativeField'];
     currency: 'USDC';
     decimals: 6;
     hash: string;
     hashAlgorithm: 'sha256';
     maxSourceAgeSeconds: number;
-    maxValueMinorUnits: typeof CANONICAL_VALUATION_POLICY.maxValueMinorUnits;
-    policyVersion: typeof CANONICAL_VALUATION_POLICY.policyVersion;
+    maxValueMinorUnits: SupportedValuationPolicy['maxValueMinorUnits'];
+    policyVersion: SupportedValuationPolicy['policyVersion'];
     rounding: 'none';
-    tieRule: typeof CANONICAL_VALUATION_POLICY.tieRule;
+    tieRule: SupportedValuationPolicy['tieRule'];
   };
   proof: {
     context: {
@@ -446,6 +449,7 @@ function buildPostDuelCardActions(input: {
         actions: cardActionCapabilities(owner),
         assetReference: outcome.assetReference,
         displayName: outcome.displayName,
+        imageUrl: outcome.imageUrl ?? null,
         duelId: input.duel.id,
         insuredValue: outcome.insuredValue,
         owner,
@@ -666,12 +670,14 @@ function buildResult(
       : duel.result.winnerSide === 'opponent'
         ? opponent
         : null;
+  const valuationPolicy = valuationPolicyForHash(policyHash);
   return {
     comparisonMetric: duel.result.comparisonMetric,
     margin: { amount: marginAmount, currency: left.currency, decimals: left.decimals },
     outcomes: duel.result.outcomes.map((outcome) => ({
       assetReference: outcome.assetReference,
       displayName: outcome.displayName,
+      imageUrl: outcome.imageUrl ?? null,
       insuredValue: outcome.insuredValue,
       isMock: outcome.isMock,
       openedAt: outcome.openedAt,
@@ -681,16 +687,16 @@ function buildResult(
       sourceTimestamp: outcome.sourceTimestamp,
     })),
     policy: {
-      authoritativeField: CANONICAL_VALUATION_POLICY.authoritativeField,
-      currency: CANONICAL_VALUATION_POLICY.currency,
-      decimals: CANONICAL_VALUATION_POLICY.decimals,
+      authoritativeField: valuationPolicy.authoritativeField,
+      currency: valuationPolicy.currency,
+      decimals: valuationPolicy.decimals,
       hash: policyHash,
       hashAlgorithm: 'sha256',
-      maxSourceAgeSeconds: CANONICAL_VALUATION_POLICY.maxSourceAgeSeconds,
-      maxValueMinorUnits: CANONICAL_VALUATION_POLICY.maxValueMinorUnits,
-      policyVersion: CANONICAL_VALUATION_POLICY.policyVersion,
-      rounding: CANONICAL_VALUATION_POLICY.rounding,
-      tieRule: CANONICAL_VALUATION_POLICY.tieRule,
+      maxSourceAgeSeconds: valuationPolicy.maxSourceAgeSeconds,
+      maxValueMinorUnits: valuationPolicy.maxValueMinorUnits,
+      policyVersion: valuationPolicy.policyVersion,
+      rounding: valuationPolicy.rounding,
+      tieRule: valuationPolicy.tieRule,
     },
     proof: {
       context: {

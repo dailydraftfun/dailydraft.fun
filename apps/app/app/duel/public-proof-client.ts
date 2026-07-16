@@ -46,6 +46,7 @@ export type PublicPostDuelCardActionState = {
   actions: PublicPostDuelCardAction[];
   assetReference: string;
   displayName: string;
+  imageUrl: string | null;
   duelId: string;
   insuredValue: PublicMoney;
   owner: PublicParticipant;
@@ -136,6 +137,7 @@ export type PublicDuelReceipt = {
     outcomes: Array<{
       assetReference: string;
       displayName: string;
+      imageUrl: string | null;
       insuredValue: PublicMoney;
       isMock: boolean;
       openedAt: string;

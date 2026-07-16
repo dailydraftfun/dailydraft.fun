@@ -26,6 +26,8 @@ import {
 import { PublicKey, Transaction, type TransactionInstruction } from '@solana/web3.js';
 import bs58 from 'bs58';
 import {
+  createCloseCardVaultInstruction,
+  createClosePaymentVaultInstruction,
   createDepositCardAssetInstruction,
   createRefundExpiredCardInstruction,
   createRefundExpiredPaymentInstruction,
@@ -43,8 +45,8 @@ import {
   MAX_CANONICAL_INSURED_VALUE,
 } from '../providers/provider-result.js';
 import {
-  CANONICAL_VALUATION_POLICY,
-  CANONICAL_VALUATION_POLICY_HASH,
+  requireCanonicalValuationPolicyHash,
+  valuationPolicyForHash,
 } from '../providers/valuation-policy.js';
 import { nonceFromDuelId } from './duel-funding.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
@@ -294,6 +296,35 @@ export class ProviderSettlementService {
           ata(caller, destinations.creatorCard, creatorCardOwner, evidence.creator.mint),
           ata(caller, destinations.opponentCard, opponentCardOwner, evidence.opponent.mint),
         ],
+        suffix:
+          duel.providerMode === ProviderMode.OPENPACKSDUEL_DEVNET
+            ? [
+                createClosePaymentVaultInstruction({
+                  caller,
+                  duel: addresses.duel,
+                  excessDestination: destinations.fee,
+                  paymentMint: NATIVE_MINT,
+                  paymentVault: addresses.paymentVault,
+                  rentRecipient: creator,
+                }),
+                createCloseCardVaultInstruction({
+                  caller,
+                  cardMint: evidence.creator.mint,
+                  duel: addresses.duel,
+                  recoveryDestination: destinations.creatorCard,
+                  rentRecipient: configuration.providerSigner,
+                  role: 'creator',
+                }),
+                createCloseCardVaultInstruction({
+                  caller,
+                  cardMint: evidence.opponent.mint,
+                  duel: addresses.duel,
+                  recoveryDestination: destinations.opponentCard,
+                  rentRecipient: configuration.providerSigner,
+                  role: 'opponent',
+                }),
+              ]
+            : [],
         proof: proof(
           evidence,
           input.providerRequestId ?? '',
@@ -335,6 +366,7 @@ export class ProviderSettlementService {
     instruction: TransactionInstruction;
     instructionName: string;
     prefix?: TransactionInstruction[];
+    suffix?: TransactionInstruction[];
     proof: Record<string, string | null>;
   }): Promise<PreparedProviderEscrowTransaction> {
     const latest = await this.rpc.getLatestBlockhash();
@@ -342,7 +374,7 @@ export class ProviderSettlementService {
       blockhash: latest.blockhash,
       feePayer: input.caller,
       lastValidBlockHeight: Number(latest.lastValidBlockHeight),
-    }).add(...(input.prefix ?? []), input.instruction);
+    }).add(...(input.prefix ?? []), input.instruction, ...(input.suffix ?? []));
     const dataBase58 = bs58.encode(input.instruction.data);
     const serializedTransaction = transaction
       .serialize({ requireAllSignatures: false, verifySignatures: false })
@@ -547,6 +579,7 @@ export function validateCanonicalEvidence(duel: {
   packOutcomes: Array<{
     assetReference: string;
     displayName: string;
+    imageUrl?: string | null;
     insuredValueAmount: string;
     insuredValueCurrency: string;
     insuredValueDecimals: number;
@@ -560,16 +593,22 @@ export function validateCanonicalEvidence(duel: {
     valuationPolicyHash: string;
   }>;
 }): CanonicalEvidence {
-  if (duel.providerMode !== ProviderMode.COLLECTOR_CRYPT_SANDBOX) {
+  if (
+    duel.providerMode !== ProviderMode.COLLECTOR_CRYPT_SANDBOX &&
+    duel.providerMode !== ProviderMode.OPENPACKSDUEL_DEVNET
+  ) {
     throw new ServiceUnavailableException('Live settlement requires confirmed provider evidence');
   }
   if (duel.packOutcomes.length !== 2 || duel.packOutcomes.some((outcome) => outcome.isMock)) {
     throw new ServiceUnavailableException('Mock or incomplete outcomes cannot settle real assets');
   }
-  const policyHash = duel.valuationPolicyHash;
-  if (policyHash !== CANONICAL_VALUATION_POLICY_HASH) {
+  let policyHash: string;
+  try {
+    policyHash = requireCanonicalValuationPolicyHash(duel.valuationPolicyHash);
+  } catch {
     throw new ServiceUnavailableException('Duel valuation policy is not canonical');
   }
+  const valuationPolicy = valuationPolicyForHash(policyHash);
   const outcomes = Object.fromEntries(
     duel.packOutcomes.map((outcome) => {
       if (
@@ -620,15 +659,13 @@ export function validateCanonicalEvidence(duel: {
     !Number.isFinite(outcomes.creator.sourceTimestamp.getTime()) ||
     !Number.isFinite(outcomes.opponent.sourceTimestamp.getTime()) ||
     outcomes.creator.sourceTimestamp.getTime() >
-      outcomes.creator.openedAt.getTime() +
-        CANONICAL_VALUATION_POLICY.maxFutureSkewSeconds * 1_000 ||
+      outcomes.creator.openedAt.getTime() + valuationPolicy.maxFutureSkewSeconds * 1_000 ||
     outcomes.opponent.sourceTimestamp.getTime() >
-      outcomes.opponent.openedAt.getTime() +
-        CANONICAL_VALUATION_POLICY.maxFutureSkewSeconds * 1_000 ||
+      outcomes.opponent.openedAt.getTime() + valuationPolicy.maxFutureSkewSeconds * 1_000 ||
     outcomes.creator.openedAt.getTime() - outcomes.creator.sourceTimestamp.getTime() >
-      CANONICAL_VALUATION_POLICY.maxSourceAgeSeconds * 1_000 ||
+      valuationPolicy.maxSourceAgeSeconds * 1_000 ||
     outcomes.opponent.openedAt.getTime() - outcomes.opponent.sourceTimestamp.getTime() >
-      CANONICAL_VALUATION_POLICY.maxSourceAgeSeconds * 1_000
+      valuationPolicy.maxSourceAgeSeconds * 1_000
   ) {
     throw new ServiceUnavailableException('Outcome insured-value snapshot is not canonical');
   }
@@ -639,6 +676,7 @@ export function validateCanonicalEvidence(duel: {
     assertNormalizedOutcome({
       assetReference: outcome.assetReference,
       displayName: outcome.displayName,
+      ...(outcome.imageUrl ? { imageUrl: outcome.imageUrl } : {}),
       insuredValue: {
         amount: outcome.insuredValueAmount,
         currency: 'USDC',

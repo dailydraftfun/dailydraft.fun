@@ -30,10 +30,7 @@ import type {
   Money,
   Page,
 } from '../domain.js';
-import {
-  CANONICAL_VALUATION_POLICY_HASH,
-  requireCanonicalValuationPolicyHash,
-} from '../providers/valuation-policy.js';
+import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
 import {
   reserveHouseExposure,
   shouldRetryTreasuryTransaction,
@@ -716,6 +713,7 @@ function toDuel(row: {
   packOutcomes?: Array<{
     assetReference: string;
     displayName: string;
+    imageUrl: string | null;
     insuredValueAmount: string;
     insuredValueCurrency: string;
     insuredValueDecimals: number;
@@ -767,7 +765,7 @@ function toDuel(row: {
       ...(row.providerPackId ? { providerPackId: row.providerPackId } : {}),
       ...(row.valuationPolicyHash ? { valuationPolicyHash: row.valuationPolicyHash } : {}),
     },
-    providerMode: row.providerMode === ProviderMode.MOCK ? 'mock' : 'collector-crypt-sandbox',
+    providerMode: toApiProviderMode(row.providerMode),
     result: toDuelResult(row),
     stake,
     status: toApiStatus(row.status),
@@ -783,6 +781,7 @@ export function toDuelResult(row: {
   packOutcomes?: Array<{
     assetReference: string;
     displayName: string;
+    imageUrl: string | null;
     insuredValueAmount: string;
     insuredValueCurrency: string;
     insuredValueDecimals: number;
@@ -804,10 +803,7 @@ export function toDuelResult(row: {
   if (!row.resultHash || !row.resultReadyAt || row.packOutcomes?.length !== 2) return null;
   const policyHashes = new Set(row.packOutcomes.map((outcome) => outcome.valuationPolicyHash));
   const poolVersions = new Set(row.packOutcomes.map((outcome) => outcome.poolVersion));
-  if (
-    row.valuationPolicyHash !== CANONICAL_VALUATION_POLICY_HASH ||
-    row.packOutcomes.some((outcome) => !outcome.poolVersion || !outcome.sourceTimestamp)
-  ) {
+  if (row.packOutcomes.some((outcome) => !outcome.poolVersion || !outcome.sourceTimestamp)) {
     return null;
   }
   if (
@@ -826,6 +822,7 @@ export function toDuelResult(row: {
     return {
       assetReference: outcome.assetReference,
       displayName: outcome.displayName,
+      imageUrl: outcome.imageUrl,
       insuredValue: toMoney(
         outcome.insuredValueAmount,
         outcome.insuredValueCurrency,
@@ -868,6 +865,7 @@ function toPackOutcomeCreate(
   return {
     assetReference: outcome.assetReference,
     displayName: outcome.displayName,
+    imageUrl: outcome.imageUrl ?? null,
     duelId,
     id: createId('outcome'),
     insuredValueAmount: outcome.insuredValue.amount,
@@ -898,8 +896,16 @@ function toDatabaseMode(mode: MatchmakingMode): DuelMode {
   return DuelMode.OPEN;
 }
 
-function toDatabaseProviderMode(mode: 'collector-crypt-sandbox' | 'mock'): ProviderMode {
-  return mode === 'mock' ? ProviderMode.MOCK : ProviderMode.COLLECTOR_CRYPT_SANDBOX;
+function toDatabaseProviderMode(mode: Duel['providerMode']): ProviderMode {
+  if (mode === 'mock') return ProviderMode.MOCK;
+  if (mode === 'openpacksduel-devnet') return ProviderMode.OPENPACKSDUEL_DEVNET;
+  return ProviderMode.COLLECTOR_CRYPT_SANDBOX;
+}
+
+function toApiProviderMode(mode: ProviderMode): Duel['providerMode'] {
+  if (mode === ProviderMode.MOCK) return 'mock';
+  if (mode === ProviderMode.OPENPACKSDUEL_DEVNET) return 'openpacksduel-devnet';
+  return 'collector-crypt-sandbox';
 }
 
 function toDatabaseStatus(status: DuelStatus): DatabaseDuelStatus {

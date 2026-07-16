@@ -138,11 +138,14 @@ export class DuelsController {
 
   @Post(':duelId/open-packs')
   @HttpCode(200)
-  @UseGuards(IntegrationKeyGuard)
-  openPacks(
+  @UseGuards(DuelMutationGuard)
+  async openPacks(
     @Param() params: DuelIdParams,
+    @CurrentDuelAuthentication() authentication: DuelAuthentication,
     @IdempotencyKey() idempotencyKey: string,
   ): Promise<Duel> {
+    const duel = await this.duels.findOne(params.duelId);
+    assertDuelParticipant(authentication, duel);
     return this.opening.open(params.duelId, idempotencyKey);
   }
 }
@@ -162,5 +165,14 @@ export class DuelProfilesController {
 export function assertWalletActor(authentication: DuelAuthentication, claimedWallet: string): void {
   if (authentication.kind === 'wallet-session' && authentication.wallet !== claimedWallet) {
     throw new ForbiddenException('Wallet session cannot act for another wallet');
+  }
+}
+
+export function assertDuelParticipant(authentication: DuelAuthentication, duel: Duel): void {
+  if (
+    authentication.kind === 'wallet-session' &&
+    ![duel.creatorWallet, duel.opponentWallet].includes(authentication.wallet)
+  ) {
+    throw new ForbiddenException('Wallet session is not a participant in this duel');
   }
 }

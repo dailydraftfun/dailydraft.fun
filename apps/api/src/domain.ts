@@ -17,6 +17,8 @@ export interface Pack {
 
 export type MatchmakingMode = 'direct' | 'house' | 'open';
 
+export type PackProviderMode = 'collector-crypt-sandbox' | 'mock' | 'openpacksduel-devnet';
+
 export type DuelStatus =
   | 'waiting'
   | 'matched'
@@ -45,7 +47,7 @@ export interface Duel {
   opponentJoinedAt?: string | null;
   opponentWallet?: string | null;
   pack: Pack;
-  providerMode: 'collector-crypt-sandbox' | 'mock';
+  providerMode: PackProviderMode;
   result?: DuelResult | null;
   stake: Money;
   status: DuelStatus;
@@ -58,6 +60,7 @@ export interface Duel {
 export interface DuelPackOutcome {
   assetReference: string;
   displayName: string;
+  imageUrl?: string | null;
   insuredValue: Money;
   isMock: boolean;
   openedAt: string;

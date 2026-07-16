@@ -23,7 +23,7 @@ pass calls `GET /v1/internal/reconciliation/solana` with `CRON_SECRET`; operator
 can run the same global batch with `POST` and either the cron secret or an
 integration key. Normal finality does not wait for that recovery pass.
 
-Funding reconciliation follows escrow v2's two-sided fee-deposit protocol. A
+Funding reconciliation follows Duel v4's two-sided fee-deposit protocol. A
 single finalized `fund` transaction records that participant's side but keeps
 the duel `committing`; only one finalized deposit from each distinct creator and
 opponent wallet atomically advances the duel to `funded`. Duplicate-wallet or
@@ -58,8 +58,10 @@ Server integrations can still use a bearer key listed in
 `OPENPACKSDUEL_API_KEYS`. Integration keys retain access to operator event and
 transaction routes and must never be shipped to browser code.
 
-`DATABASE_URL` is mandatory. `OPENPACKSDUEL_PROVIDER_MODE` defaults to `mock` and
-every duel is explicitly labeled `solana-devnet`; this API is not mainnet-ready.
+`DATABASE_URL` is mandatory. The hosted demo uses
+`OPENPACKSDUEL_PROVIDER_MODE=openpacksduel-devnet`; every duel is explicitly labeled
+`solana-devnet`, and the API is not mainnet-ready. `mock` remains limited to tests
+and local previews.
 
 ## Open matchmaking
 
@@ -137,15 +139,28 @@ the API does not call undocumented buyback or marketplace endpoints. The treasur
 reconciler verifies the finalized devnet USDC token account and canonical legacy-SPL
 inventory custody, while lifecycle reconciliation keeps already-funded sessions on
 their refund or settlement path even during an emergency pause.
-The deterministic mock provider refuses to run unless `OPENPACKSDUEL_NETWORK`
-is `solana-devnet`. Its asset references and values are valueless test data.
-All new duels snapshot the published `collector-crypt-insured-value-usdc-v1`
-policy before funding. Provider outcomes must match that exact SHA-256, use
-integer micro-USDC insured values, share one pool version, and carry a source
+The OpenPacks devnet provider creates actual zero-decimal, single-supply legacy
+SPL mints, revokes both authorities, and atomically deposits each demo card into
+the canonical Duel v4 vault. A signed, replay-safe reference binds the duel,
+side, and pack; the immutable database snapshot and result hash bind the selected
+Pokémon TCG card, displayed market value, image, and deterministic mint. The provider keypair
+is a sensitive server-only Vercel variable and must match `ESCROW_PROVIDER_SIGNER`.
+After both deposits, the API signs and monitors result commitment and settlement
+transactions until finalized. These are valueless OpenPacks demo collectibles,
+not Collector Crypt inventory.
+
+The deterministic `mock` provider still refuses to run outside devnet, but it
+never enters real settlement and must not be selected by the hosted demo.
+All new duels snapshot the valuation policy for their provider before funding.
+The hosted demo uses `openpacksduel-pokemon-tcg-market-usdc-v1` and a persisted
+Pokémon TCG `tcgplayer.prices.market` snapshot. The disabled Collector Crypt adapter
+uses `collector-crypt-insured-value-usdc-v1`. Provider outcomes must match the
+pre-funded SHA-256, use integer micro-USDC comparison values, share one pool version, and carry a source
 timestamp no more than five minutes old. Equal values follow the normal result
 commitment and settlement path, which returns each original card and refunds both
 platform fees immediately without waiting for expiry or entering recovery.
-Recorded result inputs are immutable; provider corrections require a dispute or
+Settlement atomically closes the emptied payment and card vaults after routing
+both demo assets and the fee. Recorded result inputs are immutable; provider corrections require a dispute or
 refund and never rewrite the winner. See the public valuation/proof guide and
 `GET /v1/valuation-policies/current`.
 
@@ -176,7 +191,7 @@ credential is server-only and must never use a `NEXT_PUBLIC_` variable.
 The integration-only provider escrow preparation endpoint builds unsigned card
 deposit, result commitment, settlement, and per-asset expiry-refund transactions.
 It never signs or submits. Real-asset preparation remains disabled unless the
-persisted outcomes are non-mock Collector Crypt evidence with canonical Solana
+persisted outcomes are non-mock Collector Crypt or OpenPacks devnet evidence with canonical Solana
 mint addresses, integer USDC insured values, one valuation policy, and
 `OPENPACKSDUEL_PROVIDER_ASSET_STANDARD=legacy-spl-nft`. Finalized RPC reads must
 also prove a zero-decimal/single-supply legacy mint and the exact card in each

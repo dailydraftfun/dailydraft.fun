@@ -19,8 +19,9 @@ smoke workflow.
 ## Safety boundary
 
 - Show a persistent `DEVNET` label anywhere a wallet or transaction is shown.
-- Use mock provider inventory and valueless devnet token mints until Collector
-  Crypt supplies approved partner credentials and confirms the custody flow.
+- Use only the explicit OpenPacks devnet provider and valueless, real devnet SPL
+  mints until Collector Crypt supplies approved partner credentials and confirms
+  the custody flow. Never label demo cards as Collector Crypt inventory.
 - Support only the token standards explicitly implemented by the devnet escrow.
 - Never accept a private key through the app, API, MCP server, issue, or log.
 - Keep mainnet and real-value features disabled independently of deployment.
@@ -37,7 +38,7 @@ smoke workflow.
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Optional RPC override; defaults to the public devnet endpoint. |
 | `NEXT_PUBLIC_DUEL_API_URL` | Public base URL of the deployed API, including `/v1`. |
 | `NEXT_PUBLIC_ESCROW_PROGRAM_ID` | Published devnet escrow program address. |
-| `NEXT_PUBLIC_PROVIDER_MODE` | Must be `mock` until partner onboarding is complete. |
+| `NEXT_PUBLIC_PROVIDER_MODE` | Must be `openpacksduel-devnet` for the on-chain demo. |
 
 ### API
 
@@ -54,8 +55,10 @@ smoke workflow.
 | `SOLANA_RPC_TIMEOUT_MS` | Optional per-request timeout; bounded to 30 seconds. |
 | `SOLANA_RPC_RETRIES` | Optional retry count; bounded to four retries. |
 | `SOLANA_RECONCILIATION_STUCK_MS` | Operator alert threshold; defaults to ten minutes. |
-| `OPENPACKSDUEL_PROVIDER_MODE` | Must be `mock` until the Collector Crypt contract is confirmed. |
-| `OPENPACKSDUEL_PROVIDER_ASSET_STANDARD` | Leave unset until Collector Crypt confirms canonical legacy SPL NFT custody; then set `legacy-spl-nft`. |
+| `OPENPACKSDUEL_PROVIDER_MODE` | Must be `openpacksduel-devnet` for the on-chain demo. |
+| `OPENPACKSDUEL_PROVIDER_ASSET_STANDARD` | Must be `legacy-spl-nft` for OpenPacks devnet demo mints. |
+| `OPENPACKSDUEL_DEVNET_PROVIDER_KEYPAIR_JSON` | Sensitive JSON byte array for the isolated devnet provider signer; never expose to browser code. |
+| `POKEMON_TCG_API_KEY` | Optional server-only Pokémon TCG API key. Unauthenticated requests work at lower documented limits. |
 | `OPENPACKSDUEL_API_KEYS` | Server-to-server integration keys; never expose to the browser. |
 | `OPENPACKSDUEL_APP_URL` | Canonical product URL. |
 | `OPENPACKSDUEL_AUTH_DOMAIN` | Host matching the canonical product URL in wallet sign-in messages. |
@@ -106,8 +109,12 @@ durable unsigned intents and use the same submission/reconciliation path. Card
 deposits remain operator-proof only. Each finalized refund records its asset
 proof but intentionally leaves the duel `refunding`; a full custody quorum is
 still required before any later implementation may mark the duel `refunded`.
+Successful demo settlement routes both cards and the fee, then closes all three
+empty custody vaults in the same atomic transaction. Card-vault rent returns to
+the isolated provider signer that created them; payment-vault rent returns to the
+duel creator, and any excess wrapped SOL is swept to the configured fee account.
 
-`POST /v1/duels/:duelId/transactions` prepares the verified escrow v2 funding transaction. It
+`POST /v1/duels/:duelId/transactions` prepares the verified Duel v4 funding transaction. It
 creates the player's wrapped-SOL associated token account idempotently, wraps exactly the configured
 per-side platform fee, and funds the duel PDA. The creator transaction also initializes the duel;
 the opponent transaction is enabled only after creator funding finalizes. This transaction does not
@@ -197,12 +204,18 @@ pending. Vercel builds generate Prisma Client but never mutate the database.
 
 ## Promotion gate
 
-Provider escrow orchestration stops at unsigned transaction preparation. Do not
-set `OPENPACKSDUEL_PROVIDER_ASSET_STANDARD=legacy-spl-nft` until Collector Crypt
-has confirmed the canonical mint, authoritative integer insured value and
-valuation policy, stable provider references, alternate-recipient custody, and
-a provider request ID. The configured provider signer signs externally; no
-private key belongs in Vercel or MCP output.
+For `openpacksduel-devnet`, provider escrow orchestration creates valueless SPL
+demo cards and signs their deposit, result, and settlement transactions with an
+isolated keypair stored only as a sensitive Vercel server variable. The key must
+never appear in API responses, browser bundles, MCP output, logs, or issues.
+The visible name, image, and comparison value are persisted from the Pokémon TCG
+API before funding proof is resolved. The committed demo policy names
+`tcgplayer.prices.market`; it must never be described as Collector Crypt insured value.
+
+Collector Crypt mode remains separately fail-closed until it confirms the
+canonical mint, authoritative integer insured value and valuation policy,
+stable provider references, alternate-recipient custody, and provider request
+IDs. The OpenPacks demo path is not evidence that Collector Crypt supports it.
 
 Result and settlement preparation read finalized devnet accounts and require a
 legacy SPL mint with decimals `0`, supply `1`, and exactly one matching NFT in

@@ -5,6 +5,8 @@ import { AnalyticsModule } from '../analytics/analytics.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
 import { HouseTreasuryModule } from '../treasury/house-treasury.module.js';
+import { DevnetDemoSettlementService } from './devnet-demo-settlement.service.js';
+import { DevnetDemoSignerService } from './devnet-demo-signer.service.js';
 import { DuelFundingService } from './duel-funding.service.js';
 import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
 import { ProviderSettlementService } from './provider-settlement.service.js';
@@ -24,11 +26,18 @@ import { WorkerKeyGuard } from './worker-key.guard.js';
     TransactionReconciliationController,
     ProviderSettlementController,
   ],
-  exports: [DuelFundingService, SolanaRpcGateway],
+  exports: [
+    DevnetDemoSettlementService,
+    DevnetDemoSignerService,
+    DuelFundingService,
+    SolanaRpcGateway,
+  ],
   imports: [AdminModule, AnalyticsModule, AuthModule, HouseTreasuryModule],
   providers: [
     WorkerKeyGuard,
     IntegrationKeyGuard,
+    DevnetDemoSettlementService,
+    DevnetDemoSignerService,
     ProviderSettlementService,
     DuelFundingService,
     TransactionMonitorService,

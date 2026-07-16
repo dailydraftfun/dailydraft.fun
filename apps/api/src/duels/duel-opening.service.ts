@@ -10,6 +10,8 @@ import type { DuelSide, ProviderPackSnapshot } from '../providers/pack-provider.
 import { PackProviderService } from '../providers/pack-provider.service.js';
 import { compareInsuredValues, normalizeProviderResult } from '../providers/provider-result.js';
 import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { DevnetDemoSettlementService } from '../transactions/devnet-demo-settlement.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the repository class as a runtime injection token.
 import { DuelRepository } from './duel.repository.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
@@ -22,6 +24,7 @@ export class DuelOpeningService {
     private readonly duels: DuelsService,
     private readonly repository: DuelRepository,
     private readonly providers: PackProviderService,
+    @Optional() private readonly devnetSettlement?: DevnetDemoSettlementService,
     @Optional() private readonly analytics?: AnalyticsService,
     @Optional() private readonly admin?: AdminService,
   ) {}
@@ -29,7 +32,17 @@ export class DuelOpeningService {
   async open(duelId: string, idempotencyKey: string): Promise<Duel> {
     await this.admin?.assertNotPaused();
     let duel = await this.duels.findOne(duelId);
-    if (duel.result?.resultHash && ['awaiting_assets', 'refunding'].includes(duel.status)) {
+    if (
+      duel.result?.resultHash &&
+      ['awaiting_assets', 'settling', 'refunding'].includes(duel.status)
+    ) {
+      if (
+        duel.providerMode === 'openpacksduel-devnet' &&
+        ['awaiting_assets', 'settling'].includes(duel.status)
+      ) {
+        await this.requireDevnetSettlement().finalizeDuel(duel.id);
+        return this.duels.findOne(duel.id);
+      }
       return duel;
     }
     if (!['funded', 'opening'].includes(duel.status)) {
@@ -114,6 +127,10 @@ export class DuelOpeningService {
       status: resolved.status,
       tier,
     });
+    if (resolved.providerMode === 'openpacksduel-devnet') {
+      await this.requireDevnetSettlement().finalizeDuel(resolved.id);
+      return this.duels.findOne(resolved.id);
+    }
     return resolved;
   }
 
@@ -146,6 +163,13 @@ export class DuelOpeningService {
       opened.providerReference,
       new Date(opened.openedAt),
     );
+  }
+
+  private requireDevnetSettlement(): DevnetDemoSettlementService {
+    if (!this.devnetSettlement) {
+      throw new ConflictException('OpenPacks devnet settlement is not configured');
+    }
+    return this.devnetSettlement;
   }
 }
 

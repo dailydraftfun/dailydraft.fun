@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { DuelSide, DuelStatus, DuelTransactionStatus, ProviderMode } from '@openpacksduel/db';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, Transaction } from '@solana/web3.js';
 
 import {
+  createCloseCardVaultInstruction,
+  createClosePaymentVaultInstruction,
   createDepositCardAssetInstruction,
   createRefundExpiredCardInstruction,
   createRefundExpiredPaymentInstruction,
@@ -14,7 +16,10 @@ import {
   ESCROW_V2_PROGRAM_ID,
 } from '../contracts/openpacksduel-escrow-v2.js';
 import { normalizeProviderResult } from '../providers/provider-result.js';
-import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
+import {
+  CANONICAL_VALUATION_POLICY_HASH,
+  DEVNET_DEMO_VALUATION_POLICY_HASH,
+} from '../providers/valuation-policy.js';
 import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
 import {
   canonicalOpenedAt,
@@ -68,6 +73,16 @@ describe('provider settlement evidence', () => {
     const canonical = validateCanonicalEvidence(evidence());
 
     expect(canonicalOpenedAt(canonical).toISOString()).toBe('2026-07-15T20:00:00.000Z');
+  });
+
+  test('accepts the explicit devnet provider with its Pokémon TCG market policy', () => {
+    const demo = evidence(
+      '200',
+      '100',
+      DEVNET_DEMO_VALUATION_POLICY_HASH,
+      ProviderMode.OPENPACKSDUEL_DEVNET,
+    );
+    expect(validateCanonicalEvidence(demo).winner).toBe('creator');
   });
 });
 
@@ -128,6 +143,26 @@ describe('verified escrow instruction vectors', () => {
         player: OPPONENT,
       }).data.subarray(0, 8),
     ]).toEqual([82, 5, 192, 101, 25, 133, 163, 209]);
+    expect([
+      ...createClosePaymentVaultInstruction({
+        caller: PROVIDER,
+        duel,
+        excessDestination: OPPONENT,
+        paymentMint: CREATOR,
+        paymentVault: OPPONENT,
+        rentRecipient: CREATOR,
+      }).data,
+    ]).toEqual([107, 79, 245, 212, 102, 70, 163, 243]);
+    expect([
+      ...createCloseCardVaultInstruction({
+        caller: PROVIDER,
+        cardMint: OPPONENT,
+        duel,
+        recoveryDestination: CREATOR,
+        rentRecipient: PROVIDER,
+        role: 'opponent',
+      }).data,
+    ]).toEqual([123, 45, 120, 22, 36, 197, 169, 86, 1]);
   });
 });
 
@@ -282,7 +317,12 @@ describe('ProviderSettlementService', () => {
   ] as const)('routes a %s result to exact card destinations in a monitored settlement intent', async (winner, creatorValue, opponentValue, creatorCardOwner, opponentCardOwner) => {
     const duel = {
       ...databaseDuel(new Date(Date.now() + 60_000)),
-      ...evidence(creatorValue, opponentValue),
+      ...evidence(
+        creatorValue,
+        opponentValue,
+        DEVNET_DEMO_VALUATION_POLICY_HASH,
+        ProviderMode.OPENPACKSDUEL_DEVNET,
+      ),
       status: 'SETTLING',
     };
     const service = new ProviderSettlementService(database(duel), new FixtureRpc());
@@ -306,6 +346,14 @@ describe('ProviderSettlementService', () => {
       getAssociatedTokenAddressSync(OPPONENT, opponentCardOwner).toBase58(),
     );
     expect(prepared.reconciliation).toBe('submission-monitor');
+    const transaction = Transaction.from(
+      Buffer.from(prepared.serializedTransactionBase64, 'base64'),
+    );
+    expect(transaction.instructions.slice(-3).map((instruction) => [...instruction.data])).toEqual([
+      [107, 79, 245, 212, 102, 70, 163, 243],
+      [123, 45, 120, 22, 36, 197, 169, 86, 0],
+      [123, 45, 120, 22, 36, 197, 169, 86, 1],
+    ]);
   });
 
   test('rejects operations outside their duel lifecycle state', async () => {
@@ -326,18 +374,23 @@ describe('ProviderSettlementService', () => {
   });
 });
 
-function evidence(creator = '200', opponent = '100') {
+function evidence(
+  creator = '200',
+  opponent = '100',
+  policy = POLICY,
+  providerMode = ProviderMode.COLLECTOR_CRYPT_SANDBOX,
+) {
   return {
     packOutcomes: [
-      outcome(DuelSide.CREATOR, CREATOR.toBase58(), creator),
-      outcome(DuelSide.OPPONENT, OPPONENT.toBase58(), opponent),
+      outcome(DuelSide.CREATOR, CREATOR.toBase58(), creator, policy),
+      outcome(DuelSide.OPPONENT, OPPONENT.toBase58(), opponent, policy),
     ],
-    providerMode: ProviderMode.COLLECTOR_CRYPT_SANDBOX,
-    valuationPolicyHash: POLICY,
+    providerMode,
+    valuationPolicyHash: policy,
   };
 }
 
-function outcome(side: DuelSide, assetReference: string, value: string) {
+function outcome(side: DuelSide, assetReference: string, value: string, policy = POLICY) {
   const sourceTimestamp = '2026-07-15T19:59:30.000Z';
   const openedAt = new Date('2026-07-15T20:00:00.000Z');
   const providerReference = `provider-${side.toLowerCase()}`;
@@ -349,9 +402,9 @@ function outcome(side: DuelSide, assetReference: string, value: string) {
       insuredValue: { amount: value, currency: 'USDC', decimals: 6 },
       poolVersion: 'collector-crypt-pool-v1',
       sourceTimestamp,
-      valuationPolicyHash: POLICY,
+      valuationPolicyHash: policy,
     },
-    POLICY,
+    policy,
     providerReference,
     openedAt,
   );
@@ -368,7 +421,7 @@ function outcome(side: DuelSide, assetReference: string, value: string) {
     resultHash: normalized.resultHash,
     side,
     sourceTimestamp: new Date(sourceTimestamp),
-    valuationPolicyHash: POLICY,
+    valuationPolicyHash: policy,
   };
 }
 

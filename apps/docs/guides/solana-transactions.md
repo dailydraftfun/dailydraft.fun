@@ -25,7 +25,7 @@ escrow program, encoded-data hash, and exact ordered account signer/write
 constraints returned by `getTransaction`. Expected accounts appearing elsewhere
 in the transaction are not sufficient.
 
-Escrow v2 funding uses two transactions. The creator and opponent each finalize
+Duel v4 funding uses two transactions. The creator and opponent each finalize
 one fee deposit. The first valid deposit remains `committing`; the second distinct
 participant completes the quorum and advances `funded` atomically. Duplicate
 wallet deposits never satisfy quorum and enter refund recovery.
@@ -44,7 +44,7 @@ before returning unsigned bytes. After broadcast, bind its `intentId` through
 the same submission endpoint. Card deposits remain an explicit operator-proof
 boundary: their response has `intentId: null` and does not advance duel state.
 Real-card preparation fails closed unless Collector Crypt evidence, canonical
-insured values, legacy SPL mint metadata, and escrow vault custody all match.
+the pre-funded policy's comparison values, legacy SPL mint metadata, and escrow vault custody all match.
 The monitor never reconstructs or trusts an intent from an arbitrary submitted signature.
 
 ## Lost submission recovery
@@ -57,7 +57,7 @@ recent finalized signatures for that intent's recorded escrow PDA—not general
 wallet history—and then fetches each candidate transaction.
 
 A candidate is bound only when the transaction's complete unsigned-message
-hash, recent blockhash, expected participant signer, escrow v2 program,
+hash, recent blockhash, expected participant signer, Duel v4 program,
 instruction-data hash, and exact ordered signer/write account constraints all
 match the persisted intent. Merely mentioning the wallet or escrow PDA is never
 enough. Malformed, expired-retention, non-funding, already bound, or wrong-program

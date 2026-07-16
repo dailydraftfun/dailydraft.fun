@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { DuelStatus, DuelTransactionAction, DuelTransactionStatus } from '@openpacksduel/db';
-import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
+import {
+  CANONICAL_VALUATION_POLICY_HASH,
+  DEVNET_DEMO_VALUATION_POLICY_HASH,
+} from '../providers/valuation-policy.js';
 import {
   ACTIVE_FUNDING_STATUSES,
   assertNoActiveFunding,
@@ -33,6 +36,9 @@ describe('funding preparation policy', () => {
   test('commits only the current canonical valuation policy into escrow funding', () => {
     expect(Buffer.from(parsePolicyHash(CANONICAL_VALUATION_POLICY_HASH)).toString('hex')).toBe(
       CANONICAL_VALUATION_POLICY_HASH,
+    );
+    expect(Buffer.from(parsePolicyHash(DEVNET_DEMO_VALUATION_POLICY_HASH)).toString('hex')).toBe(
+      DEVNET_DEMO_VALUATION_POLICY_HASH,
     );
     expect(() => parsePolicyHash('a'.repeat(64))).toThrow('supported canonical policy');
   });

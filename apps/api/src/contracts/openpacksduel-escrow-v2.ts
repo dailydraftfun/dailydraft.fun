@@ -1,9 +1,12 @@
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { PublicKey, SystemProgram, TransactionInstruction } from '@solana/web3.js';
 
-export const ESCROW_V2_SOURCE_SHA = '4aa3bb7560443c0565ded2d6edee67c6a544dd5f';
+// The historical filename is retained to keep imports stable. These vectors are
+// checked against the public Duel v4 release artifact built from this source SHA.
+export const ESCROW_V2_SOURCE_SHA = '5268637d961672588c70a1c3b1ccbf6d6ab5f5cb';
 export const ESCROW_V2_IDL_SHA256 =
-  '53ed60b44d5cef022db0301e5d6495ca3bf84486a048c7dd7ce5621a499762e0';
+  'f16eda95787367db629051203dac8a5db61794f1c048528ecfecd868245e070d';
+export const ESCROW_DUEL_VERSION = 4;
 export const ESCROW_V2_PROGRAM_ID = new PublicKey('Co198eFfQcmn1WzZRnHV6jxcSLBDCv1qNfPfiBYdCLfS');
 export const ESCROW_V2_MAX_OPENING_FUTURE_SKEW_SECONDS = 30n;
 export const FUND_DUEL_DISCRIMINATOR = Uint8Array.from([135, 82, 1, 209, 16, 87, 207, 32]);
@@ -19,6 +22,10 @@ export const REFUND_EXPIRED_PAYMENT_DISCRIMINATOR = Uint8Array.from([
 export const REFUND_EXPIRED_CARD_DISCRIMINATOR = Uint8Array.from([
   160, 130, 63, 132, 223, 30, 235, 144,
 ]);
+export const CLOSE_PAYMENT_VAULT_DISCRIMINATOR = Uint8Array.from([
+  107, 79, 245, 212, 102, 70, 163, 243,
+]);
+export const CLOSE_CARD_VAULT_DISCRIMINATOR = Uint8Array.from([123, 45, 120, 22, 36, 197, 169, 86]);
 
 export type EscrowV2Role = 'creator' | 'opponent';
 
@@ -245,6 +252,59 @@ export function createRefundExpiredCardInstruction(input: {
       },
       { pubkey: input.cardMint, isSigner: false, isWritable: false },
       { pubkey: input.destination, isSigner: false, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    programId: ESCROW_V2_PROGRAM_ID,
+  });
+}
+
+export function createClosePaymentVaultInstruction(input: {
+  caller: PublicKey;
+  duel: PublicKey;
+  paymentVault: PublicKey;
+  paymentMint: PublicKey;
+  rentRecipient: PublicKey;
+  excessDestination: PublicKey;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    data: Buffer.from(CLOSE_PAYMENT_VAULT_DISCRIMINATOR),
+    keys: [
+      { pubkey: input.caller, isSigner: true, isWritable: false },
+      { pubkey: input.duel, isSigner: false, isWritable: false },
+      { pubkey: input.paymentVault, isSigner: false, isWritable: true },
+      { pubkey: input.paymentMint, isSigner: false, isWritable: false },
+      { pubkey: input.rentRecipient, isSigner: false, isWritable: true },
+      { pubkey: input.excessDestination, isSigner: false, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    programId: ESCROW_V2_PROGRAM_ID,
+  });
+}
+
+export function createCloseCardVaultInstruction(input: {
+  caller: PublicKey;
+  duel: PublicKey;
+  cardMint: PublicKey;
+  role: EscrowV2Role;
+  rentRecipient: PublicKey;
+  recoveryDestination: PublicKey;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    data: Buffer.concat([
+      Buffer.from(CLOSE_CARD_VAULT_DISCRIMINATOR),
+      Buffer.from([roleIndex(input.role)]),
+    ]),
+    keys: [
+      { pubkey: input.caller, isSigner: true, isWritable: false },
+      { pubkey: input.duel, isSigner: false, isWritable: false },
+      {
+        pubkey: deriveEscrowV2CardVault(input.duel, input.role),
+        isSigner: false,
+        isWritable: true,
+      },
+      { pubkey: input.cardMint, isSigner: false, isWritable: false },
+      { pubkey: input.rentRecipient, isSigner: false, isWritable: true },
+      { pubkey: input.recoveryDestination, isSigner: false, isWritable: true },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     programId: ESCROW_V2_PROGRAM_ID,

@@ -769,11 +769,13 @@ paths:
       tags: [Duels]
       summary: Generate, open, and normalize both funded duel packs
       description: |
-        Server-side orchestration for a funded duel. Both house and wallet
-        opponents use this same path. The deterministic mock provider is
-        devnet-only and returns valueless test assets; it does not settle NFTs.
+        Idempotent server-side orchestration for a funded duel. A wallet
+        participant or integration may advance the OpenPacks devnet provider,
+        which mints two single-supply SPL demo cards, deposits both in escrow,
+        commits the result, and settles the winner on Solana devnet.
       x-openpacksduel-availability: devnet
       security:
+        - walletSession: []
         - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
@@ -1607,7 +1609,9 @@ components:
           const: sha256
         policyHash:
           type: string
-          const: 406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b
+          enum:
+            - 406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b
+            - 19cbdd32ebd2418032bd989e3a095b107dadd1ac61feb7ced83088756994f1b3
         policy:
           $ref: '#/components/schemas/ValuationPolicy'
     ValuationPolicy:
@@ -1633,11 +1637,11 @@ components:
           const: openpacksduel.valuation-policy.v1
         policyVersion:
           type: string
-          const: collector-crypt-insured-value-usdc-v1
+          enum: [collector-crypt-insured-value-usdc-v1, openpacksduel-pokemon-tcg-market-usdc-v1]
         authoritativeField:
           type: string
-          const: collector-crypt.gacha.result.insuredValue
-          description: Collector Crypt Gacha result insured value as mapped by the disabled partner adapter; never a listing, buyback, or resale estimate.
+          enum: [collector-crypt.gacha.result.insuredValue, pokemon-tcg.tcgplayer.prices.market]
+          description: The source field committed before funding. Hosted devnet demos use a persisted Pokémon TCG TCGPlayer market snapshot; the disabled Collector Crypt adapter uses insured value.
         comparisonMetric:
           type: string
           const: insured-value
@@ -1791,7 +1795,7 @@ components:
               pattern: '^[a-f0-9]{64}$'
             providerMode:
               type: string
-              enum: [mock, collector-crypt-sandbox]
+              enum: [mock, openpacksduel-devnet, collector-crypt-sandbox]
             regionSegment:
               type: string
             riskSegment:
@@ -1890,7 +1894,7 @@ components:
           const: solana-devnet
         providerMode:
           type: string
-          enum: [mock, collector-crypt-sandbox]
+          enum: [mock, openpacksduel-devnet, collector-crypt-sandbox]
           description: Mock outcomes are valueless and never represent transferred assets.
         houseOpponent:
           type: boolean
@@ -1947,6 +1951,9 @@ components:
         displayName:
           type: string
           maxLength: 160
+        imageUrl:
+          type: [string, 'null']
+          format: uri
         insuredValue:
           $ref: '#/components/schemas/Money'
         openedAt:
@@ -2053,7 +2060,9 @@ components:
             id: { type: string }
             name: { type: string }
             provider: { type: string }
-            providerMode: { type: string, enum: [mock, collector-crypt-sandbox] }
+            providerMode:
+              type: string
+              enum: [mock, openpacksduel-devnet, collector-crypt-sandbox]
             providerPackId: { type: [string, 'null'] }
             tier: { $ref: '#/components/schemas/Money' }
         participants:
@@ -2184,6 +2193,7 @@ components:
               side: { type: string, enum: [creator, opponent] }
               assetReference: { type: string }
               displayName: { type: string }
+              imageUrl: { type: [string, 'null'], format: uri }
               insuredValue: { $ref: '#/components/schemas/Money' }
               isMock: { type: boolean }
               openedAt: { type: string, format: date-time }
@@ -2195,14 +2205,14 @@ components:
           additionalProperties: false
           required: [authoritativeField, currency, decimals, hash, hashAlgorithm, maxSourceAgeSeconds, maxValueMinorUnits, policyVersion, rounding, tieRule]
           properties:
-            authoritativeField: { type: string, const: collector-crypt.gacha.result.insuredValue }
+            authoritativeField: { type: string, enum: [collector-crypt.gacha.result.insuredValue, pokemon-tcg.tcgplayer.prices.market] }
             currency: { type: string, const: USDC }
             decimals: { type: integer, const: 6 }
             hash: { type: string, pattern: '^[a-f0-9]{64}$' }
             hashAlgorithm: { type: string, const: sha256 }
             maxSourceAgeSeconds: { type: integer, const: 300 }
             maxValueMinorUnits: { type: string, const: '18446744073709551615' }
-            policyVersion: { type: string, const: collector-crypt-insured-value-usdc-v1 }
+            policyVersion: { type: string, enum: [collector-crypt-insured-value-usdc-v1, openpacksduel-pokemon-tcg-market-usdc-v1] }
             rounding: { type: string, const: none }
             tieRule: { type: string, const: return-original-assets-and-refund-platform-fees }
         proof:
@@ -2221,7 +2231,9 @@ components:
                 opponentWallet: { $ref: '#/components/schemas/SolanaAddress' }
                 escrowAddress: { $ref: '#/components/schemas/SolanaAddress' }
                 network: { type: string, const: solana-devnet }
-                providerMode: { type: string, enum: [mock, collector-crypt-sandbox] }
+                providerMode:
+                  type: string
+                  enum: [mock, openpacksduel-devnet, collector-crypt-sandbox]
             creatorResultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
             opponentResultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
             poolVersion: { type: string }
@@ -2278,6 +2290,7 @@ components:
         assetReference: { type: string }
         providerReference: { type: string }
         displayName: { type: string }
+        imageUrl: { type: [string, 'null'], format: uri }
         insuredValue: { $ref: '#/components/schemas/Money' }
         owner: { $ref: '#/components/schemas/PublicParticipant' }
         ownership:

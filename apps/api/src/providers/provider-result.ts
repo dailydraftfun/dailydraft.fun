@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { BadGatewayException } from '@nestjs/common';
 
-import type { Money } from '../domain.js';
+import type { Money, PackProviderMode } from '../domain.js';
 import type { DuelSide, ProviderCardResult } from './pack-provider.js';
 import {
   CANONICAL_VALUATION_POLICY,
@@ -17,6 +17,7 @@ export const MAX_CANONICAL_INSURED_VALUE = BigInt(CANONICAL_VALUATION_POLICY.max
 export interface NormalizedPackOutcome {
   assetReference: string;
   displayName: string;
+  imageUrl?: string;
   insuredValue: Money;
   openedAt: string;
   poolVersion: string;
@@ -42,7 +43,7 @@ export interface PackComparisonContext {
   escrowAddress: string;
   network: 'solana-devnet' | 'solana-mainnet';
   opponentWallet: string;
-  providerMode: 'collector-crypt-sandbox' | 'mock';
+  providerMode: PackProviderMode;
   valuationPolicyHash: string;
 }
 
@@ -56,6 +57,7 @@ export function normalizeProviderResult(
   requireCanonicalValuationPolicyHash(expectedPolicyHash);
   const assetReference = normalizeText(result.assetReference, 'assetReference', 200);
   const displayName = normalizeText(result.displayName, 'displayName', 160);
+  const imageUrl = normalizeOptionalHttpsUrl(result.imageUrl);
   const providerInsuredValue = result.insuredValue as Partial<Money> | undefined;
   if (
     !providerInsuredValue ||
@@ -92,6 +94,7 @@ export function normalizeProviderResult(
   const canonical = {
     assetReference,
     displayName,
+    ...(imageUrl ? { imageUrl } : {}),
     insuredValue,
     openedAt: canonicalOpenedAt,
     poolVersion,
@@ -171,6 +174,7 @@ export function assertNormalizedOutcome(outcome: NormalizedPackOutcome): void {
   if (
     normalizeText(outcome.assetReference, 'assetReference', 200) !== outcome.assetReference ||
     normalizeText(outcome.displayName, 'displayName', 160) !== outcome.displayName ||
+    normalizeOptionalHttpsUrl(outcome.imageUrl) !== outcome.imageUrl ||
     normalizeText(outcome.providerReference, 'providerReference', 200) !==
       outcome.providerReference ||
     !POOL_VERSION_PATTERN.test(outcome.poolVersion) ||
@@ -186,6 +190,7 @@ export function assertNormalizedOutcome(outcome: NormalizedPackOutcome): void {
   const canonical = {
     assetReference: outcome.assetReference,
     displayName: outcome.displayName,
+    ...(outcome.imageUrl ? { imageUrl: outcome.imageUrl } : {}),
     insuredValue: outcome.insuredValue,
     openedAt: outcome.openedAt,
     poolVersion: outcome.poolVersion,
@@ -215,6 +220,20 @@ function canonicalOpeningTimestamp(value: Date): string {
     throw new BadGatewayException('Provider opening time is invalid');
   }
   return value.toISOString();
+}
+
+function normalizeOptionalHttpsUrl(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.length > 500) {
+    throw new BadGatewayException('Provider returned an invalid imageUrl');
+  }
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') throw new Error('image URL must use HTTPS');
+    return url.toString();
+  } catch {
+    throw new BadGatewayException('Provider returned an invalid imageUrl');
+  }
 }
 
 function normalizeText(value: unknown, field: string, maxLength: number): string {
