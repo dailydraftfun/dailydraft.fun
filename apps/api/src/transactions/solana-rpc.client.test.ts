@@ -1,6 +1,29 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseLegacyTokenAccount, SolanaRpcUnavailableError } from './solana-rpc.client.js';
+import {
+  parseFinalizedAddressSignature,
+  parseLegacyTokenAccount,
+  SolanaRpcUnavailableError,
+} from './solana-rpc.client.js';
+
+describe('finalized signature parsing', () => {
+  test('preserves failed signatures so recovery can detect a truncated raw page', () => {
+    expect(
+      parseFinalizedAddressSignature({
+        blockTime: 1_784_155_260,
+        confirmationStatus: 'finalized',
+        err: { InstructionError: [0, 'Custom'] },
+        signature: '4'.repeat(88),
+      }),
+    ).toEqual([
+      {
+        blockTime: 1_784_155_260,
+        confirmationStatus: 'finalized',
+        signature: '4'.repeat(88),
+      },
+    ]);
+  });
+});
 
 describe('legacy SPL token-account parsing', () => {
   test('accepts an exactly initialized finalized account payload', () => {
