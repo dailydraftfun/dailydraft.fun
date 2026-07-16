@@ -70,7 +70,7 @@ if (duel.status === 'settled') {
   opened = duel;
 } else {
   assert(
-    ['funded', 'opening', 'awaiting_assets', 'settling'].includes(duel.status),
+    ['funded', 'opening', 'awaiting_assets', 'settling', 'refunding'].includes(duel.status),
     `Cannot resume duel from ${duel.status}`,
   );
   try {
