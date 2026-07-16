@@ -524,7 +524,9 @@ function toDuelOutcome(
     resultHash: outcome.resultHash,
     side: outcome.side,
     sourceTimestamp: outcome.sourceTimestamp,
-    valuationSourceReference: outcome.valuationSourceReference,
+    ...(outcome.valuationSourceReference
+      ? { valuationSourceReference: outcome.valuationSourceReference }
+      : {}),
   };
 }
 
