@@ -4,7 +4,8 @@ import { CurrentDuelAuthentication, type DuelAuthentication } from '../auth/auth
 import { DuelMutationGuard } from '../auth/duel-mutation.guard.js';
 import { IdempotencyKey } from '../common/idempotency-key.decorator.js';
 import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
-import type { DuelIdParams } from '../duels/duel.dto.js';
+// biome-ignore lint/style/useImportType: Nest needs the DTO constructor for runtime route validation metadata.
+import { DuelIdParams } from '../duels/duel.dto.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
 import { PrepareProviderEscrowRequest } from './provider-settlement.dto.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
