@@ -24,6 +24,7 @@ import {
 import {
   type BindSubmissionInput,
   type BoundSubmission,
+  type ParticipantReconciliationBatch,
   type TransactionDuelAnalytics,
   TransactionMonitorRepository,
 } from './transaction-monitor.repository.js';
@@ -291,6 +292,83 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
         },
       ];
     });
+  }
+
+  async findParticipantReconciliationBatch(input: {
+    actorWallet?: string;
+    duelId: string;
+  }): Promise<ParticipantReconciliationBatch> {
+    const duel = await this.database.duel.findUnique({
+      select: { creatorWallet: true, opponentWallet: true, status: true },
+      where: { id: input.duelId },
+    });
+    if (!duel) throw new NotFoundException(`Duel ${input.duelId} was not found`);
+    assertDuelReconciliationActor({
+      ...(input.actorWallet ? { actorWallet: input.actorWallet } : {}),
+      creatorWallet: duel.creatorWallet,
+      opponentWallet: duel.opponentWallet,
+    });
+
+    const rows = await this.database.duelTransaction.findMany({
+      include: { duel: { select: { status: true } } },
+      orderBy: [{ createdAt: 'asc' }],
+      take: 20,
+      where: {
+        duelId: input.duelId,
+        signature: { not: null },
+        status: { in: ACTIVE_STATUS_VALUES },
+      },
+    });
+    const transactions: MonitoredTransaction[] = rows.flatMap((row) => {
+      const expectedAccounts = parseExpectedAccounts(row.expectedAccounts);
+      const expectedInstructionAccounts = parseExpectedAccounts(row.expectedInstructionAccounts);
+      if (
+        !row.signature ||
+        !row.submittedAt ||
+        !row.expectedSigner ||
+        !row.expectedProgramId ||
+        !row.expectedMessageHash ||
+        !expectedAccounts ||
+        !row.expectedInstructionDataHash ||
+        !expectedInstructionAccounts ||
+        !row.expectedFromStatus ||
+        !row.expectedToStatus
+      ) {
+        return [];
+      }
+      return [
+        {
+          action: row.action.toLowerCase() as MonitoredTransaction['action'],
+          allowMultipleInstructionMatches: row.allowMultipleInstructionMatches,
+          checkAttempts: row.checkAttempts,
+          duelId: row.duelId,
+          duelStatus: toApiStatus(row.duel.status),
+          expectedAccounts,
+          expectedFromStatus: toApiStatus(row.expectedFromStatus),
+          expectedInstructionAccounts,
+          expectedInstructionDataHash: row.expectedInstructionDataHash,
+          expectedMessageHash: row.expectedMessageHash,
+          expectedProgramId: row.expectedProgramId,
+          expectedSigner: row.expectedSigner,
+          expectedToStatus: toApiStatus(row.expectedToStatus),
+          id: row.id,
+          lastValidBlockHeight: row.lastValidBlockHeight,
+          recentBlockhash: row.recentBlockhash,
+          signature: row.signature,
+          status: row.status === DuelTransactionStatus.CONFIRMED ? 'confirmed' : 'submitted',
+          submittedAt: row.submittedAt,
+          wallet: row.wallet,
+        },
+      ];
+    });
+    if (transactions.length !== rows.length) {
+      throw new ConflictException('Active transaction lacks required verification constraints');
+    }
+    return {
+      duelId: input.duelId,
+      duelStatus: toApiStatus(duel.status),
+      transactions,
+    };
   }
 
   async findPreparedForRecovery(
@@ -986,6 +1064,17 @@ export function assertWalletSubmissionActor(input: {
     throw new ForbiddenException(
       'Wallet session cannot submit a transaction for another signer or duel participant',
     );
+  }
+}
+
+export function assertDuelReconciliationActor(input: {
+  actorWallet?: string;
+  creatorWallet: string;
+  opponentWallet: string | null;
+}): void {
+  if (!input.actorWallet) return;
+  if (![input.creatorWallet, input.opponentWallet].includes(input.actorWallet)) {
+    throw new ForbiddenException('Wallet session cannot reconcile another duel');
   }
 }
 

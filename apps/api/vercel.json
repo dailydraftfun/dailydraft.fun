@@ -13,11 +13,11 @@
   "crons": [
     {
       "path": "/v1/internal/reconciliation/solana",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 3 * * *"
     },
     {
       "path": "/v1/internal/reconciliation/treasury",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 4 * * *"
     }
   ],
   "rewrites": [

@@ -658,6 +658,45 @@ paths:
           $ref: '#/components/responses/Conflict'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /duels/{duelId}/transactions/reconciliation:
+    post:
+      operationId: reconcileDuelTransactions
+      tags: [Transactions]
+      summary: Reconcile active transactions for one authenticated duel
+      description: |
+        Performs a bounded Solana devnet finality check for active transactions
+        belonging only to this duel. A wallet session must belong to the creator
+        or opponent; an integration key may use the same route. This request does
+        not scan recovery candidates or transactions from another duel. It is safe
+        for browser polling and allows normal finality to progress without a
+        high-frequency background worker.
+      x-openpacksduel-availability: devnet
+      security:
+        - walletSession: []
+        - integrationKey: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+      responses:
+        '200':
+          description: Current duel-scoped reconciliation state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DuelReconciliationResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Wallet session does not belong to this duel
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /internal/reconciliation/solana:
     get:
       operationId: reconcileSolanaTransactionsFromCron
@@ -2677,6 +2716,21 @@ components:
         stuck:
           type: integer
           minimum: 0
+    DuelReconciliationResult:
+      type: object
+      additionalProperties: false
+      required: [activeTransactionCount, duelId, duelStatus, reconciliation]
+      properties:
+        activeTransactionCount:
+          type: integer
+          minimum: 0
+        duelId:
+          type: string
+          pattern: '^duel_[A-Za-z0-9]{12,64}$'
+        duelStatus:
+          $ref: '#/components/schemas/DuelStatus'
+        reconciliation:
+          $ref: '#/components/schemas/ReconciliationSummary'
     SocialCard:
       type: object
       additionalProperties: false

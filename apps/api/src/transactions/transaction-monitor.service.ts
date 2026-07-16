@@ -14,6 +14,7 @@ import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { TransactionMonitorRepository } from './transaction-monitor.repository.js';
 import type {
+  DuelReconciliationResult,
   MonitoredTransaction,
   PreparedRecoveryIntent,
   ReconciliationSummary,
@@ -56,7 +57,38 @@ export class TransactionMonitorService {
       throw new ServiceUnavailableException('Escrow program is not configured');
     }
     await this.assertDevnet(input.duelId);
-    return this.repository.bindSubmission({ ...input, requiredProgramId });
+    const submission = await this.repository.bindSubmission({ ...input, requiredProgramId });
+    try {
+      await this.reconcileDuel({
+        ...(input.actorWallet ? { actorWallet: input.actorWallet } : {}),
+        duelId: input.duelId,
+      });
+    } catch (error) {
+      if (
+        !(error instanceof SolanaRpcUnavailableError) &&
+        !(error instanceof ServiceUnavailableException)
+      ) {
+        throw error;
+      }
+    }
+    return submission;
+  }
+
+  async reconcileDuel(input: {
+    actorWallet?: string;
+    duelId: string;
+  }): Promise<DuelReconciliationResult> {
+    await this.assertDevnet(input.duelId);
+    const batch = await this.repository.findParticipantReconciliationBatch(input);
+    const summary = emptySummary();
+    await this.reconcileTransactions(batch.transactions, new Date(), summary);
+    const current = await this.repository.findParticipantReconciliationBatch(input);
+    return {
+      activeTransactionCount: current.transactions.length,
+      duelId: current.duelId,
+      duelStatus: current.duelStatus,
+      reconciliation: summary,
+    };
   }
 
   async reconcile(requestedLimit = DEFAULT_BATCH_LIMIT): Promise<ReconciliationSummary> {
@@ -76,6 +108,17 @@ export class TransactionMonitorService {
       return summary;
     }
 
+    await this.reconcileTransactions(transactions, now, summary);
+    await this.treasury?.reconcileLifecycle(limit);
+    return summary;
+  }
+
+  private async reconcileTransactions(
+    transactions: MonitoredTransaction[],
+    now: Date,
+    summary: ReconciliationSummary,
+  ): Promise<void> {
+    if (transactions.length === 0) return;
     let statuses: Array<SolanaSignatureStatus | null>;
     try {
       statuses = await this.rpc.getSignatureStatuses(
@@ -124,8 +167,6 @@ export class TransactionMonitorService {
         throw error;
       }
     }
-    await this.treasury?.reconcileLifecycle(limit);
-    return summary;
   }
 
   private async recoverUnboundBroadcasts(
