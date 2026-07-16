@@ -7,6 +7,7 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "typecheck": "tsc --noEmit",
+    "test": "bun test",
     "lint": "biome check app/",
     "clean": "rm -rf .next out"
   },

@@ -1,4 +1,5 @@
 import { ImageResponse } from 'next/og';
+import { fetchPublicDuelReceipt } from '../../../public-proof-client';
 import { getDuelSocialSnapshot, resolveDuelStatus } from '../../../social-card-data';
 
 export const runtime = 'edge';
@@ -7,10 +8,6 @@ const imageSize = {
   width: 1200,
   height: 630,
 };
-
-function formatValue(value: number) {
-  return `$${value.toLocaleString('en-US')}`;
-}
 
 function PullCard({
   label,
@@ -21,7 +18,7 @@ function PullCard({
 }: {
   label: string;
   name: string;
-  value: number;
+  value: string;
   accent: string;
   faded?: boolean;
 }) {
@@ -59,9 +56,7 @@ function PullCard({
         <div style={{ display: 'flex', color: '#f4f7f8', fontSize: 30, fontWeight: 700 }}>
           {name}
         </div>
-        <div style={{ display: 'flex', color: accent, fontSize: 44, fontWeight: 700 }}>
-          {formatValue(value)}
-        </div>
+        <div style={{ display: 'flex', color: accent, fontSize: 44, fontWeight: 700 }}>{value}</div>
       </div>
     </div>
   );
@@ -72,9 +67,13 @@ export async function GET(
   { params }: { params: Promise<{ duelId: string; status: string }> },
 ) {
   const { duelId, status: statusParam } = await params;
-  const status = resolveDuelStatus(statusParam);
-  const duel = getDuelSocialSnapshot(duelId, status);
-  const isResult = status === 'settled';
+  const receipt = await fetchPublicDuelReceipt(duelId);
+  if (!receipt) return unavailableImage(duelId);
+  const requestedStatus = resolveDuelStatus(statusParam);
+  const duel = getDuelSocialSnapshot(receipt, requestedStatus);
+  const isResult = duel.status === 'settled' && duel.pulls.length === 2;
+  const firstPull = duel.pulls[0];
+  const secondPull = duel.pulls[1];
 
   return new ImageResponse(
     <div
@@ -188,7 +187,7 @@ export async function GET(
             <div style={{ display: 'flex', color: '#737f89', fontSize: 13, letterSpacing: 2 }}>
               PACK TIER
             </div>
-            <div style={{ display: 'flex', fontSize: 26, fontWeight: 700 }}>${duel.tier}</div>
+            <div style={{ display: 'flex', fontSize: 26, fontWeight: 700 }}>{duel.tier}</div>
           </div>
           <div style={{ display: 'flex', width: 1, height: 44, background: '#2a333a' }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -215,23 +214,24 @@ export async function GET(
           zIndex: 1,
         }}
       >
-        {isResult ? (
+        {isResult && firstPull && secondPull ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
             <PullCard
-              label="Winner"
-              name={duel.playerCard}
-              value={duel.playerValue}
+              label={firstPull.winner ? 'Winner' : 'Creator pull'}
+              name={firstPull.displayName}
+              value={firstPull.value}
               accent={duel.accent}
+              faded={!firstPull.winner}
             />
             <div style={{ display: 'flex', color: '#65717b', fontSize: 20, fontWeight: 700 }}>
               VS
             </div>
             <PullCard
-              label="Rival pull"
-              name={duel.opponentCard}
-              value={duel.opponentValue}
+              label={secondPull.winner ? 'Winner' : 'Opponent pull'}
+              name={secondPull.displayName}
+              value={secondPull.value}
               accent={duel.accent}
-              faded
+              faded={!secondPull.winner}
             />
           </div>
         ) : (
@@ -264,12 +264,12 @@ export async function GET(
               }}
             >
               <div style={{ display: 'flex', color: duel.accent, fontSize: 15, letterSpacing: 2 }}>
-                AUTHENTICATED
+                CANONICAL RECEIPT
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                 <div style={{ display: 'flex', fontSize: 30, fontWeight: 700 }}>PACK DUEL</div>
                 <div style={{ display: 'flex', color: '#9ca7af', fontSize: 18 }}>
-                  ${duel.tier} pull
+                  {duel.tier} pull
                 </div>
               </div>
             </div>
@@ -280,8 +280,42 @@ export async function GET(
     {
       ...imageSize,
       headers: {
-        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+        'Cache-Control': 'no-store',
+        'X-Openpacksduel-Status': duel.status,
       },
+    },
+  );
+}
+
+function unavailableImage(duelId: string) {
+  return new ImageResponse(
+    <div
+      style={{
+        alignItems: 'center',
+        background: '#050708',
+        color: '#f4f7f8',
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        justifyContent: 'center',
+        padding: 64,
+        width: '100%',
+      }}
+    >
+      <div style={{ color: '#d8ff3e', display: 'flex', fontSize: 24, fontWeight: 700 }}>
+        PACK DUEL · DEVNET
+      </div>
+      <div style={{ display: 'flex', fontSize: 60, fontWeight: 700, marginTop: 28 }}>
+        Proof unavailable
+      </div>
+      <div style={{ color: '#9da7b0', display: 'flex', fontSize: 24, marginTop: 18 }}>
+        No public receipt was found for {duelId.slice(0, 24)}.
+      </div>
+    </div>,
+    {
+      ...imageSize,
+      headers: { 'Cache-Control': 'no-store' },
+      status: 404,
     },
   );
 }

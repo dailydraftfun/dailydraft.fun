@@ -4,7 +4,6 @@ import {
   ArrowCounterClockwiseIcon,
   ArrowsLeftRightIcon,
   CheckCircleIcon,
-  ClockCountdownIcon,
   CopyIcon,
   FireIcon,
   InfoIcon,
@@ -24,9 +23,11 @@ import {
 } from '@phosphor-icons/react';
 import { Button, Card, CardContent, Input, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { trackProductEvent } from './analytics-client';
+import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
 import {
+  advanceDuelLifecycle,
   cancelDuel,
   cancelOpenMatchmaking,
   continueOpenMatchmaking,
@@ -36,8 +37,10 @@ import {
   type DurableDuel,
   getDuel,
   getOpenMatchmakingStatus,
+  getProductCapabilities,
   joinDuel,
   type MatchmakingSession,
+  type ProductCapabilities,
   prepareDuelIntent,
   searchOpenMatchmaking,
   selectHouseFallback,
@@ -49,7 +52,7 @@ import { useWalletAuth } from './solana/wallet-auth-provider';
 import { useSolanaWallet } from './solana/wallet-provider';
 
 type Mode = DuelOpponentType;
-type Phase = 'lobby' | 'matching' | 'opening' | 'result';
+type Phase = LiveDuelPhase;
 
 export type DuelLobbyEntry = {
   action: 'accept' | 'rematch';
@@ -60,94 +63,13 @@ export type DuelLobbyEntry = {
   tier: number;
 };
 
-type Pull = {
-  id: string;
-  name: string;
-  set: string;
-  grade: string;
-  image: string;
-  value: number;
-};
-
-type Match = {
-  opponent: string;
-  opponentAvatar: string;
-  tier: number;
-  left: Pull;
-  right: Pull;
-};
-
 const tiers = [25, 50, 100] as const;
-
-const pulls: Pull[] = [
-  {
-    id: 'base1-4',
-    name: 'Charizard',
-    set: 'Base Set · Holo',
-    grade: 'PSA 8',
-    image: 'https://images.pokemontcg.io/base1/4_hires.png',
-    value: 472,
-  },
-  {
-    id: 'swsh7-215',
-    name: 'Umbreon VMAX',
-    set: 'Evolving Skies · Alt Art',
-    grade: 'PSA 10',
-    image: 'https://images.pokemontcg.io/swsh7/215_hires.png',
-    value: 1380,
-  },
-  {
-    id: 'base1-2',
-    name: 'Blastoise',
-    set: 'Base Set · Holo',
-    grade: 'PSA 9',
-    image: 'https://images.pokemontcg.io/base1/2_hires.png',
-    value: 615,
-  },
-  {
-    id: 'base1-15',
-    name: 'Venusaur',
-    set: 'Base Set · Holo',
-    grade: 'PSA 9',
-    image: 'https://images.pokemontcg.io/base1/15_hires.png',
-    value: 344,
-  },
-  {
-    id: 'sm115-69',
-    name: 'Mewtwo GX',
-    set: 'Shining Legends · Secret',
-    grade: 'PSA 10',
-    image: 'https://images.pokemontcg.io/sm115/69_hires.png',
-    value: 287,
-  },
-  {
-    id: 'base1-10',
-    name: 'Mewtwo',
-    set: 'Base Set · Holo',
-    grade: 'PSA 9',
-    image: 'https://images.pokemontcg.io/base1/10_hires.png',
-    value: 168,
-  },
-];
-
-const waitingDuels = [
-  { wallet: '7Lqk…mP2z', tier: 25, wait: '8s', color: '#b8ff5a' },
-  { wallet: 'Boba.sol', tier: 50, wait: '21s', color: '#a78bfa' },
-  { wallet: '4gHn…Q8ws', tier: 100, wait: '46s', color: '#f7c948' },
-] as const;
-
-function getMatch(tier: number, nonce: number): Match {
-  const offset = (nonce * 2 + tiers.indexOf(tier as (typeof tiers)[number])) % pulls.length;
-  const left = pulls[offset];
-  const right = pulls[(offset + 1) % pulls.length];
-  return {
-    opponent: waitingDuels[nonce % waitingDuels.length].wallet,
-    opponentAvatar: waitingDuels[nonce % waitingDuels.length].color,
-    tier,
-    left,
-    right,
-  };
-}
+const terminalDuelStatuses = new Set<DurableDuel['status']>([
+  'cancelled',
+  'refunded',
+  'settled',
+  'failed',
+]);
 
 function Avatar({ color, label }: { color: string; label: string }) {
   return (
@@ -188,7 +110,7 @@ function TierCard({
         <strong>${value}</strong>
         <small>{value === 25 ? 'Silver' : value === 50 ? 'Gold' : 'Water'} Pack</small>
       </span>
-      <span className="tier-ev">EV ${(value * 1.09).toFixed(2)}</span>
+      <span className="tier-ev">Devnet</span>
       {selected ? <CheckCircleIcon className="tier-check" size={18} weight="fill" /> : null}
     </button>
   );
@@ -202,14 +124,14 @@ function DuelCard({
   tier,
   walletLabel,
 }: {
-  pull: Pull;
+  pull: LivePull | null;
   side: 'you' | 'opponent';
   phase: Phase;
   winner: boolean;
-  tier: number;
+  tier: string;
   walletLabel: string;
 }) {
-  const visible = phase === 'result';
+  const visible = phase === 'result' && pull !== null;
   return (
     <article className={`reveal-column reveal-${side} ${winner && visible ? 'reveal-winner' : ''}`}>
       <div className="player-label">
@@ -234,7 +156,7 @@ function DuelCard({
           <div className="pack-brand">
             <span>PACK</span>
             <strong>DUEL</strong>
-            <small>AUTHENTICATED PULL</small>
+            <small>COMMITTED PACK</small>
           </div>
           <Image
             src="https://images.pokemontcg.io/cardback.png"
@@ -243,17 +165,25 @@ function DuelCard({
             sizes="(max-width: 768px) 42vw, 260px"
             className="pack-art"
           />
-          <span className="pack-tier">${visible ? '—' : tier}</span>
+          <span className="pack-tier">{visible ? '—' : tier}</span>
         </div>
         <div className="pull-shell" aria-hidden={!visible}>
-          <Image
-            src={pull.image}
-            alt={`${pull.name} ${pull.set}`}
-            fill
-            sizes="(max-width: 768px) 42vw, 260px"
-            className="pull-image"
-            priority
-          />
+          {pull?.image ? (
+            <Image
+              src={pull.image}
+              alt={pull.name}
+              fill
+              sizes="(max-width: 768px) 42vw, 260px"
+              className="pull-image"
+              priority
+            />
+          ) : pull ? (
+            <div className="pack-brand">
+              <span>VERIFIED PULL</span>
+              <strong>{pull.name}</strong>
+              <small>{pull.label}</small>
+            </div>
+          ) : null}
         </div>
         {phase === 'opening' ? (
           <div className="opening-status" role="status">
@@ -263,12 +193,12 @@ function DuelCard({
       </div>
 
       <div className={visible ? 'pull-meta pull-meta-visible' : 'pull-meta'}>
-        <span className="grade-chip">{pull.grade}</span>
+        <span className="grade-chip">{pull?.provider ?? 'Pending'}</span>
         <div>
-          <strong>{pull.name}</strong>
-          <small>{pull.set}</small>
+          <strong>{pull?.name ?? 'Result pending'}</strong>
+          <small>{pull?.label ?? 'No outcome committed yet'}</small>
         </div>
-        <span className="pull-value">${pull.value.toLocaleString()}</span>
+        <span className="pull-value">{pull?.value ?? '—'}</span>
       </div>
     </article>
   );
@@ -278,11 +208,11 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const walletConnection = useSolanaWallet();
   const authentication = useWalletAuth();
   const [activeEntry, setActiveEntry] = useState(entry);
-  const [mode, setMode] = useState<Mode>(entry?.mode ?? 'matchmaking');
+  const [mode, setMode] = useState<Mode>(
+    entry?.mode === 'house' ? 'matchmaking' : (entry?.mode ?? 'matchmaking'),
+  );
   const [tier, setTier] = useState(entry?.tier ?? 50);
-  const [phase, setPhase] = useState<Phase>('lobby');
   const [wallet, setWallet] = useState(entry?.opponentAddress ?? '');
-  const [nonce, setNonce] = useState(0);
   const [copied, setCopied] = useState(false);
   const [intent, setIntent] = useState<DuelTransactionIntent | null>(null);
   const [intentPending, setIntentPending] = useState(false);
@@ -291,16 +221,22 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
   const [matchmakingSession, setMatchmakingSession] = useState<MatchmakingSession | null>(null);
   const [matchmakingRestorePending, setMatchmakingRestorePending] = useState(false);
+  const [capabilities, setCapabilities] = useState<ProductCapabilities | null>(null);
   const matchmakingRestoreKey = useRef<string | null>(null);
-  const timers = useRef<number[]>([]);
-  const match = useMemo(() => getMatch(tier, nonce), [tier, nonce]);
-  const winner = match.left.value >= match.right.value ? 'you' : 'opponent';
+  const lifecycleAdvanceKey = useRef<string | null>(null);
+  const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
+  const phase: Phase = liveDuel?.phase ?? 'lobby';
+  const houseEnabled = capabilities?.modes.house.enabled === true;
   const houseFallbackAction = matchmakingSession?.availableActions.find(
     (action) => action.action === 'house_fallback',
   );
 
   function chooseMode(nextMode: Mode) {
     if (nextMode === mode) return;
+    if (nextMode === 'house' && !houseEnabled) {
+      setActionError('House play remains hidden until API readiness is verified.');
+      return;
+    }
     if (matchmakingRestorePending) {
       setActionError('Checking this wallet for an active public matchmaking ticket.');
       return;
@@ -323,10 +259,30 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   useEffect(() => {
     trackProductEvent({ name: 'lobby_viewed' });
+  }, []);
+
+  useEffect(() => {
+    if (!isDuelApiConfigured()) return;
+    let active = true;
+    getProductCapabilities()
+      .then((nextCapabilities) => {
+        if (active) setCapabilities(nextCapabilities);
+      })
+      .catch(() => undefined);
     return () => {
-      for (const timer of timers.current) window.clearTimeout(timer);
+      active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (mode !== 'house' || houseEnabled) return;
+    setMode('matchmaking');
+    setActiveEntry(undefined);
+    setActionNotice(
+      capabilities?.modes.house.reason ??
+        'House readiness could not be verified, so house play remains hidden.',
+    );
+  }, [capabilities, houseEnabled, mode]);
 
   useEffect(() => {
     if (!persistedDuel) return;
@@ -355,23 +311,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }, [actionError, mode, persistedDuel, tier]);
 
   useEffect(() => {
-    if (!persistedDuel || persistedDuel.status !== 'waiting' || matchmakingSession) return;
-    const interval = window.setInterval(() => {
-      getDuel(persistedDuel.id)
-        .then((duel) => setPersistedDuel(duel))
-        .catch(() => undefined);
-    }, 5_000);
-    return () => window.clearInterval(interval);
-  }, [matchmakingSession, persistedDuel]);
-
-  useEffect(() => {
-    if (
-      !persistedDuel ||
-      !matchmakingSession ||
-      (persistedDuel.status !== 'matched' && persistedDuel.status !== 'committing')
-    ) {
-      return;
-    }
+    if (!persistedDuel || terminalDuelStatuses.has(persistedDuel.status)) return;
     let active = true;
     const interval = window.setInterval(() => {
       getDuel(persistedDuel.id)
@@ -384,7 +324,38 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       active = false;
       window.clearInterval(interval);
     };
-  }, [matchmakingSession, persistedDuel]);
+  }, [persistedDuel]);
+
+  useEffect(() => {
+    if (
+      persistedDuel?.status !== 'funded' ||
+      !authentication.sessionToken ||
+      !walletConnection.address ||
+      ![persistedDuel.creatorWallet, persistedDuel.opponentWallet].includes(
+        walletConnection.address,
+      )
+    ) {
+      return;
+    }
+    const advanceKey = `${persistedDuel.id}:${persistedDuel.version}`;
+    if (lifecycleAdvanceKey.current === advanceKey) return;
+    lifecycleAdvanceKey.current = advanceKey;
+    let active = true;
+    advanceDuelLifecycle(persistedDuel.id, authentication.sessionToken)
+      .then((duel) => {
+        if (!active) return;
+        setPersistedDuel(duel);
+        setActionNotice('Both packs are funded. Opening the committed devnet outcomes.');
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        lifecycleAdvanceKey.current = null;
+        setActionError(error instanceof Error ? error.message : 'Could not open both packs.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [authentication.sessionToken, persistedDuel, walletConnection.address]);
 
   useEffect(() => {
     if (
@@ -537,6 +508,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setActionError('Enter a complete Solana wallet address for the opponent.');
       return;
     }
+    if (nextMode === 'house' && !houseEnabled) {
+      setActionError('House play is unavailable until devnet treasury readiness is verified.');
+      return;
+    }
     if (isDuelApiConfigured() && !authentication.sessionToken) {
       setActionError(
         'Authenticate wallet ownership from the top-right wallet menu before creating or joining a duel.',
@@ -671,6 +646,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   async function chooseHouseFallback(): Promise<void> {
     if (!authentication.sessionToken || !walletConnection.address) return;
+    if (!houseEnabled) {
+      setActionError('House fallback is unavailable until API readiness is verified.');
+      return;
+    }
     setIntentPending(true);
     setActionError(null);
     try {
@@ -717,10 +696,6 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }
 
   function resetDuel(rematch = false) {
-    for (const timer of timers.current) window.clearTimeout(timer);
-    timers.current = [];
-    setNonce((value) => value + 1);
-    setPhase('lobby');
     if (rematch) {
       const trackedTier = toTrackedTier(tier);
       trackProductEvent({
@@ -729,25 +704,25 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         name: 'duel_rematched',
         ...(trackedTier ? { tier: trackedTier } : {}),
       });
-      setActionError('Rematch ready. Review and approve a fresh transaction to continue.');
+      setActionNotice('Rematch ready. Review and approve a fresh transaction to continue.');
     }
-  }
-
-  async function copyChallenge() {
-    const value = `${window.location.origin}/duel/devnet-${tier}?status=waiting`;
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      // Clipboard access can be unavailable in preview frames; the visual state remains useful.
-    }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    setPersistedDuel(null);
+    setMatchmakingSession(null);
+    setIntent(null);
   }
 
   function shareResult() {
-    const winningPull = winner === 'you' ? match.left : match.right;
-    const text = `${winner === 'you' ? 'I just won' : 'This duel was decided'} with ${winningPull.name} worth $${winningPull.value} in a $${tier} Pack Duel. Think you can beat it?`;
-    const shareUrl = `${window.location.origin}/duel/demo-${tier}?status=${winner === 'you' ? 'won' : 'lost'}`;
+    if (!persistedDuel || !liveDuel?.left || !liveDuel.right || !liveDuel.winner) return;
+    const winningPull =
+      liveDuel.winner === 'you'
+        ? liveDuel.left
+        : liveDuel.winner === 'opponent'
+          ? liveDuel.right
+          : null;
+    const text = winningPull
+      ? `${liveDuel.winner === 'you' ? 'I just won' : 'This duel was decided'} with ${winningPull.name} valued at ${winningPull.value} in a ${liveDuel.tier} Pack Duel.`
+      : `This ${liveDuel.tier} Pack Duel ended in a tie.`;
+    const shareUrl = `${window.location.origin}/duel/${encodeURIComponent(persistedDuel.id)}?status=${persistedDuel.status}`;
     window.open(
       `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`,
       '_blank',
@@ -762,7 +737,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     });
   }
 
-  if (phase !== 'lobby') {
+  if (phase !== 'lobby' && liveDuel && persistedDuel) {
     return (
       <main className="duel-experience">
         <div className="duel-topline">
@@ -772,7 +747,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           <div className="duel-proof">
             <ShieldCheckIcon size={15} weight="fill" />
             <span>Devnet settlement</span>
-            <code>5tE4…7qkP</code>
+            <code>{shortReference(liveDuel.settlementReference) ?? 'Awaiting escrow'}</code>
           </div>
         </div>
 
@@ -780,47 +755,49 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           <div className="battle-heading">
             <div>
               <span className="eyebrow">
-                <SwordIcon size={14} weight="fill" /> ${tier} Pack Duel
+                <SwordIcon size={14} weight="fill" /> {liveDuel.tier} Pack Duel
               </span>
-              <h1>
-                {phase === 'matching'
-                  ? 'Opponent found'
-                  : phase === 'opening'
-                    ? 'Ripping packs…'
-                    : winner === 'you'
-                      ? 'You won both pulls'
-                      : 'Opponent takes the vault'}
-              </h1>
+              <h1>{liveDuel.headline}</h1>
             </div>
             <div className={`phase-indicator phase-${phase}`}>
               <span />
-              {phase === 'matching'
-                ? 'Escrow funded'
-                : phase === 'opening'
-                  ? 'Reveal in progress'
-                  : 'Settled'}
+              {liveDuel.indicator}
             </div>
           </div>
+          {actionError ? (
+            <p className="duel-action-error" role="alert">
+              <WarningCircleIcon size={14} weight="fill" /> {actionError}
+            </p>
+          ) : null}
+          {actionNotice ? <p className="signing-note">{actionNotice}</p> : null}
 
           <div className="reveal-grid">
             <DuelCard
-              pull={match.left}
+              pull={liveDuel.left}
               side="you"
               phase={phase}
-              winner={winner === 'you'}
-              tier={tier}
+              winner={liveDuel.winner === 'you'}
+              tier={liveDuel.tier}
               walletLabel={walletConnection.shortAddress ?? 'Your wallet'}
             />
             <div className="versus-mark" aria-hidden="true">
               <span>VS</span>
             </div>
             <DuelCard
-              pull={match.right}
+              pull={liveDuel.right}
               side="opponent"
               phase={phase}
-              winner={winner === 'opponent'}
-              tier={tier}
-              walletLabel={mode === 'house' ? 'Pack Duel House' : match.opponent}
+              winner={liveDuel.winner === 'opponent'}
+              tier={liveDuel.tier}
+              walletLabel={
+                persistedDuel.houseOpponent
+                  ? 'Pack Duel House'
+                  : (shortReference(
+                      walletConnection.address === persistedDuel.opponentWallet
+                        ? persistedDuel.creatorWallet
+                        : persistedDuel.opponentWallet,
+                    ) ?? 'Opponent wallet')
+              }
             />
           </div>
 
@@ -830,20 +807,20 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 <TrophyIcon size={24} weight="fill" />
                 <div>
                   <small>Winning margin</small>
-                  <strong>
-                    ${Math.abs(match.left.value - match.right.value).toLocaleString()}
-                  </strong>
+                  <strong>{liveDuel.margin ?? '—'}</strong>
                 </div>
                 <Separator orientation="vertical" className="h-9 bg-border" />
                 <div>
                   <small>Total prize value</small>
-                  <strong>${(match.left.value + match.right.value).toLocaleString()}</strong>
+                  <strong>{liveDuel.totalValue ?? '—'}</strong>
                 </div>
               </div>
               <div className="result-actions">
-                <Button type="button" variant="ghost" onClick={() => resetDuel(true)}>
-                  <ArrowsLeftRightIcon size={16} /> Rematch
-                </Button>
+                {persistedDuel.status === 'settled' ? (
+                  <Button type="button" variant="ghost" onClick={() => resetDuel(true)}>
+                    <ArrowsLeftRightIcon size={16} /> Rematch
+                  </Button>
+                ) : null}
                 <Button type="button" className="share-button" onClick={shareResult}>
                   <XLogoIcon size={16} weight="fill" /> Share result
                 </Button>
@@ -890,13 +867,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           </p>
           <div className="hero-proof-row">
             <span>
-              <LockKeyIcon size={15} /> Non-custodial escrow
+              <LockKeyIcon size={15} /> Devnet escrow
             </span>
             <span>
-              <ShieldCheckIcon size={15} /> Verified card value
+              <ShieldCheckIcon size={15} /> Committed card value
             </span>
             <span>
-              <FireIcon size={15} /> Instant reveal
+              <FireIcon size={15} /> Synchronized reveal
             </span>
           </div>
         </div>
@@ -928,18 +905,20 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                   <small className="mode-tab-caption">Find a wallet</small>
                 </span>
               </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === 'house'}
-                onClick={() => chooseMode('house')}
-              >
-                <LightningIcon size={17} weight="fill" />
-                <span className="mode-tab-copy">
-                  <strong className="mode-tab-title">Instant</strong>
-                  <small className="mode-tab-caption">Play the house</small>
-                </span>
-              </button>
+              {houseEnabled ? (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === 'house'}
+                  onClick={() => chooseMode('house')}
+                >
+                  <LightningIcon size={17} weight="fill" />
+                  <span className="mode-tab-copy">
+                    <strong className="mode-tab-title">Instant</strong>
+                    <small className="mode-tab-caption">Play the house</small>
+                  </span>
+                </button>
+              ) : null}
             </div>
 
             <div className="match-card-body">
@@ -988,20 +967,6 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                       className="wallet-input"
                       readOnly={Boolean(activeEntry)}
                     />
-                    {!activeEntry ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={copyChallenge}
-                        title="Copy devnet challenge preview"
-                      >
-                        {copied ? (
-                          <CheckCircleIcon size={18} weight="fill" />
-                        ) : (
-                          <CopyIcon size={18} />
-                        )}
-                      </Button>
-                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -1098,23 +1063,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             <span className="eyebrow">
               <ShieldCheckIcon size={14} weight="fill" /> Durable devnet duel
             </span>
-            <h2>
-              {persistedDuel.status === 'waiting'
-                ? matchmakingSession
-                  ? 'Searching the exact public queue'
-                  : 'Challenge created and waiting'
-                : persistedDuel.status === 'matched'
-                  ? 'Both wallets are matched'
-                  : persistedDuel.status === 'committing'
-                    ? 'Escrow funding in progress'
-                    : persistedDuel.status === 'funded'
-                      ? 'Both platform fees finalized'
-                      : 'Duel cancelled before funding'}
-            </h2>
+            <h2>{persistedStatusHeadline(persistedDuel.status, Boolean(matchmakingSession))}</h2>
             <p>
-              <code>{persistedDuel.id}</code> is persisted by the API. Funding deposits only the
-              disclosed platform fee as WSOL. Pack purchase and opening are separate and have not
-              happened yet.
+              <code>{persistedDuel.id}</code> is persisted by the API. This screen follows its
+              canonical status and displays card outcomes only after the API commits both results.
             </p>
             {matchmakingSession ? (
               <p>
@@ -1136,7 +1088,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 Continue search
               </Button>
             ) : null}
-            {matchmakingSession?.state === 'searching' && houseFallbackAction?.available ? (
+            {matchmakingSession?.state === 'searching' &&
+            houseFallbackAction?.available &&
+            houseEnabled ? (
               <Button
                 type="button"
                 variant="ghost"
@@ -1196,48 +1150,6 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         </section>
       ) : null}
 
-      {!isDuelApiConfigured() ? (
-        <section className="queue-section">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">
-                <UsersThreeIcon size={14} weight="fill" /> Open duels
-              </span>
-              <h2>Someone is ready to rip</h2>
-            </div>
-            <span className="queue-count">
-              <span /> 3 waiting now
-            </span>
-          </div>
-          <div className="queue-grid">
-            {waitingDuels.map((duel) => (
-              <article className="queue-card" key={duel.wallet}>
-                <div className="queue-player">
-                  <Avatar color={duel.color} label={`${duel.wallet} avatar`} />
-                  <div>
-                    <strong>{duel.wallet}</strong>
-                    <small>
-                      <ClockCountdownIcon size={12} /> Waiting {duel.wait}
-                    </small>
-                  </div>
-                </div>
-                <div className="queue-stake">
-                  <small>Pack tier</small>
-                  <strong>${duel.tier}</strong>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => reviewDuel(duel.tier, 'matchmaking')}
-                >
-                  Join duel
-                </Button>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
       <section className="rules-strip">
         <div>
           <span>01</span>
@@ -1280,4 +1192,33 @@ function toTrackedMode(mode: Mode): 'direct' | 'house' | 'open' {
 function toTrackedTier(tier: number): 25 | 50 | 100 | undefined {
   if (tier === 25 || tier === 50 || tier === 100) return tier;
   return undefined;
+}
+
+function shortReference(value?: string | null): string | null {
+  if (!value) return null;
+  return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
+}
+
+function persistedStatusHeadline(
+  status: DurableDuel['status'],
+  hasMatchmakingSession: boolean,
+): string {
+  const headlines: Record<DurableDuel['status'], string> = {
+    awaiting_assets: 'Pulls committed; card assets pending',
+    cancelled: 'Duel cancelled before settlement',
+    cancelling: 'Duel cancellation is finalizing',
+    committing: 'Escrow funding in progress',
+    failed: 'Duel requires recovery',
+    funded: 'Both platform fees finalized',
+    matched: 'Both wallets are matched',
+    opening: 'Both packs are opening',
+    refunded: 'Both deposits were refunded',
+    refunding: 'Refund transactions are finalizing',
+    settled: 'Duel settled from committed outcomes',
+    settling: 'Winner settlement is finalizing',
+    waiting: hasMatchmakingSession
+      ? 'Searching the exact public queue'
+      : 'Challenge created and waiting',
+  };
+  return headlines[status];
 }
