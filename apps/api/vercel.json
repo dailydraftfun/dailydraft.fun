@@ -2,8 +2,12 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "functions": {
-    "api/[...path].ts": {
-      "includeFiles": "../../packages/db/generated/**",
+    "api/index.ts": {
+      "includeFiles": [
+        "../../packages/db/generated/**",
+        "../../packages/db/src/**",
+        "../../packages/db/package.json"
+      ],
       "maxDuration": 300,
       "supportsCancellation": true
     }
@@ -23,11 +27,11 @@
   "rewrites": [
     {
       "source": "/v1",
-      "destination": "/api/v1"
+      "destination": "/api?__path=v1"
     },
     {
       "source": "/v1/:path*",
-      "destination": "/api/v1/:path*"
+      "destination": "/api?__path=v1/:path*"
     }
   ]
 }

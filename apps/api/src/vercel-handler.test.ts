@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { EventEmitter } from 'node:events';
 import type { ServerResponse } from 'node:http';
 
-import { dispatchAndWaitForResponse, normalizeRequestUrl } from '../api/[...path].js';
+import { dispatchAndWaitForResponse, normalizeRequestUrl } from '../api/index.js';
 
 describe('Vercel API request adapter', () => {
   test('removes the internal api function prefix after a rewrite', () => {
@@ -12,6 +12,11 @@ describe('Vercel API request adapter', () => {
 
   test('preserves a public v1 URL when Vercel retains the original path', () => {
     expect(normalizeRequestUrl('/v1/health')).toBe('/v1/health');
+  });
+
+  test('restores the public path encoded by the single Vercel function rewrite', () => {
+    expect(normalizeRequestUrl('/api?__path=v1/health')).toBe('/v1/health');
+    expect(normalizeRequestUrl('/api?limit=20&__path=v1/duels')).toBe('/v1/duels?limit=20');
   });
 
   test('keeps the invocation open until the Fastify response finishes', async () => {
