@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
 import { describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import type { DatabaseClient } from '@openpacksduel/db';
-import { Keypair, PublicKey } from '@solana/web3.js';
+import { Keypair, type PublicKey } from '@solana/web3.js';
 
 import type { DevnetDemoSignerService } from '../transactions/devnet-demo-signer.service.js';
 import { DevnetDemoPackProvider } from './devnet-demo-pack.provider.js';

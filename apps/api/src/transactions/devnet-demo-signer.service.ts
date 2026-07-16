@@ -15,7 +15,7 @@ import {
 import {
   Connection,
   Keypair,
-  PublicKey,
+  type PublicKey,
   SystemProgram,
   Transaction,
   type TransactionInstruction,
@@ -131,18 +131,8 @@ export class DevnetDemoSignerService {
           mint,
         ),
         createMintToInstruction(mint, sourceTokenAccount, signer.publicKey, 1),
-        createSetAuthorityInstruction(
-          mint,
-          signer.publicKey,
-          AuthorityType.MintTokens,
-          null,
-        ),
-        createSetAuthorityInstruction(
-          mint,
-          signer.publicKey,
-          AuthorityType.FreezeAccount,
-          null,
-        ),
+        createSetAuthorityInstruction(mint, signer.publicKey, AuthorityType.MintTokens, null),
+        createSetAuthorityInstruction(mint, signer.publicKey, AuthorityType.FreezeAccount, null),
       );
       additionalSigners.push(mintSigner);
     }

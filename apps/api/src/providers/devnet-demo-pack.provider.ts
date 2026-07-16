@@ -157,14 +157,14 @@ export class DevnetDemoPackProvider extends PackProvider {
     if (!providerReference.startsWith(REFERENCE_PREFIX) || providerReference.length > 200) {
       throw new BadRequestException('Demo provider reference is invalid');
     }
-    const [payload, suppliedMac, extra] = providerReference.slice(REFERENCE_PREFIX.length).split('.');
+    const [payload, suppliedMac, extra] = providerReference
+      .slice(REFERENCE_PREFIX.length)
+      .split('.');
     if (!payload || !suppliedMac || extra || !/^[a-f0-9]{32}$/.test(suppliedMac)) {
       throw new BadRequestException('Demo provider reference is invalid');
     }
     const expectedMac = this.signer.referenceMac(payload).slice(0, 32);
-    if (
-      !timingSafeEqual(Buffer.from(suppliedMac, 'hex'), Buffer.from(expectedMac, 'hex'))
-    ) {
+    if (!timingSafeEqual(Buffer.from(suppliedMac, 'hex'), Buffer.from(expectedMac, 'hex'))) {
       throw new BadRequestException('Demo provider reference signature is invalid');
     }
     try {
