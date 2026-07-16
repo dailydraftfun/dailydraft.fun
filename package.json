@@ -16,6 +16,7 @@
     "dev:mcp": "turbo run dev --filter=@openpacksduel/mcp",
     "deploy:api:migrate": "bun --filter @openpacksduel/db db:deploy",
     "deploy:api:prod": "bun run deploy:api:migrate && VERCEL_ORG_ID=team_KHSVltukbViA3Mbyd0KBdW22 VERCEL_PROJECT_ID=prj_rX5EyAaDo5slW8ea0mUDjwVhb1Xq vercel deploy --prod --scope vincentshipsit",
+    "smoke:devnet": "bun run scripts/devnet-smoke.ts",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "test": "turbo run test",
@@ -30,6 +31,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.4.12",
     "@google/design.md": "0.1.1",
+    "@solana/web3.js": "1.98.4",
     "@types/node": "25.6.0",
     "turbo": "2.9.6",
     "typescript": "6.0.3"
