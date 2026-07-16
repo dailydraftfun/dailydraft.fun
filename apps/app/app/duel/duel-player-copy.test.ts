@@ -102,9 +102,7 @@ describe('duel player copy', () => {
   });
 
   test('names the next action for every payment recovery branch', () => {
-    expect(getFundingStatusNotice({ status: 'committing' }, 1)).toContain(
-      'Keep this page open',
-    );
+    expect(getFundingStatusNotice({ status: 'committing' }, 1)).toContain('Keep this page open');
     expect(getFundingStatusNotice({ status: 'funded' }, 0)).toBe(
       'Both wallets paid. Pack opening can start now.',
     );

@@ -58,7 +58,8 @@ export function getDuelPaymentReviewCopy(feeAmountSol: string) {
       { label: 'Winner receives', value: 'Both demo cards' },
       { label: 'Cancellation', value: 'Before funding starts' },
     ],
-    safety: 'Your wallet will show the platform fee, network fee, and any recoverable account rent.',
+    safety:
+      'Your wallet will show the platform fee, network fee, and any recoverable account rent.',
     title: 'Pay the devnet platform fee',
   } as const;
 }

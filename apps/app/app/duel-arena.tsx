@@ -25,7 +25,6 @@ import { Button, Card, CardContent, Input, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
 import { trackProductEvent } from './analytics-client';
-import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
 import {
   duelRules,
   getDuelPlayerStatus,
@@ -33,6 +32,7 @@ import {
   getLobbyEconomicsCopy,
   getPlayerActionError,
 } from './duel/duel-player-copy';
+import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
 import {
   advanceDuelLifecycle,
   cancelDuel,
