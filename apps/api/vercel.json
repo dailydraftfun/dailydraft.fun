@@ -3,11 +3,7 @@
   "framework": null,
   "functions": {
     "api/index.ts": {
-      "includeFiles": [
-        "../../packages/db/generated/**",
-        "../../packages/db/src/**",
-        "../../packages/db/package.json"
-      ],
+      "includeFiles": "../../packages/db/**",
       "maxDuration": 300,
       "supportsCancellation": true
     }
