@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { cache } from 'react';
+import { buildDuelMetadata, receiptTitle } from '../duel-metadata';
 import { DuelProofRefresh } from '../duel-proof-refresh';
 import {
   fetchPublicDuelReceipt,
@@ -32,17 +33,7 @@ export async function generateMetadata({ params }: DuelPageProps): Promise<Metad
       robots: { follow: false, index: false, nocache: true },
     };
   }
-  const title = `${receiptTitle(receipt)} — Pack Duel`;
-  return {
-    title,
-    description: `${receipt.pack.name} duel on Solana devnet. Status: ${receipt.duel.status}.`,
-    alternates: { canonical: `/duel/${encodeURIComponent(receipt.duel.id)}` },
-    openGraph: {
-      title,
-      description: `${receipt.participants.creator.display} vs ${receipt.participants.opponent?.display ?? 'open seat'}.`,
-    },
-    robots: { follow: false, index: receipt.privacy.indexable, nocache: true },
-  };
+  return buildDuelMetadata(receipt);
 }
 
 export default async function DuelPage({ params }: DuelPageProps) {
@@ -454,37 +445,6 @@ function UnavailableProof({ duelId }: { duelId: string }) {
       </Link>
     </main>
   );
-}
-
-function statusTitle(status: PublicDuelStatus): string {
-  const titles: Record<PublicDuelStatus, string> = {
-    awaiting_assets: 'Assets awaiting settlement',
-    cancelled: 'Duel cancelled',
-    cancelling: 'Cancellation in progress',
-    committing: 'Funding in progress',
-    expired: 'Challenge expired',
-    failed: 'Duel failed',
-    funded: 'Both fees funded',
-    matched: 'Opponent matched',
-    opening: 'Packs opening',
-    refunded: 'Duel refunded',
-    refunding: 'Refund in progress',
-    settled: 'Duel settled',
-    settling: 'Settlement in progress',
-    waiting: 'Challenge open',
-  };
-  return titles[status];
-}
-
-function receiptTitle(receipt: PublicDuelReceipt): string {
-  if (
-    receipt.result &&
-    (receipt.pack.providerMode === 'mock' ||
-      receipt.result.outcomes.some((outcome) => outcome.isMock))
-  ) {
-    return 'Devnet mock result';
-  }
-  return statusTitle(receipt.duel.status);
 }
 
 function shorten(value: string): string {
