@@ -88,6 +88,7 @@ export function normalizeRequestUrl(value: string | undefined): string {
   const rewrittenPath = url.searchParams.get('__path');
   if (rewrittenPath) {
     url.searchParams.delete('__path');
+    url.searchParams.delete('path');
     const search = url.searchParams.size > 0 ? `?${url.searchParams.toString()}` : '';
     return `/${rewrittenPath.replace(/^\/+/, '')}${search}`;
   }
