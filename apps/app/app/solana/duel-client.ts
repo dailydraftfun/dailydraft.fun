@@ -85,11 +85,18 @@ export type DurableDuel = {
 
 export type ProductCapabilities = {
   modes: {
-    direct: { enabled: boolean };
+    direct: { enabled: boolean; reason: string | null };
     house: { enabled: boolean; reason: string | null };
-    open: { enabled: boolean };
+    open: { enabled: boolean; reason: string | null };
   };
   network: 'solana-devnet';
+  packs: Array<{
+    enabled: boolean;
+    id: string;
+    name: string;
+    reason: string | null;
+    tier: 25 | 50 | 100;
+  }>;
   provider: { mode: string; ready: boolean };
 };
 
@@ -154,6 +161,7 @@ export async function createDuel(
     creatorWallet: string;
     matchmakingMode: 'direct' | 'house';
     opponentWallet?: string;
+    packId: string;
   },
   sessionToken: string,
 ): Promise<DurableDuel> {
@@ -161,16 +169,16 @@ export async function createDuel(
     ...input,
     analyticsSessionId: getAnalyticsSessionId(),
     expiresAt: new Date(Date.now() + 15 * 60 * 1_000).toISOString(),
-    packId: 'pokemon_50',
   });
 }
 
 export function searchOpenMatchmaking(
   wallet: string,
   sessionToken: string,
+  packId: string,
 ): Promise<MatchmakingSession> {
   return authenticatedMutation<MatchmakingSession>('/matchmaking/search', sessionToken, {
-    packId: 'pokemon_50',
+    packId,
     wallet,
   });
 }
@@ -178,9 +186,10 @@ export function searchOpenMatchmaking(
 export function continueOpenMatchmaking(
   wallet: string,
   sessionToken: string,
+  packId: string,
 ): Promise<MatchmakingSession> {
   return authenticatedMutation<MatchmakingSession>('/matchmaking/continue', sessionToken, {
-    packId: 'pokemon_50',
+    packId,
     wallet,
   });
 }
