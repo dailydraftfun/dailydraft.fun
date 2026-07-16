@@ -402,6 +402,52 @@
   color: var(--success);
 }
 
+.devnet-disclosure {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-top: 1px solid rgba(247, 201, 72, 0.16);
+  background: rgba(247, 201, 72, 0.07);
+  padding: 6px 16px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.devnet-disclosure-label {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--gold);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.devnet-disclosure-label i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 9px currentColor;
+}
+
+@media (max-width: 640px) {
+  .devnet-disclosure {
+    align-items: flex-start;
+    gap: 7px;
+    padding-inline: 12px;
+    font-size: 10px;
+    text-align: left;
+  }
+}
+
 .wallet-list {
   display: grid;
   gap: 8px;

@@ -8,10 +8,11 @@ import { WorkspaceShell } from './workspace-shell';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://openpacksduel.vercel.app'),
-  title: 'Pack Duel — Rip together. Winner takes all.',
-  description: 'Challenge another wallet to a synchronized trading card pack duel on Solana.',
+  title: 'Pack Duel Devnet — Rip together. Winner takes all.',
+  description:
+    'Devnet preview: challenge another wallet to a synchronized trading card pack duel using test SOL and test assets.',
   openGraph: {
-    siteName: 'Pack Duel',
+    siteName: 'Pack Duel Devnet',
     type: 'website',
   },
   twitter: {
