@@ -1,10 +1,11 @@
 # OpenPacks Duel Developer Docs
 
-Contract-first integration documentation for OpenPacks Duel.
+Nextra-powered, contract-first integration documentation for OpenPacks Duel.
 
-The canonical API contract is [`openapi.yaml`](openapi.yaml). The included
-Scalar reference is a static Vercel site. The initial API implementation lives
-in `apps/api`; production persistence and Solana settlement remain preview work.
+The canonical API contract is [`public/openapi.yaml`](public/openapi.yaml). The
+docs app exposes it at `/openapi.yaml` and renders an interactive Scalar
+reference at `/reference`. The initial API implementation lives in `apps/api`;
+production persistence and Solana settlement remain preview work.
 
 > [!IMPORTANT]
 > The v1 API is a preview contract. Endpoints marked with
@@ -15,10 +16,11 @@ in `apps/api`; production persistence and Solana settlement remain preview work.
 ```bash
 bun install
 bun run api:lint
-bunx serve .
+bun run dev
 ```
 
-Open `http://localhost:3000`. No secrets are required to render the reference.
+Open `http://localhost:3002`. No secrets are required to render the docs or API
+reference.
 
 ## Contract rules
 
@@ -28,7 +30,7 @@ Open `http://localhost:3000`. No secrets are required to render the reference.
   and sign; they never claim settlement before chain confirmation.
 - Monetary values are integer minor units plus an explicit currency.
 - Winner calculation uses only the provider-specific, pre-funded valuation policy documented in
-  [`guides/valuation-and-proof.md`](guides/valuation-and-proof.md).
+  [`content/guides/valuation-and-proof.mdx`](content/guides/valuation-and-proof.mdx).
 - Webhook consumers must verify signatures and tolerate duplicate delivery.
 
 ## Monorepo location

@@ -1,0 +1,38 @@
+---
+title: API reference
+description: Canonical OpenAPI contract and interactive reference for OpenPacks Duel.
+---
+
+# API reference
+
+The hosted devnet API base URL is:
+
+```text
+https://openpacksduel-api.vercel.app/v1
+```
+
+Open the [interactive Scalar reference](/reference) to inspect operations, schemas, and example
+payloads, or consume the raw [OpenAPI 3.1 contract](/openapi.yaml) from your generator and agent
+tooling.
+
+> [!NOTE]
+>
+> Public discovery and read endpoints do not all require an integration key. Authenticated
+> mutations document their credential, wallet-session, and `Idempotency-Key` requirements per
+> operation.
+
+## Machine-readable resources
+
+- [OpenAPI contract](/openapi.yaml)
+- [Agent index](/llms.txt)
+- [Equal-value fixture](/fixtures/valuation/equal-value.json)
+- [Stale-value fixture](/fixtures/valuation/stale-value.json)
+- [Provider-correction fixture](/fixtures/valuation/provider-correction.json)
+
+## Integration rules
+
+1. Never send a wallet private key or seed phrase to the API.
+2. Decode and inspect every prepared Solana transaction before signing.
+3. Reuse the same idempotency key when retrying a mutation.
+4. Wait for the documented finality and settlement evidence before presenting a duel as complete.
+5. Verify signed webhooks and process event IDs idempotently.

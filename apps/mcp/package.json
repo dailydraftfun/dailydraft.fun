@@ -9,11 +9,11 @@
     "openpacksduel-mcp": "./src/index.ts"
   },
   "scripts": {
-    "build": "bun build src/index.ts api/mcp.ts --target=bun --outdir=dist",
+    "build": "bun build src/index.ts api/*.ts --target=bun --outdir=dist",
     "clean": "rm -rf dist",
     "dev": "bun --watch src/index.ts",
     "start": "bun run src/index.ts",
-    "lint": "biome check api/ src/",
+    "lint": "biome check api/ public/ src/",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

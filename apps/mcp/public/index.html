@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Connect Claude Code, Codex, and other MCP clients to the authenticated OpenPacks Duel integration."
+    />
+    <meta name="theme-color" content="#070907" />
+    <title>OpenPacks Duel MCP — Connect Claude and Codex</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/connect.js" defer></script>
+  </head>
+  <body>
+    <div class="page-grid" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="OpenPacks Duel MCP home">
+        <span class="brand-mark" aria-hidden="true">
+          <span></span>
+          <span></span>
+        </span>
+        <span class="brand-name">PACK DUEL</span>
+        <span class="brand-product">MCP</span>
+      </a>
+
+      <nav class="header-nav" aria-label="Primary navigation">
+        <a href="https://openpacksduel-docs.vercel.app">Docs</a>
+        <a href="/config">Config</a>
+        <a href="/health">Health</a>
+        <a href="https://github.com/openpacksduel/app">GitHub</a>
+      </nav>
+
+      <a class="header-cta" href="#connect">Connect an agent</a>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="status-pill" data-service-status="checking">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span data-service-label>Checking hosted endpoint</span>
+        </div>
+
+        <p class="eyebrow">The agent interface for on-chain pack duels</p>
+        <h1 id="hero-title">
+          OpenPacks Duel MCP.
+          <span>Claude + Codex.</span>
+        </h1>
+        <p class="hero-copy">
+          Give agents a typed, non-custodial interface for pack discovery, duel state, proof
+          references, social cards, and human-confirmed Solana devnet transaction preparation.
+        </p>
+
+        <div class="hero-actions">
+          <a class="primary-button" href="#connect">Connect now</a>
+          <a class="secondary-button" href="https://openpacksduel-docs.vercel.app">
+            Read the API docs
+          </a>
+        </div>
+
+        <ul class="trust-row" aria-label="Integration guarantees">
+          <li>
+            <span aria-hidden="true">✓</span>
+            Streamable HTTP
+          </li>
+          <li>
+            <span aria-hidden="true">✓</span>
+            Scoped bearer auth
+          </li>
+          <li>
+            <span aria-hidden="true">✓</span>
+            Never signs for wallets
+          </li>
+        </ul>
+      </section>
+
+      <section class="endpoint-band" aria-labelledby="endpoint-title">
+        <div>
+          <p class="section-kicker">Hosted endpoint</p>
+          <h2 id="endpoint-title">One URL for every compatible client.</h2>
+        </div>
+        <div class="endpoint-control">
+          <span class="endpoint-lock" aria-hidden="true">↗</span>
+          <code id="mcp-endpoint" data-endpoint-text>https://openpacksduel-mcp.vercel.app/mcp</code>
+          <button class="copy-button" type="button" data-copy-target="mcp-endpoint">
+            <span class="copy-default">Copy</span>
+            <span class="copy-success">Copied</span>
+          </button>
+        </div>
+      </section>
+
+      <section id="connect" class="section-shell connect-section" aria-labelledby="connect-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Setup</p>
+            <h2 id="connect-title">Connect in under a minute.</h2>
+          </div>
+          <p>
+            Obtain a scoped MCP credential from the OpenPacks Duel operator, store it in an
+            environment variable, then register the hosted endpoint with your client.
+          </p>
+        </div>
+
+        <div class="setup-card">
+          <div class="tab-list" role="tablist" aria-label="MCP client setup">
+            <button
+              id="tab-claude"
+              class="tab-button"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="panel-claude"
+              tabindex="0"
+            >
+              Claude Code
+            </button>
+            <button
+              id="tab-codex"
+              class="tab-button"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-codex"
+              tabindex="-1"
+            >
+              Codex
+            </button>
+            <button
+              id="tab-manual"
+              class="tab-button"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-manual"
+              tabindex="-1"
+            >
+              Manual config
+            </button>
+          </div>
+
+          <div
+            id="panel-claude"
+            class="tab-panel"
+            role="tabpanel"
+            aria-labelledby="tab-claude"
+          >
+            <div class="step-label"><span>1</span> Store the credential in your shell</div>
+            <div class="code-block">
+              <pre><code id="claude-env">export OPENPACKSDUEL_MCP_TOKEN="replace-with-your-scoped-token"</code></pre>
+              <button class="code-copy" type="button" data-copy-target="claude-env" aria-label="Copy environment variable command">
+                Copy
+              </button>
+            </div>
+            <div class="step-label"><span>2</span> Register the hosted MCP server</div>
+            <div class="code-block">
+              <pre><code id="claude-command" data-endpoint-code>claude mcp add --transport http openpacksduel --scope user https://openpacksduel-mcp.vercel.app/mcp --header "Authorization: Bearer $OPENPACKSDUEL_MCP_TOKEN"</code></pre>
+              <button class="code-copy" type="button" data-copy-target="claude-command" aria-label="Copy Claude Code setup command">
+                Copy
+              </button>
+            </div>
+            <p class="panel-note">
+              Restart Claude Code after registration, then run <code>/mcp</code> to verify the
+              server and inspect its tools.
+            </p>
+          </div>
+
+          <div
+            id="panel-codex"
+            class="tab-panel"
+            role="tabpanel"
+            aria-labelledby="tab-codex"
+            hidden
+          >
+            <div class="step-label"><span>1</span> Store the credential in your shell</div>
+            <div class="code-block">
+              <pre><code id="codex-env">export OPENPACKSDUEL_MCP_TOKEN="replace-with-your-scoped-token"</code></pre>
+              <button class="code-copy" type="button" data-copy-target="codex-env" aria-label="Copy environment variable command">
+                Copy
+              </button>
+            </div>
+            <div class="step-label"><span>2</span> Register the hosted MCP server</div>
+            <div class="code-block">
+              <pre><code id="codex-command" data-endpoint-code>codex mcp add openpacksduel --url https://openpacksduel-mcp.vercel.app/mcp --bearer-token-env-var OPENPACKSDUEL_MCP_TOKEN</code></pre>
+              <button class="code-copy" type="button" data-copy-target="codex-command" aria-label="Copy Codex setup command">
+                Copy
+              </button>
+            </div>
+            <p class="panel-note">
+              The token is resolved from your environment at runtime and does not need to be
+              written into Codex configuration.
+            </p>
+          </div>
+
+          <div
+            id="panel-manual"
+            class="tab-panel"
+            role="tabpanel"
+            aria-labelledby="tab-manual"
+            hidden
+          >
+            <div class="step-label"><span>1</span> Add the server to an MCP client config</div>
+            <div class="code-block">
+              <pre><code id="manual-config" data-endpoint-code>[mcp_servers.openpacksduel]
+url = "https://openpacksduel-mcp.vercel.app/mcp"
+bearer_token_env_var = "OPENPACKSDUEL_MCP_TOKEN"</code></pre>
+              <button class="code-copy" type="button" data-copy-target="manual-config" aria-label="Copy manual MCP configuration">
+                Copy
+              </button>
+            </div>
+            <div class="transport-grid">
+              <div>
+                <span>Transport</span>
+                <strong>Streamable HTTP</strong>
+              </div>
+              <div>
+                <span>Authorization</span>
+                <strong>Bearer token</strong>
+              </div>
+              <div>
+                <span>Protocol mode</span>
+                <strong>Stateless JSON</strong>
+              </div>
+            </div>
+            <p class="panel-note">
+              Clients that do not support an environment-backed bearer token can send
+              <code>Authorization: Bearer &lt;token&gt;</code> as an HTTP header. Avoid committing
+              that configuration.
+            </p>
+          </div>
+        </div>
+
+        <aside class="credential-warning">
+          <div class="warning-icon" aria-hidden="true">!</div>
+          <div>
+            <strong>Treat MCP credentials like API keys.</strong>
+            <p>
+              Never paste a live token into a chat, issue, source file, or command history. Use a
+              scoped environment variable and rotate the credential if it is exposed.
+            </p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section-shell capability-section" aria-labelledby="capability-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">Capabilities</p>
+            <h2 id="capability-title">Useful context, strict boundaries.</h2>
+          </div>
+          <p>
+            Read tools work against the canonical duel API. Prepare tools only return an intent or
+            unsigned transaction for a participant wallet to inspect and approve.
+          </p>
+        </div>
+
+        <div class="capability-grid">
+          <article>
+            <span class="capability-number">01</span>
+            <h3>Discover the arena</h3>
+            <p>List eligible packs and find open, direct, or house duels by wallet and status.</p>
+            <code>list_packs · list_duels</code>
+          </article>
+          <article>
+            <span class="capability-number">02</span>
+            <h3>Verify the result</h3>
+            <p>Read canonical duel state, settlement references, and social-card URLs.</p>
+            <code>get_duel · get_duel_proof</code>
+          </article>
+          <article>
+            <span class="capability-number">03</span>
+            <h3>Prepare, never sign</h3>
+            <p>Create validated intents and unsigned devnet funding transactions.</p>
+            <code>prepare_create_duel · prepare_fund_duel</code>
+          </article>
+        </div>
+      </section>
+
+      <section class="section-shell boundary-section" aria-labelledby="boundary-title">
+        <div>
+          <p class="section-kicker">Non-custodial by design</p>
+          <h2 id="boundary-title">The agent stops at wallet confirmation.</h2>
+          <p>
+            This MCP never requests seed phrases, stores private keys, signs transactions, submits
+            transactions, holds cards, or settles duels. Value-bearing state should be verified on
+            Solana, not trusted from API text alone.
+          </p>
+        </div>
+        <a href="https://github.com/openpacksduel/escrow">
+          Inspect the public escrow
+          <span aria-hidden="true">↗</span>
+        </a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="site-footer-copy">
+        <a class="brand" href="/" aria-label="OpenPacks Duel MCP home">
+          <span class="brand-mark brand-mark-small" aria-hidden="true">
+            <span></span>
+            <span></span>
+          </span>
+          <span class="brand-name">PACK DUEL</span>
+          <span class="brand-product">MCP</span>
+        </a>
+        <p>Authenticated agent tooling for the OpenPacks Duel devnet preview.</p>
+      </div>
+      <nav class="footer-nav" aria-label="Footer navigation">
+        <a href="https://openpacksduel.vercel.app">App</a>
+        <a href="https://openpacksduel-docs.vercel.app">Docs</a>
+        <a href="/config">Machine config</a>
+        <a href="/health">Status</a>
+      </nav>
+    </footer>
+  </body>
+</html>

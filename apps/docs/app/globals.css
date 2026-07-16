@@ -1,0 +1,208 @@
+:root {
+  --opd-accent: #b8ff32;
+  --opd-accent-soft: color-mix(in srgb, var(--opd-accent) 16%, transparent);
+  --opd-border: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+::selection {
+  color: #080b08;
+  background: var(--opd-accent);
+}
+
+.docs-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  letter-spacing: -0.02em;
+}
+
+.docs-logo > span:last-child {
+  padding: 0.15rem 0.35rem;
+  color: #273014;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  background: var(--opd-accent);
+  border-radius: 0.25rem;
+}
+
+.docs-logo-mark {
+  position: relative;
+  display: inline-block;
+  width: 1.15rem;
+  height: 1.15rem;
+  transform: rotate(45deg);
+}
+
+.docs-logo-mark span {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--opd-accent);
+}
+
+.docs-logo-mark span:last-child {
+  inset: 0.28rem;
+  background: var(--opd-accent);
+}
+
+.docs-hero {
+  position: relative;
+  padding: clamp(2rem, 6vw, 4.5rem);
+  margin: 0 0 2rem;
+  overflow: hidden;
+  color: #f5f7f4;
+  background:
+    radial-gradient(circle at 85% 15%, rgb(184 255 50 / 18%), transparent 28rem),
+    linear-gradient(145deg, #10140f, #080b09 68%);
+  border: 1px solid rgb(184 255 50 / 22%);
+  border-radius: 1.25rem;
+}
+
+.docs-hero::after {
+  position: absolute;
+  right: -4rem;
+  bottom: -5rem;
+  width: 18rem;
+  height: 18rem;
+  content: "";
+  background-image:
+    linear-gradient(rgb(184 255 50 / 8%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(184 255 50 / 8%) 1px, transparent 1px);
+  background-size: 1.5rem 1.5rem;
+  transform: rotate(-12deg);
+  mask-image: linear-gradient(to top, #000, transparent);
+}
+
+.docs-eyebrow {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  padding: 0.35rem 0.6rem;
+  margin: 0 0 1.25rem;
+  color: var(--opd-accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  background: rgb(184 255 50 / 8%);
+  border: 1px solid rgb(184 255 50 / 24%);
+  border-radius: 999px;
+}
+
+.docs-hero h1 {
+  position: relative;
+  z-index: 1;
+  max-width: 13ch;
+  margin: 0;
+  font-size: clamp(2.7rem, 8vw, 5rem);
+  line-height: 0.94;
+  letter-spacing: -0.065em;
+}
+
+.docs-hero > p:not(.docs-eyebrow) {
+  position: relative;
+  z-index: 1;
+  max-width: 42rem;
+  margin: 1.5rem 0 0;
+  color: #bfc6bd;
+  font-size: 1.08rem;
+  line-height: 1.75;
+}
+
+.docs-hero-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+.docs-hero-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.65rem;
+  padding: 0.6rem 0.95rem;
+  color: #f5f7f4;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 0.6rem;
+}
+
+.docs-hero-actions a:first-child {
+  color: #080b08;
+  background: var(--opd-accent);
+  border-color: var(--opd-accent);
+}
+
+.docs-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  margin: 1rem 0 2.5rem;
+}
+
+.docs-card {
+  display: block;
+  min-height: 10rem;
+  padding: 1.15rem;
+  color: inherit;
+  text-decoration: none;
+  background: color-mix(in srgb, var(--x-color-nextra-bg, transparent) 92%, currentColor 2%);
+  border: 1px solid var(--opd-border);
+  border-radius: 0.85rem;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.docs-card:hover {
+  border-color: color-mix(in srgb, var(--opd-accent) 50%, transparent);
+  transform: translateY(-2px);
+}
+
+.docs-card span {
+  color: var(--opd-accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.docs-card strong {
+  display: block;
+  margin: 0.55rem 0;
+  font-size: 1.05rem;
+}
+
+.docs-card p {
+  margin: 0;
+  color: color-mix(in srgb, currentColor 68%, transparent);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.docs-status-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 2rem;
+}
+
+.docs-status-row > div {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--opd-border);
+  border-radius: 0.65rem;
+}
+
+.docs-status-row strong,
+.docs-status-row span {
+  display: block;
+}
+
+.docs-status-row span {
+  margin-top: 0.25rem;
+  color: color-mix(in srgb, currentColor 64%, transparent);
+  font-size: 0.82rem;
+}
