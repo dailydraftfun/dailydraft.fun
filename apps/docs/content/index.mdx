@@ -1,0 +1,77 @@
+---
+title: OpenPacks Duel developer docs
+description: Build pack-opening duels with wallet-signed Solana transactions and verifiable results.
+---
+
+<div className="docs-hero">
+  <p className="docs-eyebrow">Developer preview · Solana devnet</p>
+  <h1>Build on the duel protocol.</h1>
+  <p>
+    Discover eligible packs, match wallets, prepare transactions, follow finality, and publish
+    verifiable duel results without ever handling a player's private key.
+  </p>
+  <div className="docs-hero-actions">
+    <a href="/guides/quickstart">Start integrating →</a>
+    <a href="/reference">Explore the API</a>
+  </div>
+</div>
+
+## Choose your entry point
+
+<div className="docs-card-grid">
+  <a className="docs-card" href="/guides/quickstart">
+    <span>Start here</span>
+    <strong>Integration quickstart</strong>
+    <p>Move from pack discovery to a shareable duel receipt using the hosted devnet API.</p>
+  </a>
+  <a className="docs-card" href="/reference">
+    <span>Contract</span>
+    <strong>Interactive API reference</strong>
+    <p>Inspect every preview endpoint, schema, request, and response in the canonical OpenAPI contract.</p>
+  </a>
+  <a className="docs-card" href="/guides/solana-transactions">
+    <span>Transactions</span>
+    <strong>Wallet-signed Solana flow</strong>
+    <p>Understand prepared transactions, submission binding, finality, recovery, and escrow checks.</p>
+  </a>
+  <a className="docs-card" href="/guides/valuation-and-proof">
+    <span>Verification</span>
+    <strong>Valuation and result proof</strong>
+    <p>Reproduce the winner calculation from the committed policy, outcomes, and public receipt.</p>
+  </a>
+</div>
+
+## Hosted surfaces
+
+<div className="docs-status-row">
+  <div>
+    <strong>API</strong>
+    <span>openpacksduel-api.vercel.app/v1</span>
+  </div>
+  <div>
+    <strong>MCP</strong>
+    <span>openpacksduel-mcp.vercel.app/mcp</span>
+  </div>
+  <div>
+    <strong>Network</strong>
+    <span>Solana devnet only</span>
+  </div>
+</div>
+
+> [!IMPORTANT]
+>
+> The v1 API is a preview contract. Devnet responses, mock provider outcomes, and prepared
+> transactions do not imply production custody or mainnet readiness.
+
+## Security model
+
+- Wallets inspect and sign Solana transactions locally.
+- The API and MCP server never accept a seed phrase or private key.
+- Mutating API requests require authentication and an idempotency key.
+- A duel is final only after the required on-chain confirmation and asset-state checks.
+- Winner calculation uses the immutable valuation policy committed before funding.
+
+The public Solana program lives in the
+[escrow repository](https://github.com/openpacksduel/escrow). Agent integrations can also use the
+[hosted MCP server](https://openpacksduel-mcp.vercel.app) or the public
+[skills repository](https://github.com/openpacksduel/skills).

@@ -1,12 +1,13 @@
 # OpenPacks Duel developer documentation
 
 - API contract: /openapi.yaml
-- Quickstart: /guides/quickstart.md
-- Solana transaction model: /guides/solana-transactions.md
-- Canonical valuation and proof: /guides/valuation-and-proof.md
-- Webhook verification: /guides/webhooks.md
+- Interactive API reference: /reference
+- Quickstart: /guides/quickstart
+- Solana transaction model: /guides/solana-transactions
+- Canonical valuation and proof: /guides/valuation-and-proof
+- Webhook verification: /guides/webhooks
 - Escrow protocol: https://github.com/openpacksduel/escrow/blob/main/docs/protocol.md
-- MCP server: https://github.com/openpacksduel/mcp
+- MCP server: https://openpacksduel-mcp.vercel.app
 - Agent skills: https://github.com/openpacksduel/skills
 
 The API contract is preview-only until its endpoints are deployed. Never provide

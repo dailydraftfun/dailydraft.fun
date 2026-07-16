@@ -9,6 +9,10 @@ discovery, duel status, proof references, and canonical social-card URLs. Its
 prepare tools return off-chain intents or unsigned devnet transactions only. It
 never signs, submits, accepts wallet secrets, holds keys, or settles duels.
 
+The deployment root is a public connection guide. `/health` exposes readiness
+without secrets, while `/config` returns the public transport, tool, and safety
+configuration for automated setup.
+
 > [!IMPORTANT]
 > The backing API and Solana transaction builder are devnet-preview contracts.
 > Mock card outcomes are valueless. A prepared intent is not proof of funding or
@@ -26,8 +30,6 @@ never signs, submits, accepts wallet secrets, holds keys, or settles duels.
 | `get_duel_social_card` | Get canonical page, image, and share text |
 | `prepare_create_duel` | Validate an off-chain creation intent without creating it |
 | `prepare_fund_duel` | Request an unsigned devnet funding transaction |
-| `prepare_cancel_duel` | Request an unsigned devnet cancellation transaction |
-| `prepare_refund_duel` | Request an unsigned devnet refund transaction |
 
 Prepare tools require the `prepare` MCP credential scope and always return
 `walletConfirmation.required: true`. The transaction-preparation API is allowed

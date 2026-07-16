@@ -1,6 +1,6 @@
 apis:
   openpacksduel@v1:
-    root: ./openapi.yaml
+    root: ./public/openapi.yaml
 
 extends:
   - recommended
