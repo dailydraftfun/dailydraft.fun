@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import Link from 'next/link';
 import { cache } from 'react';
 import { DuelProofRefresh } from '../duel-proof-refresh';
@@ -221,6 +222,16 @@ function ResultPanel({ receipt }: { receipt: PublicDuelReceipt }) {
           return (
             <article key={outcome.side} className="rounded-lg border border-border bg-primary p-4">
               <p className="proof-label">{outcome.side} pull</p>
+              {outcome.imageUrl ? (
+                <Image
+                  alt={outcome.displayName}
+                  className="mt-3 h-auto w-full rounded-lg"
+                  height={500}
+                  sizes="(min-width: 768px) 320px, 80vw"
+                  src={outcome.imageUrl}
+                  width={360}
+                />
+              ) : null}
               <h3 className="mt-3 text-lg font-semibold text-primary">{outcome.displayName}</h3>
               <p className="mt-1 text-lg font-semibold text-lime">
                 {formatPublicMoney(outcome.insuredValue)}

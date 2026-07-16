@@ -389,7 +389,13 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       orderBy: [{ nextRecoveryCheckAt: 'asc' }, { createdAt: 'asc' }],
       take: limit,
       where: {
-        action: DuelTransactionAction.FUND,
+        action: {
+          in: [
+            DuelTransactionAction.FUND,
+            DuelTransactionAction.COMMIT_RESULT,
+            DuelTransactionAction.SETTLE,
+          ],
+        },
         createdAt: { gte: preparedAfter },
         OR: [{ nextRecoveryCheckAt: null }, { nextRecoveryCheckAt: { lte: now } }],
         recoveredAt: null,
@@ -401,11 +407,20 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
     return rows.flatMap((row) => {
       const expectedAccounts = parseExpectedAccounts(row.expectedAccounts);
       const expectedInstructionAccounts = parseExpectedAccounts(row.expectedInstructionAccounts);
-      const metadata = parseFundingSubmissionMetadata(row.metadata);
+      const metadata = parseRecoverySubmissionMetadata(row.action, row.metadata);
+      const fundingIntent = row.action === DuelTransactionAction.FUND;
+      const providerTransitionValid =
+        (row.action === DuelTransactionAction.COMMIT_RESULT &&
+          row.expectedFromStatus === DatabaseDuelStatus.AWAITING_ASSETS &&
+          row.expectedToStatus === DatabaseDuelStatus.SETTLING) ||
+        (row.action === DuelTransactionAction.SETTLE &&
+          row.expectedFromStatus === DatabaseDuelStatus.SETTLING &&
+          row.expectedToStatus === DatabaseDuelStatus.SETTLED);
       if (
         !row.expectedSigner ||
         row.expectedSigner !== row.wallet ||
-        ![row.duel.creatorWallet, row.duel.opponentWallet].includes(row.wallet) ||
+        (fundingIntent &&
+          ![row.duel.creatorWallet, row.duel.opponentWallet].includes(row.wallet)) ||
         !row.expectedProgramId ||
         !row.expectedMessageHash ||
         !expectedAccounts ||
@@ -413,8 +428,10 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
         !expectedInstructionAccounts ||
         !row.expectedFromStatus ||
         !row.expectedToStatus ||
-        row.expectedFromStatus !== DatabaseDuelStatus.COMMITTING ||
-        row.expectedToStatus !== DatabaseDuelStatus.FUNDED ||
+        (fundingIntent &&
+          (row.expectedFromStatus !== DatabaseDuelStatus.COMMITTING ||
+            row.expectedToStatus !== DatabaseDuelStatus.FUNDED)) ||
+        (!fundingIntent && !providerTransitionValid) ||
         !row.serializedTransaction ||
         !row.recentBlockhash ||
         row.lastValidBlockHeight === null ||
@@ -430,7 +447,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
 
       return [
         {
-          action: 'fund' as const,
+          action: row.action.toLowerCase() as PreparedRecoveryIntent['action'],
           allowMultipleInstructionMatches: row.allowMultipleInstructionMatches,
           checkAttempts: row.checkAttempts,
           duelId: row.duelId,
@@ -446,6 +463,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           expectedToStatus: toApiStatus(row.expectedToStatus),
           id: row.id,
           lastValidBlockHeight: row.lastValidBlockHeight,
+          lastRecoveryCheckedBlockHeight: row.lastRecoveryCheckedBlockHeight,
           preparedAt: row.createdAt,
           recentBlockhash: row.recentBlockhash,
           recoveryCheckAttempts: row.recoveryCheckAttempts,
@@ -459,10 +477,14 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
     transactionId: string,
     now: Date,
     nextRecoveryCheckAt: Date,
+    checkedBlockHeight?: bigint,
   ): Promise<void> {
     await this.database.duelTransaction.updateMany({
       data: {
         lastRecoveryCheckedAt: now,
+        ...(checkedBlockHeight === undefined
+          ? {}
+          : { lastRecoveryCheckedBlockHeight: checkedBlockHeight }),
         nextRecoveryCheckAt,
         recoveryCheckAttempts: { increment: 1 },
       },
@@ -496,7 +518,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       const isReplay =
         monitored.recoveryAlertCode === input.code &&
         monitored.recoveryCandidateSignature === input.signature;
-      const metadata = parseFundingSubmissionMetadata(monitored.metadata);
+      const metadata = parseRecoverySubmissionMetadata(monitored.action, monitored.metadata);
       const routing = recoveryAlertRouting({
         currentStatus: monitored.duel.status,
         storedEscrowAddress: monitored.duel.escrowAddress,
@@ -532,7 +554,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       await database.duelEvent.create({
         data: {
           data: {
-            action: 'fund',
+            action: monitored.action.toLowerCase(),
             code: input.code,
             escrowConflict: routing.escrowConflict,
             signature: input.signature,
@@ -544,6 +566,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           sequence: monitored.duel.version + 1,
           toStatus: routing.targetStatus,
           type:
+            monitored.action === DuelTransactionAction.FUND &&
             routing.targetStatus === DatabaseDuelStatus.REFUNDING
               ? 'duel.unbound_funding_recovery_started'
               : 'duel.transaction_recovery_alert',
@@ -956,6 +979,19 @@ function parseFundingSubmissionMetadata(
     return null;
   }
   return { escrowAddress: value.escrowAddress, feeAmountLamports: value.feeAmountLamports };
+}
+
+function parseRecoverySubmissionMetadata(
+  action: DuelTransactionAction,
+  value: Prisma.JsonValue | null,
+): { escrowAddress: string } | null {
+  if (action === DuelTransactionAction.FUND) {
+    return parseFundingSubmissionMetadata(value);
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const proof = value.proof;
+  if (!proof || typeof proof !== 'object' || Array.isArray(proof)) return null;
+  return typeof proof.escrowAddress === 'string' ? { escrowAddress: proof.escrowAddress } : null;
 }
 
 function containsWritableAddress(

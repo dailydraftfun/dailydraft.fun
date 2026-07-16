@@ -18,6 +18,7 @@ import {
   OperatorActorClass,
   type Prisma,
 } from '@openpacksduel/db';
+import { Keypair } from '@solana/web3.js';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type { MatchmakingMode } from '../domain.js';
@@ -436,6 +437,8 @@ export class AdminService {
     }
     const providerMode = process.env.OPENPACKSDUEL_PROVIDER_MODE ?? 'mock';
     const collectorRequired = providerMode === 'collector-crypt-sandbox';
+    const demoRequired = providerMode === 'openpacksduel-devnet';
+    const demoCredentialConfigured = demoProviderConfigured();
     const limits = readRiskLimits();
     const treasuryConfig = readHouseTreasuryConfig();
     const treasuryConfigurationErrors = houseTreasuryConfigurationErrors(treasuryConfig);
@@ -451,10 +454,12 @@ export class AdminService {
       provider: {
         configured:
           providerMode === 'mock' ||
+          (demoRequired && demoCredentialConfigured) ||
           (collectorRequired && Boolean(process.env.COLLECTOR_CRYPT_API_KEY)),
-        credentialConfigured: Boolean(process.env.COLLECTOR_CRYPT_API_KEY),
+        credentialConfigured:
+          demoCredentialConfigured || Boolean(process.env.COLLECTOR_CRYPT_API_KEY),
         mode: providerMode,
-        verified: providerMode === 'mock',
+        verified: providerMode === 'mock' || (demoRequired && demoCredentialConfigured),
       },
       rpc: {
         configured: Boolean(process.env.SOLANA_RPC_URL),
@@ -492,6 +497,26 @@ export class AdminService {
         status: { in: ACTIVE_DUEL_STATUSES },
       },
     });
+  }
+}
+
+function demoProviderConfigured(): boolean {
+  if (process.env.OPENPACKSDUEL_PROVIDER_ASSET_STANDARD !== 'legacy-spl-nft') return false;
+  const expected = process.env.ESCROW_PROVIDER_SIGNER?.trim();
+  const value = process.env.OPENPACKSDUEL_DEVNET_PROVIDER_KEYPAIR_JSON?.trim();
+  if (!expected || !value) return false;
+  try {
+    const secret: unknown = JSON.parse(value);
+    if (
+      !Array.isArray(secret) ||
+      secret.length !== 64 ||
+      !secret.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)
+    ) {
+      return false;
+    }
+    return Keypair.fromSecretKey(Uint8Array.from(secret)).publicKey.toBase58() === expected;
+  } catch {
+    return false;
   }
 }
 

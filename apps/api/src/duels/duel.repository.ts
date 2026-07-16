@@ -6,6 +6,7 @@ import type {
   DuelTransactionRecord,
   MatchmakingMode,
   Pack,
+  PackProviderMode,
   Page,
 } from '../domain.js';
 import type { ComparedPackOutcomes, NormalizedPackOutcome } from '../providers/provider-result.js';
@@ -20,7 +21,7 @@ export interface CreateDuelRecord {
   opponentJoinedAt?: Date;
   opponentWallet?: string;
   pack: Pack;
-  providerMode: 'collector-crypt-sandbox' | 'mock';
+  providerMode: PackProviderMode;
 }
 
 export interface TransitionDuelRecord {

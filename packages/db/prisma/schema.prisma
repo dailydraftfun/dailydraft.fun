@@ -35,6 +35,7 @@ enum SolanaNetwork {
 
 enum ProviderMode {
   MOCK
+  OPENPACKSDUEL_DEVNET
   COLLECTOR_CRYPT_SANDBOX
 }
 
@@ -201,12 +202,38 @@ model Duel {
   houseReservation    HouseTreasuryReservation?
   houseInventory      HouseInventoryAsset[]
   houseLedgerEntries  HouseTreasuryLedgerEntry[]
+  devnetPackSnapshots DevnetPackSnapshot[]
 
   @@index([status, expiresAt])
   @@index([mode, status, packId, createdAt])
   @@index([creatorWallet, createdAt])
   @@index([opponentWallet, createdAt])
   @@index([winnerWallet, createdAt])
+}
+
+model DevnetPackSnapshot {
+  providerReference     String    @id
+  duelId                String
+  side                  DuelSide
+  providerPackId        String
+  pokemonCardId         String
+  displayName           String
+  imageUrl              String
+  insuredValueAmount    String
+  priceVariant          String
+  priceUpdatedAt        String
+  sourceTimestamp       DateTime
+  depositLeaseOwner     String?
+  depositLeaseExpiresAt DateTime?
+  depositSignature      String?
+  assetReference        String?
+  openedAt              DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  duel                  Duel      @relation(fields: [duelId], references: [id], onDelete: Cascade)
+
+  @@unique([duelId, side])
+  @@index([pokemonCardId, createdAt])
 }
 
 model MatchmakingTicket {
@@ -243,25 +270,27 @@ model MatchmakingBehavior {
 }
 
 model DuelPackOutcome {
-  id                   String               @id
-  duelId               String
-  side                 DuelSide
-  provider             String
-  providerReference    String
-  assetReference       String
-  displayName          String
-  insuredValueAmount   String
-  insuredValueCurrency String               @default("USDC")
-  insuredValueDecimals Int                  @default(6)
-  sourceTimestamp      DateTime?
-  poolVersion          String?
-  valuationPolicyHash  String
-  resultHash           String
-  isMock               Boolean
-  openedAt             DateTime
-  createdAt            DateTime             @default(now())
-  duel                 Duel                 @relation(fields: [duelId], references: [id], onDelete: Cascade)
-  houseInventoryAsset  HouseInventoryAsset?
+  id                       String               @id
+  duelId                   String
+  side                     DuelSide
+  provider                 String
+  providerReference        String
+  assetReference           String
+  displayName              String
+  imageUrl                 String?
+  valuationSourceReference String?
+  insuredValueAmount       String
+  insuredValueCurrency     String               @default("USDC")
+  insuredValueDecimals     Int                  @default(6)
+  sourceTimestamp          DateTime?
+  poolVersion              String?
+  valuationPolicyHash      String
+  resultHash               String
+  isMock                   Boolean
+  openedAt                 DateTime
+  createdAt                DateTime             @default(now())
+  duel                     Duel                 @relation(fields: [duelId], references: [id], onDelete: Cascade)
+  houseInventoryAsset      HouseInventoryAsset?
 
   @@unique([duelId, side])
   @@unique([provider, providerReference])
@@ -332,6 +361,7 @@ model DuelTransaction {
   submittedAt                     DateTime?
   recoveredAt                     DateTime?
   lastRecoveryCheckedAt           DateTime?
+  lastRecoveryCheckedBlockHeight  BigInt?
   nextRecoveryCheckAt             DateTime?
   recoveryCheckAttempts           Int                   @default(0)
   recoveryCandidateAt             DateTime?

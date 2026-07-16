@@ -1,8 +1,9 @@
 import type { Duel, DuelStatus, DuelTransactionRecord, Money } from '../domain.js';
 import { compareInsuredValues } from '../providers/provider-result.js';
 import {
-  CANONICAL_VALUATION_POLICY,
   requireCanonicalValuationPolicyHash,
+  type SupportedValuationPolicy,
+  valuationPolicyForHash,
 } from '../providers/valuation-policy.js';
 
 export type PublicDuelStatus = DuelStatus | 'expired';
@@ -86,6 +87,7 @@ export interface PublicPostDuelCardActionState {
   actions: PublicPostDuelCardAction[];
   assetReference: string;
   displayName: string;
+  imageUrl: string | null;
   duelId: string;
   insuredValue: Money;
   owner: PublicParticipant;
@@ -139,7 +141,7 @@ export interface PublicSolanaReference {
 }
 
 export interface PublicRecoveryAlert {
-  action: 'fund';
+  action: 'commit_result' | 'fund' | 'settle';
   code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH';
   detectedAt: string;
   explorerUrl: string;
@@ -152,6 +154,7 @@ export interface PublicDuelResult {
   outcomes: Array<{
     assetReference: string;
     displayName: string;
+    imageUrl: string | null;
     insuredValue: Money;
     isMock: boolean;
     openedAt: string;
@@ -159,18 +162,19 @@ export interface PublicDuelResult {
     resultHash: string;
     side: 'creator' | 'opponent';
     sourceTimestamp: string;
+    valuationSourceReference: string | null;
   }>;
   policy: {
-    authoritativeField: typeof CANONICAL_VALUATION_POLICY.authoritativeField;
+    authoritativeField: SupportedValuationPolicy['authoritativeField'];
     currency: 'USDC';
     decimals: 6;
     hash: string;
     hashAlgorithm: 'sha256';
     maxSourceAgeSeconds: number;
-    maxValueMinorUnits: typeof CANONICAL_VALUATION_POLICY.maxValueMinorUnits;
-    policyVersion: typeof CANONICAL_VALUATION_POLICY.policyVersion;
+    maxValueMinorUnits: SupportedValuationPolicy['maxValueMinorUnits'];
+    policyVersion: SupportedValuationPolicy['policyVersion'];
     rounding: 'none';
-    tieRule: typeof CANONICAL_VALUATION_POLICY.tieRule;
+    tieRule: SupportedValuationPolicy['tieRule'];
   };
   proof: {
     context: {
@@ -186,7 +190,8 @@ export interface PublicDuelResult {
     poolVersion: string;
     providerAttestation: {
       required: boolean;
-      status: 'mock-not-applicable' | 'not-recorded';
+      scope: 'escrow-mints-values-policy' | 'none';
+      status: 'mock-not-applicable' | 'not-recorded' | 'on-chain-commitment-finalized';
     };
     schemaVersion: 'openpacksduel.result-proof.v1';
   };
@@ -257,7 +262,10 @@ export function buildPublicDuelReceipt(
   const opponent = duel.opponentWallet
     ? participant(duel.opponentWallet, duel.houseOpponent ? 'house' : 'opponent')
     : null;
-  const result = buildResult(duel, creator, opponent);
+  const providerCommitmentFinalized = transactions.some(
+    (transaction) => transaction.action === 'commit_result' && transaction.status === 'finalized',
+  );
+  const result = buildResult(duel, creator, opponent, providerCommitmentFinalized);
   const publicTransactions = transactions.filter(
     (transaction): transaction is DuelTransactionRecord & { signature: string } =>
       Boolean(transaction.signature),
@@ -275,7 +283,7 @@ export function buildPublicDuelReceipt(
   }));
   const recoveryAlerts = transactions.flatMap((transaction): PublicRecoveryAlert[] => {
     if (
-      transaction.action !== 'fund' ||
+      !isRecoveryAlertAction(transaction.action) ||
       transaction.recoveryAlertCode !== 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH' ||
       !transaction.recoveryCandidateAt ||
       !transaction.recoveryCandidateSignature ||
@@ -285,7 +293,7 @@ export function buildPublicDuelReceipt(
     }
     return [
       {
-        action: 'fund',
+        action: transaction.action,
         code: transaction.recoveryAlertCode,
         detectedAt: transaction.recoveryCandidateAt,
         explorerUrl: `https://explorer.solana.com/tx/${encodeURIComponent(transaction.recoveryCandidateSignature)}?cluster=devnet`,
@@ -320,6 +328,7 @@ export function buildPublicDuelReceipt(
     duel,
     feeAmounts,
     fundingSides,
+    providerCommitmentFinalized,
     settlementReference: Boolean(settlementReference),
   });
 
@@ -400,6 +409,12 @@ export function buildPublicDuelReceipt(
   };
 }
 
+function isRecoveryAlertAction(
+  action: DuelTransactionRecord['action'],
+): action is PublicRecoveryAlert['action'] {
+  return action === 'fund' || action === 'commit_result' || action === 'settle';
+}
+
 function buildPostDuelCardActions(input: {
   creator: PublicParticipant;
   duel: Duel;
@@ -446,6 +461,7 @@ function buildPostDuelCardActions(input: {
         actions: cardActionCapabilities(owner),
         assetReference: outcome.assetReference,
         displayName: outcome.displayName,
+        imageUrl: outcome.imageUrl ?? null,
         duelId: input.duel.id,
         insuredValue: outcome.insuredValue,
         owner,
@@ -620,6 +636,7 @@ function buildResult(
   duel: Duel,
   creator: PublicParticipant,
   opponent: PublicParticipant | null,
+  providerCommitmentFinalized: boolean,
 ): PublicDuelResult | null {
   if (!duel.result) return null;
   const policyHash = requireCanonicalValuationPolicyHash(duel.result.valuationPolicyHash);
@@ -666,12 +683,14 @@ function buildResult(
       : duel.result.winnerSide === 'opponent'
         ? opponent
         : null;
+  const valuationPolicy = valuationPolicyForHash(policyHash);
   return {
     comparisonMetric: duel.result.comparisonMetric,
     margin: { amount: marginAmount, currency: left.currency, decimals: left.decimals },
     outcomes: duel.result.outcomes.map((outcome) => ({
       assetReference: outcome.assetReference,
       displayName: outcome.displayName,
+      imageUrl: outcome.imageUrl ?? null,
       insuredValue: outcome.insuredValue,
       isMock: outcome.isMock,
       openedAt: outcome.openedAt,
@@ -679,18 +698,19 @@ function buildResult(
       resultHash: outcome.resultHash,
       side: outcome.side,
       sourceTimestamp: outcome.sourceTimestamp,
+      valuationSourceReference: outcome.valuationSourceReference ?? null,
     })),
     policy: {
-      authoritativeField: CANONICAL_VALUATION_POLICY.authoritativeField,
-      currency: CANONICAL_VALUATION_POLICY.currency,
-      decimals: CANONICAL_VALUATION_POLICY.decimals,
+      authoritativeField: valuationPolicy.authoritativeField,
+      currency: valuationPolicy.currency,
+      decimals: valuationPolicy.decimals,
       hash: policyHash,
       hashAlgorithm: 'sha256',
-      maxSourceAgeSeconds: CANONICAL_VALUATION_POLICY.maxSourceAgeSeconds,
-      maxValueMinorUnits: CANONICAL_VALUATION_POLICY.maxValueMinorUnits,
-      policyVersion: CANONICAL_VALUATION_POLICY.policyVersion,
-      rounding: CANONICAL_VALUATION_POLICY.rounding,
-      tieRule: CANONICAL_VALUATION_POLICY.tieRule,
+      maxSourceAgeSeconds: valuationPolicy.maxSourceAgeSeconds,
+      maxValueMinorUnits: valuationPolicy.maxValueMinorUnits,
+      policyVersion: valuationPolicy.policyVersion,
+      rounding: valuationPolicy.rounding,
+      tieRule: valuationPolicy.tieRule,
     },
     proof: {
       context: {
@@ -705,8 +725,17 @@ function buildResult(
       opponentResultHash: opponentOutcome.resultHash,
       poolVersion: comparison.poolVersion,
       providerAttestation: {
-        required: duel.providerMode !== 'mock',
-        status: duel.providerMode === 'mock' ? 'mock-not-applicable' : 'not-recorded',
+        required: duel.providerMode === 'collector-crypt-sandbox',
+        scope:
+          duel.providerMode === 'openpacksduel-devnet' && providerCommitmentFinalized
+            ? 'escrow-mints-values-policy'
+            : 'none',
+        status:
+          duel.providerMode === 'mock'
+            ? 'mock-not-applicable'
+            : duel.providerMode === 'openpacksduel-devnet' && providerCommitmentFinalized
+              ? 'on-chain-commitment-finalized'
+              : 'not-recorded',
       },
       schemaVersion: 'openpacksduel.result-proof.v1',
     },
@@ -737,6 +766,7 @@ function receiptMissingFields(input: {
   duel: Duel;
   feeAmounts: Set<string>;
   fundingSides: number;
+  providerCommitmentFinalized: boolean;
   settlementReference: boolean;
 }): string[] {
   const missing: string[] = [];
@@ -747,11 +777,11 @@ function receiptMissingFields(input: {
   if (input.duel.status === 'settled') {
     if (!input.duel.result) missing.push('provider_results');
     if (!input.duel.result?.valuationPolicyHash) missing.push('valuation_policy_hash');
-    if (
-      input.duel.providerMode !== 'mock' &&
-      input.duel.result?.outcomes.some((outcome) => !outcome.isMock)
-    ) {
+    if (input.duel.providerMode === 'collector-crypt-sandbox') {
       missing.push('provider_result_attestation');
+    }
+    if (input.duel.providerMode === 'openpacksduel-devnet' && !input.providerCommitmentFinalized) {
+      missing.push('on_chain_result_commitment');
     }
     if (!input.settlementReference) missing.push('card_settlement_reference');
   }

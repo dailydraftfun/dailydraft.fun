@@ -5,7 +5,7 @@
   "functions": {
     "api/[...path].ts": {
       "includeFiles": "../../packages/db/generated/**",
-      "maxDuration": 60,
+      "maxDuration": 300,
       "supportsCancellation": true
     }
   },

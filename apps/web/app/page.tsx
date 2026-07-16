@@ -111,9 +111,9 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <section className="duel-visual" aria-label="Preview of a fifty dollar pack duel">
+          <section className="duel-visual" aria-label="Preview of a Pokémon devnet pack duel">
             <div className="duel-status">
-              <span className="live-dot" /> $50 PACK DUEL
+              <span className="live-dot" /> DEVNET PACK DUEL
               <span>DEMO</span>
             </div>
             <div className="duel-stage">
@@ -124,7 +124,7 @@ export default function LandingPage() {
                   <small>AUTHENTICATED</small>
                   <strong>PACK</strong>
                   <strong>DUEL</strong>
-                  <span>$50</span>
+                  <span>DEVNET</span>
                 </div>
               </article>
               <div className="versus">
@@ -137,7 +137,7 @@ export default function LandingPage() {
                   <small>AUTHENTICATED</small>
                   <strong>PACK</strong>
                   <strong>DUEL</strong>
-                  <span>$50</span>
+                  <span>DEVNET</span>
                 </div>
               </article>
             </div>
@@ -216,7 +216,7 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="share-preview" aria-hidden="true">
-            <span className="result-chip">DUEL WON</span>
+            <span className="result-chip">ILLUSTRATIVE SHARE CARD</span>
             <strong>Umbreon VMAX</strong>
             <b>$1,380</b>
             <small>Beat a $615 pull · $50 pack tier</small>
@@ -227,7 +227,10 @@ export default function LandingPage() {
       <section className="final-cta">
         <span className="eyebrow">The arena is open</span>
         <h2>Think your pack wins?</h2>
-        <p>Try the interactive duel demo. Real wallet and settlement flows are coming next.</p>
+        <p>
+          Try the devnet duel with real wallet signatures and on-chain settlement. Demo assets have
+          no real-world value.
+        </p>
         <a className="primary-cta" href={appUrl}>
           Try Pack Duel <ArrowRightIcon size={18} weight="bold" />
         </a>
@@ -241,7 +244,10 @@ export default function LandingPage() {
           </span>
           <span>PACK DUEL</span>
         </a>
-        <p>Preview product. No real wallet signatures or settlement are enabled in the demo.</p>
+        <p>
+          Devnet preview. Wallet signatures and settlement are real; demo assets have no real-world
+          value.
+        </p>
         <div>
           <a href="https://github.com/openpacksduel">GitHub</a>
           <a href={appUrl}>Demo</a>

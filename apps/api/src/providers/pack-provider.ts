@@ -1,4 +1,4 @@
-import type { Money } from '../domain.js';
+import type { Money, PackProviderMode } from '../domain.js';
 
 export type DuelSide = 'creator' | 'opponent';
 
@@ -23,9 +23,11 @@ export interface OpenPackInput {
 export interface ProviderCardResult {
   assetReference: string;
   displayName: string;
+  imageUrl?: string;
   insuredValue: Money;
   poolVersion: string;
   sourceTimestamp: string;
+  valuationSourceReference?: string;
   valuationPolicyHash: string;
 }
 
@@ -40,7 +42,7 @@ export type ProviderPackSnapshot =
     };
 
 export abstract class PackProvider {
-  abstract readonly mode: 'collector-crypt-sandbox' | 'mock';
+  abstract readonly mode: PackProviderMode;
 
   abstract generatePack(input: GeneratePackInput): Promise<GeneratedPack>;
   abstract getPack(providerReference: string): Promise<ProviderPackSnapshot>;

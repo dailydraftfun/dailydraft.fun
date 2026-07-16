@@ -1,10 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { DuelSide, DuelStatus, DuelTransactionStatus, ProviderMode } from '@openpacksduel/db';
+import {
+  DuelSide,
+  DuelStatus,
+  DuelTransactionAction,
+  DuelTransactionStatus,
+  ProviderMode,
+} from '@openpacksduel/db';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, Transaction } from '@solana/web3.js';
 
 import {
+  createCloseCardVaultInstruction,
+  createClosePaymentVaultInstruction,
   createDepositCardAssetInstruction,
   createRefundExpiredCardInstruction,
   createRefundExpiredPaymentInstruction,
@@ -14,7 +22,10 @@ import {
   ESCROW_V2_PROGRAM_ID,
 } from '../contracts/openpacksduel-escrow-v2.js';
 import { normalizeProviderResult } from '../providers/provider-result.js';
-import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
+import {
+  CANONICAL_VALUATION_POLICY_HASH,
+  DEVNET_DEMO_VALUATION_POLICY_HASH,
+} from '../providers/valuation-policy.js';
 import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
 import {
   canonicalOpenedAt,
@@ -68,6 +79,16 @@ describe('provider settlement evidence', () => {
     const canonical = validateCanonicalEvidence(evidence());
 
     expect(canonicalOpenedAt(canonical).toISOString()).toBe('2026-07-15T20:00:00.000Z');
+  });
+
+  test('accepts the explicit devnet provider with its Pokémon TCG market policy', () => {
+    const demo = evidence(
+      '200',
+      '100',
+      DEVNET_DEMO_VALUATION_POLICY_HASH,
+      ProviderMode.OPENPACKSDUEL_DEVNET,
+    );
+    expect(validateCanonicalEvidence(demo).winner).toBe('creator');
   });
 });
 
@@ -128,6 +149,26 @@ describe('verified escrow instruction vectors', () => {
         player: OPPONENT,
       }).data.subarray(0, 8),
     ]).toEqual([82, 5, 192, 101, 25, 133, 163, 209]);
+    expect([
+      ...createClosePaymentVaultInstruction({
+        caller: PROVIDER,
+        duel,
+        excessDestination: OPPONENT,
+        paymentMint: CREATOR,
+        paymentVault: OPPONENT,
+        rentRecipient: CREATOR,
+      }).data,
+    ]).toEqual([107, 79, 245, 212, 102, 70, 163, 243]);
+    expect([
+      ...createCloseCardVaultInstruction({
+        caller: PROVIDER,
+        cardMint: OPPONENT,
+        duel,
+        recoveryDestination: CREATOR,
+        rentRecipient: PROVIDER,
+        role: 'opponent',
+      }).data,
+    ]).toEqual([123, 45, 120, 22, 36, 197, 169, 86, 1]);
   });
 });
 
@@ -206,6 +247,31 @@ describe('ProviderSettlementService', () => {
     expect(prepared.serializedTransactionBase64.length).toBeGreaterThan(100);
   });
 
+  test('records provider recovery alerts with provider metadata and action labels', async () => {
+    const duel: MutableDuelFixture = {
+      ...databaseDuel(new Date(Date.now() + 60_000)),
+      status: DuelStatus.SETTLING,
+      version: 4,
+    };
+    const recovery = recoveryDatabase(duel, DuelTransactionAction.COMMIT_RESULT);
+    const monitor = new PrismaTransactionMonitorRepository(recovery.client);
+
+    await monitor.recordRecoveryAlert({
+      code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH',
+      nextRecoveryCheckAt: new Date(Date.now() + 60_000),
+      now: new Date(),
+      signature: '5'.repeat(88),
+      transactionId: 'tx_lost_creator_funding',
+    });
+
+    expect(recovery.events).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'commit_result' }),
+        type: 'duel.transaction_recovery_alert',
+      }),
+    ]);
+  });
+
   test('prepares an independently monitored expired card refund to its original owner', async () => {
     const duel = databaseDuel(new Date(Date.now() - 60_000));
     const service = new ProviderSettlementService(database(duel), new FixtureRpc());
@@ -275,6 +341,33 @@ describe('ProviderSettlementService', () => {
     );
   });
 
+  test('renews an expired provider intent only after a finalized recovery scan clears it', async () => {
+    const duel = databaseDuel(new Date(Date.now() + 60_000));
+    const tracked = trackedDatabase(duel);
+    const service = new ProviderSettlementService(tracked.client, new RotatingFixtureRpc());
+    const input = {
+      assetStandard: 'legacy-spl-nft' as const,
+      callerWallet: PROVIDER.toBase58(),
+      duelId: duel.id,
+      idempotencyKey: 'provider-result-renewal',
+      operation: 'commit_result' as const,
+      providerRequestId: REQUEST,
+    };
+
+    const first = await service.prepare(input);
+    const record = tracked.transactions.get(input.idempotencyKey);
+    if (!record) throw new Error('Expected a tracked transaction');
+    record.lastRecoveryCheckedBlockHeight = 151n;
+
+    const renewed = await service.prepare(input);
+
+    expect(renewed.intentId).toBe(first.intentId);
+    expect(renewed.recentBlockhash).not.toBe(first.recentBlockhash);
+    expect(renewed.serializedTransactionBase64).not.toBe(first.serializedTransactionBase64);
+    expect(record.lastRecoveryCheckedBlockHeight).toBeNull();
+    expect(record.lastValidBlockHeight).toBe(250n);
+  });
+
   test.each([
     ['creator', '200', '100', CREATOR, CREATOR],
     ['opponent', '100', '200', OPPONENT, OPPONENT],
@@ -282,7 +375,12 @@ describe('ProviderSettlementService', () => {
   ] as const)('routes a %s result to exact card destinations in a monitored settlement intent', async (winner, creatorValue, opponentValue, creatorCardOwner, opponentCardOwner) => {
     const duel = {
       ...databaseDuel(new Date(Date.now() + 60_000)),
-      ...evidence(creatorValue, opponentValue),
+      ...evidence(
+        creatorValue,
+        opponentValue,
+        DEVNET_DEMO_VALUATION_POLICY_HASH,
+        ProviderMode.OPENPACKSDUEL_DEVNET,
+      ),
       status: 'SETTLING',
     };
     const service = new ProviderSettlementService(database(duel), new FixtureRpc());
@@ -306,6 +404,14 @@ describe('ProviderSettlementService', () => {
       getAssociatedTokenAddressSync(OPPONENT, opponentCardOwner).toBase58(),
     );
     expect(prepared.reconciliation).toBe('submission-monitor');
+    const transaction = Transaction.from(
+      Buffer.from(prepared.serializedTransactionBase64, 'base64'),
+    );
+    expect(transaction.instructions.slice(-3).map((instruction) => [...instruction.data])).toEqual([
+      [107, 79, 245, 212, 102, 70, 163, 243],
+      [123, 45, 120, 22, 36, 197, 169, 86, 0],
+      [123, 45, 120, 22, 36, 197, 169, 86, 1],
+    ]);
   });
 
   test('rejects operations outside their duel lifecycle state', async () => {
@@ -326,19 +432,27 @@ describe('ProviderSettlementService', () => {
   });
 });
 
-function evidence(creator = '200', opponent = '100') {
+function evidence(
+  creator = '200',
+  opponent = '100',
+  policy = POLICY,
+  providerMode: ProviderMode = ProviderMode.COLLECTOR_CRYPT_SANDBOX,
+) {
   return {
     packOutcomes: [
-      outcome(DuelSide.CREATOR, CREATOR.toBase58(), creator),
-      outcome(DuelSide.OPPONENT, OPPONENT.toBase58(), opponent),
+      outcome(DuelSide.CREATOR, CREATOR.toBase58(), creator, policy),
+      outcome(DuelSide.OPPONENT, OPPONENT.toBase58(), opponent, policy),
     ],
-    providerMode: ProviderMode.COLLECTOR_CRYPT_SANDBOX,
-    valuationPolicyHash: POLICY,
+    providerMode,
+    valuationPolicyHash: policy,
   };
 }
 
-function outcome(side: DuelSide, assetReference: string, value: string) {
-  const sourceTimestamp = '2026-07-15T19:59:30.000Z';
+function outcome(side: DuelSide, assetReference: string, value: string, policy = POLICY) {
+  const sourceTimestamp =
+    policy === DEVNET_DEMO_VALUATION_POLICY_HASH
+      ? '2026-07-15T00:00:00.000Z'
+      : '2026-07-15T19:59:30.000Z';
   const openedAt = new Date('2026-07-15T20:00:00.000Z');
   const providerReference = `provider-${side.toLowerCase()}`;
   const normalized = normalizeProviderResult(
@@ -349,9 +463,15 @@ function outcome(side: DuelSide, assetReference: string, value: string) {
       insuredValue: { amount: value, currency: 'USDC', decimals: 6 },
       poolVersion: 'collector-crypt-pool-v1',
       sourceTimestamp,
-      valuationPolicyHash: POLICY,
+      ...(policy === DEVNET_DEMO_VALUATION_POLICY_HASH
+        ? {
+            valuationSourceReference:
+              'pokemon-tcg:base1-4:tcgplayer:holofoil:market:2026-07-15T00:00:00.000Z',
+          }
+        : {}),
+      valuationPolicyHash: policy,
     },
-    POLICY,
+    policy,
     providerReference,
     openedAt,
   );
@@ -368,7 +488,8 @@ function outcome(side: DuelSide, assetReference: string, value: string) {
     resultHash: normalized.resultHash,
     side,
     sourceTimestamp: new Date(sourceTimestamp),
-    valuationPolicyHash: POLICY,
+    valuationSourceReference: normalized.valuationSourceReference ?? null,
+    valuationPolicyHash: policy,
   };
 }
 
@@ -402,12 +523,19 @@ type MutableDuelFixture = Omit<ReturnType<typeof databaseDuel>, 'escrowAddress' 
   version: number;
 };
 
-function recoveryDatabase(duel: MutableDuelFixture) {
+function recoveryDatabase(
+  duel: MutableDuelFixture,
+  action: DuelTransactionAction = DuelTransactionAction.FUND,
+) {
   const expectedEscrow = deriveEscrowV2Addresses(CREATOR, nonceFromFixtureDuel()).duel.toBase58();
   const monitored = {
+    action,
     duel,
     id: 'tx_lost_creator_funding',
-    metadata: { escrowAddress: expectedEscrow, feeAmountLamports: '1000000' },
+    metadata:
+      action === DuelTransactionAction.FUND
+        ? { escrowAddress: expectedEscrow, feeAmountLamports: '1000000' }
+        : { proof: { escrowAddress: expectedEscrow } },
     recoveryAlertCode: null,
     recoveryCandidateAt: null,
     recoveryCandidateSignature: null,
@@ -472,6 +600,55 @@ function database(duel: ReturnType<typeof databaseDuel> | MutableDuelFixture): n
   } as never;
 }
 
+function trackedDatabase(duel: ReturnType<typeof databaseDuel>) {
+  const transactions = new Map<string, Record<string, unknown>>();
+  const duelTransaction = {
+    findUnique: ({ where }: { where: { id: string } }) =>
+      Promise.resolve(
+        [...transactions.values()].find((transaction) => transaction.id === where.id) ?? null,
+      ),
+    updateMany: ({
+      data,
+      where,
+    }: {
+      data: Record<string, unknown>;
+      where: Record<string, unknown>;
+    }) => {
+      const transaction = [...transactions.values()].find((item) => item.id === where.id);
+      if (
+        !transaction ||
+        (transaction.signature !== null && transaction.signature !== undefined) ||
+        transaction.status !== where.status ||
+        transaction.lastValidBlockHeight !== where.lastValidBlockHeight ||
+        transaction.lastRecoveryCheckedBlockHeight !== where.lastRecoveryCheckedBlockHeight
+      ) {
+        return Promise.resolve({ count: 0 });
+      }
+      Object.assign(transaction, data);
+      return Promise.resolve({ count: 1 });
+    },
+    upsert: ({ create }: { create: Record<string, unknown> }) => {
+      const key = String(create.idempotencyKey);
+      const existing = transactions.get(key);
+      if (existing) return Promise.resolve(existing);
+      const record = {
+        lastRecoveryCheckedBlockHeight: null,
+        signature: null,
+        ...create,
+      };
+      transactions.set(key, record);
+      return Promise.resolve(record);
+    },
+  };
+  return {
+    client: {
+      duel: { findUnique: () => Promise.resolve(duel) },
+      duelTransaction,
+    } as never,
+    transactions,
+  };
+}
+
 class FixtureRpc extends SolanaRpcGateway {
   vaultAmount = 1n;
   async assertDevnet() {}
@@ -507,5 +684,16 @@ class FixtureRpc extends SolanaRpcGateway {
   }
   async getTransaction() {
     return null;
+  }
+}
+
+class RotatingFixtureRpc extends FixtureRpc {
+  #preparations = 0;
+
+  override async getLatestBlockhash() {
+    this.#preparations += 1;
+    return this.#preparations === 1
+      ? { blockhash: CREATOR.toBase58(), lastValidBlockHeight: 150n }
+      : { blockhash: OPPONENT.toBase58(), lastValidBlockHeight: 250n };
   }
 }

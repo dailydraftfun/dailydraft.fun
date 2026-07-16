@@ -801,6 +801,7 @@ export function shouldRetryMatchmakingTransaction(error: unknown, attempt: numbe
 function resolveProviderMode(): ProviderMode {
   const value = process.env.OPENPACKSDUEL_PROVIDER_MODE ?? 'mock';
   if (value === 'mock') return ProviderMode.MOCK;
+  if (value === 'openpacksduel-devnet') return ProviderMode.OPENPACKSDUEL_DEVNET;
   if (value === 'collector-crypt-sandbox') return ProviderMode.COLLECTOR_CRYPT_SANDBOX;
   throw new ServiceUnavailableException('Configured provider mode is invalid');
 }

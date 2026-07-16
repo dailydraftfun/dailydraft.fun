@@ -46,6 +46,7 @@ export type PublicPostDuelCardActionState = {
   actions: PublicPostDuelCardAction[];
   assetReference: string;
   displayName: string;
+  imageUrl: string | null;
   duelId: string;
   insuredValue: PublicMoney;
   owner: PublicParticipant;
@@ -122,7 +123,7 @@ export type PublicDuelReceipt = {
   };
   recovery: {
     alerts: Array<{
-      action: 'fund';
+      action: 'commit_result' | 'fund' | 'settle';
       code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH';
       detectedAt: string;
       explorerUrl: string;
@@ -136,6 +137,7 @@ export type PublicDuelReceipt = {
     outcomes: Array<{
       assetReference: string;
       displayName: string;
+      imageUrl: string | null;
       insuredValue: PublicMoney;
       isMock: boolean;
       openedAt: string;
@@ -143,6 +145,7 @@ export type PublicDuelReceipt = {
       resultHash: string;
       side: 'creator' | 'opponent';
       sourceTimestamp: string;
+      valuationSourceReference: string | null;
     }>;
     policy: {
       authoritativeField: string;
@@ -170,7 +173,8 @@ export type PublicDuelReceipt = {
       poolVersion: string;
       providerAttestation: {
         required: boolean;
-        status: 'mock-not-applicable' | 'not-recorded';
+        scope: 'escrow-mints-values-policy' | 'none';
+        status: 'mock-not-applicable' | 'not-recorded' | 'on-chain-commitment-finalized';
       };
       schemaVersion: 'openpacksduel.result-proof.v1';
     };

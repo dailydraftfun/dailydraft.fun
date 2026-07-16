@@ -42,6 +42,7 @@ export interface PreparedRecoveryIntent
   extends Omit<MonitoredTransaction, 'signature' | 'status' | 'submittedAt'> {
   escrowAddress: string;
   preparedAt: Date;
+  lastRecoveryCheckedBlockHeight: bigint | null;
   recoveryCheckAttempts: number;
 }
 

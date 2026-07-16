@@ -1,26 +1,32 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
 import type { Pack, Page } from '../domain.js';
-import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
+import { currentValuationPolicy } from '../providers/valuation-policy.js';
 import type { ListPacksQuery } from './list-packs.query.js';
 
-const PACKS: readonly Pack[] = [
-  {
-    active: true,
-    id: 'pokemon_50',
-    name: 'Pokémon $50 Pack',
-    price: { amount: '50000000', currency: 'USDC', decimals: 6 },
-    provider: 'jupiter-gacha',
-    providerPackId: 'pokemon_50',
-    valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
-  },
-];
+function packs(): readonly Pack[] {
+  const { policyHash } = currentValuationPolicy();
+  return [
+    {
+      active: true,
+      id: 'pokemon_50',
+      name: 'Pokémon $50 Pack',
+      price: { amount: '50000000', currency: 'USDC', decimals: 6 },
+      provider:
+        process.env.OPENPACKSDUEL_PROVIDER_MODE === 'openpacksduel-devnet'
+          ? 'openpacksduel-devnet'
+          : 'collector-crypt',
+      providerPackId: 'pokemon_50',
+      valuationPolicyHash: policyHash,
+    },
+  ];
+}
 
 @Injectable()
 export class PacksService {
   findAll(query: ListPacksQuery): Page<Pack> {
     const active = query.active === undefined ? true : query.active === 'true';
-    const eligible = PACKS.filter((pack) => pack.active === active);
+    const eligible = packs().filter((pack) => pack.active === active);
     const start = resolveCursor(eligible, query.cursor);
     const data = eligible.slice(start, start + query.limit);
     const hasMore = start + data.length < eligible.length;
@@ -33,7 +39,7 @@ export class PacksService {
   }
 
   findOne(packId: string): Pack {
-    const pack = PACKS.find((candidate) => candidate.id === packId);
+    const pack = packs().find((candidate) => candidate.id === packId);
     if (!pack) throw new NotFoundException(`Pack ${packId} was not found`);
     return pack;
   }

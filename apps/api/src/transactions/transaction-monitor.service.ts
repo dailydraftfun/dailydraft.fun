@@ -195,11 +195,14 @@ export class TransactionMonitorService {
         );
         continue;
       }
+      let checkedBlockHeight: bigint;
       let signatures: SolanaAddressSignature[];
+      const signatureLimit = recoverySignatureLimit();
       try {
+        checkedBlockHeight = await this.rpc.getBlockHeight();
         signatures = await this.rpc.getFinalizedSignaturesForAddress(
           intent.escrowAddress,
-          recoverySignatureLimit(),
+          signatureLimit,
         );
       } catch (error) {
         if (error instanceof SolanaRpcUnavailableError) {
@@ -218,6 +221,7 @@ export class TransactionMonitorService {
         continue;
       }
       let handled = false;
+      let scanComplete = signatures.length < signatureLimit;
       for (const candidate of signatures) {
         if (
           candidate.blockTime !== null &&
@@ -241,6 +245,7 @@ export class TransactionMonitorService {
         try {
           envelope = await this.rpc.getTransaction(candidate.signature, 'finalized');
         } catch (error) {
+          scanComplete = false;
           summary.recoveryErrors += 1;
           if (error instanceof SolanaRpcUnavailableError) {
             await this.analytics?.recordServer({
@@ -252,6 +257,7 @@ export class TransactionMonitorService {
           continue;
         }
         if (!envelope) {
+          scanComplete = false;
           summary.recoveryRejected += 1;
           continue;
         }
@@ -265,7 +271,7 @@ export class TransactionMonitorService {
           summary.recoveryRejected += 1;
           continue;
         }
-        if (!canBindRecoveredFunding(intent.duelStatus)) {
+        if (!canBindRecoveredIntent(intent)) {
           await this.repository.recordRecoveryAlert({
             code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH',
             nextRecoveryCheckAt: nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
@@ -306,6 +312,7 @@ export class TransactionMonitorService {
           intent.id,
           now,
           nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
+          scanComplete ? checkedBlockHeight : undefined,
         );
       }
       if (remainingCandidateBudget === 0) break;
@@ -519,6 +526,12 @@ export function nextRecoveryCheckAt(now: Date, attempts: number): Date {
 
 export function canBindRecoveredFunding(status: PreparedRecoveryIntent['duelStatus']): boolean {
   return status === 'matched' || status === 'committing';
+}
+
+export function canBindRecoveredIntent(intent: PreparedRecoveryIntent): boolean {
+  return intent.action === 'fund'
+    ? canBindRecoveredFunding(intent.duelStatus)
+    : intent.duelStatus === intent.expectedFromStatus;
 }
 
 function boundedInteger(

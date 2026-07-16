@@ -38,7 +38,7 @@ import {
   fundDuelAccountConstraints,
 } from '../contracts/openpacksduel-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
-import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
+import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { HouseTreasuryService } from '../treasury/house-treasury.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
@@ -125,7 +125,7 @@ export class DuelFundingService {
       input,
       configuration,
       currentBlockHeight,
-      CANONICAL_VALUATION_POLICY_HASH,
+      requireCanonicalValuationPolicyHash(duel.valuationPolicyHash),
     );
     if (reusable) return reusable;
 
@@ -205,7 +205,7 @@ export class DuelFundingService {
       programId: configuration.programId.toBase58(),
       providerSigner: configuration.providerSigner.toBase58(),
       sourceSha: ESCROW_V2_SOURCE_SHA,
-      valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
+      valuationPolicyHash: requireCanonicalValuationPolicyHash(duel.valuationPolicyHash),
       wallet: input.wallet,
     });
     const metadata = buildMetadata({
@@ -411,12 +411,13 @@ function parsePublicKey(value: string, label: string): PublicKey {
 }
 
 export function parsePolicyHash(value: string | null): Uint8Array {
-  if (value !== CANONICAL_VALUATION_POLICY_HASH) {
+  try {
+    return Uint8Array.from(Buffer.from(requireCanonicalValuationPolicyHash(value), 'hex'));
+  } catch {
     throw new ServiceUnavailableException(
-      'Duel valuation policy does not match the supported canonical policy',
+      'Duel valuation policy does not match a supported canonical policy',
     );
   }
-  return Uint8Array.from(Buffer.from(value, 'hex'));
 }
 
 export function validateFundingDuelForPreparation(

@@ -250,9 +250,9 @@ function parseSignatureStatus(value: unknown): SolanaSignatureStatus | null {
   return { confirmationStatus, err: value.err ?? null };
 }
 
-function parseFinalizedAddressSignature(value: unknown): SolanaAddressSignature[] {
+export function parseFinalizedAddressSignature(value: unknown): SolanaAddressSignature[] {
   if (!isObject(value)) throw new SolanaRpcUnavailableError();
-  if (value.err !== null || value.confirmationStatus !== 'finalized') return [];
+  if (value.confirmationStatus !== 'finalized') return [];
   if (
     typeof value.signature !== 'string' ||
     (value.blockTime !== null && !isNonNegativeInteger(value.blockTime))

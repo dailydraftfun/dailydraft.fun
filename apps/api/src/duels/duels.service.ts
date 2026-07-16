@@ -10,7 +10,7 @@ import {
 import { AdminService } from '../admin/admin.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { AnalyticsService } from '../analytics/analytics.service.js';
-import type { Duel, DuelEvent, DuelTransactionRecord, Page } from '../domain.js';
+import type { Duel, DuelEvent, DuelTransactionRecord, PackProviderMode, Page } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { PacksService } from '../packs/packs.service.js';
 import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
@@ -227,11 +227,13 @@ function validateCreation(input: CreateDuelRequest): void {
   }
 }
 
-function resolveProviderMode(): 'collector-crypt-sandbox' | 'mock' {
+function resolveProviderMode(): PackProviderMode {
   const mode = process.env.OPENPACKSDUEL_PROVIDER_MODE ?? 'mock';
-  if (mode === 'mock' || mode === 'collector-crypt-sandbox') return mode;
+  if (mode === 'mock' || mode === 'openpacksduel-devnet' || mode === 'collector-crypt-sandbox') {
+    return mode;
+  }
   throw new ConflictException(
-    'OPENPACKSDUEL_PROVIDER_MODE must be mock or collector-crypt-sandbox',
+    'OPENPACKSDUEL_PROVIDER_MODE must be mock, openpacksduel-devnet, or collector-crypt-sandbox',
   );
 }
 

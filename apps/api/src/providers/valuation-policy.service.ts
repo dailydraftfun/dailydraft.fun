@@ -1,21 +1,26 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
-import { CANONICAL_VALUATION_POLICY, CANONICAL_VALUATION_POLICY_HASH } from './valuation-policy.js';
+import { currentValuationPolicy, valuationPolicyForHash } from './valuation-policy.js';
 
 @Injectable()
 export class ValuationPolicyService {
   findCurrent() {
+    const current = currentValuationPolicy();
     return {
       hashAlgorithm: 'sha256' as const,
-      policy: CANONICAL_VALUATION_POLICY,
-      policyHash: CANONICAL_VALUATION_POLICY_HASH,
+      ...current,
     };
   }
 
   findOne(policyHash: string) {
-    if (policyHash !== CANONICAL_VALUATION_POLICY_HASH) {
+    try {
+      return {
+        hashAlgorithm: 'sha256' as const,
+        policy: valuationPolicyForHash(policyHash),
+        policyHash,
+      };
+    } catch {
       throw new NotFoundException(`Valuation policy ${policyHash} was not found`);
     }
-    return this.findCurrent();
   }
 }

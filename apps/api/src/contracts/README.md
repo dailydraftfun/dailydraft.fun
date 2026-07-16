@@ -1,12 +1,14 @@
 # Vendored escrow contract surface
 
-`openpacksduel-escrow-v2.ts` contains only the instructions and PDA derivations needed to fund a
-duel. It was generated from the verified GitHub Actions artifact for
-[`openpacksduel/escrow@4aa3bb7560443c0565ded2d6edee67c6a544dd5f`](https://github.com/openpacksduel/escrow/commit/4aa3bb7560443c0565ded2d6edee67c6a544dd5f).
+The historical `openpacksduel-escrow-v2.ts` filename remains for import stability, but the
+instruction vectors and PDA derivations are pinned to Duel v4 from the verified GitHub Actions
+artifact for
+[`openpacksduel/escrow@5268637d961672588c70a1c3b1ccbf6d6ab5f5cb`](https://github.com/openpacksduel/escrow/commit/5268637d961672588c70a1c3b1ccbf6d6ab5f5cb).
 
-- Artifact: `openpacksduel-escrow-4aa3bb7560443c0565ded2d6edee67c6a544dd5f`
+- Duel account version: `4`
+- Artifact: `openpacksduel-escrow-5268637d961672588c70a1c3b1ccbf6d6ab5f5cb`
 - IDL file: `openpacksduel_escrow.json`
-- IDL SHA-256: `53ed60b44d5cef022db0301e5d6495ca3bf84486a048c7dd7ce5621a499762e0`
+- IDL SHA-256: `f16eda95787367db629051203dac8a5db61794f1c048528ecfecd868245e070d`
 - Program: `Co198eFfQcmn1WzZRnHV6jxcSLBDCv1qNfPfiBYdCLfS`
 
 The artifact's `SHA256SUMS` was verified before this surface was copied. The full IDL and program
