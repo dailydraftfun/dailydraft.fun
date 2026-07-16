@@ -82,6 +82,19 @@ async function bootstrapApplication(): Promise<NestFastifyApplication> {
 }
 
 export function normalizeRequestUrl(value: string | undefined): string {
-  if (!value || value === '/api') return '/';
-  return value.startsWith('/api/') ? value.slice('/api'.length) : value;
+  if (!value) return '/';
+
+  const url = new URL(value, 'https://openpacksduel-api.vercel.app');
+  const rewrittenPath = url.searchParams.get('__path');
+  if (rewrittenPath) {
+    url.searchParams.delete('__path');
+    const search = url.searchParams.size > 0 ? `?${url.searchParams.toString()}` : '';
+    return `/${rewrittenPath.replace(/^\/+/, '')}${search}`;
+  }
+
+  if (url.pathname === '/api') return '/';
+  if (url.pathname.startsWith('/api/')) {
+    return `${url.pathname.slice('/api'.length)}${url.search}`;
+  }
+  return `${url.pathname}${url.search}`;
 }

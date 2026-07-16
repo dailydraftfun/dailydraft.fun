@@ -202,7 +202,7 @@ escrow PDA vault before result or settlement preparation.
 
 The Vercel project uses `apps/api` as its Root Directory, but CLI deploys must be
 started from the monorepo root so the `@openpacksduel/db` workspace is uploaded.
-`api/[...path].ts` caches one initialized Nest/Fastify application per warm Node
+`api/index.ts` caches one initialized Nest/Fastify application per warm Node
 24 function instance and disables process shutdown hooks in serverless mode.
 
 The build generates Prisma Client and explicitly includes it in the function
