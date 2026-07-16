@@ -736,7 +736,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setIntent(null);
       const refreshed = await getDuel(intent.duelId);
       setPersistedDuel(refreshed);
-      setActionNotice(fundingReconciliationNotice(refreshed, reconciliation.activeTransactionCount));
+      setActionNotice(
+        fundingReconciliationNotice(refreshed, reconciliation.activeTransactionCount),
+      );
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : 'The wallet did not approve the transaction.',
