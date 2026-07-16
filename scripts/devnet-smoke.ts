@@ -8,6 +8,7 @@ const apiUrl = (
 const rpcUrl = process.env.OPENPACKSDUEL_SMOKE_RPC_URL ?? 'https://api.devnet.solana.com';
 const creatorPath = requiredEnvironment('OPENPACKSDUEL_SMOKE_CREATOR_KEYPAIR');
 const opponentPath = requiredEnvironment('OPENPACKSDUEL_SMOKE_OPPONENT_KEYPAIR');
+const existingDuelId = process.env.OPENPACKSDUEL_SMOKE_DUEL_ID?.trim();
 const connection = new Connection(rpcUrl, 'confirmed');
 
 const creator = await loadKeypair(creatorPath);
@@ -22,45 +23,57 @@ const [creatorToken, opponentToken] = await Promise.all([
   authenticate(opponent),
 ]);
 
-const duel = await requestJson<Duel>('/duels', {
-  body: {
-    creatorWallet,
-    expiresAt: new Date(Date.now() + 20 * 60_000).toISOString(),
-    matchmakingMode: 'direct',
-    opponentWallet,
-    packId: 'pokemon_50',
-  },
-  idempotencyKey: uniqueKey('create'),
-  method: 'POST',
-  token: creatorToken,
-});
-console.log(JSON.stringify({ duelId: duel.id, stage: 'created', status: duel.status }));
+let duel = existingDuelId
+  ? await requestJson<Duel>(`/duels/${existingDuelId}`)
+  : await requestJson<Duel>('/duels', {
+      body: {
+        creatorWallet,
+        expiresAt: new Date(Date.now() + 20 * 60_000).toISOString(),
+        matchmakingMode: 'direct',
+        opponentWallet,
+        packId: 'pokemon_50',
+      },
+      idempotencyKey: uniqueKey('create'),
+      method: 'POST',
+      token: creatorToken,
+    });
+console.log(
+  JSON.stringify({
+    duelId: duel.id,
+    stage: existingDuelId ? 'resumed' : 'created',
+    status: duel.status,
+  }),
+);
 
-await requestJson<Duel>(`/duels/${duel.id}/join`, {
-  body: { wallet: opponentWallet },
-  idempotencyKey: uniqueKey('join'),
-  method: 'POST',
-  token: opponentToken,
-});
-console.log(JSON.stringify({ duelId: duel.id, stage: 'joined' }));
+if (duel.status === 'waiting') {
+  duel = await requestJson<Duel>(`/duels/${duel.id}/join`, {
+    body: { wallet: opponentWallet },
+    idempotencyKey: uniqueKey('join'),
+    method: 'POST',
+    token: opponentToken,
+  });
+  console.log(JSON.stringify({ duelId: duel.id, stage: 'joined' }));
+}
 
-await fundSide(duel.id, creator, creatorToken, 'creator', 'committing');
-await fundSide(duel.id, opponent, opponentToken, 'opponent', 'funded');
+if (duel.status === 'matched') {
+  await fundSide(duel.id, creator, creatorToken, 'creator', 'committing');
+  duel = await requestJson<Duel>(`/duels/${duel.id}`);
+}
+if (duel.status === 'committing') {
+  await fundSide(duel.id, opponent, opponentToken, 'opponent', 'funded');
+  duel = await requestJson<Duel>(`/duels/${duel.id}`);
+}
 
 const openKey = uniqueKey('open');
 let opened: Duel;
-try {
-  opened = await requestJson<Duel>(`/duels/${duel.id}/open-packs`, {
-    body: {},
-    idempotencyKey: openKey,
-    method: 'POST',
-    timeoutMs: 295_000,
-    token: creatorToken,
-  });
-} catch (error) {
-  console.error(String(error));
-  opened = await waitForDuelStatus(duel.id, ['settled', 'failed'], 120_000);
-  if (opened.status !== 'settled') {
+if (duel.status === 'settled') {
+  opened = duel;
+} else {
+  assert(
+    ['funded', 'opening', 'awaiting_assets', 'settling'].includes(duel.status),
+    `Cannot resume duel from ${duel.status}`,
+  );
+  try {
     opened = await requestJson<Duel>(`/duels/${duel.id}/open-packs`, {
       body: {},
       idempotencyKey: openKey,
@@ -68,6 +81,22 @@ try {
       timeoutMs: 295_000,
       token: creatorToken,
     });
+  } catch (error) {
+    console.error(String(error));
+    await Bun.sleep(5_000);
+    const current = await requestJson<Duel>(`/duels/${duel.id}`);
+    if (current.status === 'settled') {
+      opened = current;
+    } else {
+      assert(current.status !== 'failed', 'Duel failed during opening');
+      opened = await requestJson<Duel>(`/duels/${duel.id}/open-packs`, {
+        body: {},
+        idempotencyKey: openKey,
+        method: 'POST',
+        timeoutMs: 295_000,
+        token: creatorToken,
+      });
+    }
   }
 }
 assert(opened.status === 'settled', `Expected settled duel, received ${opened.status}`);
@@ -181,20 +210,6 @@ async function waitForFundingFinality(
     await Bun.sleep(2_000);
   }
   throw new Error(`Funding did not finalize into ${expectedStatus}`);
-}
-
-async function waitForDuelStatus(
-  duelId: string,
-  statuses: Duel['status'][],
-  timeoutMs: number,
-): Promise<Duel> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const duel = await requestJson<Duel>(`/duels/${duelId}`);
-    if (statuses.includes(duel.status)) return duel;
-    await Bun.sleep(3_000);
-  }
-  throw new Error(`Duel did not reach ${statuses.join(' or ')}`);
 }
 
 async function requestJson<T = unknown>(
