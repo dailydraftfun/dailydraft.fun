@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { assertWalletSubmissionActor } from './prisma-transaction-monitor.repository.js';
+import {
+  assertDuelReconciliationActor,
+  assertWalletSubmissionActor,
+} from './prisma-transaction-monitor.repository.js';
 
 const CREATOR = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
 const OPPONENT = 'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW';
@@ -50,6 +53,39 @@ describe('transaction submission wallet binding', () => {
         expectedSigner: OTHER_WALLET,
         opponentWallet: OPPONENT,
         transactionWallet: OTHER_WALLET,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe('participant reconciliation wallet binding', () => {
+  test('allows either duel participant to advance finality checks', () => {
+    for (const actorWallet of [CREATOR, OPPONENT]) {
+      expect(() =>
+        assertDuelReconciliationActor({
+          actorWallet,
+          creatorWallet: CREATOR,
+          opponentWallet: OPPONENT,
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  test('rejects a wallet that is not part of the duel', () => {
+    expect(() =>
+      assertDuelReconciliationActor({
+        actorWallet: OTHER_WALLET,
+        creatorWallet: CREATOR,
+        opponentWallet: OPPONENT,
+      }),
+    ).toThrow('cannot reconcile another duel');
+  });
+
+  test('keeps integration-key reconciliation available', () => {
+    expect(() =>
+      assertDuelReconciliationActor({
+        creatorWallet: CREATOR,
+        opponentWallet: OPPONENT,
       }),
     ).not.toThrow();
   });

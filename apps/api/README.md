@@ -10,14 +10,18 @@ cancellation, and social-card metadata. Transaction preparation returns
 unsigned transactions.
 
 Submitted escrow signatures are bound idempotently to a previously prepared
-intent and reconciled independently of the browser. The server validates the
-RPC cluster genesis hash, follows `confirmed` progress, requires `finalized`
-before advancing a duel, and re-verifies the transaction signature, recent
-blockhash, signer, and one uniquely matching target instruction. That instruction
-must match the escrow program, encoded-data hash, and exact ordered account
-signer/write constraints recorded by the prepared intent. Vercel Cron
-calls `GET /v1/internal/reconciliation/solana` with `CRON_SECRET`; operators can
-run the same batch with `POST` and either the cron secret or an integration key.
+intent and receive one opportunistic finality check in the submission request.
+Either authenticated duel participant can continue the bounded check at
+`POST /v1/duels/{duelId}/transactions/reconciliation`; the browser polls this
+route while a known transaction remains active. The server validates the RPC
+cluster genesis hash, follows `confirmed` progress, requires `finalized` before
+advancing a duel, and re-verifies the transaction signature, recent blockhash,
+signer, and one uniquely matching target instruction. That instruction must
+match the escrow program, encoded-data hash, and exact ordered account signer/write
+constraints recorded by the prepared intent. A once-daily Vercel Hobby recovery
+pass calls `GET /v1/internal/reconciliation/solana` with `CRON_SECRET`; operators
+can run the same global batch with `POST` and either the cron secret or an
+integration key. Normal finality does not wait for that recovery pass.
 
 Funding reconciliation follows escrow v2's two-sided fee-deposit protocol. A
 single finalized `fund` transaction records that participant's side but keeps

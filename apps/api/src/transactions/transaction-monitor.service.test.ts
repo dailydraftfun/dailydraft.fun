@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
-import { TransactionMonitorRepository } from './transaction-monitor.repository.js';
+import {
+  type BoundSubmission,
+  type ParticipantReconciliationBatch,
+  TransactionMonitorRepository,
+} from './transaction-monitor.repository.js';
 import { nextRecoveryCheckAt, TransactionMonitorService } from './transaction-monitor.service.js';
 import { monitoredTransaction, transactionEnvelope } from './transaction-monitor.test-fixtures.js';
 import type {
@@ -35,6 +39,48 @@ describe('TransactionMonitorService', () => {
 
     expect(summary.finalized).toBe(1);
     expect(repository.finalized).toEqual(['tx_123456789012']);
+  });
+
+  test('reconciles only the authenticated duel batch without running global recovery', async () => {
+    const transaction = monitoredTransaction();
+    const repository = new FakeRepository(transaction);
+    const service = new TransactionMonitorService(
+      repository,
+      new FakeRpc({ confirmationStatus: 'finalized', err: null }),
+    );
+
+    const result = await service.reconcileDuel({
+      actorWallet: transaction.wallet,
+      duelId: transaction.duelId,
+    });
+
+    expect(result.reconciliation.checked).toBe(1);
+    expect(result.reconciliation.finalized).toBe(1);
+    expect(result.activeTransactionCount).toBe(0);
+    expect(result.duelStatus).toBe('settled');
+    expect(repository.recoveryLookups).toBe(0);
+  });
+
+  test('opportunistically checks finality after binding a submitted signature', async () => {
+    const transaction = monitoredTransaction();
+    const repository = new SubmissionRepository(transaction);
+    const service = new TransactionMonitorService(
+      repository,
+      new FakeRpc({ confirmationStatus: 'finalized', err: null }),
+    );
+
+    const submission = await withEscrowProgram(transaction.expectedProgramId, () =>
+      service.bindSubmission({
+        actorWallet: transaction.wallet,
+        duelId: transaction.duelId,
+        idempotencyKey: 'opd-submit-tx_123456789012',
+        signature: transaction.signature,
+        transactionId: transaction.id,
+      }),
+    );
+
+    expect(submission.status).toBe('submitted');
+    expect(repository.finalized).toEqual([transaction.id]);
   });
 
   test('expires a missing signature only after its last valid block height', async () => {
@@ -204,13 +250,14 @@ class FakeRepository extends TransactionMonitorRepository {
   readonly confirmed: string[] = [];
   readonly finalized: string[] = [];
   readonly pending: string[] = [];
+  recoveryLookups = 0;
   readonly terminal: Array<{ code: string; id: string; status: 'expired' | 'failed' }> = [];
 
-  constructor(private readonly transaction: MonitoredTransaction) {
+  constructor(protected readonly transaction: MonitoredTransaction) {
     super();
   }
 
-  async bindSubmission(): Promise<never> {
+  async bindSubmission(): Promise<BoundSubmission> {
     throw new Error('Not used by reconciliation tests');
   }
 
@@ -222,7 +269,17 @@ class FakeRepository extends TransactionMonitorRepository {
     return [this.transaction];
   }
 
+  async findParticipantReconciliationBatch(): Promise<ParticipantReconciliationBatch> {
+    const terminal = this.finalized.length > 0 || this.terminal.length > 0;
+    return {
+      duelId: this.transaction.duelId,
+      duelStatus: terminal ? this.transaction.expectedToStatus : this.transaction.duelStatus,
+      transactions: terminal ? [] : [this.transaction],
+    };
+  }
+
   async findPreparedForRecovery(): Promise<PreparedRecoveryIntent[]> {
+    this.recoveryLookups += 1;
     return [];
   }
 
@@ -253,6 +310,22 @@ class FakeRepository extends TransactionMonitorRepository {
     code: string,
   ): Promise<void> {
     this.terminal.push({ code, id: transactionId, status });
+  }
+}
+
+class SubmissionRepository extends FakeRepository {
+  override async bindSubmission(): Promise<{
+    duelId: string;
+    signature: string;
+    status: 'submitted';
+    transactionId: string;
+  }> {
+    return {
+      duelId: this.transaction.duelId,
+      signature: this.transaction.signature,
+      status: 'submitted',
+      transactionId: this.transaction.id,
+    };
   }
 }
 
@@ -322,6 +395,25 @@ class RecoveryRepository extends TransactionMonitorRepository {
         submittedAt: this.intent.preparedAt,
       },
     ];
+  }
+
+  async findParticipantReconciliationBatch(): Promise<ParticipantReconciliationBatch> {
+    return {
+      duelId: this.intent.duelId,
+      duelStatus: this.finalized.length > 0 ? 'funded' : this.intent.duelStatus,
+      transactions:
+        !this.#boundSignature || this.finalized.length > 0
+          ? []
+          : [
+              {
+                ...this.intent,
+                duelStatus: 'committing',
+                signature: this.#boundSignature,
+                status: 'submitted',
+                submittedAt: this.intent.preparedAt,
+              },
+            ],
+    };
   }
 
   async recordRecoveryAlert(input: { signature: string }): Promise<void> {

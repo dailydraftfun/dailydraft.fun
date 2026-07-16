@@ -23,6 +23,19 @@ import { WorkerKeyGuard } from './worker-key.guard.js';
 export class TransactionSubmissionController {
   constructor(private readonly monitor: TransactionMonitorService) {}
 
+  @Post('reconciliation')
+  @HttpCode(200)
+  @UseGuards(DuelMutationGuard)
+  reconcileDuel(
+    @Param() params: DuelIdParams,
+    @CurrentDuelAuthentication() authentication: DuelAuthentication,
+  ) {
+    return this.monitor.reconcileDuel({
+      ...(authentication.kind === 'wallet-session' ? { actorWallet: authentication.wallet } : {}),
+      duelId: params.duelId,
+    });
+  }
+
   @Post(':transactionId/submissions')
   @HttpCode(202)
   @UseGuards(DuelMutationGuard)

@@ -64,6 +64,13 @@ export interface ReconciliationSummary {
   stuck: number;
 }
 
+export interface DuelReconciliationResult {
+  activeTransactionCount: number;
+  duelId: string;
+  duelStatus: DuelStatus;
+  reconciliation: ReconciliationSummary;
+}
+
 export interface SolanaAddressSignature {
   blockTime: number | null;
   confirmationStatus: 'finalized';

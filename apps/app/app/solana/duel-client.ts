@@ -75,6 +75,24 @@ export type MatchmakingSession = {
   wallet: string;
 };
 
+export type DuelReconciliationResult = {
+  activeTransactionCount: number;
+  duelId: string;
+  duelStatus: DurableDuel['status'];
+  reconciliation: {
+    checked: number;
+    confirmed: number;
+    expired: number;
+    failed: number;
+    finalized: number;
+    pending: number;
+    stuck: number;
+  };
+};
+
+const RECONCILIATION_POLL_ATTEMPTS = 20;
+const RECONCILIATION_POLL_INTERVAL_MS = 2_000;
+
 export async function prepareDuelIntent(
   duelId: string,
   wallet: string,
@@ -211,6 +229,41 @@ export async function submitSignedDuelIntent(
   );
 }
 
+export function reconcileDuelTransactions(
+  duelId: string,
+  sessionToken: string,
+): Promise<DuelReconciliationResult> {
+  return authenticatedMutation<DuelReconciliationResult>(
+    `/duels/${encodeURIComponent(duelId)}/transactions/reconciliation`,
+    sessionToken,
+    {},
+  );
+}
+
+export async function waitForDuelTransactions(
+  duelId: string,
+  sessionToken: string,
+): Promise<DuelReconciliationResult> {
+  let latest: DuelReconciliationResult | null = null;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < RECONCILIATION_POLL_ATTEMPTS; attempt += 1) {
+    try {
+      latest = await reconcileDuelTransactions(duelId, sessionToken);
+      if (latest.activeTransactionCount === 0) return latest;
+    } catch (error) {
+      if (!(error instanceof DuelApiRequestError) || !error.retryable) throw error;
+      lastError = error;
+    }
+    if (attempt + 1 < RECONCILIATION_POLL_ATTEMPTS) {
+      await wait(RECONCILIATION_POLL_INTERVAL_MS);
+    }
+  }
+  if (latest) return latest;
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Solana devnet reconciliation is temporarily unavailable.');
+}
+
 export function submissionIdempotencyKey(intentId: string): string {
   return `opd-submit-${intentId}`;
 }
@@ -238,9 +291,26 @@ async function parseMutationResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const problem = await response.json().catch(() => null);
     const detail = getProblemDetail(problem);
-    throw new Error(detail ?? `The duel request failed (${response.status}).`);
+    throw new DuelApiRequestError(
+      detail ?? `The duel request failed (${response.status}).`,
+      response.status,
+    );
   }
   return (await response.json()) as T;
+}
+
+class DuelApiRequestError extends Error {
+  readonly retryable: boolean;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'DuelApiRequestError';
+    this.retryable = status === 429 || status >= 500;
+  }
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function getProblemDetail(value: unknown): string | undefined {

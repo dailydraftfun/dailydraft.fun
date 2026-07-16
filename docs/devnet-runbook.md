@@ -76,16 +76,21 @@ smoke workflow.
 | `OPENPACKSDUEL_HOUSE_ALLOWED_DISPOSITIONS` | Operator inventory workflow allowlist; defaults to `hold,manual_review`. |
 | `CORS_ORIGINS` | Explicit allowed browser origins. |
 
-The transaction worker runs every five minutes in production and can be invoked
-manually at `POST /v1/internal/reconciliation/solana`. It treats `confirmed` as
-progress and advances duel state only after a `finalized` transaction matches
-the stored signer and blockhash plus one unique escrow instruction with the
-stored data hash and exact ordered account constraints. The public RPC
-fallback is appropriate only for this devnet preview and may rate-limit calls.
-Funding requires distinct finalized deposits from both duel participants; the
-first side remains `committing`, and only the second completes `funded`.
+Every submitted transaction receives an opportunistic finality check. Either
+authenticated participant can continue the duel-scoped check at
+`POST /v1/duels/{duelId}/transactions/reconciliation`, and the product polls
+that endpoint while a known transaction remains active. The global transaction
+worker is a once-daily Vercel Hobby recovery net and can also be invoked manually
+at `POST /v1/internal/reconciliation/solana`. Both paths treat `confirmed` as
+progress and advance duel state only after a `finalized` transaction matches the
+stored signer and blockhash plus one unique escrow instruction with the stored
+data hash and exact ordered account constraints. The public RPC fallback is
+appropriate only for this devnet preview and may rate-limit calls. Funding
+requires distinct finalized deposits from both duel participants; the first
+side remains `committing`, and only the second completes `funded`.
 
-The treasury worker at `GET|POST /v1/internal/reconciliation/treasury` first
+The once-daily treasury recovery worker at
+`GET|POST /v1/internal/reconciliation/treasury` first
 advances durable reservation/refund/settlement lifecycle state, then verifies
 the configured finalized devnet USDC balance and legacy-SPL house inventory.
 House creation and explicit queue fallback reserve micro-USDC inside a

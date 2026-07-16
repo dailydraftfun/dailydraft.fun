@@ -30,11 +30,14 @@ one fee deposit. The first valid deposit remains `committing`; the second distin
 participant completes the quorum and advances `funded` atomically. Duplicate
 wallet deposits never satisfy quorum and enter refund recovery.
 
-The reconciliation worker is idempotent, bounded to 100 records per run, and
-available at `GET|POST /internal/reconciliation/solana`. Vercel Cron uses
-`Authorization: Bearer $CRON_SECRET`; a manual worker can also use an integration
-key. Missing signatures are retried until blockheight proves expiry. RPC errors
-are not copied into public duel responses.
+The participant path is idempotent and available at
+`POST /duels/{duelId}/transactions/reconciliation`. Either authenticated duel
+participant can poll it after submission, and only active transactions belonging
+to that duel are checked. The global recovery worker is bounded to 100 records
+per run and available at `GET|POST /internal/reconciliation/solana`. A once-daily
+Vercel Hobby cron uses `Authorization: Bearer $CRON_SECRET`; a manual worker can
+also use an integration key. Missing signatures are retried until blockheight
+proves expiry. RPC errors are not copied into public duel responses.
 
 Provider result, settlement, and refund preparation creates a durable intent
 before returning unsigned bytes. After broadcast, bind its `intentId` through

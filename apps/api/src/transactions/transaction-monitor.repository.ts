@@ -5,6 +5,12 @@ import type {
   RecoveryAlertCode,
 } from './transaction-monitor.types.js';
 
+export interface ParticipantReconciliationBatch {
+  duelId: string;
+  duelStatus: DuelStatus;
+  transactions: MonitoredTransaction[];
+}
+
 export interface TransactionDuelAnalytics {
   mode: 'direct' | 'house' | 'open';
   status: DuelStatus;
@@ -37,6 +43,10 @@ export abstract class TransactionMonitorRepository {
     transactionId: string;
   }): Promise<BoundSubmission>;
   abstract findPending(limit: number, now: Date): Promise<MonitoredTransaction[]>;
+  abstract findParticipantReconciliationBatch(input: {
+    actorWallet?: string;
+    duelId: string;
+  }): Promise<ParticipantReconciliationBatch>;
   abstract findPreparedForRecovery(
     limit: number,
     preparedAfter: Date,

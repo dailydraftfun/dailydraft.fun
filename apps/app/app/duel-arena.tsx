@@ -39,9 +39,11 @@ import {
   joinDuel,
   type MatchmakingSession,
   prepareDuelIntent,
+  reconcileDuelTransactions,
   searchOpenMatchmaking,
   selectHouseFallback,
   submitSignedDuelIntent,
+  waitForDuelTransactions,
 } from './solana/duel-client';
 import { TransactionIntentReview } from './solana/transaction-intent-review';
 import { isDuelApiConfigured } from './solana/wallet-auth-client';
@@ -388,6 +390,30 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   useEffect(() => {
     if (
+      !persistedDuel ||
+      !authentication.sessionToken ||
+      !['committing', 'settling', 'cancelling', 'refunding'].includes(persistedDuel.status)
+    ) {
+      return;
+    }
+    let active = true;
+    const poll = () => {
+      reconcileDuelTransactions(persistedDuel.id, authentication.sessionToken as string)
+        .then(() => getDuel(persistedDuel.id))
+        .then((duel) => {
+          if (active) setPersistedDuel(duel);
+        })
+        .catch(() => undefined);
+    };
+    const interval = window.setInterval(poll, 4_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [authentication.sessionToken, persistedDuel]);
+
+  useEffect(() => {
+    if (
       matchmakingSession ||
       !authentication.sessionToken ||
       !walletConnection.address ||
@@ -702,10 +728,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         signature,
         authentication.sessionToken,
       );
+      setActionNotice('Funding broadcast on Solana devnet. Verifying finalized escrow state…');
+      const reconciliation = await waitForDuelTransactions(
+        intent.duelId,
+        authentication.sessionToken,
+      );
       setIntent(null);
-      setPersistedDuel(await getDuel(intent.duelId));
+      const refreshed = await getDuel(intent.duelId);
+      setPersistedDuel(refreshed);
       setActionNotice(
-        'Funding broadcast on Solana devnet. The duel advances only after finalized verification.',
+        fundingReconciliationNotice(refreshed, reconciliation.activeTransactionCount),
       );
     } catch (error) {
       setActionError(
@@ -1271,6 +1303,17 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       ) : null}
     </main>
   );
+}
+
+function fundingReconciliationNotice(duel: DurableDuel, activeTransactionCount: number): string {
+  if (activeTransactionCount > 0) {
+    return 'Funding is still confirming on Solana devnet. This wallet can resume verification without a background worker.';
+  }
+  if (duel.status === 'funded') return 'Both escrow deposits are finalized. The duel is funded.';
+  if (duel.status === 'committing') {
+    return 'Your escrow deposit is finalized. Waiting for the other wallet to fund.';
+  }
+  return `Funding reconciliation completed with duel status: ${duel.status}.`;
 }
 
 function toTrackedMode(mode: Mode): 'direct' | 'house' | 'open' {
