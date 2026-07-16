@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
 import {
+  type BoundSubmission,
   type ParticipantReconciliationBatch,
   TransactionMonitorRepository,
 } from './transaction-monitor.repository.js';
@@ -256,7 +257,7 @@ class FakeRepository extends TransactionMonitorRepository {
     super();
   }
 
-  async bindSubmission(): Promise<never> {
+  async bindSubmission(): Promise<BoundSubmission> {
     throw new Error('Not used by reconciliation tests');
   }
 
