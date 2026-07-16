@@ -123,7 +123,7 @@ export type PublicDuelReceipt = {
   };
   recovery: {
     alerts: Array<{
-      action: 'fund';
+      action: 'commit_result' | 'fund' | 'settle';
       code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH';
       detectedAt: string;
       explorerUrl: string;

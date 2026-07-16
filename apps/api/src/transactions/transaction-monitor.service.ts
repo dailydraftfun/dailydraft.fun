@@ -195,8 +195,10 @@ export class TransactionMonitorService {
         );
         continue;
       }
+      let checkedBlockHeight: bigint;
       let signatures: SolanaAddressSignature[];
       try {
+        checkedBlockHeight = await this.rpc.getBlockHeight();
         signatures = await this.rpc.getFinalizedSignaturesForAddress(
           intent.escrowAddress,
           recoverySignatureLimit(),
@@ -218,6 +220,7 @@ export class TransactionMonitorService {
         continue;
       }
       let handled = false;
+      let scanComplete = true;
       for (const candidate of signatures) {
         if (
           candidate.blockTime !== null &&
@@ -241,6 +244,7 @@ export class TransactionMonitorService {
         try {
           envelope = await this.rpc.getTransaction(candidate.signature, 'finalized');
         } catch (error) {
+          scanComplete = false;
           summary.recoveryErrors += 1;
           if (error instanceof SolanaRpcUnavailableError) {
             await this.analytics?.recordServer({
@@ -252,6 +256,7 @@ export class TransactionMonitorService {
           continue;
         }
         if (!envelope) {
+          scanComplete = false;
           summary.recoveryRejected += 1;
           continue;
         }
@@ -302,12 +307,11 @@ export class TransactionMonitorService {
         break;
       }
       if (!handled) {
-        const checkedBlockHeight = await this.rpc.getBlockHeight();
         await this.repository.recordRecoveryAttempt(
           intent.id,
           now,
           nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
-          checkedBlockHeight,
+          scanComplete ? checkedBlockHeight : undefined,
         );
       }
       if (remainingCandidateBudget === 0) break;

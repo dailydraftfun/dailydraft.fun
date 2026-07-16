@@ -518,7 +518,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       const isReplay =
         monitored.recoveryAlertCode === input.code &&
         monitored.recoveryCandidateSignature === input.signature;
-      const metadata = parseFundingSubmissionMetadata(monitored.metadata);
+      const metadata = parseRecoverySubmissionMetadata(monitored.action, monitored.metadata);
       const routing = recoveryAlertRouting({
         currentStatus: monitored.duel.status,
         storedEscrowAddress: monitored.duel.escrowAddress,
@@ -554,7 +554,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       await database.duelEvent.create({
         data: {
           data: {
-            action: 'fund',
+            action: monitored.action.toLowerCase(),
             code: input.code,
             escrowConflict: routing.escrowConflict,
             signature: input.signature,
@@ -566,6 +566,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           sequence: monitored.duel.version + 1,
           toStatus: routing.targetStatus,
           type:
+            monitored.action === DuelTransactionAction.FUND &&
             routing.targetStatus === DatabaseDuelStatus.REFUNDING
               ? 'duel.unbound_funding_recovery_started'
               : 'duel.transaction_recovery_alert',

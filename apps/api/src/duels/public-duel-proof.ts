@@ -141,7 +141,7 @@ export interface PublicSolanaReference {
 }
 
 export interface PublicRecoveryAlert {
-  action: 'fund';
+  action: 'commit_result' | 'fund' | 'settle';
   code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH';
   detectedAt: string;
   explorerUrl: string;
@@ -283,7 +283,7 @@ export function buildPublicDuelReceipt(
   }));
   const recoveryAlerts = transactions.flatMap((transaction): PublicRecoveryAlert[] => {
     if (
-      transaction.action !== 'fund' ||
+      !isRecoveryAlertAction(transaction.action) ||
       transaction.recoveryAlertCode !== 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH' ||
       !transaction.recoveryCandidateAt ||
       !transaction.recoveryCandidateSignature ||
@@ -293,7 +293,7 @@ export function buildPublicDuelReceipt(
     }
     return [
       {
-        action: 'fund',
+        action: transaction.action,
         code: transaction.recoveryAlertCode,
         detectedAt: transaction.recoveryCandidateAt,
         explorerUrl: `https://explorer.solana.com/tx/${encodeURIComponent(transaction.recoveryCandidateSignature)}?cluster=devnet`,
@@ -407,6 +407,12 @@ export function buildPublicDuelReceipt(
     result,
     schemaVersion: 'openpacksduel.receipt.v1',
   };
+}
+
+function isRecoveryAlertAction(
+  action: DuelTransactionRecord['action'],
+): action is PublicRecoveryAlert['action'] {
+  return action === 'fund' || action === 'commit_result' || action === 'settle';
 }
 
 function buildPostDuelCardActions(input: {

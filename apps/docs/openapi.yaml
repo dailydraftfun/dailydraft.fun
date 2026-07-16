@@ -2173,7 +2173,7 @@ components:
                 additionalProperties: false
                 required: [action, code, detectedAt, signature, explorerUrl]
                 properties:
-                  action: { type: string, const: fund }
+                  action: { type: string, enum: [fund, commit_result, settle] }
                   code: { type: string, const: UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH }
                   detectedAt: { type: string, format: date-time }
                   signature: { type: string }

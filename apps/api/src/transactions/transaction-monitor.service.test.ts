@@ -180,6 +180,18 @@ describe('TransactionMonitorService', () => {
     expect(repository.bound).toEqual([]);
   });
 
+  test('does not certify an intent absent when a finalized candidate envelope is unavailable', async () => {
+    const intent = preparedRecoveryIntent();
+    const repository = new RecoveryRepository(intent);
+    const service = new TransactionMonitorService(repository, new MissingEnvelopeRecoveryRpc());
+
+    const summary = await withEscrowProgram(intent.expectedProgramId, () => service.reconcile());
+
+    expect(summary.recovered).toBe(0);
+    expect(summary.recoveryErrors).toBe(0);
+    expect(repository.checkedBlockHeights).toEqual([null]);
+  });
+
   test('refuses recovery when the duel was cancelled during discovery', async () => {
     const intent = preparedRecoveryIntent({ duelStatus: 'cancelled' });
     const repository = new RecoveryRepository(intent);
@@ -370,9 +382,20 @@ class RecoveryRpc extends FakeRpc {
   }
 }
 
+class MissingEnvelopeRecoveryRpc extends RecoveryRpc {
+  constructor() {
+    super(transactionEnvelope());
+  }
+
+  override async getTransaction(): Promise<null> {
+    return null;
+  }
+}
+
 class RecoveryRepository extends TransactionMonitorRepository {
   readonly alerts: string[] = [];
   readonly bound: string[] = [];
+  readonly checkedBlockHeights: Array<bigint | null> = [];
   readonly finalized: string[] = [];
   #boundSignature: string | null = null;
 
@@ -442,7 +465,14 @@ class RecoveryRepository extends TransactionMonitorRepository {
     this.alerts.push(input.signature);
   }
 
-  async recordRecoveryAttempt(): Promise<void> {}
+  async recordRecoveryAttempt(
+    _transactionId: string,
+    _now: Date,
+    _nextRecoveryCheckAt: Date,
+    checkedBlockHeight?: bigint,
+  ): Promise<void> {
+    this.checkedBlockHeights.push(checkedBlockHeight ?? null);
+  }
 
   async recordConfirmed(): Promise<void> {}
 

@@ -147,6 +147,29 @@ describe('public duel proof', () => {
     expect(receipt.references.solana).toEqual([]);
   });
 
+  test('publishes provider recovery alerts with their actual action', () => {
+    const signature = '6'.repeat(88);
+    const receipt = buildPublicDuelReceipt(settledDuel(), [
+      {
+        action: 'commit_result',
+        createdAt: '2026-07-15T20:02:00.000Z',
+        duelId: 'duel_receipt00001',
+        id: 'tx_unbound_commit_result',
+        network: 'solana-devnet',
+        recoveryAlertCode: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH',
+        recoveryCandidateAt: '2026-07-15T20:03:00.000Z',
+        recoveryCandidateSignature: signature,
+        status: 'prepared',
+        updatedAt: '2026-07-15T20:03:00.000Z',
+        wallet: CREATOR,
+      },
+    ]);
+
+    expect(receipt.recovery.alerts).toEqual([
+      expect.objectContaining({ action: 'commit_result', signature }),
+    ]);
+  });
+
   test('does not treat an unfinalized settlement signature as custody proof', () => {
     const duel = settledDuel();
     const result = requireResult(duel);

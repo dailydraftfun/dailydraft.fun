@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { DuelSide, DuelStatus, DuelTransactionStatus, ProviderMode } from '@openpacksduel/db';
+import {
+  DuelSide,
+  DuelStatus,
+  DuelTransactionAction,
+  DuelTransactionStatus,
+  ProviderMode,
+} from '@openpacksduel/db';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { PublicKey, Transaction } from '@solana/web3.js';
 
@@ -239,6 +245,31 @@ describe('ProviderSettlementService', () => {
     expect(prepared.instruction.name).toBe('refund_expired_payment');
     expect(prepared.reconciliation).toBe('submission-monitor');
     expect(prepared.serializedTransactionBase64.length).toBeGreaterThan(100);
+  });
+
+  test('records provider recovery alerts with provider metadata and action labels', async () => {
+    const duel: MutableDuelFixture = {
+      ...databaseDuel(new Date(Date.now() + 60_000)),
+      status: DuelStatus.SETTLING,
+      version: 4,
+    };
+    const recovery = recoveryDatabase(duel, DuelTransactionAction.COMMIT_RESULT);
+    const monitor = new PrismaTransactionMonitorRepository(recovery.client);
+
+    await monitor.recordRecoveryAlert({
+      code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH',
+      nextRecoveryCheckAt: new Date(Date.now() + 60_000),
+      now: new Date(),
+      signature: '5'.repeat(88),
+      transactionId: 'tx_lost_creator_funding',
+    });
+
+    expect(recovery.events).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({ action: 'commit_result' }),
+        type: 'duel.transaction_recovery_alert',
+      }),
+    ]);
   });
 
   test('prepares an independently monitored expired card refund to its original owner', async () => {
@@ -492,12 +523,19 @@ type MutableDuelFixture = Omit<ReturnType<typeof databaseDuel>, 'escrowAddress' 
   version: number;
 };
 
-function recoveryDatabase(duel: MutableDuelFixture) {
+function recoveryDatabase(
+  duel: MutableDuelFixture,
+  action: DuelTransactionAction = DuelTransactionAction.FUND,
+) {
   const expectedEscrow = deriveEscrowV2Addresses(CREATOR, nonceFromFixtureDuel()).duel.toBase58();
   const monitored = {
+    action,
     duel,
     id: 'tx_lost_creator_funding',
-    metadata: { escrowAddress: expectedEscrow, feeAmountLamports: '1000000' },
+    metadata:
+      action === DuelTransactionAction.FUND
+        ? { escrowAddress: expectedEscrow, feeAmountLamports: '1000000' }
+        : { proof: { escrowAddress: expectedEscrow } },
     recoveryAlertCode: null,
     recoveryCandidateAt: null,
     recoveryCandidateSignature: null,
