@@ -27,6 +27,16 @@ import { useEffect, useRef, useState } from 'react';
 import { trackProductEvent } from './analytics-client';
 import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
 import {
+  parseStoredRevealTimeline,
+  type RevealSideResolution,
+  recoverRevealStartedAt,
+  revealCommitmentCopy,
+  revealPresentationAt,
+  revealSideResolution,
+  revealStorageKey,
+  type StoredRevealTimeline,
+} from './duel/reveal-presentation';
+import {
   advanceDuelLifecycle,
   cancelDuel,
   cancelOpenMatchmaking,
@@ -55,6 +65,7 @@ import { useSolanaWallet } from './solana/wallet-provider';
 
 type Mode = DuelOpponentType;
 type Phase = LiveDuelPhase;
+type DuelCardStage = 'opening' | 'revealed' | 'sealed';
 
 export type DuelLobbyEntry = {
   action: 'accept' | 'rematch';
@@ -121,21 +132,24 @@ function TierCard({
 function DuelCard({
   pull,
   side,
-  phase,
-  winner,
+  stage,
+  resolution,
   tier,
   walletLabel,
 }: {
   pull: LivePull | null;
   side: 'you' | 'opponent';
-  phase: Phase;
-  winner: boolean;
+  stage: DuelCardStage;
+  resolution: RevealSideResolution | null;
   tier: string;
   walletLabel: string;
 }) {
-  const visible = phase === 'result' && pull !== null;
+  const visible = stage === 'revealed' && pull !== null;
+  const displayPull = visible ? pull : null;
   return (
-    <article className={`reveal-column reveal-${side} ${winner && visible ? 'reveal-winner' : ''}`}>
+    <article
+      className={`reveal-column reveal-${side} ${resolution === 'winner' && visible ? 'reveal-winner' : ''}`}
+    >
       <div className="player-label">
         <Avatar
           color={side === 'you' ? '#b8ff5a' : '#a78bfa'}
@@ -145,14 +159,16 @@ function DuelCard({
           <small>{side === 'you' ? 'You' : 'Opponent'}</small>
           <strong>{walletLabel}</strong>
         </div>
-        {winner && visible ? (
-          <span className="winner-chip">
-            <TrophyIcon size={12} weight="fill" /> Winner
+        {resolution && visible ? (
+          <span className={`result-chip result-${resolution}`}>
+            {resolution === 'winner' ? <TrophyIcon size={12} weight="fill" /> : null}
+            {resolution === 'tie' ? <ArrowsLeftRightIcon size={12} weight="bold" /> : null}
+            {resolution === 'winner' ? 'Winner' : resolution === 'tie' ? 'Tie' : 'Runner-up'}
           </span>
         ) : null}
       </div>
 
-      <div className={`card-stage card-stage-${phase}`}>
+      <div className={`card-stage card-stage-${stage}`}>
         <div className="pack-shell" aria-hidden={visible}>
           <div className="pack-glint" />
           <div className="pack-brand">
@@ -170,37 +186,37 @@ function DuelCard({
           <span className="pack-tier">{visible ? '—' : tier}</span>
         </div>
         <div className="pull-shell" aria-hidden={!visible}>
-          {pull?.image ? (
+          {displayPull?.image ? (
             <Image
-              src={pull.image}
-              alt={pull.name}
+              src={displayPull.image}
+              alt={displayPull.name}
               fill
               sizes="(max-width: 768px) 42vw, 260px"
               className="pull-image"
               priority
             />
-          ) : pull ? (
+          ) : displayPull ? (
             <div className="pack-brand">
               <span>VERIFIED PULL</span>
-              <strong>{pull.name}</strong>
-              <small>{pull.label}</small>
+              <strong>{displayPull.name}</strong>
+              <small>{displayPull.label}</small>
             </div>
           ) : null}
         </div>
-        {phase === 'opening' ? (
+        {stage === 'opening' ? (
           <div className="opening-status" role="status">
             <span /> Opening pack
           </div>
         ) : null}
       </div>
 
-      <div className={visible ? 'pull-meta pull-meta-visible' : 'pull-meta'}>
-        <span className="grade-chip">{pull?.provider ?? 'Pending'}</span>
+      <div className={visible ? 'pull-meta pull-meta-visible' : 'pull-meta'} aria-hidden={!visible}>
+        <span className="grade-chip">{displayPull?.provider ?? 'Pending'}</span>
         <div>
-          <strong>{pull?.name ?? 'Result pending'}</strong>
-          <small>{pull?.label ?? 'No outcome committed yet'}</small>
+          <strong>{displayPull?.name ?? 'Result pending'}</strong>
+          <small>{displayPull?.label ?? 'No outcome committed yet'}</small>
         </div>
-        <span className="pull-value">{pull?.value ?? '—'}</span>
+        <span className="pull-value">{displayPull?.value ?? '—'}</span>
       </div>
     </article>
   );
@@ -224,10 +240,23 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [matchmakingSession, setMatchmakingSession] = useState<MatchmakingSession | null>(null);
   const [matchmakingRestorePending, setMatchmakingRestorePending] = useState(false);
   const [capabilities, setCapabilities] = useState<ProductCapabilities | null>(null);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const [revealClock, setRevealClock] = useState(() => Date.now());
+  const [revealTimeline, setRevealTimeline] = useState<StoredRevealTimeline | null>(null);
   const matchmakingRestoreKey = useRef<string | null>(null);
   const lifecycleAdvanceKey = useRef<string | null>(null);
   const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
   const phase: Phase = liveDuel?.phase ?? 'lobby';
+  const duelId = persistedDuel?.id ?? null;
+  const resultKey = persistedDuel?.result?.resultHash ?? null;
+  const committedResultReady = Boolean(
+    phase === 'result' && duelId && resultKey && liveDuel?.left && liveDuel.right,
+  );
+  const revealStartedAt = revealTimeline?.resultKey === resultKey ? revealTimeline.startedAt : null;
+  const revealPresentation =
+    committedResultReady && revealStartedAt !== null
+      ? revealPresentationAt(revealClock - revealStartedAt, reducedMotion)
+      : null;
   const houseEnabled = capabilities?.modes.house.enabled === true;
   const houseFallbackAction = matchmakingSession?.availableActions.find(
     (action) => action.action === 'house_fallback',
@@ -262,6 +291,44 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   useEffect(() => {
     trackProductEvent({ name: 'lobby_viewed' });
   }, []);
+
+  useEffect(() => {
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updatePreference = () => setReducedMotion(motionQuery.matches);
+    updatePreference();
+    motionQuery.addEventListener('change', updatePreference);
+    return () => motionQuery.removeEventListener('change', updatePreference);
+  }, []);
+
+  useEffect(() => {
+    if (!committedResultReady || !duelId || !resultKey) {
+      setRevealTimeline(null);
+      return;
+    }
+
+    const now = Date.now();
+    const storageKey = revealStorageKey(duelId);
+    let stored: StoredRevealTimeline | null = null;
+    try {
+      stored = parseStoredRevealTimeline(window.sessionStorage.getItem(storageKey));
+    } catch {
+      stored = null;
+    }
+    const startedAt = recoverRevealStartedAt(stored, resultKey, now);
+    try {
+      window.sessionStorage.setItem(storageKey, JSON.stringify({ resultKey, startedAt }));
+    } catch {
+      // A denied storage write only disables reload recovery; it never changes the result.
+    }
+    setRevealClock(now);
+    setRevealTimeline({ resultKey, startedAt });
+  }, [committedResultReady, duelId, resultKey]);
+
+  useEffect(() => {
+    if (!committedResultReady || revealStartedAt === null || revealPresentation?.isComplete) return;
+    const interval = window.setInterval(() => setRevealClock(Date.now()), 100);
+    return () => window.clearInterval(interval);
+  }, [committedResultReady, revealPresentation?.isComplete, revealStartedAt]);
 
   useEffect(() => {
     if (!isDuelApiConfigured()) return;
@@ -770,6 +837,32 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }
 
   if (phase !== 'lobby' && liveDuel && persistedDuel) {
+    const showResolution = revealPresentation?.showResolution ?? false;
+    const leftStage: DuelCardStage =
+      phase === 'result'
+        ? revealPresentation?.showLeft
+          ? 'revealed'
+          : 'sealed'
+        : phase === 'opening'
+          ? 'opening'
+          : 'sealed';
+    const rightStage: DuelCardStage =
+      phase === 'result'
+        ? revealPresentation?.showRight
+          ? 'revealed'
+          : 'sealed'
+        : phase === 'opening'
+          ? 'opening'
+          : 'sealed';
+    const presentationHeadline =
+      phase === 'result' && !showResolution
+        ? (revealPresentation?.headline ?? 'Outcome committed. Preparing reveal…')
+        : liveDuel.headline;
+    const presentationIndicator =
+      phase === 'result' && !showResolution
+        ? (revealPresentation?.indicator ?? 'Outcome committed')
+        : liveDuel.indicator;
+
     return (
       <main className="duel-experience">
         <div className="duel-topline">
@@ -789,11 +882,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               <span className="eyebrow">
                 <SwordIcon size={14} weight="fill" /> {liveDuel.tier} Pack Duel
               </span>
-              <h1>{liveDuel.headline}</h1>
+              <h1>{presentationHeadline}</h1>
             </div>
-            <div className={`phase-indicator phase-${phase}`}>
+            <div
+              className={`phase-indicator phase-${showResolution ? 'result' : phase === 'result' ? 'opening' : phase}`}
+            >
               <span />
-              {liveDuel.indicator}
+              {presentationIndicator}
             </div>
           </div>
           {actionError ? (
@@ -803,12 +898,30 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           ) : null}
           {actionNotice ? <p className="signing-note">{actionNotice}</p> : null}
 
-          <div className="reveal-grid">
+          {committedResultReady ? (
+            <div className="commitment-banner">
+              <ShieldCheckIcon size={17} weight="fill" />
+              <span>
+                <strong>{revealCommitmentCopy}</strong>
+                <small>Result hash {shortReference(resultKey) ?? 'verified'}</small>
+              </span>
+            </div>
+          ) : null}
+
+          {revealPresentation?.countdown ? (
+            <div className="reveal-countdown" role="status" aria-atomic="true">
+              <small>Committed reveal</small>
+              <strong>{revealPresentation.countdown}</strong>
+              <span>Both outcomes are locked</span>
+            </div>
+          ) : null}
+
+          <div className={`reveal-grid reveal-grid-${revealPresentation?.phase ?? phase}`}>
             <DuelCard
               pull={liveDuel.left}
               side="you"
-              phase={phase}
-              winner={liveDuel.winner === 'you'}
+              stage={leftStage}
+              resolution={showResolution ? revealSideResolution(liveDuel.winner, 'you') : null}
               tier={liveDuel.tier}
               walletLabel={walletConnection.shortAddress ?? 'Your wallet'}
             />
@@ -818,8 +931,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             <DuelCard
               pull={liveDuel.right}
               side="opponent"
-              phase={phase}
-              winner={liveDuel.winner === 'opponent'}
+              stage={rightStage}
+              resolution={showResolution ? revealSideResolution(liveDuel.winner, 'opponent') : null}
               tier={liveDuel.tier}
               walletLabel={
                 persistedDuel.houseOpponent
@@ -833,17 +946,22 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             />
           </div>
 
-          {phase === 'result' ? (
+          {showResolution ? (
             <div className="result-panel">
               <div className="result-summary">
                 <TrophyIcon size={24} weight="fill" />
+                <div>
+                  <small>Winner</small>
+                  <strong>{resultWinnerLabel(liveDuel.winner)}</strong>
+                </div>
+                <Separator orientation="vertical" className="h-9 bg-border" />
                 <div>
                   <small>Winning margin</small>
                   <strong>{liveDuel.margin ?? '—'}</strong>
                 </div>
                 <Separator orientation="vertical" className="h-9 bg-border" />
                 <div>
-                  <small>Total prize value</small>
+                  <small>Total haul</small>
                   <strong>{liveDuel.totalValue ?? '—'}</strong>
                 </div>
               </div>
@@ -857,6 +975,44 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                   <XLogoIcon size={16} weight="fill" /> Share result
                 </Button>
               </div>
+            </div>
+          ) : revealPresentation ? (
+            <div
+              className="opening-timeline reveal-timeline"
+              role="status"
+              aria-label="Reveal progress"
+            >
+              <span className="timeline-complete">
+                <CheckCircleIcon size={14} weight="fill" /> Committed
+              </span>
+              <span className="timeline-line">
+                <i />
+              </span>
+              <span
+                className={revealPresentation.showLeft ? 'timeline-complete' : 'timeline-active'}
+              >
+                <FireIcon size={14} weight="fill" /> Your pull
+              </span>
+              <span className="timeline-line">
+                <i />
+              </span>
+              <span
+                className={
+                  revealPresentation.showRight
+                    ? 'timeline-complete'
+                    : revealPresentation.showLeft
+                      ? 'timeline-active'
+                      : ''
+                }
+              >
+                <FireIcon size={14} weight="fill" /> Rival pull
+              </span>
+              <span className="timeline-line">
+                <i />
+              </span>
+              <span className={revealPresentation.showRight ? 'timeline-active' : ''}>
+                <TrophyIcon size={14} /> Resolve
+              </span>
             </div>
           ) : (
             <div className="opening-timeline" aria-hidden="true">
@@ -1240,6 +1396,13 @@ function toTrackedTier(tier: number): 25 | 50 | 100 | undefined {
 function shortReference(value?: string | null): string | null {
   if (!value) return null;
   return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
+}
+
+function resultWinnerLabel(winner: 'opponent' | 'tie' | 'you' | null): string {
+  if (winner === 'you') return 'You';
+  if (winner === 'opponent') return 'Opponent';
+  if (winner === 'tie') return 'Tie';
+  return 'Pending';
 }
 
 function persistedStatusHeadline(

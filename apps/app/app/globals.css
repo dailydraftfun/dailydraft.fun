@@ -1472,19 +1472,87 @@
   font-family: var(--font-mono);
   font-size: 10px;
 }
-.winner-chip {
+.result-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   margin-left: auto;
-  border: 1px solid rgba(184, 255, 90, 0.3);
   border-radius: 4px;
-  background: rgba(184, 255, 90, 0.1);
   padding: 4px 6px;
-  color: var(--lime);
   font-size: 8px;
   font-weight: 700;
   text-transform: uppercase;
+}
+.result-winner {
+  border: 1px solid rgba(184, 255, 90, 0.3);
+  background: rgba(184, 255, 90, 0.1);
+  color: var(--lime);
+}
+.result-loser {
+  border: 1px solid var(--color-border);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+}
+.result-tie {
+  border: 1px solid rgba(247, 201, 72, 0.32);
+  background: rgba(247, 201, 72, 0.09);
+  color: var(--warning);
+}
+
+.commitment-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 870px;
+  margin: 20px auto 0;
+  border: 1px solid rgba(72, 224, 138, 0.22);
+  border-radius: 8px;
+  background: rgba(72, 224, 138, 0.055);
+  padding: 10px 12px;
+  color: var(--success);
+}
+.commitment-banner > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.commitment-banner strong {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+.commitment-banner small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reveal-countdown {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  width: min(100%, 260px);
+  margin: 22px auto -18px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.reveal-countdown small,
+.reveal-countdown span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+}
+.reveal-countdown strong {
+  color: var(--lime);
+  font-family: var(--font-mono);
+  font-size: clamp(46px, 7vw, 72px);
+  line-height: 0.95;
+  animation: countdown-pulse 900ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
 .card-stage {
@@ -1602,11 +1670,11 @@
 .card-stage-opening .pack-glint {
   animation: glint 1.2s ease-in-out infinite;
 }
-.card-stage-result .pack-shell {
+.card-stage-revealed .pack-shell {
   opacity: 0;
   transform: rotateY(-90deg) scale(0.88);
 }
-.card-stage-result .pull-shell {
+.card-stage-revealed .pull-shell {
   opacity: 1;
   transform: rotateY(0) scale(1);
 }
@@ -1752,6 +1820,9 @@
 .opening-timeline .timeline-active {
   color: var(--lime);
 }
+.reveal-timeline .timeline-line {
+  width: 62px;
+}
 
 .result-panel {
   display: flex;
@@ -1822,6 +1893,17 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes countdown-pulse {
+  from {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
@@ -1991,7 +2073,7 @@
   .player-label .duel-avatar {
     display: none;
   }
-  .winner-chip {
+  .result-chip {
     position: absolute;
     z-index: 12;
     top: 61px;
@@ -2044,6 +2126,14 @@
     width: 25px;
     margin-inline: 5px;
   }
+  .reveal-timeline {
+    font-size: 7px;
+    letter-spacing: 0.06em;
+  }
+  .reveal-timeline .timeline-line {
+    width: 12px;
+    margin-inline: 3px;
+  }
   .result-panel {
     align-items: stretch;
     flex-direction: column;
@@ -2066,7 +2156,8 @@
   .animate-ping,
   .card-stage-opening .pack-shell,
   .card-stage-opening .pack-glint,
-  .opening-status span {
+  .opening-status span,
+  .reveal-countdown strong {
     animation: none;
   }
 
