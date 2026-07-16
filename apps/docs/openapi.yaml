@@ -2254,14 +2254,14 @@ components:
             creatorResultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
             opponentResultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
             poolVersion: { type: string }
-              providerAttestation:
-                type: object
-                additionalProperties: false
-                required: [required, scope, status]
-                properties:
-                  required: { type: boolean }
-                  scope: { type: string, enum: [none, escrow-mints-values-policy] }
-                  status: { type: string, enum: [mock-not-applicable, not-recorded, on-chain-commitment-finalized] }
+            providerAttestation:
+              type: object
+              additionalProperties: false
+              required: [required, scope, status]
+              properties:
+                required: { type: boolean }
+                scope: { type: string, enum: [none, escrow-mints-values-policy] }
+                status: { type: string, enum: [mock-not-applicable, not-recorded, on-chain-commitment-finalized] }
         resultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
         settlementReady: { type: boolean }
         valuationPolicyHash: { type: string, pattern: '^[a-f0-9]{64}$' }
