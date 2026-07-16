@@ -43,8 +43,8 @@ Provider result, settlement, and refund preparation creates a durable intent
 before returning unsigned bytes. After broadcast, bind its `intentId` through
 the same submission endpoint. Card deposits remain an explicit operator-proof
 boundary: their response has `intentId: null` and does not advance duel state.
-Real-card preparation fails closed unless Collector Crypt evidence, canonical
-the pre-funded policy's comparison values, legacy SPL mint metadata, and escrow vault custody all match.
+Real-asset preparation fails closed unless provider evidence, the pre-funded
+policy's comparison values, legacy SPL mint metadata, and escrow vault custody all match.
 The monitor never reconstructs or trusts an intent from an arbitrary submitted signature.
 
 ## Lost submission recovery

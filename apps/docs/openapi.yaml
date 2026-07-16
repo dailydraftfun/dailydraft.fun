@@ -18,8 +18,8 @@ info:
 servers:
   - url: http://localhost:3003/v1
     description: Local development
-  - url: https://api.openpacksduel.com/v1
-    description: Reserved devnet API endpoint (not live; not mainnet)
+  - url: https://openpacksduel-api.vercel.app/v1
+    description: Canonical hosted devnet API (not mainnet)
 tags:
   - name: Authentication
     description: Replay-safe Solana devnet wallet ownership sessions.
@@ -1217,7 +1217,7 @@ paths:
       description: |
         Integration-only, devnet-only boundary. The API never signs or submits.
         Real card operations fail closed for mock/incomplete provider outcomes,
-        unsupported asset standards, noncanonical insured values or policies,
+        unsupported asset standards, noncanonical comparison values or policies,
         invalid legacy SPL mint metadata, and missing vault custody.
       x-openpacksduel-availability: devnet-gated
       security:
@@ -1956,6 +1956,7 @@ components:
           format: uri
         insuredValue:
           $ref: '#/components/schemas/Money'
+          description: Backward-compatible result field. Its authoritative meaning comes from valuationPolicyHash; hosted demo outcomes contain the snapshotted TCGPlayer market value, not Collector Crypt insured value.
         openedAt:
           type: string
           format: date-time
@@ -1967,7 +1968,7 @@ components:
         sourceTimestamp:
           type: string
           format: date-time
-          description: Provider timestamp for the insured-value source snapshot, captured before comparison.
+          description: Timestamp when the API captured the authoritative provider value snapshot before comparison.
         resultHash:
           type: string
           pattern: '^[a-f0-9]{64}$'
@@ -2008,7 +2009,7 @@ components:
         tieRule:
           type: string
           const: return-original-assets-and-refund-platform-fees
-          description: Equal integer insured values return each original card and refund both platform fees.
+          description: Equal canonical comparison values return each original card and refund both platform fees.
         valuationPolicyHash:
           type: string
           pattern: '^[a-f0-9]{64}$'
