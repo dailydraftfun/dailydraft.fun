@@ -1,4 +1,4 @@
-import { getDuelSocialSnapshot } from '../duel/social-card-data';
+import { fetchPublicDuelReceipt, type PublicDuelReceipt } from '../duel/public-proof-client';
 import { DuelArena } from '../duel-arena';
 
 type OverviewPageProps = {
@@ -18,39 +18,50 @@ export default async function OverviewPage({ searchParams }: OverviewPageProps) 
   const rematchId = firstQueryValue(query.rematch);
 
   if (challengeId) {
-    const snapshot = getDuelSocialSnapshot(challengeId, 'waiting');
-    return (
-      <DuelArena
-        key={`accept:${challengeId}`}
-        entry={{
-          action: 'accept',
-          duelId: challengeId,
-          mode: 'direct',
-          opponentAddress: snapshot.playerAddress,
-          opponentLabel: snapshot.player,
-          tier: snapshot.tier,
-        }}
-      />
-    );
+    const receipt = await fetchPublicDuelReceipt(challengeId);
+    if (receipt?.duel.status === 'waiting' && receipt.duel.mode === 'direct') {
+      return (
+        <DuelArena
+          key={`accept:${challengeId}`}
+          entry={{
+            action: 'accept',
+            duelId: receipt.duel.id,
+            mode: 'direct',
+            opponentAddress: receipt.participants.creator.address,
+            opponentLabel: receipt.participants.creator.display,
+            tier: moneyValue(receipt.pack.tier),
+          }}
+        />
+      );
+    }
   }
 
   if (rematchId) {
-    const snapshot = getDuelSocialSnapshot(rematchId, 'settled');
-    return (
-      <DuelArena
-        key={`rematch:${rematchId}`}
-        entry={{
-          action: 'rematch',
-          duelId: rematchId,
-          mode: snapshot.opponentType === 'house' ? 'house' : 'direct',
-          opponentAddress:
-            snapshot.opponentType === 'wallet' ? snapshot.opponentAddress : undefined,
-          opponentLabel: snapshot.opponent,
-          tier: snapshot.tier,
-        }}
-      />
-    );
+    const receipt = await fetchPublicDuelReceipt(rematchId);
+    if (
+      receipt?.duel.status === 'settled' &&
+      receipt.duel.mode !== 'house' &&
+      receipt.participants.opponent
+    ) {
+      return (
+        <DuelArena
+          key={`rematch:${rematchId}`}
+          entry={{
+            action: 'rematch',
+            duelId: receipt.duel.id,
+            mode: 'direct',
+            opponentAddress: receipt.participants.opponent.address,
+            opponentLabel: receipt.participants.opponent.display,
+            tier: moneyValue(receipt.pack.tier),
+          }}
+        />
+      );
+    }
   }
 
   return <DuelArena />;
+}
+
+function moneyValue(money: PublicDuelReceipt['pack']['tier']): number {
+  return Number(money.amount) / 10 ** money.decimals;
 }

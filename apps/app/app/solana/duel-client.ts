@@ -2,6 +2,7 @@ import { getAnalyticsSessionId } from '../analytics-client';
 import type { SOLANA_CHAIN, SOLANA_CLUSTER } from './config';
 
 export type DuelOpponentType = 'direct' | 'matchmaking' | 'house';
+export type DuelProviderMode = 'collector-crypt-sandbox' | 'mock' | 'openpacksduel-devnet';
 
 export type DuelTransactionIntent = {
   action: 'fund';
@@ -28,11 +29,41 @@ export type DuelTransactionIntent = {
 const apiBaseUrl = process.env.NEXT_PUBLIC_DUEL_API_URL?.replace(/\/$/, '');
 
 export type DurableDuel = {
+  createdAt: string;
   creatorWallet: string;
+  environment: 'solana-devnet';
+  escrowAddress?: string | null;
   expiresAt: string;
+  houseOpponent: boolean;
   id: string;
   matchmakingMode: 'direct' | 'house' | 'open';
   opponentWallet?: string | null;
+  pack: {
+    id: string;
+    imageUrl?: string;
+    name: string;
+    price: { amount: string; currency: 'USDC'; decimals: 6 };
+    provider: string;
+    providerPackId?: string;
+  };
+  providerMode: DuelProviderMode;
+  result?: {
+    comparisonMetric: 'insured-value';
+    outcomes: Array<{
+      assetReference: string;
+      displayName: string;
+      insuredValue: { amount: string; currency: 'USDC'; decimals: 6 };
+      isMock: boolean;
+      provider: string;
+      providerReference: string;
+      side: 'creator' | 'opponent';
+    }>;
+    resultHash: string;
+    settlementReady: boolean;
+    valuationPolicyHash: string;
+    winnerSide: 'creator' | 'opponent' | null;
+  } | null;
+  stake: { amount: string; currency: 'USDC'; decimals: 6 };
   status:
     | 'waiting'
     | 'matched'
@@ -47,6 +78,19 @@ export type DurableDuel = {
     | 'refunding'
     | 'refunded'
     | 'failed';
+  transactionSignature?: string | null;
+  version: number;
+  winnerWallet?: string | null;
+};
+
+export type ProductCapabilities = {
+  modes: {
+    direct: { enabled: boolean };
+    house: { enabled: boolean; reason: string | null };
+    open: { enabled: boolean };
+  };
+  network: 'solana-devnet';
+  provider: { mode: string; ready: boolean };
 };
 
 export type MatchmakingSession = {
@@ -62,7 +106,7 @@ export type MatchmakingSession = {
   opponentWallet: string | null;
   queue: {
     packId: string;
-    providerMode: 'collector-crypt-sandbox' | 'mock';
+    providerMode: DuelProviderMode;
     queueKey: string;
     regionSegment: string;
     riskSegment: string;
@@ -181,6 +225,22 @@ export async function getDuel(duelId: string): Promise<DurableDuel> {
   });
   if (!response.ok) throw new Error(`The duel could not be refreshed (${response.status}).`);
   return (await response.json()) as DurableDuel;
+}
+
+export function advanceDuelLifecycle(duelId: string, sessionToken: string): Promise<DurableDuel> {
+  return authenticatedMutation<DurableDuel>(
+    `/duels/${encodeURIComponent(duelId)}/open-packs`,
+    sessionToken,
+    {},
+    `opd-open-packs-${duelId}`,
+  );
+}
+
+export async function getProductCapabilities(): Promise<ProductCapabilities> {
+  if (!apiBaseUrl) throw new Error('The duel API is not configured.');
+  const response = await fetch(`${apiBaseUrl}/health/capabilities`, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Product capabilities are unavailable (${response.status}).`);
+  return (await response.json()) as ProductCapabilities;
 }
 
 export async function joinDuel(

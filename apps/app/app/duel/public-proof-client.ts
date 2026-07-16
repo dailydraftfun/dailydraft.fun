@@ -17,6 +17,7 @@ export type PublicDuelStatus =
   | 'waiting';
 
 export type PublicMoney = { amount: string; currency: 'USDC'; decimals: 6 };
+export type PublicProviderMode = 'collector-crypt-sandbox' | 'mock' | 'openpacksduel-devnet';
 
 export type PublicParticipant = {
   address: string;
@@ -96,7 +97,7 @@ export type PublicDuelReceipt = {
     id: string;
     name: string;
     provider: string;
-    providerMode: 'collector-crypt-sandbox' | 'mock';
+    providerMode: PublicProviderMode;
     providerPackId: string | null;
     tier: PublicMoney;
   };
@@ -162,7 +163,7 @@ export type PublicDuelReceipt = {
         escrowAddress: string;
         network: 'solana-devnet';
         opponentWallet: string;
-        providerMode: 'collector-crypt-sandbox' | 'mock';
+        providerMode: PublicProviderMode;
       };
       creatorResultHash: string;
       opponentResultHash: string;
