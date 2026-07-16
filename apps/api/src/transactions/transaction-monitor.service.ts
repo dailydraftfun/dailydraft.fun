@@ -197,11 +197,12 @@ export class TransactionMonitorService {
       }
       let checkedBlockHeight: bigint;
       let signatures: SolanaAddressSignature[];
+      const signatureLimit = recoverySignatureLimit();
       try {
         checkedBlockHeight = await this.rpc.getBlockHeight();
         signatures = await this.rpc.getFinalizedSignaturesForAddress(
           intent.escrowAddress,
-          recoverySignatureLimit(),
+          signatureLimit,
         );
       } catch (error) {
         if (error instanceof SolanaRpcUnavailableError) {
@@ -220,7 +221,7 @@ export class TransactionMonitorService {
         continue;
       }
       let handled = false;
-      let scanComplete = true;
+      let scanComplete = signatures.length < signatureLimit;
       for (const candidate of signatures) {
         if (
           candidate.blockTime !== null &&

@@ -192,6 +192,18 @@ describe('TransactionMonitorService', () => {
     expect(repository.checkedBlockHeights).toEqual([null]);
   });
 
+  test('does not certify absence when the finalized signature page is full and truncated', async () => {
+    const intent = preparedRecoveryIntent();
+    const repository = new RecoveryRepository(intent);
+    const service = new TransactionMonitorService(repository, new FullPageRecoveryRpc());
+
+    const summary = await withEscrowProgram(intent.expectedProgramId, () => service.reconcile());
+
+    expect(summary.recovered).toBe(0);
+    expect(summary.recoveryRejected).toBe(10);
+    expect(repository.checkedBlockHeights).toEqual([null]);
+  });
+
   test('refuses recovery when the duel was cancelled during discovery', async () => {
     const intent = preparedRecoveryIntent({ duelStatus: 'cancelled' });
     const repository = new RecoveryRepository(intent);
@@ -389,6 +401,31 @@ class MissingEnvelopeRecoveryRpc extends RecoveryRpc {
 
   override async getTransaction(): Promise<null> {
     return null;
+  }
+}
+
+class FullPageRecoveryRpc extends RecoveryRpc {
+  constructor() {
+    super(transactionEnvelope());
+  }
+
+  override async getFinalizedSignaturesForAddress(): Promise<SolanaAddressSignature[]> {
+    const signatureCharacters = '123456789A';
+    return Array.from({ length: 10 }, (_, index) => ({
+      blockTime: 1_784_155_260 + index,
+      confirmationStatus: 'finalized' as const,
+      signature: (signatureCharacters[index] ?? '1').repeat(88),
+    }));
+  }
+
+  override async getTransaction(): Promise<SolanaTransactionEnvelope> {
+    const envelope = transactionEnvelope();
+    envelope.transaction.message.instructions.unshift({
+      accounts: [0],
+      data: '3',
+      programIdIndex: 2,
+    });
+    return envelope;
   }
 }
 
