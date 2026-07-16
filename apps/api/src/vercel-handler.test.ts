@@ -17,6 +17,7 @@ describe('Vercel API request adapter', () => {
   test('restores the public path encoded by the single Vercel function rewrite', () => {
     expect(normalizeRequestUrl('/api?__path=v1/health')).toBe('/v1/health');
     expect(normalizeRequestUrl('/api?limit=20&__path=v1/duels')).toBe('/v1/duels?limit=20');
+    expect(normalizeRequestUrl('/api?__path=v1/packs&path=packs')).toBe('/v1/packs');
   });
 
   test('keeps the invocation open until the Fastify response finishes', async () => {
