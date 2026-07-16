@@ -4,11 +4,15 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
-    "build": "bunx --bun prisma generate",
-    "clean": "rm -rf generated",
+    "build": "bunx --bun prisma generate && bun build src/index.ts --target=node --packages=external --outdir=dist",
+    "clean": "rm -rf dist generated",
     "db:deploy": "bunx --bun prisma migrate deploy",
     "db:generate": "bunx --bun prisma generate",
     "db:migrate": "bunx --bun prisma migrate dev",
