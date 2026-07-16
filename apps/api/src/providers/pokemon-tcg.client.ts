@@ -44,7 +44,7 @@ export class PokemonTcgClient {
 
 interface FetchCardOptions {
   apiKey?: string;
-  fetcher: typeof fetch;
+  fetcher: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   onRetry?: (event: {
     attempt: number;
     event: 'pokemon_tcg_request_retry';
