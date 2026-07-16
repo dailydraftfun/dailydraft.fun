@@ -9,6 +9,7 @@
     }
   },
   "installCommand": "cd ../.. && bun install --frozen-lockfile && bun --filter @openpacksduel/db db:generate",
+  "outputDirectory": "public",
   "crons": [
     {
       "path": "/v1/internal/reconciliation/solana",
