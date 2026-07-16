@@ -134,6 +134,7 @@ function outcome(side: 'creator' | 'opponent', displayName: string, amount: stri
   return {
     assetReference: `${side}_asset`,
     displayName,
+    imageUrl: null,
     insuredValue: { amount, currency: 'USDC' as const, decimals: 6 as const },
     isMock: false,
     openedAt: '2026-07-16T00:01:00.000Z',
