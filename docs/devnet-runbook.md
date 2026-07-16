@@ -59,6 +59,9 @@ smoke workflow.
 | `OPENPACKSDUEL_PROVIDER_ASSET_STANDARD` | Must be `legacy-spl-nft` for OpenPacks devnet demo mints. |
 | `OPENPACKSDUEL_DEVNET_PROVIDER_KEYPAIR_JSON` | Sensitive JSON byte array for the isolated devnet provider signer; never expose to browser code. |
 | `POKEMON_TCG_API_KEY` | Optional server-only Pokémon TCG API key. Unauthenticated requests work at lower documented limits. |
+| `POKEMON_TCG_API_TIMEOUT_MS` | Optional per-attempt Pokémon TCG timeout; defaults to 20 seconds and is bounded to 60 seconds. |
+| `POKEMON_TCG_API_RETRIES` | Optional transient Pokémon TCG retry count; defaults to one and is bounded to three retries. |
+| `POKEMON_TCG_API_RETRY_DELAY_MS` | Optional linear retry backoff; defaults to 250 ms and is bounded to five seconds. |
 | `OPENPACKSDUEL_API_KEYS` | Server-to-server integration keys; never expose to the browser. |
 | `OPENPACKSDUEL_APP_URL` | Canonical product URL. |
 | `OPENPACKSDUEL_AUTH_DOMAIN` | Host matching the canonical product URL in wallet sign-in messages. |
