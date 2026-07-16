@@ -43,11 +43,18 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
-            <div className="hidden items-center gap-2 rounded-md border border-border bg-secondary px-3 py-2 text-xs text-secondary md:flex">
-              Test assets only
-            </div>
             <WalletControl />
           </div>
+        </div>
+        <div className="devnet-disclosure" role="status" aria-label="Devnet environment notice">
+          <span className="devnet-disclosure-label">
+            <i aria-hidden="true" />
+            Devnet preview
+          </span>
+          <span>
+            Test SOL and test assets only. No mainnet funds. Collector Crypt live pack settlement is
+            not enabled yet.
+          </span>
         </div>
       </header>
       {children}
