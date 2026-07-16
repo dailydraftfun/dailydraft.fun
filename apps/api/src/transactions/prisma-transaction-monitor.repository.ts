@@ -40,6 +40,7 @@ const ACTIVE_STATUS_VALUES: DuelTransactionStatus[] = [
   DuelTransactionStatus.CONFIRMED,
 ];
 const ACTIVE_STATUSES = new Set<DuelTransactionStatus>(ACTIVE_STATUS_VALUES);
+const RECOVERABLE_TERMINAL_ERROR_CODE = 'ACCOUNT_ACCESS_MISMATCH';
 
 @Injectable()
 export class PrismaTransactionMonitorRepository extends TransactionMonitorRepository {
@@ -250,48 +251,24 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
         status: { in: ACTIVE_STATUS_VALUES },
       },
     });
-    return rows.flatMap((row) => {
-      const expectedAccounts = parseExpectedAccounts(row.expectedAccounts);
-      const expectedInstructionAccounts = parseExpectedAccounts(row.expectedInstructionAccounts);
-      if (
-        !row.signature ||
-        !row.submittedAt ||
-        !row.expectedSigner ||
-        !row.expectedProgramId ||
-        !row.expectedMessageHash ||
-        !expectedAccounts ||
-        !row.expectedInstructionDataHash ||
-        !expectedInstructionAccounts ||
-        !row.expectedFromStatus ||
-        !row.expectedToStatus
-      ) {
-        return [];
-      }
-      return [
-        {
-          action: row.action.toLowerCase() as MonitoredTransaction['action'],
-          allowMultipleInstructionMatches: row.allowMultipleInstructionMatches,
-          checkAttempts: row.checkAttempts,
-          duelId: row.duelId,
-          duelStatus: toApiStatus(row.duel.status),
-          expectedAccounts,
-          expectedInstructionAccounts,
-          expectedInstructionDataHash: row.expectedInstructionDataHash,
-          expectedMessageHash: row.expectedMessageHash,
-          expectedFromStatus: toApiStatus(row.expectedFromStatus),
-          expectedProgramId: row.expectedProgramId,
-          expectedSigner: row.expectedSigner,
-          expectedToStatus: toApiStatus(row.expectedToStatus),
-          id: row.id,
-          lastValidBlockHeight: row.lastValidBlockHeight,
-          recentBlockhash: row.recentBlockhash,
-          signature: row.signature,
-          status: row.status === DuelTransactionStatus.CONFIRMED ? 'confirmed' : 'submitted',
-          submittedAt: row.submittedAt,
-          wallet: row.wallet,
+    return rows.flatMap(toMonitoredTransaction);
+  }
+
+  async findRecoverableTerminal(limit: number): Promise<MonitoredTransaction[]> {
+    const rows = await this.database.duelTransaction.findMany({
+      include: { duel: { select: { status: true } } },
+      orderBy: [{ updatedAt: 'asc' }, { createdAt: 'asc' }],
+      take: limit,
+      where: {
+        action: {
+          in: [DuelTransactionAction.COMMIT_RESULT, DuelTransactionAction.SETTLE],
         },
-      ];
+        errorCode: RECOVERABLE_TERMINAL_ERROR_CODE,
+        signature: { not: null },
+        status: DuelTransactionStatus.FAILED,
+      },
     });
+    return rows.flatMap(toMonitoredTransaction);
   }
 
   async findParticipantReconciliationBatch(input: {
@@ -716,15 +693,20 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
       });
       if (!monitored) return false;
       if (monitored.status === DuelTransactionStatus.FINALIZED) return monitored.errorCode === null;
-      if (!ACTIVE_STATUSES.has(monitored.status)) return false;
+      const recoveringAccessMismatch = isRecoverableTerminalFinalization(monitored);
+      if (!ACTIVE_STATUSES.has(monitored.status) && !recoveringAccessMismatch) return false;
       if (!monitored.expectedFromStatus || !monitored.expectedToStatus) {
         await rejectFinalization(database, monitored.id, now, 'MISSING_INTENT_CONSTRAINTS');
         return false;
       }
       const from = toApiStatus(monitored.expectedFromStatus);
       const to = toApiStatus(monitored.expectedToStatus);
+      const currentStatus = monitored.duel.status;
+      const stateMatches =
+        currentStatus === monitored.expectedFromStatus ||
+        (recoveringAccessMismatch && currentStatus === DatabaseDuelStatus.REFUNDING);
       if (
-        monitored.duel.status !== monitored.expectedFromStatus ||
+        !stateMatches ||
         (!canTransition(from, to) && from !== to) ||
         !isTransactionTransition(monitored.action.toLowerCase(), from, to)
       ) {
@@ -743,7 +725,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
         },
         where: {
           id: monitored.duel.id,
-          status: monitored.expectedFromStatus,
+          status: currentStatus,
           version: monitored.duel.version,
         },
       });
@@ -771,16 +753,95 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
             transactionId: monitored.id,
           },
           duelId: monitored.duel.id,
-          fromStatus: monitored.expectedFromStatus,
+          fromStatus: currentStatus,
           id: createId('evt'),
           sequence: monitored.duel.version + 1,
           toStatus: monitored.expectedToStatus,
-          type: 'duel.transaction_finalized',
+          type: recoveringAccessMismatch
+            ? 'duel.transaction_finalization_recovered'
+            : 'duel.transaction_finalized',
         },
       });
       return true;
     });
   }
+}
+
+export function isRecoverableTerminalFinalization(input: {
+  action: DuelTransactionAction;
+  errorCode: string | null;
+  status: DuelTransactionStatus;
+}): boolean {
+  return (
+    input.status === DuelTransactionStatus.FAILED &&
+    input.errorCode === RECOVERABLE_TERMINAL_ERROR_CODE &&
+    (input.action === DuelTransactionAction.COMMIT_RESULT ||
+      input.action === DuelTransactionAction.SETTLE)
+  );
+}
+
+function toMonitoredTransaction(row: {
+  action: DuelTransactionAction;
+  allowMultipleInstructionMatches: boolean;
+  checkAttempts: number;
+  duel: { status: DatabaseDuelStatus };
+  duelId: string;
+  expectedAccounts: Prisma.JsonValue | null;
+  expectedFromStatus: DatabaseDuelStatus | null;
+  expectedInstructionAccounts: Prisma.JsonValue | null;
+  expectedInstructionDataHash: string | null;
+  expectedMessageHash: string | null;
+  expectedProgramId: string | null;
+  expectedSigner: string | null;
+  expectedToStatus: DatabaseDuelStatus | null;
+  id: string;
+  lastValidBlockHeight: bigint | null;
+  recentBlockhash: string | null;
+  signature: string | null;
+  status: DuelTransactionStatus;
+  submittedAt: Date | null;
+  wallet: string;
+}): MonitoredTransaction[] {
+  const expectedAccounts = parseExpectedAccounts(row.expectedAccounts);
+  const expectedInstructionAccounts = parseExpectedAccounts(row.expectedInstructionAccounts);
+  if (
+    !row.signature ||
+    !row.submittedAt ||
+    !row.expectedSigner ||
+    !row.expectedProgramId ||
+    !row.expectedMessageHash ||
+    !expectedAccounts ||
+    !row.expectedInstructionDataHash ||
+    !expectedInstructionAccounts ||
+    !row.expectedFromStatus ||
+    !row.expectedToStatus
+  ) {
+    return [];
+  }
+  return [
+    {
+      action: row.action.toLowerCase() as MonitoredTransaction['action'],
+      allowMultipleInstructionMatches: row.allowMultipleInstructionMatches,
+      checkAttempts: row.checkAttempts,
+      duelId: row.duelId,
+      duelStatus: toApiStatus(row.duel.status),
+      expectedAccounts,
+      expectedFromStatus: toApiStatus(row.expectedFromStatus),
+      expectedInstructionAccounts,
+      expectedInstructionDataHash: row.expectedInstructionDataHash,
+      expectedMessageHash: row.expectedMessageHash,
+      expectedProgramId: row.expectedProgramId,
+      expectedSigner: row.expectedSigner,
+      expectedToStatus: toApiStatus(row.expectedToStatus),
+      id: row.id,
+      lastValidBlockHeight: row.lastValidBlockHeight,
+      recentBlockhash: row.recentBlockhash,
+      signature: row.signature,
+      status: row.status === DuelTransactionStatus.CONFIRMED ? 'confirmed' : 'submitted',
+      submittedAt: row.submittedAt,
+      wallet: row.wallet,
+    },
+  ];
 }
 
 async function finalizeFundingSide(

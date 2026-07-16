@@ -53,6 +53,36 @@ describe('verifyTransactionEnvelope', () => {
     expectVerificationCode(envelope, 'AMBIGUOUS_INSTRUCTION_MATCH');
   });
 
+  test('accepts a read-only instruction signer promoted to writable by the full message', () => {
+    const base = monitoredTransaction();
+    const transaction = monitoredTransaction({
+      expectedAccounts: [
+        {
+          address: base.expectedSigner,
+          isSigner: true,
+          isWritable: false,
+        },
+        base.expectedAccounts[1] ?? {
+          address: 'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW',
+          isWritable: true,
+        },
+      ],
+      expectedInstructionAccounts: [
+        {
+          address: base.expectedSigner,
+          isSigner: true,
+          isWritable: false,
+        },
+        base.expectedInstructionAccounts[1] ?? {
+          address: 'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW',
+          isWritable: true,
+        },
+      ],
+    });
+
+    expect(() => verifyTransactionEnvelope(transaction, transactionEnvelope())).not.toThrow();
+  });
+
   test('rejects any mutation to another instruction in the bound message', () => {
     const envelope = transactionEnvelope();
     envelope.transaction.message.instructions.unshift({

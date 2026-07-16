@@ -167,7 +167,7 @@ function verifyAccountConstraint(
   if (constraint.isSigner !== undefined && account.isSigner !== constraint.isSigner) {
     throw new TransactionVerificationError('ACCOUNT_SIGNER_MISMATCH');
   }
-  if (constraint.isWritable !== undefined && account.isWritable !== constraint.isWritable) {
+  if (!accountAccessMatchesConstraint(account, constraint)) {
     throw new TransactionVerificationError('ACCOUNT_ACCESS_MISMATCH');
   }
 }
@@ -179,8 +179,21 @@ function accountMatchesConstraint(
   return (
     account.address === constraint.address &&
     (constraint.isSigner === undefined || account.isSigner === constraint.isSigner) &&
-    (constraint.isWritable === undefined || account.isWritable === constraint.isWritable)
+    accountAccessMatchesConstraint(account, constraint)
   );
+}
+
+function accountAccessMatchesConstraint(
+  account: AccountAccess,
+  constraint: ExpectedAccountConstraint,
+): boolean {
+  // Solana compiles account privileges across the full transaction. An account
+  // declared read-only by the monitored instruction can therefore become
+  // writable when another instruction in the same, message-hash-bound
+  // transaction needs write access. Requiring write access remains strict;
+  // accepting the compiler's read-only -> writable promotion is safe because
+  // the complete serialized message is verified above.
+  return constraint.isWritable !== true || account.isWritable;
 }
 
 function hashInstructionData(data: string): string {

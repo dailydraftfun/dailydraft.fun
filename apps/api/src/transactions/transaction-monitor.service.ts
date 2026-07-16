@@ -103,12 +103,14 @@ export class TransactionMonitorService {
       await this.analytics?.recordServer({ name: 'solana_rpc_error' });
     }
     const transactions = await this.repository.findPending(limit, now);
-    if (transactions.length === 0) {
+    const recoverableTerminal = await this.repository.findRecoverableTerminal(limit);
+    if (transactions.length === 0 && recoverableTerminal.length === 0) {
       await this.treasury?.reconcileLifecycle(limit);
       return summary;
     }
 
     await this.reconcileTransactions(transactions, now, summary);
+    await this.reconcileTransactions(recoverableTerminal, now, summary);
     await this.treasury?.reconcileLifecycle(limit);
     return summary;
   }

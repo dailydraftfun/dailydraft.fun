@@ -112,6 +112,20 @@ describe('TransactionMonitorService', () => {
     expect(repository.finalized).toEqual([]);
   });
 
+  test('rechecks a terminal provider transaction rejected by the legacy access verifier', async () => {
+    const transaction = monitoredTransaction({ duelStatus: 'refunding' });
+    const repository = new RecoverableTerminalRepository(transaction);
+    const service = new TransactionMonitorService(
+      repository,
+      new FakeRpc({ confirmationStatus: 'finalized', err: null }),
+    );
+
+    const summary = await service.reconcile();
+
+    expect(summary.finalized).toBe(1);
+    expect(repository.finalized).toEqual([transaction.id]);
+  });
+
   test('recovers a finalized broadcast after the API submission response is lost', async () => {
     const intent = preparedRecoveryIntent();
     const repository = new RecoveryRepository(intent);
@@ -372,6 +386,16 @@ class SubmissionRepository extends FakeRepository {
       status: 'submitted',
       transactionId: this.transaction.id,
     };
+  }
+}
+
+class RecoverableTerminalRepository extends FakeRepository {
+  override async findPending(): Promise<MonitoredTransaction[]> {
+    return [];
+  }
+
+  override async findRecoverableTerminal(): Promise<MonitoredTransaction[]> {
+    return [this.transaction];
   }
 }
 

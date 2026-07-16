@@ -38,7 +38,7 @@ export class DuelOpeningService {
     ) {
       if (
         duel.providerMode === 'openpacksduel-devnet' &&
-        ['awaiting_assets', 'settling'].includes(duel.status)
+        ['awaiting_assets', 'settling', 'refunding'].includes(duel.status)
       ) {
         await this.requireDevnetSettlement().finalizeDuel(duel.id);
         return this.duels.findOne(duel.id);

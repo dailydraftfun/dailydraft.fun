@@ -44,6 +44,27 @@ describe('DuelOpeningService', () => {
     }
     expect(repository.resolvedModes).toEqual(['direct', 'house']);
   });
+
+  test('reconciles a devnet settlement misclassified as refunding before returning the receipt', async () => {
+    const repository = new OpeningRepository([refundingDevnetDuel()]);
+    const duels = new DuelsService(repository, new PacksService());
+    const providers = new PackProviderService(
+      new MockPackProvider(),
+      new CollectorCryptPackProvider(),
+    );
+    const finalized: string[] = [];
+    const service = new DuelOpeningService(duels, repository, providers, {
+      finalizeDuel: async (duelId: string) => {
+        finalized.push(duelId);
+        repository.setStatus(duelId, 'settled');
+      },
+    } as never);
+
+    const result = await service.open('duel_refunding', 'resume-refunding-0001');
+
+    expect(finalized).toEqual(['duel_refunding']);
+    expect(result.status).toBe('settled');
+  });
 });
 
 class OpeningRepository extends DuelRepository {
@@ -134,6 +155,11 @@ class OpeningRepository extends DuelRepository {
     return [];
   }
 
+  setStatus(duelId: string, status: Duel['status']): void {
+    const duel = this.require(duelId);
+    this.#duels.set(duelId, { ...duel, status, version: duel.version + 1 });
+  }
+
   private require(duelId: string): Duel {
     const duel = this.#duels.get(duelId);
     if (!duel) throw new Error(`Missing test duel ${duelId}`);
@@ -167,5 +193,24 @@ function fundedDuel(id: string, houseOpponent: boolean): Duel {
     status: 'funded',
     updatedAt: now.toISOString(),
     version: 3,
+  };
+}
+
+function refundingDevnetDuel(): Duel {
+  const duel = fundedDuel('duel_refunding', false);
+  return {
+    ...duel,
+    providerMode: 'openpacksduel-devnet',
+    result: {
+      comparisonMetric: 'insured-value',
+      outcomes: [],
+      resultHash: 'result_hash',
+      settlementReady: true,
+      tieRule: 'return-original-assets-and-refund-platform-fees',
+      valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
+      winnerSide: 'creator',
+    },
+    status: 'refunding',
+    winnerWallet: CREATOR,
   };
 }
