@@ -70,6 +70,7 @@ export interface DuelPackOutcome {
   resultHash: string;
   side: 'creator' | 'opponent';
   sourceTimestamp: string;
+  valuationSourceReference?: string;
 }
 
 export interface DuelResult {

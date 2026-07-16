@@ -5,8 +5,10 @@ import type { Money, PackProviderMode } from '../domain.js';
 import type { DuelSide, ProviderCardResult } from './pack-provider.js';
 import {
   CANONICAL_VALUATION_POLICY,
+  DEVNET_DEMO_VALUATION_POLICY_HASH,
   requireCanonicalValuationPolicyHash,
   stableStringify,
+  valuationPolicyForHash,
 } from './valuation-policy.js';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
@@ -25,6 +27,7 @@ export interface NormalizedPackOutcome {
   resultHash: string;
   side: DuelSide;
   sourceTimestamp: string;
+  valuationSourceReference?: string;
   valuationPolicyHash: string;
 }
 
@@ -83,8 +86,20 @@ export function normalizeProviderResult(
     throw new BadGatewayException('Provider returned an invalid poolVersion');
   }
   const canonicalOpenedAt = canonicalOpeningTimestamp(openedAt);
-  const sourceTimestamp = normalizeSourceTimestamp(result.sourceTimestamp, openedAt);
+  const sourceTimestamp = normalizeSourceTimestamp(
+    result.sourceTimestamp,
+    openedAt,
+    expectedPolicyHash,
+  );
   const providerReference = normalizeText(providerReferenceInput, 'providerReference', 200);
+  const valuationSourceReference = normalizeOptionalText(
+    result.valuationSourceReference,
+    'valuationSourceReference',
+    200,
+  );
+  if (expectedPolicyHash === DEVNET_DEMO_VALUATION_POLICY_HASH && !valuationSourceReference) {
+    throw new BadGatewayException('Demo provider result lacks its exact valuation source');
+  }
 
   const insuredValue: Money = {
     amount: amount.toString(),
@@ -101,6 +116,7 @@ export function normalizeProviderResult(
     providerReference,
     side,
     sourceTimestamp,
+    ...(valuationSourceReference ? { valuationSourceReference } : {}),
     valuationPolicyHash: result.valuationPolicyHash,
   };
 
@@ -158,13 +174,18 @@ export function compareInsuredValues(
   };
 }
 
-function normalizeSourceTimestamp(value: unknown, observedAt: Date): string {
+function normalizeSourceTimestamp(
+  value: unknown,
+  observedAt: Date,
+  valuationPolicyHash: string,
+): string {
   const sourceAt = canonicalTimestamp(value);
+  const valuationPolicy = valuationPolicyForHash(valuationPolicyHash);
   const ageMs = observedAt.getTime() - sourceAt.getTime();
-  if (ageMs > CANONICAL_VALUATION_POLICY.maxSourceAgeSeconds * 1_000) {
+  if (ageMs > valuationPolicy.maxSourceAgeSeconds * 1_000) {
     throw new BadGatewayException('Provider insured value is stale');
   }
-  if (ageMs < -CANONICAL_VALUATION_POLICY.maxFutureSkewSeconds * 1_000) {
+  if (ageMs < -valuationPolicy.maxFutureSkewSeconds * 1_000) {
     throw new BadGatewayException('Provider insured value timestamp is in the future');
   }
   return value as string;
@@ -175,6 +196,8 @@ export function assertNormalizedOutcome(outcome: NormalizedPackOutcome): void {
     normalizeText(outcome.assetReference, 'assetReference', 200) !== outcome.assetReference ||
     normalizeText(outcome.displayName, 'displayName', 160) !== outcome.displayName ||
     normalizeOptionalHttpsUrl(outcome.imageUrl) !== outcome.imageUrl ||
+    normalizeOptionalText(outcome.valuationSourceReference, 'valuationSourceReference', 200) !==
+      outcome.valuationSourceReference ||
     normalizeText(outcome.providerReference, 'providerReference', 200) !==
       outcome.providerReference ||
     !POOL_VERSION_PATTERN.test(outcome.poolVersion) ||
@@ -184,6 +207,12 @@ export function assertNormalizedOutcome(outcome: NormalizedPackOutcome): void {
     BigInt(outcome.insuredValue.amount) > MAX_CANONICAL_INSURED_VALUE
   ) {
     throw new BadGatewayException('Pack outcome is not canonical');
+  }
+  if (
+    outcome.valuationPolicyHash === DEVNET_DEMO_VALUATION_POLICY_HASH &&
+    !outcome.valuationSourceReference
+  ) {
+    throw new BadGatewayException('Demo pack outcome lacks its exact valuation source');
   }
   canonicalTimestamp(outcome.sourceTimestamp);
   canonicalTimestamp(outcome.openedAt, 'openedAt');
@@ -197,6 +226,9 @@ export function assertNormalizedOutcome(outcome: NormalizedPackOutcome): void {
     providerReference: outcome.providerReference,
     side: outcome.side,
     sourceTimestamp: outcome.sourceTimestamp,
+    ...(outcome.valuationSourceReference
+      ? { valuationSourceReference: outcome.valuationSourceReference }
+      : {}),
     valuationPolicyHash: outcome.valuationPolicyHash,
   };
   if (sha256(stableStringify(canonical)) !== outcome.resultHash) {
@@ -234,6 +266,15 @@ function normalizeOptionalHttpsUrl(value: unknown): string | undefined {
   } catch {
     throw new BadGatewayException('Provider returned an invalid imageUrl');
   }
+}
+
+function normalizeOptionalText(
+  value: unknown,
+  field: string,
+  maxLength: number,
+): string | undefined {
+  if (value === undefined) return undefined;
+  return normalizeText(value, field, maxLength);
 }
 
 function normalizeText(value: unknown, field: string, maxLength: number): string {

@@ -11,7 +11,7 @@ are different data and must never be substituted for one another.
 provider. The demo policy is `openpacksduel-pokemon-tcg-market-usdc-v1`:
 
 ```text
-19cbdd32ebd2418032bd989e3a095b107dadd1ac61feb7ced83088756994f1b3
+39186a3c3b133d001d3c17dd3832b45c2286e3df81ba13494e3cef638a48baf8
 ```
 
 The Collector Crypt policy remains published at its stable hash for future
@@ -25,8 +25,11 @@ Both policies encode the comparison value as a canonical unsigned integer string
 exactly six decimals (no leading zeros except the value `0`).
 There is no floating-point conversion and no rounding. Higher wins. The result
 must fit the escrow program's unsigned 64-bit integer representation. The result
-source timestamp may be at most 300 seconds old at ingestion, with at most 30
-seconds of future clock skew. Both outcomes must name the same immutable
+Collector Crypt timestamps may be at most 300 seconds old with 30 seconds of
+future clock skew. The demo interprets Pokémon TCG `updatedAt` as UTC midnight,
+allows at most seven days of price age, and rejects future-dated values. Its
+hashed policy also fixes the market variant priority, rejects unknown fallbacks,
+and fixes exact two-decimal USD-to-micro-USDC conversion. Both outcomes must name the same immutable
 provider `poolVersion`. The distinct provider opening time is encoded in whole
 seconds for escrow and must fall between finalized funding and duel expiry. It
 may be at most 30 seconds ahead of the API server when the result is recorded.

@@ -115,7 +115,7 @@ function receipt({
             creatorResultHash: 'creator_hash',
             opponentResultHash: 'opponent_hash',
             poolVersion: 'pool-v1',
-            providerAttestation: { required: true, status: 'not-recorded' },
+            providerAttestation: { required: true, scope: 'none', status: 'not-recorded' },
             schemaVersion: 'openpacksduel.result-proof.v1',
           },
           resultHash: 'result_hash',
@@ -142,5 +142,6 @@ function outcome(side: 'creator' | 'opponent', displayName: string, amount: stri
     resultHash: `${side}_hash`,
     side,
     sourceTimestamp: '2026-07-16T00:01:00.000Z',
+    valuationSourceReference: null,
   };
 }

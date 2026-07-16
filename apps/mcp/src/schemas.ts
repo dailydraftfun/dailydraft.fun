@@ -48,6 +48,7 @@ export const duelPackOutcomeSchema = z.object({
   resultHash: z.string().regex(/^[a-f0-9]{64}$/),
   side: z.enum(['creator', 'opponent']),
   sourceTimestamp: z.iso.datetime(),
+  valuationSourceReference: z.string().nullable().optional(),
 });
 
 export const duelResultSchema = z.object({

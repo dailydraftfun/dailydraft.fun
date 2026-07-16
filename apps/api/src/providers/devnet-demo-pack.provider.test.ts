@@ -41,6 +41,7 @@ describe('DevnetDemoPackProvider', () => {
     if (opened.status !== 'opened') throw new Error('Expected an opened pack');
     expect(opened.result.assetReference).toBe(MINT.toBase58());
     expect(opened.result.poolVersion).toBe('openpacksduel-devnet-pokemon.v1');
+    expect(opened.result.valuationSourceReference).toContain(':tcgplayer:holofoil:market:');
     expect(signer.deposits).toEqual([{ duel: DUEL, role: 'creator' }]);
   });
 
@@ -65,11 +66,41 @@ describe('DevnetDemoPackProvider', () => {
     ).rejects.toThrow('signature is invalid');
     expect(signer.deposits).toEqual([]);
   });
+
+  test('leases a side so concurrent opens broadcast one deposit and replay the result', async () => {
+    const signer = new FixtureSigner();
+    const database = new FixtureDatabase();
+    const provider = createProvider(signer, database);
+    const generated = await provider.generatePack({
+      duelId: 'duel_concurrent',
+      idempotencyKey: 'generate',
+      providerPackId: 'pokemon_50',
+      recipientWallet: DUEL.toBase58(),
+      side: 'creator',
+    });
+
+    const [first, second] = await Promise.all([
+      provider.openPack({
+        idempotencyKey: 'open-1',
+        providerReference: generated.providerReference,
+      }),
+      provider.openPack({
+        idempotencyKey: 'open-2',
+        providerReference: generated.providerReference,
+      }),
+    ]);
+
+    expect(first).toEqual(second);
+    expect(signer.deposits).toEqual([{ duel: DUEL, role: 'creator' }]);
+  });
 });
 
-function createProvider(signer: FixtureSigner): DevnetDemoPackProvider {
+function createProvider(
+  signer: FixtureSigner,
+  database: FixtureDatabase = new FixtureDatabase(),
+): DevnetDemoPackProvider {
   return new DevnetDemoPackProvider(
-    new FixtureDatabase() as unknown as DatabaseClient,
+    database as unknown as DatabaseClient,
     signer as unknown as DevnetDemoSignerService,
     new FixturePokemonClient() as unknown as PokemonTcgClient,
   );
@@ -77,6 +108,7 @@ function createProvider(signer: FixtureSigner): DevnetDemoPackProvider {
 
 class FixtureSigner {
   readonly deposits: Array<{ duel: PublicKey; role: 'creator' | 'opponent' }> = [];
+  #deposited = false;
 
   async assertReady(): Promise<void> {}
 
@@ -89,7 +121,11 @@ class FixtureSigner {
     providerReference: string;
     role: 'creator' | 'opponent';
   }) {
-    this.deposits.push({ duel: input.duel, role: input.role });
+    if (!this.#deposited) {
+      this.deposits.push({ duel: input.duel, role: input.role });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      this.#deposited = true;
+    }
     return {
       mint: MINT,
       openedAt: OPENED_AT,
@@ -100,7 +136,7 @@ class FixtureSigner {
   }
 
   async isCardDeposited(): Promise<boolean> {
-    return true;
+    return this.#deposited;
   }
 
   demoMint(): PublicKey {
@@ -114,10 +150,63 @@ class FixtureDatabase {
     findUnique: async (input: { where: { providerReference: string } }) =>
       this.#snapshots.get(input.where.providerReference) ?? null,
     upsert: async (input: { create: Record<string, unknown> }) => {
-      this.#snapshots.set(String(input.create.providerReference), input.create);
-      return input.create;
+      const key = String(input.create.providerReference);
+      const existing = this.#snapshots.get(key);
+      if (existing) return existing;
+      const created = {
+        assetReference: null,
+        depositLeaseExpiresAt: null,
+        depositLeaseOwner: null,
+        depositSignature: null,
+        openedAt: null,
+        ...input.create,
+      };
+      this.#snapshots.set(key, created);
+      return created;
+    },
+    updateMany: async (input: {
+      data: Record<string, unknown>;
+      where: {
+        assetReference?: null;
+        depositLeaseOwner?: string | null;
+        OR?: Array<Record<string, unknown>>;
+        providerReference: string;
+      };
+    }) => {
+      const current = this.#snapshots.get(input.where.providerReference);
+      if (!current) return { count: 0 };
+      if (input.where.assetReference === null && current.assetReference !== null) {
+        return { count: 0 };
+      }
+      if (
+        typeof input.where.depositLeaseOwner === 'string' &&
+        current.depositLeaseOwner !== input.where.depositLeaseOwner
+      ) {
+        return { count: 0 };
+      }
+      if (input.where.OR && !leaseIsAvailable(current, input.where.OR)) return { count: 0 };
+      Object.assign(current, input.data);
+      return { count: 1 };
     },
   };
+}
+
+function leaseIsAvailable(
+  current: Record<string, unknown>,
+  clauses: Array<Record<string, unknown>>,
+): boolean {
+  return clauses.some((clause) => {
+    if ('depositLeaseOwner' in clause) return current.depositLeaseOwner === null;
+    if ('depositLeaseExpiresAt' in clause && clause.depositLeaseExpiresAt === null) {
+      return current.depositLeaseExpiresAt === null;
+    }
+    const expiry = clause.depositLeaseExpiresAt as { lte?: Date } | undefined;
+    return (
+      expiry?.lte instanceof Date &&
+      current.depositLeaseExpiresAt instanceof Date &&
+      current.depositLeaseExpiresAt <= expiry.lte
+    );
+  });
 }
 
 class FixturePokemonClient {
@@ -127,8 +216,9 @@ class FixturePokemonClient {
       displayName: 'Charizard',
       imageUrl: 'https://images.pokemontcg.io/base1/4_hires.png',
       marketValueMicroUsdc: '773510000',
-      priceUpdatedAt: '2026/07/15',
-      sourceTimestamp: new Date('2026-07-16T00:59:59.000Z'),
+      priceUpdatedAt: '2026-07-15T00:00:00.000Z',
+      priceVariant: 'holofoil',
+      sourceTimestamp: new Date('2026-07-15T00:00:00.000Z'),
     };
   }
 }

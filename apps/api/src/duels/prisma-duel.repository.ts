@@ -725,6 +725,7 @@ function toDuel(row: {
     resultHash: string;
     side: DatabaseDuelSide;
     sourceTimestamp: Date | null;
+    valuationSourceReference?: string | null;
     valuationPolicyHash: string;
   }>;
   packId: string;
@@ -793,6 +794,7 @@ export function toDuelResult(row: {
     resultHash: string;
     side: DatabaseDuelSide;
     sourceTimestamp: Date | null;
+    valuationSourceReference?: string | null;
     valuationPolicyHash: string;
   }>;
   resultHash: string | null;
@@ -837,6 +839,9 @@ export function toDuelResult(row: {
       side:
         outcome.side === DatabaseDuelSide.CREATOR ? ('creator' as const) : ('opponent' as const),
       sourceTimestamp: outcome.sourceTimestamp.toISOString(),
+      ...(outcome.valuationSourceReference
+        ? { valuationSourceReference: outcome.valuationSourceReference }
+        : {}),
     };
   });
   const winnerSide =
@@ -879,6 +884,7 @@ function toPackOutcomeCreate(
     resultHash: outcome.resultHash,
     side: outcome.side === 'creator' ? DatabaseDuelSide.CREATOR : DatabaseDuelSide.OPPONENT,
     sourceTimestamp: new Date(outcome.sourceTimestamp),
+    valuationSourceReference: outcome.valuationSourceReference ?? null,
     valuationPolicyHash: outcome.valuationPolicyHash,
   };
 }

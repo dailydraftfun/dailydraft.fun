@@ -56,6 +56,7 @@ export abstract class TransactionMonitorRepository {
     transactionId: string,
     now: Date,
     nextRecoveryCheckAt: Date,
+    checkedBlockHeight?: bigint,
   ): Promise<void>;
   abstract recordRecoveryAlert(input: {
     code: RecoveryAlertCode;

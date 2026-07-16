@@ -209,8 +209,10 @@ demo cards and signs their deposit, result, and settlement transactions with an
 isolated keypair stored only as a sensitive Vercel server variable. The key must
 never appear in API responses, browser bundles, MCP output, logs, or issues.
 The visible name, image, and comparison value are persisted from the Pokémon TCG
-API before funding proof is resolved. The committed demo policy names
-`tcgplayer.prices.market`; it must never be described as Collector Crypt insured value.
+API before funding proof is resolved. The committed demo policy fixes the TCGPlayer
+market variant order and conversion rule; every outcome hash binds the selected
+card, variant, field, and upstream update timestamp. It must never be described
+as Collector Crypt insured value.
 
 Collector Crypt mode remains separately fail-closed until it confirms the
 canonical mint, authoritative integer insured value and valuation policy,

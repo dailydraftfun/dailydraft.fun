@@ -126,6 +126,28 @@ describe('TransactionMonitorService', () => {
     expect(repository.finalized).toEqual([intent.id]);
   });
 
+  test.each([
+    ['commit_result', 'awaiting_assets', 'awaiting_assets', 'settling'],
+    ['settle', 'settling', 'settling', 'settled'],
+  ] as const)('recovers an unbound provider %s broadcast only from its exact lifecycle state', async (action, duelStatus, expectedFromStatus, expectedToStatus) => {
+    const intent = preparedRecoveryIntent({
+      action,
+      duelStatus,
+      expectedFromStatus,
+      expectedToStatus,
+    });
+    const repository = new RecoveryRepository(intent);
+    const service = new TransactionMonitorService(
+      repository,
+      new RecoveryRpc(transactionEnvelope()),
+    );
+
+    const summary = await withEscrowProgram(intent.expectedProgramId, () => service.reconcile());
+
+    expect(summary.recovered).toBe(1);
+    expect(repository.bound).toEqual(['4'.repeat(88)]);
+  });
+
   test('does not bind the same discovered broadcast twice', async () => {
     const intent = preparedRecoveryIntent();
     const repository = new RecoveryRepository(intent);
@@ -485,6 +507,7 @@ function preparedRecoveryIntent(
   return {
     ...intent,
     escrowAddress: escrow.address,
+    lastRecoveryCheckedBlockHeight: null,
     preparedAt: new Date('2026-07-15T20:00:00.000Z'),
     recoveryCheckAttempts: 0,
     ...overrides,

@@ -155,8 +155,9 @@ All new duels snapshot the valuation policy for their provider before funding.
 The hosted demo uses `openpacksduel-pokemon-tcg-market-usdc-v1` and a persisted
 Pokémon TCG `tcgplayer.prices.market` snapshot. The disabled Collector Crypt adapter
 uses `collector-crypt-insured-value-usdc-v1`. Provider outcomes must match the
-pre-funded SHA-256, use integer micro-USDC comparison values, share one pool version, and carry a source
-timestamp no more than five minutes old. Equal values follow the normal result
+pre-funded SHA-256, use integer micro-USDC comparison values, share one pool version, and carry the
+policy-specific authoritative source timestamp. Demo results bind the exact card,
+selected price variant, value field, and upstream update timestamp. Equal values follow the normal result
 commitment and settlement path, which returns each original card and refunds both
 platform fees immediately without waiting for expiry or entering recovery.
 Settlement atomically closes the emptied payment and card vaults after routing

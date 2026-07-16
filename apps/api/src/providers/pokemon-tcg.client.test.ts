@@ -4,25 +4,29 @@ import { parseCard } from './pokemon-tcg.client.js';
 
 describe('Pokémon TCG card snapshots', () => {
   test('converts the authoritative USD market price to exact USDC micro-units', () => {
-    const observedAt = new Date('2026-07-16T00:16:35.000Z');
-    expect(parseCard(card(), observedAt)).toEqual({
+    expect(parseCard(card())).toEqual({
       cardId: 'base1-4',
       displayName: 'Charizard',
       imageUrl: 'https://images.pokemontcg.io/base1/4_hires.png',
       marketValueMicroUsdc: '773510000',
-      priceUpdatedAt: '2026/07/15',
-      sourceTimestamp: observedAt,
+      priceVariant: 'holofoil',
+      priceUpdatedAt: '2026-07-15T00:00:00.000Z',
+      sourceTimestamp: new Date('2026-07-15T00:00:00.000Z'),
     });
   });
 
   test('rejects missing market prices and noncanonical image hosts', () => {
     const missingPrice = card();
     missingPrice.data.tcgplayer.prices = {};
-    expect(() => parseCard(missingPrice, new Date())).toThrow('no positive USD market price');
+    expect(() => parseCard(missingPrice)).toThrow('no positive USD market price');
 
     const wrongImage = card();
     wrongImage.data.images.large = 'https://example.com/fake.png';
-    expect(() => parseCard(wrongImage, new Date())).toThrow('lacks canonical market data');
+    expect(() => parseCard(wrongImage)).toThrow('lacks canonical market data');
+
+    const unknownVariant = card();
+    unknownVariant.data.tcgplayer.prices = { unlimitedHolofoil: { market: 10 } };
+    expect(() => parseCard(unknownVariant)).toThrow('no positive USD market price');
   });
 });
 

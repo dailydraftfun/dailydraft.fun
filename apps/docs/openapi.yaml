@@ -1611,7 +1611,7 @@ components:
           type: string
           enum:
             - 406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b
-            - 19cbdd32ebd2418032bd989e3a095b107dadd1ac61feb7ced83088756994f1b3
+            - 39186a3c3b133d001d3c17dd3832b45c2286e3df81ba13494e3cef638a48baf8
         policy:
           $ref: '#/components/schemas/ValuationPolicy'
     ValuationPolicy:
@@ -1640,7 +1640,7 @@ components:
           enum: [collector-crypt-insured-value-usdc-v1, openpacksduel-pokemon-tcg-market-usdc-v1]
         authoritativeField:
           type: string
-          enum: [collector-crypt.gacha.result.insuredValue, pokemon-tcg.tcgplayer.prices.market]
+          enum: [collector-crypt.gacha.result.insuredValue, pokemon-tcg.tcgplayer.prices.<first-supported-variant>.market]
           description: The source field committed before funding. Hosted devnet demos use a persisted Pokémon TCG TCGPlayer market snapshot; the disabled Collector Crypt adapter uses insured value.
         comparisonMetric:
           type: string
@@ -1659,13 +1659,25 @@ components:
           const: none
         maxSourceAgeSeconds:
           type: integer
-          const: 300
+          enum: [300, 604800]
         maxValueMinorUnits:
           type: string
           const: '18446744073709551615'
         maxFutureSkewSeconds:
           type: integer
-          const: 30
+          enum: [0, 30]
+        sourceSelection:
+          type: object
+          additionalProperties: false
+          required: [fallbackRule, priceField, updatedAtInterpretation, usdToMicroUsdc, variantOrder]
+          properties:
+            fallbackRule: { type: string, const: reject-if-no-listed-variant-has-positive-market }
+            priceField: { type: string, const: market }
+            updatedAtInterpretation: { type: string, const: utc-start-of-day }
+            usdToMicroUsdc: { type: string, const: require-two-decimal-usd-then-multiply-by-1000000 }
+            variantOrder:
+              type: array
+              const: [holofoil, reverseHolofoil, normal, 1stEditionHolofoil]
         tieRule:
           type: string
           const: return-original-assets-and-refund-platform-fees
@@ -1969,6 +1981,9 @@ components:
           type: string
           format: date-time
           description: Timestamp when the API captured the authoritative provider value snapshot before comparison.
+        valuationSourceReference:
+          type: [string, 'null']
+          description: Exact provider card, selected price variant, value field, and upstream update timestamp bound into the outcome hash when available.
         resultHash:
           type: string
           pattern: '^[a-f0-9]{64}$'
@@ -2189,7 +2204,7 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [side, assetReference, displayName, insuredValue, isMock, openedAt, poolVersion, sourceTimestamp, resultHash]
+            required: [side, assetReference, displayName, insuredValue, isMock, openedAt, poolVersion, sourceTimestamp, valuationSourceReference, resultHash]
             properties:
               side: { type: string, enum: [creator, opponent] }
               assetReference: { type: string }
@@ -2200,18 +2215,19 @@ components:
               openedAt: { type: string, format: date-time }
               poolVersion: { type: string }
               sourceTimestamp: { type: string, format: date-time }
+              valuationSourceReference: { type: [string, 'null'] }
               resultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
         policy:
           type: object
           additionalProperties: false
           required: [authoritativeField, currency, decimals, hash, hashAlgorithm, maxSourceAgeSeconds, maxValueMinorUnits, policyVersion, rounding, tieRule]
           properties:
-            authoritativeField: { type: string, enum: [collector-crypt.gacha.result.insuredValue, pokemon-tcg.tcgplayer.prices.market] }
+            authoritativeField: { type: string, enum: [collector-crypt.gacha.result.insuredValue, pokemon-tcg.tcgplayer.prices.<first-supported-variant>.market] }
             currency: { type: string, const: USDC }
             decimals: { type: integer, const: 6 }
             hash: { type: string, pattern: '^[a-f0-9]{64}$' }
             hashAlgorithm: { type: string, const: sha256 }
-            maxSourceAgeSeconds: { type: integer, const: 300 }
+            maxSourceAgeSeconds: { type: integer, enum: [300, 604800] }
             maxValueMinorUnits: { type: string, const: '18446744073709551615' }
             policyVersion: { type: string, enum: [collector-crypt-insured-value-usdc-v1, openpacksduel-pokemon-tcg-market-usdc-v1] }
             rounding: { type: string, const: none }
@@ -2238,13 +2254,14 @@ components:
             creatorResultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
             opponentResultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
             poolVersion: { type: string }
-            providerAttestation:
-              type: object
-              additionalProperties: false
-              required: [required, status]
-              properties:
-                required: { type: boolean }
-                status: { type: string, enum: [mock-not-applicable, not-recorded] }
+              providerAttestation:
+                type: object
+                additionalProperties: false
+                required: [required, scope, status]
+                properties:
+                  required: { type: boolean }
+                  scope: { type: string, enum: [none, escrow-mints-values-policy] }
+                  status: { type: string, enum: [mock-not-applicable, not-recorded, on-chain-commitment-finalized] }
         resultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
         settlementReady: { type: boolean }
         valuationPolicyHash: { type: string, pattern: '^[a-f0-9]{64}$' }

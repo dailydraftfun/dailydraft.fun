@@ -162,6 +162,7 @@ export interface PublicDuelResult {
     resultHash: string;
     side: 'creator' | 'opponent';
     sourceTimestamp: string;
+    valuationSourceReference: string | null;
   }>;
   policy: {
     authoritativeField: SupportedValuationPolicy['authoritativeField'];
@@ -189,7 +190,8 @@ export interface PublicDuelResult {
     poolVersion: string;
     providerAttestation: {
       required: boolean;
-      status: 'mock-not-applicable' | 'not-recorded';
+      scope: 'escrow-mints-values-policy' | 'none';
+      status: 'mock-not-applicable' | 'not-recorded' | 'on-chain-commitment-finalized';
     };
     schemaVersion: 'openpacksduel.result-proof.v1';
   };
@@ -260,7 +262,10 @@ export function buildPublicDuelReceipt(
   const opponent = duel.opponentWallet
     ? participant(duel.opponentWallet, duel.houseOpponent ? 'house' : 'opponent')
     : null;
-  const result = buildResult(duel, creator, opponent);
+  const providerCommitmentFinalized = transactions.some(
+    (transaction) => transaction.action === 'commit_result' && transaction.status === 'finalized',
+  );
+  const result = buildResult(duel, creator, opponent, providerCommitmentFinalized);
   const publicTransactions = transactions.filter(
     (transaction): transaction is DuelTransactionRecord & { signature: string } =>
       Boolean(transaction.signature),
@@ -323,6 +328,7 @@ export function buildPublicDuelReceipt(
     duel,
     feeAmounts,
     fundingSides,
+    providerCommitmentFinalized,
     settlementReference: Boolean(settlementReference),
   });
 
@@ -624,6 +630,7 @@ function buildResult(
   duel: Duel,
   creator: PublicParticipant,
   opponent: PublicParticipant | null,
+  providerCommitmentFinalized: boolean,
 ): PublicDuelResult | null {
   if (!duel.result) return null;
   const policyHash = requireCanonicalValuationPolicyHash(duel.result.valuationPolicyHash);
@@ -685,6 +692,7 @@ function buildResult(
       resultHash: outcome.resultHash,
       side: outcome.side,
       sourceTimestamp: outcome.sourceTimestamp,
+      valuationSourceReference: outcome.valuationSourceReference ?? null,
     })),
     policy: {
       authoritativeField: valuationPolicy.authoritativeField,
@@ -711,8 +719,17 @@ function buildResult(
       opponentResultHash: opponentOutcome.resultHash,
       poolVersion: comparison.poolVersion,
       providerAttestation: {
-        required: duel.providerMode !== 'mock',
-        status: duel.providerMode === 'mock' ? 'mock-not-applicable' : 'not-recorded',
+        required: duel.providerMode === 'collector-crypt-sandbox',
+        scope:
+          duel.providerMode === 'openpacksduel-devnet' && providerCommitmentFinalized
+            ? 'escrow-mints-values-policy'
+            : 'none',
+        status:
+          duel.providerMode === 'mock'
+            ? 'mock-not-applicable'
+            : duel.providerMode === 'openpacksduel-devnet' && providerCommitmentFinalized
+              ? 'on-chain-commitment-finalized'
+              : 'not-recorded',
       },
       schemaVersion: 'openpacksduel.result-proof.v1',
     },
@@ -743,6 +760,7 @@ function receiptMissingFields(input: {
   duel: Duel;
   feeAmounts: Set<string>;
   fundingSides: number;
+  providerCommitmentFinalized: boolean;
   settlementReference: boolean;
 }): string[] {
   const missing: string[] = [];
@@ -753,11 +771,11 @@ function receiptMissingFields(input: {
   if (input.duel.status === 'settled') {
     if (!input.duel.result) missing.push('provider_results');
     if (!input.duel.result?.valuationPolicyHash) missing.push('valuation_policy_hash');
-    if (
-      input.duel.providerMode !== 'mock' &&
-      input.duel.result?.outcomes.some((outcome) => !outcome.isMock)
-    ) {
+    if (input.duel.providerMode === 'collector-crypt-sandbox') {
       missing.push('provider_result_attestation');
+    }
+    if (input.duel.providerMode === 'openpacksduel-devnet' && !input.providerCommitmentFinalized) {
+      missing.push('on_chain_result_commitment');
     }
     if (!input.settlementReference) missing.push('card_settlement_reference');
   }

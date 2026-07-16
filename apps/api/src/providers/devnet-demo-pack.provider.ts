@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   BadRequestException,
   Inject,
@@ -27,6 +27,9 @@ const REFERENCE_PREFIX = 'opd1_';
 const POOL_VERSION = 'openpacksduel-devnet-pokemon.v1';
 const PACK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
 const CARD_POOL = ['base1-4', 'base1-58', 'base1-2', 'base1-15', 'base1-22'] as const;
+const DEPOSIT_LEASE_MS = 120_000;
+const DEPOSIT_WAIT_ATTEMPTS = 120;
+const DEPOSIT_WAIT_MS = 500;
 
 interface DemoPackReference {
   duel: PublicKey;
@@ -74,6 +77,7 @@ export class DevnetDemoPackProvider extends PackProvider {
           duelId: input.duelId,
           imageUrl: card.imageUrl,
           insuredValueAmount: card.marketValueMicroUsdc,
+          priceVariant: card.priceVariant,
           pokemonCardId: card.cardId,
           priceUpdatedAt: card.priceUpdatedAt,
           providerPackId: input.providerPackId,
@@ -90,12 +94,8 @@ export class DevnetDemoPackProvider extends PackProvider {
 
   async openPack(input: OpenPackInput): Promise<ProviderPackSnapshot> {
     const reference = this.parseReference(input.providerReference);
-    const card = await this.signer.ensureCardDeposited({
-      duel: reference.duel,
-      providerReference: input.providerReference,
-      role: reference.side,
-    });
     const snapshot = await this.requireSnapshot(input.providerReference, reference);
+    const card = await this.ensureSnapshotDeposited(input.providerReference, reference, snapshot);
     return this.openedSnapshot(input.providerReference, card.mint, card.openedAt, snapshot);
   }
 
@@ -103,19 +103,122 @@ export class DevnetDemoPackProvider extends PackProvider {
     await this.signer.assertReady();
     const reference = this.parseReference(providerReference);
     const snapshot = await this.requireSnapshot(providerReference, reference);
-    const deposited = await this.signer.isCardDeposited({
+    if (!snapshot.assetReference || !snapshot.openedAt) {
+      const deposited = await this.signer.isCardDeposited({
+        duel: reference.duel,
+        providerReference,
+        role: reference.side,
+      });
+      if (!deposited) return { providerReference, status: 'generated' };
+    }
+    const opened = await this.ensureSnapshotDeposited(providerReference, reference, snapshot);
+    return this.openedSnapshot(providerReference, opened.mint, opened.openedAt, snapshot);
+  }
+
+  private async ensureSnapshotDeposited(
+    providerReference: string,
+    reference: DemoPackReference,
+    initialSnapshot: Awaited<ReturnType<DevnetDemoPackProvider['requireSnapshot']>>,
+  ) {
+    let snapshot = initialSnapshot;
+    if (snapshot.assetReference && snapshot.openedAt) {
+      return this.verifyCompletedDeposit(providerReference, reference, snapshot.assetReference);
+    }
+
+    const leaseOwner = randomUUID();
+    for (let attempt = 0; attempt < DEPOSIT_WAIT_ATTEMPTS; attempt += 1) {
+      const now = new Date();
+      const claimed = await this.database.devnetPackSnapshot.updateMany({
+        data: {
+          depositLeaseExpiresAt: new Date(now.getTime() + DEPOSIT_LEASE_MS),
+          depositLeaseOwner: leaseOwner,
+        },
+        where: {
+          assetReference: null,
+          OR: [
+            { depositLeaseOwner: null },
+            { depositLeaseExpiresAt: null },
+            { depositLeaseExpiresAt: { lte: now } },
+          ],
+          providerReference,
+        },
+      });
+      if (claimed.count === 1) {
+        try {
+          const deposited = await this.signer.ensureCardDeposited({
+            duel: reference.duel,
+            providerReference,
+            role: reference.side,
+          });
+          const completed = await this.database.devnetPackSnapshot.updateMany({
+            data: {
+              assetReference: deposited.mint.toBase58(),
+              depositLeaseExpiresAt: null,
+              depositLeaseOwner: null,
+              depositSignature: deposited.signature,
+              openedAt: deposited.openedAt,
+            },
+            where: { depositLeaseOwner: leaseOwner, providerReference },
+          });
+          if (completed.count !== 1) {
+            throw new ServiceUnavailableException('Demo provider deposit lease was lost');
+          }
+          return deposited;
+        } catch (error) {
+          await this.database.devnetPackSnapshot.updateMany({
+            data: { depositLeaseExpiresAt: null, depositLeaseOwner: null },
+            where: { depositLeaseOwner: leaseOwner, providerReference },
+          });
+          throw error;
+        }
+      }
+
+      if (attempt % 4 === 3) {
+        const deposited = await this.signer.isCardDeposited({
+          duel: reference.duel,
+          providerReference,
+          role: reference.side,
+        });
+        if (deposited) {
+          const recovered = await this.signer.ensureCardDeposited({
+            duel: reference.duel,
+            providerReference,
+            role: reference.side,
+          });
+          await this.database.devnetPackSnapshot.updateMany({
+            data: {
+              assetReference: recovered.mint.toBase58(),
+              openedAt: recovered.openedAt,
+            },
+            where: { assetReference: null, providerReference },
+          });
+          return recovered;
+        }
+      }
+
+      await delay(DEPOSIT_WAIT_MS);
+      snapshot = await this.requireSnapshot(providerReference, reference);
+      if (snapshot.assetReference && snapshot.openedAt) {
+        return this.verifyCompletedDeposit(providerReference, reference, snapshot.assetReference);
+      }
+    }
+    throw new ServiceUnavailableException('Demo provider card deposit is still in progress');
+  }
+
+  private async verifyCompletedDeposit(
+    providerReference: string,
+    reference: DemoPackReference,
+    expectedMint: string,
+  ) {
+    const deposited = await this.signer.ensureCardDeposited({
       duel: reference.duel,
       providerReference,
       role: reference.side,
     });
-    if (!deposited) return { providerReference, status: 'generated' };
-    const mint = this.signer.demoMint(providerReference);
-    const opened = await this.signer.ensureCardDeposited({
-      duel: reference.duel,
-      providerReference,
-      role: reference.side,
-    });
-    return this.openedSnapshot(providerReference, mint, opened.openedAt, snapshot);
+    if (deposited.mint.toBase58() !== expectedMint) {
+      throw new ServiceUnavailableException('Demo provider deposit does not match its snapshot');
+    }
+    return deposited;
   }
 
   private openedSnapshot(
@@ -126,6 +229,9 @@ export class DevnetDemoPackProvider extends PackProvider {
       displayName: string;
       imageUrl: string;
       insuredValueAmount: string;
+      pokemonCardId: string;
+      priceUpdatedAt: string;
+      priceVariant: string;
       sourceTimestamp: Date;
     },
   ): ProviderPackSnapshot {
@@ -196,6 +302,9 @@ function resultFor(
     displayName: string;
     imageUrl: string;
     insuredValueAmount: string;
+    pokemonCardId: string;
+    priceUpdatedAt: string;
+    priceVariant: string;
     sourceTimestamp: Date;
   },
 ): ProviderCardResult {
@@ -210,6 +319,14 @@ function resultFor(
     },
     poolVersion: POOL_VERSION,
     sourceTimestamp: snapshot.sourceTimestamp.toISOString(),
+    valuationSourceReference: [
+      'pokemon-tcg',
+      snapshot.pokemonCardId,
+      'tcgplayer',
+      snapshot.priceVariant,
+      'market',
+      snapshot.priceUpdatedAt,
+    ].join(':'),
     valuationPolicyHash: DEVNET_DEMO_VALUATION_POLICY_HASH,
   };
 }
@@ -231,4 +348,8 @@ function parsePublicKey(value: string, label: string): PublicKey {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

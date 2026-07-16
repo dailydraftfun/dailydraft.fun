@@ -145,6 +145,7 @@ export type PublicDuelReceipt = {
       resultHash: string;
       side: 'creator' | 'opponent';
       sourceTimestamp: string;
+      valuationSourceReference: string | null;
     }>;
     policy: {
       authoritativeField: string;
@@ -172,7 +173,8 @@ export type PublicDuelReceipt = {
       poolVersion: string;
       providerAttestation: {
         required: boolean;
-        status: 'mock-not-applicable' | 'not-recorded';
+        scope: 'escrow-mints-values-policy' | 'none';
+        status: 'mock-not-applicable' | 'not-recorded' | 'on-chain-commitment-finalized';
       };
       schemaVersion: 'openpacksduel.result-proof.v1';
     };

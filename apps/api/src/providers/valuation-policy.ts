@@ -32,12 +32,21 @@ if (calculatedPolicyHash !== CANONICAL_VALUATION_POLICY_HASH) {
 
 export const DEVNET_DEMO_VALUATION_POLICY = Object.freeze({
   ...CANONICAL_VALUATION_POLICY,
-  authoritativeField: 'pokemon-tcg.tcgplayer.prices.market',
+  authoritativeField: 'pokemon-tcg.tcgplayer.prices.<first-supported-variant>.market',
+  maxFutureSkewSeconds: 0,
+  maxSourceAgeSeconds: 604800,
   policyVersion: 'openpacksduel-pokemon-tcg-market-usdc-v1',
+  sourceSelection: {
+    fallbackRule: 'reject-if-no-listed-variant-has-positive-market',
+    priceField: 'market',
+    updatedAtInterpretation: 'utc-start-of-day',
+    usdToMicroUsdc: 'require-two-decimal-usd-then-multiply-by-1000000',
+    variantOrder: ['holofoil', 'reverseHolofoil', 'normal', '1stEditionHolofoil'],
+  },
 } as const);
 
 export const DEVNET_DEMO_VALUATION_POLICY_HASH =
-  '19cbdd32ebd2418032bd989e3a095b107dadd1ac61feb7ced83088756994f1b3';
+  '39186a3c3b133d001d3c17dd3832b45c2286e3df81ba13494e3cef638a48baf8';
 
 const calculatedDemoPolicyHash = createHash('sha256')
   .update(stableStringify(DEVNET_DEMO_VALUATION_POLICY))

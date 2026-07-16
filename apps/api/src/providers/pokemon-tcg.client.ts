@@ -9,6 +9,7 @@ export interface PokemonTcgCardSnapshot {
   displayName: string;
   imageUrl: string;
   marketValueMicroUsdc: string;
+  priceVariant: (typeof PRICE_VARIANTS)[number];
   priceUpdatedAt: string;
   sourceTimestamp: Date;
 }
@@ -33,7 +34,7 @@ export class PokemonTcgClient {
       if (!response.ok) {
         throw new BadGatewayException(`Pokémon TCG API returned ${response.status}`);
       }
-      return parseCard(await response.json(), new Date());
+      return parseCard(await response.json());
     } catch (error) {
       if (error instanceof BadGatewayException) throw error;
       throw new BadGatewayException('Pokémon TCG API is unavailable');
@@ -43,7 +44,7 @@ export class PokemonTcgClient {
   }
 }
 
-export function parseCard(value: unknown, sourceTimestamp: Date): PokemonTcgCardSnapshot {
+export function parseCard(value: unknown): PokemonTcgCardSnapshot {
   if (!isObject(value) || !isObject(value.data)) {
     throw new BadGatewayException('Pokémon TCG API returned an invalid card');
   }
@@ -65,29 +66,42 @@ export function parseCard(value: unknown, sourceTimestamp: Date): PokemonTcgCard
     throw new BadGatewayException('Pokémon TCG card lacks canonical market data');
   }
   const market = selectMarketPrice(card.tcgplayer.prices);
+  const priceUpdatedAt = canonicalPriceUpdatedAt(card.tcgplayer.updatedAt);
   return {
     cardId: card.id,
     displayName: card.name,
     imageUrl: card.images.large,
-    marketValueMicroUsdc: decimalDollarsToMicroUsdc(market),
-    priceUpdatedAt: card.tcgplayer.updatedAt,
-    sourceTimestamp,
+    marketValueMicroUsdc: decimalDollarsToMicroUsdc(market.value),
+    priceVariant: market.variant,
+    priceUpdatedAt,
+    sourceTimestamp: new Date(priceUpdatedAt),
   };
 }
 
-function selectMarketPrice(prices: Record<string, unknown>): number {
+function selectMarketPrice(prices: Record<string, unknown>): {
+  value: number;
+  variant: (typeof PRICE_VARIANTS)[number];
+} {
   for (const variant of PRICE_VARIANTS) {
     const price = prices[variant];
     if (isObject(price) && typeof price.market === 'number' && price.market > 0) {
-      return price.market;
-    }
-  }
-  for (const price of Object.values(prices)) {
-    if (isObject(price) && typeof price.market === 'number' && price.market > 0) {
-      return price.market;
+      return { value: price.market, variant };
     }
   }
   throw new BadGatewayException('Pokémon TCG card has no positive USD market price');
+}
+
+function canonicalPriceUpdatedAt(value: string): string {
+  const [year, month, day] = value.split('/').map(Number);
+  const date = new Date(Date.UTC(year ?? 0, (month ?? 0) - 1, day ?? 0));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() + 1 !== month ||
+    date.getUTCDate() !== day
+  ) {
+    throw new BadGatewayException('Pokémon TCG price update date is invalid');
+  }
+  return date.toISOString();
 }
 
 function decimalDollarsToMicroUsdc(value: number): string {

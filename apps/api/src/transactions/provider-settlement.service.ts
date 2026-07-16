@@ -239,7 +239,10 @@ export class ProviderSettlementService {
         idempotencyKey: input.idempotencyKey,
         instruction: built.instruction,
         instructionName: 'submit_result',
-        proof: proof(evidence, input.providerRequestId ?? '', built.resultCommitment.toBase58()),
+        proof: {
+          ...proof(evidence, input.providerRequestId ?? '', built.resultCommitment.toBase58()),
+          escrowAddress: addresses.duel.toBase58(),
+        },
       });
     }
 
@@ -325,11 +328,14 @@ export class ProviderSettlementService {
                 }),
               ]
             : [],
-        proof: proof(
-          evidence,
-          input.providerRequestId ?? '',
-          builtResult.resultCommitment.toBase58(),
-        ),
+        proof: {
+          ...proof(
+            evidence,
+            input.providerRequestId ?? '',
+            builtResult.resultCommitment.toBase58(),
+          ),
+          escrowAddress: addresses.duel.toBase58(),
+        },
       });
     }
 
@@ -459,7 +465,7 @@ export class ProviderSettlementService {
       isSigner: account.isSigner,
       isWritable: account.isWritable,
     }));
-    const intent = await this.database.duelTransaction.upsert({
+    let intent = await this.database.duelTransaction.upsert({
       create: {
         action: input.action,
         allowMultipleInstructionMatches: false,
@@ -499,6 +505,51 @@ export class ProviderSettlementService {
       metadata?.prepareRequestHash !== requestHash
     ) {
       throw new ConflictException('Idempotency-Key was already used for another transaction');
+    }
+    if (
+      intent.status === DuelTransactionStatus.PREPARED &&
+      !intent.signature &&
+      intent.lastValidBlockHeight !== null &&
+      intent.lastRecoveryCheckedBlockHeight !== null &&
+      intent.lastRecoveryCheckedBlockHeight > intent.lastValidBlockHeight
+    ) {
+      const refreshed = await this.database.duelTransaction.updateMany({
+        data: {
+          errorCode: null,
+          errorMessage: null,
+          expectedMessageHash: input.messageSha256,
+          expiresAt: new Date(Date.now() + 75_000),
+          lastCheckedAt: null,
+          lastRecoveryCheckedAt: null,
+          lastRecoveryCheckedBlockHeight: null,
+          lastValidBlockHeight: input.lastValidBlockHeight,
+          nextCheckAt: null,
+          nextRecoveryCheckAt: null,
+          recentBlockhash: input.recentBlockhash,
+          recoveryCheckAttempts: 0,
+          serializedTransaction: input.serializedTransaction,
+        },
+        where: {
+          id: intent.id,
+          lastRecoveryCheckedBlockHeight: intent.lastRecoveryCheckedBlockHeight,
+          lastValidBlockHeight: intent.lastValidBlockHeight,
+          signature: null,
+          status: DuelTransactionStatus.PREPARED,
+        },
+      });
+      if (refreshed.count === 1) {
+        const renewed = await this.database.duelTransaction.findUnique({
+          where: { id: intent.id },
+        });
+        if (!renewed) throw new ConflictException('Transaction intent disappeared during renewal');
+        intent = renewed;
+      } else {
+        const current = await this.database.duelTransaction.findUnique({
+          where: { id: intent.id },
+        });
+        if (!current) throw new ConflictException('Transaction intent disappeared during renewal');
+        intent = current;
+      }
     }
     if (
       intent.status !== DuelTransactionStatus.PREPARED ||
@@ -590,6 +641,7 @@ export function validateCanonicalEvidence(duel: {
     resultHash: string;
     side: DuelSide;
     sourceTimestamp: Date | null;
+    valuationSourceReference?: string | null;
     valuationPolicyHash: string;
   }>;
 }): CanonicalEvidence {
@@ -688,6 +740,9 @@ export function validateCanonicalEvidence(duel: {
       resultHash: outcome.resultHash,
       side: outcome.side === DuelSide.CREATOR ? 'creator' : 'opponent',
       sourceTimestamp: outcome.sourceTimestamp.toISOString(),
+      ...(outcome.valuationSourceReference
+        ? { valuationSourceReference: outcome.valuationSourceReference }
+        : {}),
       valuationPolicyHash: outcome.valuationPolicyHash,
     });
   }

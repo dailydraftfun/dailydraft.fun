@@ -27,6 +27,7 @@ export interface ProviderCardResult {
   insuredValue: Money;
   poolVersion: string;
   sourceTimestamp: string;
+  valuationSourceReference?: string;
   valuationPolicyHash: string;
 }
 

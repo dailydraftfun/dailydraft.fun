@@ -265,7 +265,7 @@ export class TransactionMonitorService {
           summary.recoveryRejected += 1;
           continue;
         }
-        if (!canBindRecoveredFunding(intent.duelStatus)) {
+        if (!canBindRecoveredIntent(intent)) {
           await this.repository.recordRecoveryAlert({
             code: 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH',
             nextRecoveryCheckAt: nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
@@ -302,10 +302,12 @@ export class TransactionMonitorService {
         break;
       }
       if (!handled) {
+        const checkedBlockHeight = await this.rpc.getBlockHeight();
         await this.repository.recordRecoveryAttempt(
           intent.id,
           now,
           nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
+          checkedBlockHeight,
         );
       }
       if (remainingCandidateBudget === 0) break;
@@ -519,6 +521,12 @@ export function nextRecoveryCheckAt(now: Date, attempts: number): Date {
 
 export function canBindRecoveredFunding(status: PreparedRecoveryIntent['duelStatus']): boolean {
   return status === 'matched' || status === 'committing';
+}
+
+export function canBindRecoveredIntent(intent: PreparedRecoveryIntent): boolean {
+  return intent.action === 'fund'
+    ? canBindRecoveredFunding(intent.duelStatus)
+    : intent.duelStatus === intent.expectedFromStatus;
 }
 
 function boundedInteger(

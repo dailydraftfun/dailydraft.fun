@@ -310,6 +310,33 @@ describe('ProviderSettlementService', () => {
     );
   });
 
+  test('renews an expired provider intent only after a finalized recovery scan clears it', async () => {
+    const duel = databaseDuel(new Date(Date.now() + 60_000));
+    const tracked = trackedDatabase(duel);
+    const service = new ProviderSettlementService(tracked.client, new RotatingFixtureRpc());
+    const input = {
+      assetStandard: 'legacy-spl-nft' as const,
+      callerWallet: PROVIDER.toBase58(),
+      duelId: duel.id,
+      idempotencyKey: 'provider-result-renewal',
+      operation: 'commit_result' as const,
+      providerRequestId: REQUEST,
+    };
+
+    const first = await service.prepare(input);
+    const record = tracked.transactions.get(input.idempotencyKey);
+    if (!record) throw new Error('Expected a tracked transaction');
+    record.lastRecoveryCheckedBlockHeight = 151n;
+
+    const renewed = await service.prepare(input);
+
+    expect(renewed.intentId).toBe(first.intentId);
+    expect(renewed.recentBlockhash).not.toBe(first.recentBlockhash);
+    expect(renewed.serializedTransactionBase64).not.toBe(first.serializedTransactionBase64);
+    expect(record.lastRecoveryCheckedBlockHeight).toBeNull();
+    expect(record.lastValidBlockHeight).toBe(250n);
+  });
+
   test.each([
     ['creator', '200', '100', CREATOR, CREATOR],
     ['opponent', '100', '200', OPPONENT, OPPONENT],
@@ -391,7 +418,10 @@ function evidence(
 }
 
 function outcome(side: DuelSide, assetReference: string, value: string, policy = POLICY) {
-  const sourceTimestamp = '2026-07-15T19:59:30.000Z';
+  const sourceTimestamp =
+    policy === DEVNET_DEMO_VALUATION_POLICY_HASH
+      ? '2026-07-15T00:00:00.000Z'
+      : '2026-07-15T19:59:30.000Z';
   const openedAt = new Date('2026-07-15T20:00:00.000Z');
   const providerReference = `provider-${side.toLowerCase()}`;
   const normalized = normalizeProviderResult(
@@ -402,6 +432,12 @@ function outcome(side: DuelSide, assetReference: string, value: string, policy =
       insuredValue: { amount: value, currency: 'USDC', decimals: 6 },
       poolVersion: 'collector-crypt-pool-v1',
       sourceTimestamp,
+      ...(policy === DEVNET_DEMO_VALUATION_POLICY_HASH
+        ? {
+            valuationSourceReference:
+              'pokemon-tcg:base1-4:tcgplayer:holofoil:market:2026-07-15T00:00:00.000Z',
+          }
+        : {}),
       valuationPolicyHash: policy,
     },
     policy,
@@ -421,6 +457,7 @@ function outcome(side: DuelSide, assetReference: string, value: string, policy =
     resultHash: normalized.resultHash,
     side,
     sourceTimestamp: new Date(sourceTimestamp),
+    valuationSourceReference: normalized.valuationSourceReference ?? null,
     valuationPolicyHash: policy,
   };
 }
@@ -525,6 +562,55 @@ function database(duel: ReturnType<typeof databaseDuel> | MutableDuelFixture): n
   } as never;
 }
 
+function trackedDatabase(duel: ReturnType<typeof databaseDuel>) {
+  const transactions = new Map<string, Record<string, unknown>>();
+  const duelTransaction = {
+    findUnique: ({ where }: { where: { id: string } }) =>
+      Promise.resolve(
+        [...transactions.values()].find((transaction) => transaction.id === where.id) ?? null,
+      ),
+    updateMany: ({
+      data,
+      where,
+    }: {
+      data: Record<string, unknown>;
+      where: Record<string, unknown>;
+    }) => {
+      const transaction = [...transactions.values()].find((item) => item.id === where.id);
+      if (
+        !transaction ||
+        (transaction.signature !== null && transaction.signature !== undefined) ||
+        transaction.status !== where.status ||
+        transaction.lastValidBlockHeight !== where.lastValidBlockHeight ||
+        transaction.lastRecoveryCheckedBlockHeight !== where.lastRecoveryCheckedBlockHeight
+      ) {
+        return Promise.resolve({ count: 0 });
+      }
+      Object.assign(transaction, data);
+      return Promise.resolve({ count: 1 });
+    },
+    upsert: ({ create }: { create: Record<string, unknown> }) => {
+      const key = String(create.idempotencyKey);
+      const existing = transactions.get(key);
+      if (existing) return Promise.resolve(existing);
+      const record = {
+        lastRecoveryCheckedBlockHeight: null,
+        signature: null,
+        ...create,
+      };
+      transactions.set(key, record);
+      return Promise.resolve(record);
+    },
+  };
+  return {
+    client: {
+      duel: { findUnique: () => Promise.resolve(duel) },
+      duelTransaction,
+    } as never,
+    transactions,
+  };
+}
+
 class FixtureRpc extends SolanaRpcGateway {
   vaultAmount = 1n;
   async assertDevnet() {}
@@ -560,5 +646,16 @@ class FixtureRpc extends SolanaRpcGateway {
   }
   async getTransaction() {
     return null;
+  }
+}
+
+class RotatingFixtureRpc extends FixtureRpc {
+  #preparations = 0;
+
+  override async getLatestBlockhash() {
+    this.#preparations += 1;
+    return this.#preparations === 1
+      ? { blockhash: CREATOR.toBase58(), lastValidBlockHeight: 150n }
+      : { blockhash: OPPONENT.toBase58(), lastValidBlockHeight: 250n };
   }
 }

@@ -184,17 +184,6 @@ export class DevnetDemoSignerService {
       preflightCommitment: 'confirmed',
       skipPreflight: false,
     });
-    const confirmation = await this.#connection.confirmTransaction(
-      {
-        blockhash: input.recentBlockhash,
-        lastValidBlockHeight: Number(input.lastValidBlockHeight),
-        signature,
-      },
-      'finalized',
-    );
-    if (confirmation.value.err) {
-      throw new ServiceUnavailableException('Devnet provider transaction failed');
-    }
     return signature;
   }
 
