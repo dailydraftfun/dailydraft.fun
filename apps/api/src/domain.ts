@@ -60,7 +60,7 @@ export interface Duel {
 export interface DuelPackOutcome {
   assetReference: string;
   displayName: string;
-  imageUrl?: string | null;
+  imageUrl?: string;
   insuredValue: Money;
   isMock: boolean;
   openedAt: string;

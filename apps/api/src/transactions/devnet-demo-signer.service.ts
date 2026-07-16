@@ -257,7 +257,7 @@ export class DevnetDemoSignerService {
       'finalized',
     );
     const blockTimes = signatures.flatMap((signature) =>
-      signature.blockTime === null ? [] : [signature.blockTime],
+      signature.blockTime == null ? [] : [signature.blockTime],
     );
     if (blockTimes.length === 0) {
       throw new ServiceUnavailableException('Devnet card creation time is unavailable');

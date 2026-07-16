@@ -713,7 +713,7 @@ function toDuel(row: {
   packOutcomes?: Array<{
     assetReference: string;
     displayName: string;
-    imageUrl: string | null;
+    imageUrl?: string | null;
     insuredValueAmount: string;
     insuredValueCurrency: string;
     insuredValueDecimals: number;
@@ -781,7 +781,7 @@ export function toDuelResult(row: {
   packOutcomes?: Array<{
     assetReference: string;
     displayName: string;
-    imageUrl: string | null;
+    imageUrl?: string | null;
     insuredValueAmount: string;
     insuredValueCurrency: string;
     insuredValueDecimals: number;
@@ -822,7 +822,7 @@ export function toDuelResult(row: {
     return {
       assetReference: outcome.assetReference,
       displayName: outcome.displayName,
-      imageUrl: outcome.imageUrl,
+      ...(outcome.imageUrl ? { imageUrl: outcome.imageUrl } : {}),
       insuredValue: toMoney(
         outcome.insuredValueAmount,
         outcome.insuredValueCurrency,

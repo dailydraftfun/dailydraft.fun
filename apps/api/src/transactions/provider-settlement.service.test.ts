@@ -378,7 +378,7 @@ function evidence(
   creator = '200',
   opponent = '100',
   policy = POLICY,
-  providerMode = ProviderMode.COLLECTOR_CRYPT_SANDBOX,
+  providerMode: ProviderMode = ProviderMode.COLLECTOR_CRYPT_SANDBOX,
 ) {
   return {
     packOutcomes: [
