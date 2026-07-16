@@ -1,6 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd ../.. && bun --filter @openpacksduel/db db:generate",
   "framework": null,
   "functions": {
     "api/[...path].ts": {
@@ -9,8 +8,7 @@
       "supportsCancellation": true
     }
   },
-  "installCommand": "cd ../.. && bun install --frozen-lockfile",
-  "outputDirectory": ".",
+  "installCommand": "cd ../.. && bun install --frozen-lockfile && bun --filter @openpacksduel/db db:generate",
   "crons": [
     {
       "path": "/v1/internal/reconciliation/solana",

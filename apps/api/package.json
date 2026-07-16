@@ -12,8 +12,7 @@
     "start": "bun run src/main.ts",
     "lint": "biome check api/ src/",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
-    "vercel-build": "cd ../.. && bun --filter @openpacksduel/db db:generate"
+    "test": "bun test"
   },
   "dependencies": {
     "@openpacksduel/db": "workspace:*",
