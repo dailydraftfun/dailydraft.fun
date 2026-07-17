@@ -88,6 +88,7 @@ describe('duel receipt presentation', () => {
       expect.objectContaining({
         badge: 'Devnet preview',
         headline: 'Devnet result preview.',
+        mockPreview: true,
       }),
     );
     expect(presentation.finality).toEqual(

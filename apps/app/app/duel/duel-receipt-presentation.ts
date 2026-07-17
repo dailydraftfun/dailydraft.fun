@@ -1,5 +1,5 @@
 import type { PublicDuelReceipt, PublicDuelStatus } from './public-proof-client';
-import { getDuelStatusPresentation } from './social-card-data';
+import { getDuelStatusPresentation, isMockDuelResult } from './social-card-data';
 
 export type ReceiptFinalityTone = 'attention' | 'neutral' | 'pending' | 'verified';
 
@@ -12,6 +12,7 @@ export type DuelReceiptPresentation = {
     tone: ReceiptFinalityTone;
   };
   headline: string;
+  mockPreview: boolean;
   outcomeStates: Array<{
     label: 'Runner-up' | 'Tie' | 'Winner';
     side: 'creator' | 'opponent';
@@ -37,13 +38,13 @@ export function getDuelReceiptPresentation(receipt: PublicDuelReceipt): DuelRece
     return {
       ...safeCopy,
       finality: finalityWithoutResult(receipt),
+      mockPreview: false,
       outcomeStates: [],
       statusLabel,
     };
   }
 
-  const mockPreview =
-    receipt.pack.providerMode === 'mock' || result.outcomes.some((outcome) => outcome.isMock);
+  const mockPreview = isMockDuelResult(receipt);
   const settled = receipt.duel.status === 'settled';
   const headline = mockPreview
     ? 'Devnet result preview.'
@@ -65,6 +66,7 @@ export function getDuelReceiptPresentation(receipt: PublicDuelReceipt): DuelRece
     badge: mockPreview ? 'Devnet preview' : copy.badge,
     finality: finalityWithResult(receipt, mockPreview),
     headline,
+    mockPreview,
     outcomeStates: result.outcomes.map((outcome) => ({
       label:
         result.winnerSide === null

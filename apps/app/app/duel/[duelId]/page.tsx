@@ -139,8 +139,6 @@ function ResultArtifact({
 }) {
   const result = receipt.result;
   if (!result) return null;
-  const mockPreview =
-    receipt.pack.providerMode === 'mock' || result.outcomes.some((outcome) => outcome.isMock);
 
   return (
     <section aria-label="Duel result">
@@ -157,7 +155,7 @@ function ResultArtifact({
         />
       </div>
 
-      {mockPreview ? (
+      {presentation.mockPreview ? (
         <p className="receipt-preview-note">
           Devnet mock values test the reveal and comparison flow only. No purchased card,
           transferred NFT, or settled prize is represented.
