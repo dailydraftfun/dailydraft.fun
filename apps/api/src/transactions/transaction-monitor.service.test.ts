@@ -49,10 +49,12 @@ describe('TransactionMonitorService', () => {
       new FakeRpc({ confirmationStatus: 'finalized', err: null }),
     );
 
-    const result = await service.reconcileDuel({
-      actorWallet: transaction.wallet,
-      duelId: transaction.duelId,
-    });
+    const result = await withEscrowProgram(transaction.expectedProgramId, () =>
+      service.reconcileDuel({
+        actorWallet: transaction.wallet,
+        duelId: transaction.duelId,
+      }),
+    );
 
     expect(result.reconciliation.checked).toBe(1);
     expect(result.reconciliation.finalized).toBe(1);
