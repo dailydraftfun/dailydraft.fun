@@ -217,7 +217,15 @@ export async function GET(
         {isResult && firstPull && secondPull ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
             <PullCard
-              label={firstPull.winner ? 'Winner' : 'Creator pull'}
+              label={
+                duel.mockPreview
+                  ? firstPull.winner
+                    ? 'Higher mock value'
+                    : 'Mock pull'
+                  : firstPull.winner
+                    ? 'Winner'
+                    : 'Creator pull'
+              }
               name={firstPull.displayName}
               value={firstPull.value}
               accent={duel.accent}
@@ -227,7 +235,15 @@ export async function GET(
               VS
             </div>
             <PullCard
-              label={secondPull.winner ? 'Winner' : 'Opponent pull'}
+              label={
+                duel.mockPreview
+                  ? secondPull.winner
+                    ? 'Higher mock value'
+                    : 'Mock pull'
+                  : secondPull.winner
+                    ? 'Winner'
+                    : 'Opponent pull'
+              }
               name={secondPull.displayName}
               value={secondPull.value}
               accent={duel.accent}

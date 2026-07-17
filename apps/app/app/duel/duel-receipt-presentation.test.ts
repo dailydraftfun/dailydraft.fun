@@ -81,7 +81,15 @@ describe('duel receipt presentation', () => {
     const base = receipt({ status: 'settled' });
     const presentation = getDuelReceiptPresentation({
       ...base,
-      pack: { ...base.pack, providerMode: 'mock' },
+      result: base.result
+        ? {
+            ...base.result,
+            outcomes: base.result.outcomes.map((outcome, index) => ({
+              ...outcome,
+              isMock: index === 0,
+            })),
+          }
+        : null,
     });
 
     expect(presentation).toEqual(

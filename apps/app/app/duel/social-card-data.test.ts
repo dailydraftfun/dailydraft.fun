@@ -37,6 +37,7 @@ describe('duel social card data', () => {
       expect.objectContaining({
         badge: 'Devnet preview',
         headline: 'Devnet result preview.',
+        mockPreview: true,
       }),
     );
   });

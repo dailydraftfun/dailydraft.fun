@@ -35,6 +35,7 @@ export type DuelSocialPull = {
 
 export type DuelSocialSnapshot = StatusPresentation & {
   duelId: string;
+  mockPreview: boolean;
   network: 'devnet';
   opponent: string;
   opponentType: 'house' | 'wallet';
@@ -179,6 +180,7 @@ export function getDuelSocialSnapshot(
 
   return {
     duelId: receipt.duel.id,
+    mockPreview,
     network: 'devnet',
     opponent: receipt.participants.opponent?.display ?? 'Waiting for opponent',
     opponentType: receipt.duel.mode === 'house' ? 'house' : 'wallet',
@@ -200,10 +202,10 @@ export function getDuelSocialSnapshot(
           subline: 'Committed mock values do not represent purchased cards or transferred assets.',
         }
       : status === 'settled' && winner
-      ? { headline: `${winner.display} won the vault.` }
-      : status === 'settled' && receipt.result
-        ? { headline: 'The duel ended in a tie.' }
-        : {}),
+        ? { headline: `${winner.display} won the vault.` }
+        : status === 'settled' && receipt.result
+          ? { headline: 'The duel ended in a tie.' }
+          : {}),
   };
 }
 
