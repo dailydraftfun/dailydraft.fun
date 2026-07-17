@@ -21,7 +21,7 @@ export const duelRules = [
     title: 'What you pay',
   },
   {
-    body: 'The preview selects from a fixed five-card OpenPacksDuel Pokémon pool, so each listed demo card is approximately a 1-in-5 pull. Collector Crypt production packs and commercial odds are not active.',
+    body: 'The preview selects from a server-provided OpenPacksDuel Pokémon demo pool. Pool contents can change; Collector Crypt production packs and commercial odds are not active.',
     title: 'Pack source and odds',
   },
   {
@@ -57,7 +57,7 @@ export function getMatchmakingSearchCopy(session: MatchmakingSearchSession): str
 
 export function getDuelPaymentReviewCopy(feeAmountSol: string) {
   return {
-    description: `You are approving exactly ${feeAmountSol} SOL. No pack is purchased in this transaction.`,
+    description: `The platform fee is exactly ${feeAmountSol} SOL. Your wallet also shows the network fee and any recoverable rent. No pack is purchased in this transaction.`,
     heading: 'Review your duel payment',
     rows: [
       { label: 'Platform fee now', value: `${feeAmountSol} SOL` },
@@ -137,14 +137,14 @@ export function getDuelPlayerStatus(
       nextAction: 'Keep this page open until both returns complete.',
     },
     settled: {
-      detail: 'The higher verified market value won both demo cards.',
+      detail: 'The committed result is final. The public receipt shows whether one pull led or the values tied.',
       headline: 'Duel complete',
       nextAction: 'View the public receipt or start another duel.',
     },
     settling: {
-      detail: 'The winner is decided while Solana devnet moves both demo cards.',
-      headline: 'Winner decided; cards are moving',
-      nextAction: 'Keep this page open until the final transfer completes.',
+      detail: 'The committed comparison is final while Solana devnet completes settlement or return.',
+      headline: 'Result committed; settlement is finishing',
+      nextAction: 'Keep this page open until the final settlement completes.',
     },
     waiting: {
       detail: 'Your challenge is open, and no payment has been requested yet.',

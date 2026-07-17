@@ -83,8 +83,8 @@ describe('duel player copy', () => {
         nextAction: 'View the public receipt or start another duel.',
       },
       settling: {
-        headline: 'Winner decided; cards are moving',
-        nextAction: 'Keep this page open until the final transfer completes.',
+        headline: 'Result committed; settlement is finishing',
+        nextAction: 'Keep this page open until the final settlement completes.',
       },
       waiting: {
         headline: 'Challenge ready to share',
@@ -123,6 +123,20 @@ describe('duel player copy', () => {
       'Searching for the same $50 pack. You can continue or cancel before funding starts.',
     );
     expect(getMatchmakingSearchCopy({ ...session, state: 'matched' })).toBeNull();
+  });
+
+  test('keeps payment, outcome, and demo-pool claims scoped to known facts', () => {
+    const payment = getDuelPaymentReviewCopy('0.001');
+    const poolRule = duelRules.find((rule) => rule.title === 'Pack source and odds');
+
+    expect(payment.description).toContain('The platform fee is exactly 0.001 SOL');
+    expect(payment.description).toContain('network fee and any recoverable rent');
+    expect(getDuelPlayerStatus('settled').detail).toContain('whether one pull led or the values tied');
+    expect(getDuelPlayerStatus('settling').headline).toBe(
+      'Result committed; settlement is finishing',
+    );
+    expect(poolRule?.body).toContain('server-provided');
+    expect(poolRule?.body).not.toMatch(/five-card|1-in-5/);
   });
 
   test('turns recoverable failures into explicit player actions', () => {

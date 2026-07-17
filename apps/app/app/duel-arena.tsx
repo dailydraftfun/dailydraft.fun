@@ -237,7 +237,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
   const phase: Phase = liveDuel?.phase ?? 'lobby';
   const playerStatus = persistedDuel
-    ? getDuelPlayerStatus(persistedDuel.status, Boolean(matchmakingSession))
+    ? getDuelPlayerStatus(
+        persistedDuel.status,
+        matchmakingSession?.state === 'searching',
+      )
     : null;
   const houseEnabled = capabilities?.modes.house.enabled === true;
   const houseFallbackAction = matchmakingSession?.availableActions.find(
