@@ -7,7 +7,7 @@ import {
   ProductCapabilityPanel,
   resolveLobbySelection,
 } from './duel-lobby-options';
-import type { ProductCapabilities } from './solana/duel-client';
+import { type ProductCapabilities, parseProductCapabilities } from './solana/duel-client';
 
 describe('duel lobby capability controls', () => {
   test('renders every server-supported mode and pack as playable', () => {
@@ -129,6 +129,19 @@ describe('duel lobby capability controls', () => {
 
     expect(markup).toContain('The duel API is not configured.');
     expect(markup).not.toContain('Check availability again');
+  });
+
+  test('rejects malformed capability responses before lobby rendering', () => {
+    const valid = capabilityFixture();
+    expect(() =>
+      parseProductCapabilities({
+        modes: valid.modes,
+        network: 'solana-devnet',
+        provider: { mode: 'openpacksduel-devnet', ready: true },
+      }),
+    ).toThrow('Product capabilities are unavailable (malformed response).');
+
+    expect(parseProductCapabilities(valid)).toEqual(valid);
   });
 });
 
