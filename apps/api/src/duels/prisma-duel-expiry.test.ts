@@ -120,6 +120,11 @@ function expiryFixture(input: {
   };
   const events: Array<Record<string, unknown>> = [];
   let query: Record<string, unknown> = {};
+  let pendingUpdate: {
+    cancellationReason: string;
+    status: DuelStatus;
+    versionIncrement: number;
+  } | null = null;
   const transaction = {
     duel: {
       updateMany: ({
@@ -141,15 +146,22 @@ function expiryFixture(input: {
         ) {
           return Promise.resolve({ count: 0 });
         }
-        duel.cancellationReason = data.cancellationReason;
-        duel.status = data.status;
-        duel.version += data.version.increment;
+        pendingUpdate = {
+          cancellationReason: data.cancellationReason,
+          status: data.status,
+          versionIncrement: data.version.increment,
+        };
         return Promise.resolve({ count: 1 });
       },
     },
     duelEvent: {
       create: ({ data }: { data: Record<string, unknown> }) => {
         events.push(data);
+        if (pendingUpdate) {
+          duel.cancellationReason = pendingUpdate.cancellationReason;
+          duel.status = pendingUpdate.status;
+          duel.version += pendingUpdate.versionIncrement;
+        }
         return Promise.resolve(data);
       },
     },
