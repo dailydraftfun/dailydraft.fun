@@ -41,7 +41,7 @@ describe('TransactionMonitorService', () => {
     expect(repository.finalized).toEqual(['tx_123456789012']);
   });
 
-  test('reconciles only the authenticated duel batch without running global recovery', async () => {
+  test('scopes recovery and reconciliation to the authenticated duel batch', async () => {
     const transaction = monitoredTransaction();
     const repository = new FakeRepository(transaction);
     const service = new TransactionMonitorService(
@@ -58,7 +58,54 @@ describe('TransactionMonitorService', () => {
     expect(result.reconciliation.finalized).toBe(1);
     expect(result.activeTransactionCount).toBe(0);
     expect(result.duelStatus).toBe('settled');
-    expect(repository.recoveryLookups).toBe(0);
+    expect(result.unboundTransactionCount).toBe(0);
+    expect(repository.recoveryLookups).toBe(2);
+  });
+
+  test('recovers an unbound broadcast from participant-triggered reconciliation', async () => {
+    const intent = preparedRecoveryIntent();
+    const repository = new RecoveryRepository(intent);
+    const service = new TransactionMonitorService(
+      repository,
+      new RecoveryRpc(transactionEnvelope()),
+    );
+
+    const result = await withEscrowProgram(intent.expectedProgramId, () =>
+      service.reconcileDuel({ actorWallet: intent.wallet, duelId: intent.duelId }),
+    );
+
+    expect(result.reconciliation.recovered).toBe(1);
+    expect(result.reconciliation.finalized).toBe(1);
+    expect(result.activeTransactionCount).toBe(0);
+    expect(result.unboundTransactionCount).toBe(0);
+    expect(result.duelStatus).toBe('funded');
+  });
+
+  test('keeps an unbound intent active until absence is finality-safe', async () => {
+    const intent = preparedRecoveryIntent({ lastValidBlockHeight: 2_000n });
+    const repository = new RecoveryRepository(intent);
+    const service = new TransactionMonitorService(repository, new FakeRpc(null, 2_010n));
+
+    const result = await withEscrowProgram(intent.expectedProgramId, () =>
+      service.reconcileDuel({ actorWallet: intent.wallet, duelId: intent.duelId }),
+    );
+
+    expect(result.unboundTransactionCount).toBe(1);
+    expect(result.reconciliation.expired).toBe(0);
+  });
+
+  test('certifies an unbound intent absent only after blockhash finality', async () => {
+    const intent = preparedRecoveryIntent({ lastValidBlockHeight: 1_000n });
+    const repository = new RecoveryRepository(intent);
+    const service = new TransactionMonitorService(repository, new FakeRpc(null, 1_065n));
+
+    const result = await withEscrowProgram(intent.expectedProgramId, () =>
+      service.reconcileDuel({ actorWallet: intent.wallet, duelId: intent.duelId }),
+    );
+
+    expect(result.unboundTransactionCount).toBe(0);
+    expect(result.reconciliation.expired).toBe(1);
+    expect(repository.expired).toEqual([intent.id]);
   });
 
   test('opportunistically checks finality after binding a submitted signature', async () => {
@@ -343,6 +390,8 @@ class FakeRepository extends TransactionMonitorRepository {
     return [];
   }
 
+  async recordPreparedRecoveryExpired(): Promise<void> {}
+
   async recordRecoveryAlert(): Promise<void> {}
 
   async recordRecoveryAttempt(
@@ -457,6 +506,7 @@ class RecoveryRepository extends TransactionMonitorRepository {
   readonly alerts: string[] = [];
   readonly bound: string[] = [];
   readonly checkedBlockHeights: Array<bigint | null> = [];
+  readonly expired: string[] = [];
   readonly finalized: string[] = [];
   #boundSignature: string | null = null;
 
@@ -487,7 +537,7 @@ class RecoveryRepository extends TransactionMonitorRepository {
   }
 
   async findPreparedForRecovery(): Promise<PreparedRecoveryIntent[]> {
-    return this.#boundSignature ? [] : [this.intent];
+    return this.#boundSignature || this.expired.length > 0 ? [] : [this.intent];
   }
 
   async findPending(): Promise<MonitoredTransaction[]> {
@@ -533,6 +583,10 @@ class RecoveryRepository extends TransactionMonitorRepository {
     checkedBlockHeight?: bigint,
   ): Promise<void> {
     this.checkedBlockHeights.push(checkedBlockHeight ?? null);
+  }
+
+  override async recordPreparedRecoveryExpired(transactionId: string): Promise<void> {
+    this.expired.push(transactionId);
   }
 
   async recordConfirmed(): Promise<void> {}

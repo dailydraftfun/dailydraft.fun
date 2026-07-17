@@ -271,7 +271,9 @@ export class DuelFundingService {
     ) {
       return toIntent(existing, metadata);
     }
-    return null;
+    throw new ConflictException(
+      'The previous funding review is being reconciled before another transaction can be prepared',
+    );
   }
 
   private async persistPrepared(input: PersistPreparedInput) {
@@ -292,6 +294,7 @@ export class DuelFundingService {
           wallet: input.wallet,
         },
       });
+      assertNoPreparedFundingReplacement(stale);
       const data = {
         allowMultipleInstructionMatches: false,
         errorCode: null,
@@ -311,9 +314,6 @@ export class DuelFundingService {
         recentBlockhash: input.recentBlockhash,
         serializedTransaction: input.serializedTransaction,
       };
-      if (stale) {
-        return database.duelTransaction.update({ data, where: { id: stale.id } });
-      }
       return database.duelTransaction.create({
         data: {
           ...data,
@@ -449,6 +449,14 @@ export function validateFundingDuelForPreparation(
 
 export function assertNoActiveFunding(active: { id: string } | null): void {
   if (active) throw new ConflictException('This wallet already has an active funding transaction');
+}
+
+export function assertNoPreparedFundingReplacement(prepared: { id: string } | null): void {
+  if (prepared) {
+    throw new ConflictException(
+      'The previous funding review must be reconciled before another transaction can be prepared',
+    );
+  }
 }
 
 export function fundingPreparationStatus(status: DuelStatus): DuelStatus {
