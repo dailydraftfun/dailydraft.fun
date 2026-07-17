@@ -19,8 +19,8 @@ colors:
   success: "#48e08a"
   warning: "#f7c948"
   danger: "#ff6464"
-  agent: "#38bdf8"
-  done: "#a855f7"
+  agent: "#62d8ff"
+  done: "#a78bfa"
 
 typography:
   sans:
