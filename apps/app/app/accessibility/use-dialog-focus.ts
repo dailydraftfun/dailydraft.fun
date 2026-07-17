@@ -30,17 +30,16 @@ export function useDialogFocus({ active, closeOnEscape = true, onClose }: Dialog
 
     const dialog = dialogRef.current;
     if (!dialog) return;
+    const activeDialog = dialog;
 
     const previouslyFocused =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousBodyOverflow = document.body.style.overflow;
 
     function getFocusableElements(): HTMLElement[] {
-      return dialog
-        ? [...dialog.querySelectorAll<HTMLElement>(focusableSelector)].filter(
-            (element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true',
-          )
-        : [];
+      return [...activeDialog.querySelectorAll<HTMLElement>(focusableSelector)].filter(
+        (element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true',
+      );
     }
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -54,7 +53,7 @@ export function useDialogFocus({ active, closeOnEscape = true, onClose }: Dialog
       const focusableElements = getFocusableElements();
       if (focusableElements.length === 0) {
         event.preventDefault();
-        dialog.focus();
+        activeDialog.focus();
         return;
       }
 
@@ -75,9 +74,9 @@ export function useDialogFocus({ active, closeOnEscape = true, onClose }: Dialog
     }
 
     const initialFocus =
-      dialog.querySelector<HTMLElement>('[data-dialog-initial-focus]') ??
+      activeDialog.querySelector<HTMLElement>('[data-dialog-initial-focus]') ??
       getFocusableElements()[0] ??
-      dialog;
+      activeDialog;
     initialFocus.focus();
     document.body.style.overflow = 'hidden';
     document.addEventListener('keydown', handleKeyDown);
