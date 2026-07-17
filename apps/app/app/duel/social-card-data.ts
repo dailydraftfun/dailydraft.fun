@@ -19,7 +19,7 @@ export const duelStatuses = [
 
 export type DuelStatus = (typeof duelStatuses)[number];
 
-type StatusPresentation = {
+export type StatusPresentation = {
   accent: string;
   badge: string;
   headline: string;
@@ -140,6 +140,10 @@ const statusPresentation: Record<DuelStatus, StatusPresentation> = {
   },
 };
 
+export function getDuelStatusPresentation(status: DuelStatus): StatusPresentation {
+  return statusPresentation[status];
+}
+
 export function isDuelStatus(value: string): value is DuelStatus {
   return duelStatuses.includes(value as DuelStatus);
 }
@@ -162,7 +166,7 @@ export function getDuelSocialSnapshot(
     value: formatMoney(outcome.insuredValue),
     winner: outcome.side === receipt.result?.winnerSide,
   }));
-  const presentation = statusPresentation[status];
+  const presentation = getDuelStatusPresentation(status);
 
   return {
     duelId: receipt.duel.id,
