@@ -207,7 +207,7 @@ export function getPrimaryAction(snapshot: DuelSocialSnapshot): DuelAction {
     )
   ) {
     return {
-      href: `/duel/${encodeURIComponent(snapshot.duelId)}?status=${snapshot.status}`,
+      href: `/duel/${encodeURIComponent(snapshot.duelId)}`,
       label: 'Watch live',
     };
   }
@@ -219,7 +219,19 @@ export function getSocialDescription(snapshot: DuelSocialSnapshot): string {
     return `${snapshot.pulls[0]?.displayName} (${snapshot.pulls[0]?.value}) faced ${snapshot.pulls[1]?.displayName} (${snapshot.pulls[1]?.value}) in a ${snapshot.tier} Pack Duel.`;
   }
 
-  return snapshot.subline;
+  if (snapshot.status === 'waiting') {
+    return `${snapshot.player} opened a ${snapshot.tier} challenge. ${snapshot.subline}`;
+  }
+
+  if (
+    ['matched', 'committing', 'funded', 'opening', 'awaiting_assets', 'settling'].includes(
+      snapshot.status,
+    )
+  ) {
+    return `${snapshot.player} vs ${snapshot.opponent} in a ${snapshot.tier} Pack Duel. ${snapshot.subline}`;
+  }
+
+  return `${snapshot.headline} ${snapshot.subline}`;
 }
 
 function formatMoney(money: PublicMoney): string {

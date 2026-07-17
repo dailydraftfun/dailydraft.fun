@@ -1787,11 +1787,31 @@
 }
 .result-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 7px;
 }
-.result-actions button {
+.result-actions button,
+.result-receipt-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
   font-size: 10px;
+}
+.result-receipt-action {
+  min-height: 2.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease;
+}
+.result-receipt-action:hover {
+  border-color: var(--lime);
+  color: var(--lime);
 }
 .share-button {
   background: var(--text-primary);
@@ -2051,7 +2071,8 @@
   .result-summary {
     justify-content: center;
   }
-  .result-actions button {
+  .result-actions button,
+  .result-receipt-action {
     flex: 1;
   }
 }

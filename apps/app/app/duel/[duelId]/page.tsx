@@ -12,6 +12,12 @@ import {
   type PublicPostDuelCardActionState,
   publicReceiptDownloadUrl,
 } from '../public-proof-client';
+import {
+  type DuelSocialSnapshot,
+  getDuelSocialSnapshot,
+  getPrimaryAction,
+  getSocialDescription,
+} from '../social-card-data';
 
 type DuelPageProps = { params: Promise<{ duelId: string }> };
 
@@ -42,10 +48,13 @@ export default async function DuelPage({ params }: DuelPageProps) {
   if (!receipt) return <UnavailableProof duelId={duelId} />;
 
   const active = !terminalStatuses.has(receipt.duel.status);
+  const socialSnapshot = getDuelSocialSnapshot(receipt);
+  const primaryAction = getPrimaryAction(socialSnapshot);
   const canonicalOrigin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://openpacksduel.vercel.app';
   const canonicalUrl = `${canonicalOrigin}/duel/${encodeURIComponent(receipt.duel.id)}`;
+  const socialImagePath = `/duel/${encodeURIComponent(receipt.duel.id)}/social/${receipt.duel.status}`;
   const shareUrl = `https://x.com/intent/post?${new URLSearchParams({
-    text: `${receiptTitle(receipt)} · ${receipt.pack.name}`,
+    text: getSocialDescription(socialSnapshot),
     url: canonicalUrl,
   }).toString()}`;
 
@@ -66,12 +75,20 @@ export default async function DuelPage({ params }: DuelPageProps) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <DuelProofRefresh active={active} />
-          <Link className="proof-primary-action" href={receipt.actions.primary.href}>
-            {receipt.actions.primary.label}
+          <Link className="proof-primary-action" href={primaryAction.href}>
+            {primaryAction.label}
           </Link>
+          <DuelProofRefresh active={active} />
           <a className="proof-secondary-action" href={shareUrl} target="_blank" rel="noreferrer">
             Share on X
+          </a>
+          <a
+            className="proof-secondary-action"
+            href={socialImagePath}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open social image
           </a>
         </div>
       </header>
@@ -87,6 +104,8 @@ export default async function DuelPage({ params }: DuelPageProps) {
           </p>
         </section>
       ) : null}
+
+      <PublicStateCard receipt={receipt} snapshot={socialSnapshot} />
 
       <section className="proof-stat-grid">
         <ProofStat label="Status" value={receipt.duel.status} />
@@ -170,9 +189,59 @@ export default async function DuelPage({ params }: DuelPageProps) {
       </section>
 
       <p className="text-xs leading-5 text-secondary">
-        Privacy: {receipt.privacy.reason} This page is excluded from indexing.
+        Privacy: {receipt.privacy.reason} This spectator view uses pseudonymous display names and
+        keeps full wallet addresses out of the rendered page and social metadata.
       </p>
     </main>
+  );
+}
+
+function PublicStateCard({
+  receipt,
+  snapshot,
+}: {
+  receipt: PublicDuelReceipt;
+  snapshot: DuelSocialSnapshot;
+}) {
+  const primaryAction = getPrimaryAction(snapshot);
+  const waiting = receipt.duel.status === 'waiting';
+
+  return (
+    <section className="rounded-xl border border-lime/20 bg-lime/5 p-5 sm:p-6">
+      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+        <div>
+          <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-lime">
+            {snapshot.badge}
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold text-primary">{snapshot.headline}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-secondary">{snapshot.subline}</p>
+        </div>
+        <Link className="proof-primary-action shrink-0" href={primaryAction.href}>
+          {primaryAction.label}
+        </Link>
+      </div>
+
+      {waiting ? (
+        <dl className="mt-5 grid gap-3 border-t border-lime/15 pt-5 sm:grid-cols-4">
+          <InvitationFact label="Invited by" value={receipt.participants.creator.display} />
+          <InvitationFact label="Pack tier" value={receipt.pack.name} />
+          <InvitationFact label="Per-player stake" value={formatPublicMoney(receipt.pack.tier)} />
+          <InvitationFact
+            label="Accept before"
+            value={new Date(receipt.duel.expiresAt).toLocaleString()}
+          />
+        </dl>
+      ) : null}
+    </section>
+  );
+}
+
+function InvitationFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="proof-label">{label}</dt>
+      <dd className="mt-2 text-sm font-semibold text-primary">{value}</dd>
+    </div>
   );
 }
 
@@ -360,13 +429,10 @@ function ParticipantCard({
   return (
     <article className="proof-panel">
       <p className="proof-label">{participant.role}</p>
-      <Link
-        href={`/profile/${encodeURIComponent(participant.address)}`}
-        className="mt-2 inline-block text-xl font-semibold text-primary hover:text-lime"
-      >
-        {participant.display}
-      </Link>
-      <p className="mt-3 break-all font-mono text-[10px] text-secondary">{participant.address}</p>
+      <h2 className="mt-2 text-xl font-semibold text-primary">{participant.display}</h2>
+      <p className="mt-3 text-xs leading-5 text-secondary">
+        Pseudonymous wallet identity. Full addresses stay out of the spectator surface.
+      </p>
     </article>
   );
 }

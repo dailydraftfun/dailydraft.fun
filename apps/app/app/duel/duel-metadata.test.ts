@@ -48,6 +48,49 @@ describe('duel metadata', () => {
     ]);
     expect(metadata.twitter).toEqual(expect.objectContaining({ card: 'summary_large_image' }));
   });
+
+  test.each([
+    'waiting',
+    'matched',
+    'opening',
+    'settled',
+    'cancelled',
+    'refunded',
+    'expired',
+  ] as const)('uses the canonical %s social image and status-aware copy', (status) => {
+    const metadata = buildDuelMetadata(
+      receipt({ mockResult: status === 'settled', status }),
+      'https://openpacksduel.vercel.app',
+    );
+
+    expect(metadata.description).not.toContain(`Status: ${status}`);
+    expect(metadata.openGraph?.images).toEqual([
+      expect.objectContaining({
+        url: new URL(`https://openpacksduel.vercel.app/duel/duel_social/social/${status}`),
+      }),
+    ]);
+  });
+
+  test('does not leak wallet or transaction identifiers into share metadata', () => {
+    const publicReceipt = receipt({ status: 'opening' });
+    publicReceipt.participants.creator.address = 'creator_sensitive_wallet_address';
+    publicReceipt.references.solana = [
+      {
+        action: 'fund',
+        bindingSource: 'api-submission',
+        explorerUrl: 'https://explorer.solana.com/tx/sensitive_signature',
+        finalizedAt: null,
+        recoveredAt: null,
+        signature: 'sensitive_signature',
+        status: 'finalized',
+      },
+    ];
+
+    const metadata = JSON.stringify(buildDuelMetadata(publicReceipt));
+
+    expect(metadata).not.toContain('creator_sensitive_wallet_address');
+    expect(metadata).not.toContain('sensitive_signature');
+  });
 });
 
 function receipt({

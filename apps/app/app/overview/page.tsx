@@ -27,8 +27,10 @@ export default async function OverviewPage({ searchParams }: OverviewPageProps) 
             action: 'accept',
             duelId: receipt.duel.id,
             mode: 'direct',
-            opponentAddress: receipt.participants.creator.address,
-            opponentLabel: receipt.participants.creator.display,
+            opponent: {
+              address: receipt.participants.creator.address,
+              label: receipt.participants.creator.display,
+            },
             tier: moneyValue(receipt.pack.tier),
           }}
         />
@@ -50,8 +52,16 @@ export default async function OverviewPage({ searchParams }: OverviewPageProps) 
             action: 'rematch',
             duelId: receipt.duel.id,
             mode: 'direct',
-            opponentAddress: receipt.participants.opponent.address,
-            opponentLabel: receipt.participants.opponent.display,
+            participants: {
+              creator: {
+                address: receipt.participants.creator.address,
+                label: receipt.participants.creator.display,
+              },
+              opponent: {
+                address: receipt.participants.opponent.address,
+                label: receipt.participants.opponent.display,
+              },
+            },
             tier: moneyValue(receipt.pack.tier),
           }}
         />

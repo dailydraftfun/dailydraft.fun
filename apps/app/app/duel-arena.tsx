@@ -23,8 +23,17 @@ import {
 } from '@phosphor-icons/react';
 import { Button, Card, CardContent, Input, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { trackProductEvent } from './analytics-client';
+import {
+  type DuelGrowthParticipant,
+  type DuelGrowthParticipants,
+  rematchLabel,
+  resolveRematchOpponent,
+  resultShareText,
+  viewerResult,
+} from './duel/duel-growth';
 import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
 import {
   advanceDuelLifecycle,
@@ -56,14 +65,21 @@ import { useSolanaWallet } from './solana/wallet-provider';
 type Mode = DuelOpponentType;
 type Phase = LiveDuelPhase;
 
-export type DuelLobbyEntry = {
-  action: 'accept' | 'rematch';
+type DuelLobbyEntryBase = {
   duelId: string;
   mode: Mode;
-  opponentAddress?: string;
-  opponentLabel: string;
   tier: number;
 };
+
+export type DuelLobbyEntry =
+  | (DuelLobbyEntryBase & {
+      action: 'accept';
+      opponent: DuelGrowthParticipant;
+    })
+  | (DuelLobbyEntryBase & {
+      action: 'rematch';
+      participants: DuelGrowthParticipants;
+    });
 
 const tiers = [25, 50, 100] as const;
 const terminalDuelStatuses = new Set<DurableDuel['status']>([
@@ -214,7 +230,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     entry?.mode === 'house' ? 'matchmaking' : (entry?.mode ?? 'matchmaking'),
   );
   const [tier, setTier] = useState(entry?.tier ?? 50);
-  const [wallet, setWallet] = useState(entry?.opponentAddress ?? '');
+  const [wallet, setWallet] = useState('');
   const [copied, setCopied] = useState(false);
   const [intent, setIntent] = useState<DuelTransactionIntent | null>(null);
   const [intentPending, setIntentPending] = useState(false);
@@ -228,6 +244,14 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const lifecycleAdvanceKey = useRef<string | null>(null);
   const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
   const phase: Phase = liveDuel?.phase ?? 'lobby';
+  const linkedOpponent =
+    activeEntry?.action === 'accept'
+      ? activeEntry.opponent
+      : activeEntry?.action === 'rematch'
+        ? resolveRematchOpponent(activeEntry.participants, walletConnection.address)
+        : null;
+  const opponentWallet = activeEntry ? (linkedOpponent?.address ?? '') : wallet;
+  const currentViewerResult = liveDuel?.winner ? viewerResult(liveDuel.winner) : null;
   const houseEnabled = capabilities?.modes.house.enabled === true;
   const houseFallbackAction = matchmakingSession?.availableActions.find(
     (action) => action.action === 'house_fallback',
@@ -530,7 +554,15 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       );
       return;
     }
-    if (nextMode === 'direct' && wallet.trim().length < 32) {
+    if (activeEntry?.action === 'rematch' && !linkedOpponent) {
+      setActionError(
+        walletConnection.address
+          ? 'This wallet did not play in the original duel. Open a new duel instead.'
+          : 'Connect the wallet that played in the original duel to run this rematch.',
+      );
+      return;
+    }
+    if (nextMode === 'direct' && opponentWallet.trim().length < 32) {
       setActionError('Enter a complete Solana wallet address for the opponent.');
       return;
     }
@@ -576,7 +608,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 {
                   creatorWallet: walletConnection.address,
                   matchmakingMode: nextMode,
-                  ...(nextMode === 'direct' ? { opponentWallet: wallet.trim() } : {}),
+                  ...(nextMode === 'direct' ? { opponentWallet: opponentWallet.trim() } : {}),
                 },
                 authentication.sessionToken,
               );
@@ -736,6 +768,25 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         name: 'duel_rematched',
         ...(trackedTier ? { tier: trackedTier } : {}),
       });
+      if (persistedDuel?.opponentWallet && !persistedDuel.houseOpponent) {
+        setActiveEntry({
+          action: 'rematch',
+          duelId: persistedDuel.id,
+          mode: 'direct',
+          participants: {
+            creator: {
+              address: persistedDuel.creatorWallet,
+              label: shortReference(persistedDuel.creatorWallet) ?? 'Creator wallet',
+            },
+            opponent: {
+              address: persistedDuel.opponentWallet,
+              label: shortReference(persistedDuel.opponentWallet) ?? 'Opponent wallet',
+            },
+          },
+          tier,
+        });
+        setMode('direct');
+      }
       setActionNotice('Rematch ready. Review and approve a fresh transaction to continue.');
     }
     setPersistedDuel(null);
@@ -743,7 +794,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setIntent(null);
   }
 
-  function shareResult() {
+  async function shareResult(destination: 'native' | 'x') {
     if (!persistedDuel || !liveDuel?.left || !liveDuel.right || !liveDuel.winner) return;
     const winningPull =
       liveDuel.winner === 'you'
@@ -751,15 +802,33 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         : liveDuel.winner === 'opponent'
           ? liveDuel.right
           : null;
-    const text = winningPull
-      ? `${liveDuel.winner === 'you' ? 'I just won' : 'This duel was decided'} with ${winningPull.name} valued at ${winningPull.value} in a ${liveDuel.tier} Pack Duel.`
-      : `This ${liveDuel.tier} Pack Duel ended in a tie.`;
-    const shareUrl = `${window.location.origin}/duel/${encodeURIComponent(persistedDuel.id)}?status=${persistedDuel.status}`;
-    window.open(
-      `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`,
-      '_blank',
-      'noopener,noreferrer',
-    );
+    const text = resultShareText({
+      result: viewerResult(liveDuel.winner),
+      tier: liveDuel.tier,
+      winningPull,
+    });
+    const shareUrl = `${window.location.origin}/duel/${encodeURIComponent(persistedDuel.id)}`;
+
+    if (destination === 'x') {
+      window.open(
+        `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`,
+        '_blank',
+        'noopener,noreferrer',
+      );
+    } else {
+      try {
+        if (navigator.share) {
+          await navigator.share({ text, title: 'Pack Duel result', url: shareUrl });
+        } else {
+          await navigator.clipboard.writeText(`${text}\n${shareUrl}`);
+          setActionNotice('Result link copied with its status-aware social preview.');
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setActionError('Could not share this result. Open the verified receipt and copy its URL.');
+        return;
+      }
+    }
     const trackedTier = toTrackedTier(tier);
     trackProductEvent({
       ...(persistedDuel ? { duelId: persistedDuel.id, status: persistedDuel.status } : {}),
@@ -848,13 +917,27 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 </div>
               </div>
               <div className="result-actions">
+                <Button
+                  type="button"
+                  className="share-button"
+                  onClick={() => shareResult('native')}
+                >
+                  <ShareNetworkIcon size={16} weight="fill" /> Share result
+                </Button>
                 {persistedDuel.status === 'settled' ? (
                   <Button type="button" variant="ghost" onClick={() => resetDuel(true)}>
-                    <ArrowsLeftRightIcon size={16} /> Rematch
+                    <ArrowsLeftRightIcon size={16} />{' '}
+                    {currentViewerResult ? rematchLabel(currentViewerResult) : 'Run a rematch'}
                   </Button>
                 ) : null}
-                <Button type="button" className="share-button" onClick={shareResult}>
-                  <XLogoIcon size={16} weight="fill" /> Share result
+                <Link
+                  className="result-receipt-action"
+                  href={`/duel/${encodeURIComponent(persistedDuel.id)}`}
+                >
+                  <ShieldCheckIcon size={16} /> Verified receipt
+                </Link>
+                <Button type="button" variant="ghost" onClick={() => shareResult('x')}>
+                  <XLogoIcon size={16} weight="fill" /> X
                 </Button>
               </div>
             </div>
@@ -978,12 +1061,18 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                       <span>
                         <strong>
                           {activeEntry.action === 'accept'
-                            ? `Challenge from ${activeEntry.opponentLabel}`
-                            : `Rematch against ${activeEntry.opponentLabel}`}
+                            ? `Challenge from ${activeEntry.opponent.label}`
+                            : linkedOpponent
+                              ? `Rematch against ${linkedOpponent.label}`
+                              : 'Original duel rematch'}
                         </strong>
                         {activeEntry.action === 'accept'
                           ? `This link reserves the $${activeEntry.tier} direct-wallet seat. Choose another mode to leave it.`
-                          : `The original $${activeEntry.tier} tier and opponent are ready for a fresh commitment.`}
+                          : linkedOpponent
+                            ? `The original $${activeEntry.tier} tier and opponent are ready for a fresh commitment.`
+                            : walletConnection.address
+                              ? 'This wallet was not in the original duel, so it cannot use the rematch shortcut.'
+                              : 'Connect either original participant wallet to select the rival automatically.'}
                       </span>
                     </div>
                   ) : null}
@@ -993,7 +1082,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                   <div className="wallet-input-row">
                     <Input
                       id="opponent-wallet"
-                      value={wallet}
+                      value={opponentWallet}
                       onChange={(event) => setWallet(event.target.value)}
                       placeholder="Solana wallet address"
                       className="wallet-input"
@@ -1050,7 +1139,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                   intentPending ||
                   matchmakingRestorePending ||
                   Boolean(matchmakingSession) ||
-                  (mode === 'direct' && wallet.trim().length === 0)
+                  (activeEntry?.action === 'rematch' && !linkedOpponent) ||
+                  (mode === 'direct' && opponentWallet.trim().length === 0)
                 }
               >
                 {intentPending ? (
@@ -1146,7 +1236,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 type="button"
                 variant="ghost"
                 onClick={async () => {
-                  const challengeUrl = `${window.location.origin}/overview?challenge=${encodeURIComponent(persistedDuel.id)}`;
+                  const challengeUrl = `${window.location.origin}/duel/${encodeURIComponent(persistedDuel.id)}`;
                   await navigator.clipboard.writeText(challengeUrl);
                   trackProductEvent({
                     duelId: persistedDuel.id,

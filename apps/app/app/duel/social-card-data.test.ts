@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { PublicDuelReceipt } from './public-proof-client';
-import { getDuelSocialSnapshot } from './social-card-data';
+import { getDuelSocialSnapshot, getPrimaryAction, getSocialDescription } from './social-card-data';
 
 describe('duel social card data', () => {
   test('uses the receipt status instead of a forged URL status', () => {
@@ -24,6 +24,46 @@ describe('duel social card data', () => {
       { displayName: 'Receipt pull B', side: 'opponent', value: '$31', winner: false },
     ]);
     expect(snapshot.totalValue).toBe('$103.5');
+  });
+
+  test.each([
+    ['waiting', '/overview?challenge=duel_truth', 'Accept challenge'],
+    ['matched', '/duel/duel_truth', 'Watch live'],
+    ['opening', '/duel/duel_truth', 'Watch live'],
+    ['settled', '/overview?rematch=duel_truth', 'Run a rematch'],
+    ['cancelled', '/overview', 'Open a new duel'],
+    ['refunded', '/overview', 'Open a new duel'],
+    ['expired', '/overview', 'Open a new duel'],
+  ] as const)('uses a stable canonical action for %s', (status, href, label) => {
+    const snapshot = getDuelSocialSnapshot(receipt({ status, withResult: status === 'settled' }));
+
+    expect(getPrimaryAction(snapshot)).toEqual({ href, label });
+  });
+
+  test('keeps wallet addresses and transaction references out of social copy', () => {
+    const publicReceipt = receipt({ status: 'opening' });
+    publicReceipt.participants.creator.address = 'creator_sensitive_wallet_address';
+    if (publicReceipt.participants.opponent) {
+      publicReceipt.participants.opponent.address = 'opponent_sensitive_wallet_address';
+    }
+    publicReceipt.references.solana = [
+      {
+        action: 'fund',
+        bindingSource: 'api-submission',
+        explorerUrl: 'https://explorer.solana.com/tx/sensitive_signature',
+        finalizedAt: null,
+        recoveredAt: null,
+        signature: 'sensitive_signature',
+        status: 'finalized',
+      },
+    ];
+
+    const snapshot = getDuelSocialSnapshot(publicReceipt);
+    const sharedText = JSON.stringify({ snapshot, description: getSocialDescription(snapshot) });
+
+    expect(sharedText).not.toContain('creator_sensitive_wallet_address');
+    expect(sharedText).not.toContain('opponent_sensitive_wallet_address');
+    expect(sharedText).not.toContain('sensitive_signature');
   });
 });
 
