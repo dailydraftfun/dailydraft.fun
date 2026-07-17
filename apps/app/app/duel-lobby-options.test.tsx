@@ -133,15 +133,33 @@ describe('duel lobby capability controls', () => {
 
   test('rejects malformed capability responses before lobby rendering', () => {
     const valid = capabilityFixture();
-    expect(() =>
-      parseProductCapabilities({
+    const malformedResponses: unknown[] = [
+      null,
+      'not-an-object',
+      {
         modes: valid.modes,
         network: 'solana-devnet',
         provider: { mode: 'openpacksduel-devnet', ready: true },
-      }),
-    ).toThrow('Product capabilities are unavailable (malformed response).');
+      },
+      { ...valid, modes: { ...valid.modes, direct: { enabled: true } } },
+      { ...valid, packs: {} },
+      {
+        ...valid,
+        packs: valid.packs.map((pack, index) => (index === 0 ? { ...pack, tier: 75 } : pack)),
+      },
+      {
+        ...valid,
+        modes: { ...valid.modes, direct: { enabled: true, reason: 503 } },
+      },
+    ];
 
-    expect(parseProductCapabilities(valid)).toEqual(valid);
+    for (const response of malformedResponses) {
+      expect(() => parseProductCapabilities(response)).toThrow(
+        'Product capabilities are unavailable (malformed response).',
+      );
+    }
+
+    expect(parseProductCapabilities(valid)).toEqual(capabilityFixture());
   });
 });
 

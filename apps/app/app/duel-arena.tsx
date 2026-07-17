@@ -207,7 +207,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
   const phase: Phase = liveDuel?.phase ?? 'lobby';
   const capabilities = capabilityState.status === 'ready' ? capabilityState.value : null;
-  const houseEnabled = capabilities?.modes.house.enabled === true;
+  const houseFallbackEnabled = capabilities?.modes.house.enabled === true;
   const capabilityFormReady = capabilities ? isProductPlayable(capabilities) : false;
   const selectedPack = capabilities ? enabledPackForTier(capabilities, tier) : undefined;
   const selectedModeEnabled = capabilities ? isModeEnabled(capabilities, mode) : false;
@@ -697,7 +697,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   async function chooseHouseFallback(): Promise<void> {
     if (!authentication.sessionToken || !walletConnection.address) return;
-    if (!houseEnabled) {
+    if (!houseFallbackEnabled) {
       setActionError('House fallback is unavailable until API readiness is verified.');
       return;
     }
@@ -1120,7 +1120,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             ) : null}
             {matchmakingSession?.state === 'searching' &&
             houseFallbackAction?.available &&
-            houseEnabled ? (
+            houseFallbackEnabled ? (
               <Button
                 type="button"
                 variant="ghost"

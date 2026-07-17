@@ -270,7 +270,7 @@ function unavailableReason(capabilities: ProductCapabilities): string | null {
   return (
     capabilities.modes.direct.reason ??
     capabilities.modes.open.reason ??
-    capabilities.packs.find((pack) => pack.tier === 50)?.reason ??
+    capabilities.packs.find((pack) => pack.reason)?.reason ??
     null
   );
 }
