@@ -13,11 +13,7 @@ import {
 import { Button, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
 import { useEffect, useRef } from 'react';
-import type {
-  DuelOpponentType,
-  DuelTransactionIntent,
-  DurableDuel,
-} from '../solana/duel-client';
+import type { DuelOpponentType, DuelTransactionIntent, DurableDuel } from '../solana/duel-client';
 import { useWalletAuth } from '../solana/wallet-auth-provider';
 import { useSolanaWallet } from '../solana/wallet-provider';
 import { getDuelEntryStage, getPlainMoneySummary } from './duel-entry-flow';
@@ -207,9 +203,7 @@ export function DuelEntryStepper({
           {stage === 'waiting' ? (
             <WaitingStep status={persistedDuel?.status ?? null} notice={notice} />
           ) : null}
-          {stage === 'complete' ? (
-            <CompleteStep status={persistedDuel?.status ?? null} />
-          ) : null}
+          {stage === 'complete' ? <CompleteStep status={persistedDuel?.status ?? null} /> : null}
           {stage === 'recovery' ? (
             <RecoveryStep
               error={error}
@@ -226,10 +220,10 @@ export function DuelEntryStepper({
         {authentication.error ? (
           <StepperError message={authentication.error} onDismiss={authentication.clearError} />
         ) : null}
-        {wallet.error ? <StepperError message={wallet.error} onDismiss={wallet.clearError} /> : null}
-        {error && stage !== 'recovery' ? (
-          <StepperError message={error} />
+        {wallet.error ? (
+          <StepperError message={wallet.error} onDismiss={wallet.clearError} />
         ) : null}
+        {error && stage !== 'recovery' ? <StepperError message={error} /> : null}
         {notice && stage !== 'waiting' ? <p className="duel-stepper-notice">{notice}</p> : null}
 
         <Separator className="bg-border" />
@@ -613,10 +607,10 @@ function RecoveryStep({
                 }`
               : offline
                 ? 'No transaction will open until the RPC responds on the expected network.'
-                : error ??
+                : (error ??
                   (persistedStatus === 'matched'
                     ? 'The duel is matched. Refresh its funding intent, then approve it explicitly.'
-                    : 'The previous attempt did not complete. Retry from the last safe boundary.')}
+                    : 'The previous attempt did not complete. Retry from the last safe boundary.'))}
           </p>
           {error ? <p className="duel-recovery-error">{error}</p> : null}
         </div>
@@ -645,13 +639,7 @@ function RecoveryStep({
   );
 }
 
-function StepperError({
-  message,
-  onDismiss,
-}: {
-  message: string;
-  onDismiss?: () => void;
-}) {
+function StepperError({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
   return (
     <div className="duel-stepper-error" role="alert">
       <WarningCircleIcon size={17} weight="fill" />

@@ -404,10 +404,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   ]);
 
   useEffect(() => {
-    if (
-      !persistedDuel ||
-      !completedEntryStatuses.has(persistedDuel.status)
-    ) {
+    if (!persistedDuel || !completedEntryStatuses.has(persistedDuel.status)) {
       return;
     }
     window.localStorage.removeItem(DUEL_ENTRY_DRAFT_STORAGE_KEY);
@@ -780,10 +777,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setIntentPending(true);
     setActionError(null);
     try {
-      const target = getDuelEntryCancellationTarget(
-        persistedDuel,
-        Boolean(matchmakingSession),
-      );
+      const target = getDuelEntryCancellationTarget(persistedDuel, Boolean(matchmakingSession));
       if (target === 'matchmaking') {
         await cancelOpenMatchmaking(walletConnection.address, authentication.sessionToken);
         setMatchmakingSession(null);
@@ -927,10 +921,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     }
   }
 
-  async function reconcileBroadcastFunding(
-    duelId: string,
-    sessionToken: string,
-  ): Promise<void> {
+  async function reconcileBroadcastFunding(duelId: string, sessionToken: string): Promise<void> {
     const reconciliation = await waitForDuelTransactions(duelId, sessionToken);
     const refreshed = await getDuel(duelId);
     setPersistedDuel(refreshed);

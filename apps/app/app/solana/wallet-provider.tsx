@@ -19,14 +19,7 @@ import {
   type StandardEventsFeature,
 } from '@wallet-standard/features';
 import bs58 from 'bs58';
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useEffectEvent,
-  useState,
-} from 'react';
+import { createContext, useCallback, useContext, useEffect, useEffectEvent, useState } from 'react';
 import { trackProductEvent } from '../analytics-client';
 import { SOLANA_CHAIN, SOLANA_CLUSTER, SOLANA_RPC_URL, shortenAddress } from './config';
 import {
@@ -106,8 +99,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
       });
       const payload = (await response.json()) as { result?: unknown };
       const online =
-        response.ok &&
-        payload.result === 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
+        response.ok && payload.result === 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
       setNetworkStatus(online ? 'online' : 'offline');
       return online;
     } catch (networkError) {

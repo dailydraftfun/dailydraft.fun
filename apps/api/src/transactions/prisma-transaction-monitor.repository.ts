@@ -478,10 +478,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
     });
   }
 
-  override async recordPreparedRecoveryExpired(
-    transactionId: string,
-    now: Date,
-  ): Promise<void> {
+  override async recordPreparedRecoveryExpired(transactionId: string, now: Date): Promise<void> {
     await this.database.duelTransaction.updateMany({
       data: {
         errorCode: 'UNBOUND_BROADCAST_NOT_FOUND_AFTER_FINALITY',

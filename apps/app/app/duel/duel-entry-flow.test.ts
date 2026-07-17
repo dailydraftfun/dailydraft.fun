@@ -45,9 +45,7 @@ describe('guided duel entry flow', () => {
 
   test('advances from preparation through funding confirmation', () => {
     expect(getDuelEntryStage({ ...authenticated, pending: true })).toBe('preparing');
-    expect(getDuelEntryStage({ ...authenticated, intent: fundingIntent() })).toBe(
-      'funding-review',
-    );
+    expect(getDuelEntryStage({ ...authenticated, intent: fundingIntent() })).toBe('funding-review');
     expect(
       getDuelEntryStage({
         ...authenticated,

@@ -1472,8 +1472,8 @@
   max-width: 390px;
 }
 
-.duel-complete-icon {
-  color: var(--success) !important;
+.duel-progress-panel > svg.duel-complete-icon {
+  color: var(--success);
 }
 
 .duel-stepper-error {

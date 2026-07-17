@@ -18,11 +18,7 @@ export type RestoredDuelEntry = {
   intent: DuelTransactionIntent | null;
 };
 
-export type PostBroadcastRecovery =
-  | 'complete'
-  | 'retry-safe'
-  | 'still-confirming'
-  | 'waiting';
+export type PostBroadcastRecovery = 'complete' | 'retry-safe' | 'still-confirming' | 'waiting';
 
 export type DuelEntryCancellationTarget = 'duel' | 'matchmaking' | 'none';
 

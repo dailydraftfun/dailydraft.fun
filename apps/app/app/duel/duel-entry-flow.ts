@@ -1,8 +1,4 @@
-import type {
-  DuelOpponentType,
-  DuelTransactionIntent,
-  DurableDuel,
-} from '../solana/duel-client';
+import type { DuelOpponentType, DuelTransactionIntent, DurableDuel } from '../solana/duel-client';
 
 export const DUEL_ENTRY_DRAFT_STORAGE_KEY = 'openpacksduel.duel-entry.v1';
 export const DUEL_ENTRY_DRAFT_MAX_AGE_MS = 30 * 60 * 1_000;
@@ -113,10 +109,7 @@ export function createDuelEntryDraft(
   return { ...input, updatedAt, version: 1 };
 }
 
-export function parseDuelEntryDraft(
-  value: string | null,
-  now = Date.now(),
-): DuelEntryDraft | null {
+export function parseDuelEntryDraft(value: string | null, now = Date.now()): DuelEntryDraft | null {
   if (!value) return null;
   try {
     const parsed = JSON.parse(value) as Partial<DuelEntryDraft>;
