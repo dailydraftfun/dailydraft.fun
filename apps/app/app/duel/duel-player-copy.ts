@@ -1,4 +1,4 @@
-import type { DurableDuel } from '../solana/duel-client';
+import type { DurableDuel, MatchmakingSession } from '../solana/duel-client';
 
 export const prohibitedPrimaryUiTerms = [
   'persisted',
@@ -44,6 +44,15 @@ export const duelRules = [
 
 export function getLobbyEconomicsCopy(): string {
   return 'Approve the displayed devnet platform fee now; normal Solana network fees and recoverable account rent are additional, pack purchase is separate, and the higher verified market value wins both demo cards.';
+}
+
+type MatchmakingSearchSession = Pick<MatchmakingSession, 'state'> & {
+  queue: Pick<MatchmakingSession['queue'], 'tier'>;
+};
+
+export function getMatchmakingSearchCopy(session: MatchmakingSearchSession): string | null {
+  if (session.state !== 'searching') return null;
+  return `Searching for the same $${session.queue.tier} pack. You can continue or cancel before funding starts.`;
 }
 
 export function getDuelPaymentReviewCopy(feeAmountSol: string) {

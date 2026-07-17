@@ -7,6 +7,7 @@ import {
   getDuelPlayerStatus,
   getFundingStatusNotice,
   getLobbyEconomicsCopy,
+  getMatchmakingSearchCopy,
   getPlayerActionError,
   prohibitedPrimaryUiTerms,
 } from './duel-player-copy';
@@ -110,6 +111,18 @@ describe('duel player copy', () => {
       'Your payment completed. Waiting for the other wallet to pay.',
     );
     expect(getFundingStatusNotice({ status: 'failed' }, 0)).toContain('Refresh once');
+  });
+
+  test('shows search guidance only while matchmaking is still searching', () => {
+    const session = {
+      queue: { tier: 50 },
+      state: 'searching',
+    } as const;
+
+    expect(getMatchmakingSearchCopy(session)).toBe(
+      'Searching for the same $50 pack. You can continue or cancel before funding starts.',
+    );
+    expect(getMatchmakingSearchCopy({ ...session, state: 'matched' })).toBeNull();
   });
 
   test('turns recoverable failures into explicit player actions', () => {

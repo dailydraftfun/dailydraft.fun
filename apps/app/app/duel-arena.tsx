@@ -30,6 +30,7 @@ import {
   getDuelPlayerStatus,
   getFundingStatusNotice,
   getLobbyEconomicsCopy,
+  getMatchmakingSearchCopy,
   getPlayerActionError,
 } from './duel/duel-player-copy';
 import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
@@ -242,6 +243,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const houseFallbackAction = matchmakingSession?.availableActions.find(
     (action) => action.action === 'house_fallback',
   );
+  const matchmakingSearchCopy = matchmakingSession
+    ? getMatchmakingSearchCopy(matchmakingSession)
+    : null;
 
   function chooseMode(nextMode: Mode) {
     if (nextMode === mode) return;
@@ -601,7 +605,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         }
         return;
       }
-      throw new Error('The devnet service is unavailable.');
+      setActionError('This devnet preview is not available right now. Nothing was submitted.');
+      return;
     } catch (error) {
       setActionError(getPlayerActionError(error, 'Could not prepare the payment review.'));
     } finally {
@@ -1102,13 +1107,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 <strong>Next:</strong> {playerStatus.nextAction}
               </p>
             ) : null}
-            {matchmakingSession ? (
+            {matchmakingSearchCopy ? (
               <>
-                <p>
-                  Searching for the same ${matchmakingSession.queue.tier} pack. You can continue or
-                  cancel before funding starts.
-                </p>
-                <p>{matchmakingSession.cancellationRule}</p>
+                <p>{matchmakingSearchCopy}</p>
                 {houseFallbackAction?.disclosure ? <p>{houseFallbackAction.disclosure}</p> : null}
               </>
             ) : null}
