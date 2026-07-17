@@ -137,6 +137,9 @@ describe('duel player copy', () => {
     expect(getDuelPlayerStatus('settling').headline).toBe(
       'Result committed; settlement is finishing',
     );
+    expect(getDuelPlayerStatus('matched').nextAction).toBe(
+      'The challenge creator approves first; the other wallet is prompted next.',
+    );
     expect(poolRule?.body).toContain('server-provided');
     expect(poolRule?.body).not.toMatch(/five-card|1-in-5/);
   });
@@ -169,6 +172,16 @@ describe('duel player copy', () => {
         true,
       ),
     ).toBe('Nothing was submitted. Review the payment and approve it in your wallet when ready.');
+    expect(
+      getPlayerActionError(
+        new Error('Signed transaction rejected by escrow validation'),
+        'The payment did not complete.',
+        true,
+        true,
+      ),
+    ).toBe(
+      'The payment may have been sent to Solana devnet, but confirmation could not be verified. Refresh this duel before retrying so you do not submit a duplicate payment.',
+    );
   });
 
   test('keeps protocol jargon out of primary lobby, rules, payment, and lifecycle copy', () => {

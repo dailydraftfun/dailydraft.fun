@@ -708,11 +708,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setIntentPending(true);
     setActionError(null);
     let transactionMayHaveBeenSubmitted = false;
+    let transactionWasSubmitted = false;
     try {
       const binary = window.atob(intent.serializedTransactionBase64);
       const transaction = Uint8Array.from(binary, (character) => character.charCodeAt(0));
       transactionMayHaveBeenSubmitted = true;
       const signature = await walletConnection.signAndSendTransaction(transaction);
+      transactionWasSubmitted = true;
       await submitSignedDuelIntent(
         intent.duelId,
         intent.id,
@@ -734,6 +736,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           error,
           'The payment did not complete.',
           transactionMayHaveBeenSubmitted,
+          transactionWasSubmitted,
         ),
       );
     } finally {

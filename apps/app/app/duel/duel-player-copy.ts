@@ -120,7 +120,7 @@ export function getDuelPlayerStatus(
     matched: {
       detail: 'The challenge creator pays first, and the other wallet pays next.',
       headline: 'Opponent found',
-      nextAction: 'Approve the displayed platform fee, or cancel before funding starts.',
+      nextAction: 'The challenge creator approves first; the other wallet is prompted next.',
     },
     opening: {
       detail: 'Both pack results stay hidden until the provider has recorded both pulls.',
@@ -178,8 +178,13 @@ export function getPlayerActionError(
   error: unknown,
   fallback: string,
   transactionMayHaveBeenSubmitted = false,
+  transactionWasSubmitted = false,
 ): string {
   const message = error instanceof Error ? error.message.toLowerCase() : '';
+
+  if (transactionWasSubmitted) {
+    return 'The payment may have been sent to Solana devnet, but confirmation could not be verified. Refresh this duel before retrying so you do not submit a duplicate payment.';
+  }
 
   if (
     message.includes('reject') ||
