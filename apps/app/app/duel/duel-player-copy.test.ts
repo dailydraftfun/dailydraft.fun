@@ -160,8 +160,15 @@ describe('duel player copy', () => {
     expect(
       getPlayerActionError(new Error('RPC unavailable'), 'The payment did not complete.', true),
     ).toBe(
-      'The payment was sent to Solana devnet, but confirmation could not be verified. Refresh this duel before retrying so you do not submit a duplicate payment.',
+      'The payment may have been sent to Solana devnet, but confirmation could not be verified. Refresh this duel before retrying so you do not submit a duplicate payment.',
     );
+    expect(
+      getPlayerActionError(
+        new Error('Wallet rejected request'),
+        'The payment did not complete.',
+        true,
+      ),
+    ).toBe('Nothing was submitted. Review the payment and approve it in your wallet when ready.');
   });
 
   test('keeps protocol jargon out of primary lobby, rules, payment, and lifecycle copy', () => {

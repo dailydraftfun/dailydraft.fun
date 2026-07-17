@@ -711,8 +711,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     try {
       const binary = window.atob(intent.serializedTransactionBase64);
       const transaction = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-      const signature = await walletConnection.signAndSendTransaction(transaction);
       transactionMayHaveBeenSubmitted = true;
+      const signature = await walletConnection.signAndSendTransaction(transaction);
       await submitSignedDuelIntent(
         intent.duelId,
         intent.id,

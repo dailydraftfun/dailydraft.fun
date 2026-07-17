@@ -179,11 +179,19 @@ export function getPlayerActionError(
   fallback: string,
   transactionMayHaveBeenSubmitted = false,
 ): string {
-  if (transactionMayHaveBeenSubmitted) {
-    return 'The payment was sent to Solana devnet, but confirmation could not be verified. Refresh this duel before retrying so you do not submit a duplicate payment.';
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+
+  if (
+    message.includes('reject') ||
+    message.includes('declin') ||
+    message.includes('cancelled by user')
+  ) {
+    return 'Nothing was submitted. Review the payment and approve it in your wallet when ready.';
   }
 
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (transactionMayHaveBeenSubmitted) {
+    return 'The payment may have been sent to Solana devnet, but confirmation could not be verified. Refresh this duel before retrying so you do not submit a duplicate payment.';
+  }
 
   if (
     message.includes('unauthorized') ||
@@ -194,14 +202,6 @@ export function getPlayerActionError(
     message.includes('401')
   ) {
     return 'Your wallet session expired. Re-authenticate from the wallet menu, then retry.';
-  }
-
-  if (
-    message.includes('reject') ||
-    message.includes('declin') ||
-    message.includes('cancelled by user')
-  ) {
-    return 'Nothing was submitted. Review the payment and approve it in your wallet when ready.';
   }
 
   if (
