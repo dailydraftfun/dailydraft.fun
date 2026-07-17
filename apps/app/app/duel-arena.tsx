@@ -24,6 +24,7 @@ import {
 import { Button, Card, CardContent, Input, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
+import { getRovingTabIndex } from './accessibility/focus-navigation';
 import { trackProductEvent } from './analytics-client';
 import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
 import {
@@ -226,30 +227,35 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [capabilities, setCapabilities] = useState<ProductCapabilities | null>(null);
   const matchmakingRestoreKey = useRef<string | null>(null);
   const lifecycleAdvanceKey = useRef<string | null>(null);
+  const modeTabRefs = useRef<Partial<Record<Mode, HTMLButtonElement>>>({});
   const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
   const phase: Phase = liveDuel?.phase ?? 'lobby';
   const houseEnabled = capabilities?.modes.house.enabled === true;
   const houseFallbackAction = matchmakingSession?.availableActions.find(
     (action) => action.action === 'house_fallback',
   );
+  const availableModes: Mode[] = houseEnabled
+    ? ['direct', 'matchmaking', 'house']
+    : ['direct', 'matchmaking'];
 
-  function chooseMode(nextMode: Mode) {
-    if (nextMode === mode) return;
+  function chooseMode(nextMode: Mode): boolean {
+    if (nextMode === mode) return true;
     if (nextMode === 'house' && !houseEnabled) {
       setActionError('House play remains hidden until API readiness is verified.');
-      return;
+      return false;
     }
     if (matchmakingRestorePending) {
       setActionError('Checking this wallet for an active public matchmaking ticket.');
-      return;
+      return false;
     }
     if (matchmakingSession) {
       setActionError('Cancel the active public search before starting a different duel mode.');
-      return;
+      return false;
     }
     setActiveEntry(undefined);
     setMode(nextMode);
     if (nextMode !== 'direct') setWallet('');
+    return true;
   }
 
   function chooseTier(nextTier: number) {
@@ -257,6 +263,19 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     const trackedTier = toTrackedTier(nextTier);
     if (trackedTier) trackProductEvent({ name: 'tier_selected', tier: trackedTier });
     if (activeEntry?.action === 'accept') setActiveEntry(undefined);
+  }
+
+  function handleModeTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, currentMode: Mode) {
+    const currentIndex = availableModes.indexOf(currentMode);
+    const nextIndex = getRovingTabIndex(currentIndex, event.key, availableModes.length);
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextMode = availableModes[nextIndex];
+    if (!nextMode) return;
+    if (chooseMode(nextMode)) {
+      window.requestAnimationFrame(() => modeTabRefs.current[nextMode]?.focus());
+    }
   }
 
   useEffect(() => {
@@ -912,12 +931,24 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
         <Card className="match-card border-border bg-secondary">
           <CardContent className="p-0">
-            <div className="mode-tabs" role="tablist" aria-label="Duel mode">
+            <div
+              className={houseEnabled ? 'mode-tabs mode-tabs-three' : 'mode-tabs'}
+              role="tablist"
+              aria-label="Duel mode"
+              aria-orientation="horizontal"
+            >
               <button
+                id="mode-tab-direct"
                 type="button"
                 role="tab"
                 aria-selected={mode === 'direct'}
+                aria-controls="mode-panel-direct"
+                tabIndex={mode === 'direct' ? 0 : -1}
+                ref={(element) => {
+                  modeTabRefs.current.direct = element ?? undefined;
+                }}
                 onClick={() => chooseMode('direct')}
+                onKeyDown={(event) => handleModeTabKeyDown(event, 'direct')}
               >
                 <UserPlusIcon size={17} weight="bold" />
                 <span className="mode-tab-copy">
@@ -926,10 +957,17 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 </span>
               </button>
               <button
+                id="mode-tab-matchmaking"
                 type="button"
                 role="tab"
                 aria-selected={mode === 'matchmaking'}
+                aria-controls="mode-panel-matchmaking"
+                tabIndex={mode === 'matchmaking' ? 0 : -1}
+                ref={(element) => {
+                  modeTabRefs.current.matchmaking = element ?? undefined;
+                }}
                 onClick={() => chooseMode('matchmaking')}
+                onKeyDown={(event) => handleModeTabKeyDown(event, 'matchmaking')}
               >
                 <UsersThreeIcon size={17} weight="fill" />
                 <span className="mode-tab-copy">
@@ -939,10 +977,17 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               </button>
               {houseEnabled ? (
                 <button
+                  id="mode-tab-house"
                   type="button"
                   role="tab"
                   aria-selected={mode === 'house'}
+                  aria-controls="mode-panel-house"
+                  tabIndex={mode === 'house' ? 0 : -1}
+                  ref={(element) => {
+                    modeTabRefs.current.house = element ?? undefined;
+                  }}
                   onClick={() => chooseMode('house')}
+                  onKeyDown={(event) => handleModeTabKeyDown(event, 'house')}
                 >
                   <LightningIcon size={17} weight="fill" />
                   <span className="mode-tab-copy">
@@ -970,7 +1015,14 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 ))}
               </div>
 
-              {mode === 'direct' ? (
+              <div
+                id="mode-panel-direct"
+                className="mode-panel"
+                role="tabpanel"
+                aria-labelledby="mode-tab-direct"
+                tabIndex={mode === 'direct' ? 0 : -1}
+                hidden={mode !== 'direct'}
+              >
                 <div className="wallet-challenge-panel">
                   {activeEntry ? (
                     <div className="opponent-disclosure">
@@ -1001,25 +1053,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                     />
                   </div>
                 </div>
-              ) : null}
+              </div>
 
-              {mode === 'house' ? (
-                <div className="opponent-disclosure">
-                  <ShieldCheckIcon size={18} weight="fill" />
-                  <span>
-                    <strong>
-                      {activeEntry?.action === 'rematch'
-                        ? 'House rematch ready'
-                        : 'Instant house opponent'}
-                    </strong>
-                    {activeEntry?.action === 'rematch'
-                      ? `The original $${activeEntry.tier} house tier is preselected for a fresh commitment.`
-                      : 'The house funds the matching pack and must precommit before either reveal.'}
-                  </span>
-                </div>
-              ) : null}
-
-              {mode === 'matchmaking' ? (
+              <div
+                id="mode-panel-matchmaking"
+                className="mode-panel"
+                role="tabpanel"
+                aria-labelledby="mode-tab-matchmaking"
+                tabIndex={mode === 'matchmaking' ? 0 : -1}
+                hidden={mode !== 'matchmaking'}
+              >
                 <div className="opponent-disclosure">
                   <UsersThreeIcon size={18} weight="fill" />
                   <span>
@@ -1027,6 +1070,31 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                     We match the exact tier and valuation policy. You can continue searching or
                     cancel before funding. House play is never selected automatically.
                   </span>
+                </div>
+              </div>
+
+              {houseEnabled ? (
+                <div
+                  id="mode-panel-house"
+                  className="mode-panel"
+                  role="tabpanel"
+                  aria-labelledby="mode-tab-house"
+                  tabIndex={mode === 'house' ? 0 : -1}
+                  hidden={mode !== 'house'}
+                >
+                  <div className="opponent-disclosure">
+                    <ShieldCheckIcon size={18} weight="fill" />
+                    <span>
+                      <strong>
+                        {activeEntry?.action === 'rematch'
+                          ? 'House rematch ready'
+                          : 'Instant house opponent'}
+                      </strong>
+                      {activeEntry?.action === 'rematch'
+                        ? `The original $${activeEntry.tier} house tier is preselected for a fresh commitment.`
+                        : 'The house funds the matching pack and must precommit before either reveal.'}
+                    </span>
+                  </div>
                 </div>
               ) : null}
 
