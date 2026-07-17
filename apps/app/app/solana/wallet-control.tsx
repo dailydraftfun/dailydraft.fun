@@ -12,7 +12,8 @@ import {
 } from '@phosphor-icons/react';
 import { Button } from '@shipshitdev/ui';
 import Image from 'next/image';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useDialogFocus } from '../accessibility/use-dialog-focus';
 import { getExplorerAddressUrl } from './config';
 import { useWalletAuth } from './wallet-auth-provider';
 import { useSolanaWallet } from './wallet-provider';
@@ -22,15 +23,10 @@ export function WalletControl() {
   const authentication = useWalletAuth();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') setOpen(false);
-    }
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [open]);
+  const dialogRef = useDialogFocus({
+    active: open,
+    onClose: () => setOpen(false),
+  });
 
   async function copyAddress() {
     if (!wallet.address) return;
@@ -64,10 +60,13 @@ export function WalletControl() {
             aria-label="Close wallet dialog"
           />
           <section
+            ref={dialogRef}
             className="wallet-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="wallet-dialog-title"
+            aria-describedby="wallet-dialog-description"
+            tabIndex={-1}
           >
             <div className="wallet-dialog-heading">
               <div>
@@ -78,7 +77,12 @@ export function WalletControl() {
                   {wallet.address ? 'Wallet connected' : 'Choose a wallet'}
                 </h2>
               </div>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Close wallet dialog">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close wallet dialog"
+                data-dialog-initial-focus
+              >
                 <XIcon size={18} />
               </button>
             </div>
@@ -250,7 +254,7 @@ export function WalletControl() {
               </div>
             ) : null}
 
-            <p className="wallet-safety-note">
+            <p id="wallet-dialog-description" className="wallet-safety-note">
               We only request connection and clearly reviewed signatures. Never enter or share a
               seed phrase or private key.
             </p>

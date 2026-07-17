@@ -11,14 +11,14 @@ colors:
   bg-elevated: "#191e1b"
   bg-hover: "#202721"
   text-primary: "#f6f8f3"
-  text-secondary: "#a8b0a7"
-  text-muted: "#687168"
+  text-secondary: "#b7c0b6"
+  text-muted: "#909a90"
   accent: "#b8ff5a"
   accent-hover: "#c9ff82"
   accent-foreground: "#10150d"
   success: "#48e08a"
   warning: "#f7c948"
-  danger: "#ef4444"
+  danger: "#ff6464"
   agent: "#38bdf8"
   done: "#a855f7"
 
@@ -102,7 +102,7 @@ components:
     padding: 2px 8px
   tooltip:
     backgroundColor: "{colors.bg-hover}"
-    textColor: "{colors.text-secondary}"
+    textColor: "{colors.text-muted}"
     rounded: "{rounded.md}"
     padding: 4px 8px
   link:
@@ -122,28 +122,28 @@ Design reference: https://styles.refero.design/style/90ce5883-bb24-4466-93f7-801
 The palette uses layered dark surfaces for visual hierarchy instead of shadows or outlines.
 
 **Surface layers (darkest to lightest):**
-- **bg-primary (#050607)** — page background
-- **bg-secondary (#0c0d10)** — sidebar, nav panels
-- **bg-tertiary (#131518)** — grouped content areas
-- **bg-elevated (#1a1c21)** — cards, floating panels
-- **bg-hover (#20232a)** — interactive hover state
+- **bg-primary (#070807)** — page background
+- **bg-secondary (#0d100f)** — sidebar, nav panels
+- **bg-tertiary (#131714)** — grouped content areas
+- **bg-elevated (#191e1b)** — cards, floating panels
+- **bg-hover (#202721)** — interactive hover state
 
 **Text scale:**
-- **text-primary (#f4f4f5)** — headings, important content
-- **text-secondary (#b4b4bc)** — body text, descriptions
-- **text-muted (#6b6b78)** — labels, placeholders, timestamps
+- **text-primary (#f6f8f3)** — headings, important content
+- **text-secondary (#b7c0b6)** — body text, descriptions
+- **text-muted (#909a90)** — labels, placeholders, timestamps
 
 **Borders** (not in YAML — these use rgba for transparency):
 - **border:** rgba(255, 255, 255, 0.10) — subtle dividers
 - **border-strong:** rgba(255, 255, 255, 0.18) — emphasized dividers
 
 **Semantic colors:**
-- **accent (#fafafa)** — primary actions, CTA buttons
-- **success (#10b981)** — positive states, confirmations
-- **warning (#f59e0b)** — caution, pending states
-- **danger (#ef4444)** — errors, destructive actions
-- **agent (#38bdf8)** — AI/agent activity indicators
-- **done (#a855f7)** — completed states
+- **accent (#b8ff5a)** — primary actions, CTA buttons
+- **success (#48e08a)** — positive states, confirmations
+- **warning (#f7c948)** — caution, pending states
+- **danger (#ff6464)** — errors, destructive actions
+- **agent (#62d8ff)** — AI/agent activity indicators
+- **done (#a78bfa)** — completed states
 
 ## Typography
 
@@ -153,6 +153,16 @@ Two typefaces cover all use cases:
 - **JetBrains Mono** — code blocks, terminal output, technical strings, monospaced data.
 
 System fonts are fallbacks only, never used as primary typeface.
+
+| Token | Size | Usage |
+|-------|------|-------|
+| metadata | 11px minimum | Compact nonessential labels only |
+| body-small | 12px minimum | Meaning-bearing labels and supporting copy |
+| body | 16px | Default prose and controls |
+| title | Responsive clamp | Page and section hierarchy |
+
+DM Sans weights 400, 500, 600, and 700 are loaded explicitly. Weight 800 is
+not used, and all surfaces disable synthetic font styles.
 
 ## Layout
 
@@ -189,13 +199,13 @@ Consistent corner radius scale:
 
 ## Components
 
-**Button (primary):** Accent background (#fafafa) with dark text (#050607). 6px radius, 8px/16px padding. Hover shifts to #e4e4e7.
+**Button (primary):** Accent background (#b8ff5a) with dark text (#10150d). 6px radius, 8px/16px padding. Hover shifts to #c9ff82.
 
 **Button (ghost):** Transparent background, white text. Same radius and padding. Hover shows bg-hover layer.
 
-**Card:** bg-elevated background (#1a1c21). 10px radius, 16px padding. No border by default; optional rgba(255, 255, 255, 0.10) border for emphasis.
+**Card:** bg-elevated background (#191e1b). 10px radius, 16px padding. No border by default; optional rgba(255, 255, 255, 0.10) border for emphasis.
 
-**Input:** bg-secondary background (#0c0d10). 6px radius, 8px/12px padding. Border on focus: rgba(255, 255, 255, 0.18).
+**Input:** bg-secondary background (#0d100f). 6px radius, 8px/12px padding. Border on focus: rgba(255, 255, 255, 0.18).
 
 ## Do's and Don'ts
 

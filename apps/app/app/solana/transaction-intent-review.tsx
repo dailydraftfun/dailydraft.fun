@@ -8,7 +8,7 @@ import {
   XIcon,
 } from '@phosphor-icons/react';
 import { Button, Separator } from '@shipshitdev/ui';
-import { useEffect } from 'react';
+import { useDialogFocus } from '../accessibility/use-dialog-focus';
 import type { DuelTransactionIntent } from './duel-client';
 
 type TransactionIntentReviewProps = {
@@ -26,21 +26,23 @@ export function TransactionIntentReview({
   onClose,
   onConfirm,
 }: TransactionIntentReviewProps) {
-  useEffect(() => {
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !pending) onClose();
-    }
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [onClose, pending]);
+  const dialogRef = useDialogFocus({
+    active: true,
+    closeOnEscape: !pending,
+    onClose,
+  });
 
   return (
     <div className="intent-dialog-backdrop" role="presentation">
       <section
+        ref={dialogRef}
         className="intent-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="intent-dialog-title"
+        aria-describedby="intent-dialog-description"
+        aria-busy={pending}
+        tabIndex={-1}
       >
         <div className="intent-dialog-heading">
           <div>
@@ -104,7 +106,7 @@ export function TransactionIntentReview({
           </div>
         </dl>
 
-        <div className="intent-notice">
+        <div id="intent-dialog-description" className="intent-notice">
           <CheckCircleIcon size={18} weight="fill" />
           <span>
             The full unsigned message is integrity-bound. Your wallet will broadcast it only after
@@ -125,8 +127,14 @@ export function TransactionIntentReview({
         ) : null}
 
         <Separator className="bg-border" />
-        <div className="intent-actions">
-          <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>
+        <div className="intent-actions" aria-live="polite">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onClose}
+            disabled={pending}
+            data-dialog-initial-focus
+          >
             Cancel
           </Button>
           <Button type="button" className="intent-confirm" onClick={onConfirm} disabled={pending}>

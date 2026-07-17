@@ -1,21 +1,45 @@
 :root {
-  --background: #070907;
-  --surface: #0e120f;
-  --surface-strong: #151a16;
+  --opd-bg-primary: #070807;
+  --opd-bg-secondary: #0d100f;
+  --opd-bg-tertiary: #131714;
+  --opd-bg-elevated: #191e1b;
+  --opd-bg-hover: #202721;
+  --opd-text-primary: #f6f8f3;
+  --opd-text-secondary: #b7c0b6;
+  --opd-text-muted: #909a90;
+  --opd-accent: #b8ff5a;
+  --opd-accent-foreground: #10150d;
+  --opd-success: #48e08a;
+  --opd-warning: #f7c948;
+  --opd-danger: #ff6464;
+  --opd-agent: #62d8ff;
+  --opd-done: #a78bfa;
+  --opd-font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --opd-font-mono: "JetBrains Mono", "SF Mono", monospace;
+  --opd-space-base: 4px;
+  --opd-space-sm: 8px;
+  --opd-space-md: 16px;
+  --opd-space-lg: 24px;
+  --opd-space-xl: 32px;
+  --opd-radius-sm: 4px;
+  --opd-radius-md: 6px;
+  --opd-radius-lg: 10px;
+  --opd-radius-xl: 16px;
+  --background: var(--opd-bg-primary);
+  --surface: var(--opd-bg-secondary);
+  --surface-strong: var(--opd-bg-tertiary);
   --surface-soft: rgba(17, 22, 18, 0.72);
-  --text: #f4f7f1;
-  --muted: #9ba49c;
-  --dim: #667067;
+  --text: var(--opd-text-primary);
+  --muted: var(--opd-text-secondary);
+  --dim: var(--opd-text-muted);
   --line: rgba(224, 255, 217, 0.12);
   --line-strong: rgba(224, 255, 217, 0.22);
-  --lime: #b8ff5a;
+  --lime: var(--opd-accent);
   --lime-soft: rgba(184, 255, 90, 0.1);
-  --gold: #f7c948;
-  --danger: #ff856f;
-  --font-sans:
-    "DM Sans", "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --gold: var(--opd-warning);
+  --danger: var(--opd-danger);
+  --font-sans: var(--opd-font-sans);
+  --font-mono: var(--opd-font-mono);
 }
 
 * {
@@ -39,6 +63,7 @@ body {
   color: var(--text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  font-synthesis: none;
 }
 
 a {
@@ -97,7 +122,7 @@ a {
   width: max-content;
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.11em;
 }
 
@@ -138,7 +163,7 @@ a {
   border-radius: 5px;
   padding: 4px 6px;
   color: var(--lime);
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 0.12em;
 }
 
@@ -166,7 +191,7 @@ a {
   padding: 11px 15px;
   color: #101410;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   transition:
     transform 150ms ease,
     background 150ms ease;
@@ -214,7 +239,7 @@ a {
   padding: 0 12px;
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -248,8 +273,8 @@ a {
   margin: 0;
   color: var(--lime);
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -301,7 +326,7 @@ a {
   border-radius: 8px;
   padding: 0 20px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   transition:
     transform 150ms ease,
     border-color 150ms ease,
@@ -412,7 +437,7 @@ a {
   padding: 0 12px;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .copy-success {
@@ -532,7 +557,7 @@ a {
   background: var(--lime-soft);
   color: var(--lime);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .code-block {
@@ -567,8 +592,8 @@ a {
   background: var(--surface-strong);
   padding: 8px 10px;
   color: var(--dim);
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .code-copy:hover,
@@ -611,7 +636,7 @@ a {
 .transport-grid span {
   color: var(--dim);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
@@ -641,7 +666,7 @@ a {
   color: var(--gold);
   font-family: var(--font-mono);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .credential-warning strong {
@@ -680,8 +705,8 @@ a {
 .capability-number {
   color: var(--lime);
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 700;
   letter-spacing: 0.08em;
 }
 
@@ -705,7 +730,7 @@ a {
   overflow: hidden;
   color: var(--dim);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -737,7 +762,7 @@ a {
   padding: 0 0 8px;
   color: var(--lime);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .site-footer {
