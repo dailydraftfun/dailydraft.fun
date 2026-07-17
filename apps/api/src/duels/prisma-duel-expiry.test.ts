@@ -105,8 +105,14 @@ function expiryFixture(input: {
   loseRace?: boolean;
   matchmakingManaged?: boolean;
 }) {
-  const duel = {
-    cancellationReason: null as string | null,
+  const duel: {
+    cancellationReason: string | null;
+    id: string;
+    status: DuelStatus;
+    transactions: Array<{ id: string }>;
+    version: number;
+  } = {
+    cancellationReason: null,
     id: 'duel_expired_committing',
     status: DuelStatus.COMMITTING,
     transactions: input.finalizedFunding ? [{ id: 'tx_finalized_funding' }] : [],
