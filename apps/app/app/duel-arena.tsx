@@ -237,10 +237,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
   const phase: Phase = liveDuel?.phase ?? 'lobby';
   const playerStatus = persistedDuel
-    ? getDuelPlayerStatus(
-        persistedDuel.status,
-        matchmakingSession?.state === 'searching',
-      )
+    ? getDuelPlayerStatus(persistedDuel.status, matchmakingSession?.state === 'searching')
     : null;
   const houseEnabled = capabilities?.modes.house.enabled === true;
   const houseFallbackAction = matchmakingSession?.availableActions.find(
@@ -710,10 +707,12 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     if (!intent || !authentication.sessionToken) return;
     setIntentPending(true);
     setActionError(null);
+    let transactionMayHaveBeenSubmitted = false;
     try {
       const binary = window.atob(intent.serializedTransactionBase64);
       const transaction = Uint8Array.from(binary, (character) => character.charCodeAt(0));
       const signature = await walletConnection.signAndSendTransaction(transaction);
+      transactionMayHaveBeenSubmitted = true;
       await submitSignedDuelIntent(
         intent.duelId,
         intent.id,
@@ -730,7 +729,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setPersistedDuel(refreshed);
       setActionNotice(getFundingStatusNotice(refreshed, reconciliation.activeTransactionCount));
     } catch (error) {
-      setActionError(getPlayerActionError(error, 'The payment did not complete.'));
+      setActionError(
+        getPlayerActionError(
+          error,
+          'The payment did not complete.',
+          transactionMayHaveBeenSubmitted,
+        ),
+      );
     } finally {
       setIntentPending(false);
     }
@@ -811,6 +816,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             </p>
           ) : null}
           {actionNotice ? <p className="signing-note">{actionNotice}</p> : null}
+          <p className="signing-note">
+            <strong>Cancellation:</strong> {persistedDuel.cancellationRule}
+          </p>
 
           <div className="reveal-grid">
             <DuelCard

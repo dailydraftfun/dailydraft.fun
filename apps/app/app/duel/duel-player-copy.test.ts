@@ -131,7 +131,9 @@ describe('duel player copy', () => {
 
     expect(payment.description).toContain('The platform fee is exactly 0.001 SOL');
     expect(payment.description).toContain('network fee and any recoverable rent');
-    expect(getDuelPlayerStatus('settled').detail).toContain('whether one pull led or the values tied');
+    expect(getDuelPlayerStatus('settled').detail).toContain(
+      'whether one pull led or the values tied',
+    );
     expect(getDuelPlayerStatus('settling').headline).toBe(
       'Result committed; settlement is finishing',
     );
@@ -155,6 +157,11 @@ describe('duel player copy', () => {
     expect(
       getPlayerActionError(new Error('No active matchmaking session'), 'Could not continue.'),
     ).toBe('Could not continue. Try again; your current duel progress is unchanged.');
+    expect(
+      getPlayerActionError(new Error('RPC unavailable'), 'The payment did not complete.', true),
+    ).toBe(
+      'The payment was sent to Solana devnet, but confirmation could not be verified. Refresh this duel before retrying so you do not submit a duplicate payment.',
+    );
   });
 
   test('keeps protocol jargon out of primary lobby, rules, payment, and lifecycle copy', () => {

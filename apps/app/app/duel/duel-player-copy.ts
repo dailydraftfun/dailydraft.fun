@@ -87,7 +87,8 @@ export function getDuelPlayerStatus(
 
   const copy: Record<DurableDuel['status'], DuelPlayerStatusCopy> = {
     awaiting_assets: {
-      detail: 'The winning result is already decided while both demo cards enter the duel vault.',
+      detail:
+        'The result, including a possible tie, is already decided while both demo cards enter the duel vault.',
       headline: 'Cards are moving into the duel',
       nextAction: 'Keep this page open while devnet finishes the transfers.',
     },
@@ -137,12 +138,14 @@ export function getDuelPlayerStatus(
       nextAction: 'Keep this page open until both returns complete.',
     },
     settled: {
-      detail: 'The committed result is final. The public receipt shows whether one pull led or the values tied.',
+      detail:
+        'The committed result is final. The public receipt shows whether one pull led or the values tied.',
       headline: 'Duel complete',
       nextAction: 'View the public receipt or start another duel.',
     },
     settling: {
-      detail: 'The committed comparison is final while Solana devnet completes settlement or return.',
+      detail:
+        'The committed comparison is final while Solana devnet completes settlement or return.',
       headline: 'Result committed; settlement is finishing',
       nextAction: 'Keep this page open until the final settlement completes.',
     },
@@ -171,7 +174,15 @@ export function getFundingStatusNotice(
   return `${copy.headline}. ${copy.nextAction ?? copy.detail}`;
 }
 
-export function getPlayerActionError(error: unknown, fallback: string): string {
+export function getPlayerActionError(
+  error: unknown,
+  fallback: string,
+  transactionMayHaveBeenSubmitted = false,
+): string {
+  if (transactionMayHaveBeenSubmitted) {
+    return 'The payment was sent to Solana devnet, but confirmation could not be verified. Refresh this duel before retrying so you do not submit a duplicate payment.';
+  }
+
   const message = error instanceof Error ? error.message.toLowerCase() : '';
 
   if (
