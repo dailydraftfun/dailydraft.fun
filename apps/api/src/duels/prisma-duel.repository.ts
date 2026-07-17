@@ -11,8 +11,8 @@ import {
   DuelSide as DatabaseDuelSide,
   DuelStatus as DatabaseDuelStatus,
   DuelMode,
-  type DuelTransactionAction,
-  type DuelTransactionStatus,
+  DuelTransactionAction,
+  DuelTransactionStatus,
   type Prisma,
   ProviderMode,
 } from '@openpacksduel/db';
@@ -328,16 +328,42 @@ export class PrismaDuelRepository extends DuelRepository {
   async expireTimedOut(now: Date): Promise<number> {
     const expired = await this.database.duel.findMany({
       orderBy: { expiresAt: 'asc' },
+      select: {
+        id: true,
+        status: true,
+        transactions: {
+          select: { id: true },
+          take: 1,
+          where: {
+            action: DuelTransactionAction.FUND,
+            status: DuelTransactionStatus.FINALIZED,
+          },
+        },
+        version: true,
+      },
       take: 100,
-      where: { expiresAt: { lte: now }, status: { in: [...ACTIVE_TIMEOUT_STATUSES] } },
+      where: {
+        expiresAt: { lte: now },
+        OR: [
+          { status: { in: [...ACTIVE_TIMEOUT_STATUSES] } },
+          {
+            matchmakingTickets: { none: {} },
+            status: DatabaseDuelStatus.COMMITTING,
+          },
+        ],
+      },
     });
     let count = 0;
     for (const duel of expired) {
+      const recovery = timedOutDuelRecovery({
+        hasFinalizedFunding: duel.transactions.length > 0,
+        status: duel.status,
+      });
       const changed = await this.database.$transaction(async (transaction) => {
         const updated = await transaction.duel.updateMany({
           data: {
-            cancellationReason: 'timeout',
-            status: DatabaseDuelStatus.CANCELLED,
+            cancellationReason: recovery.reason,
+            status: recovery.status,
             version: { increment: 1 },
           },
           where: { id: duel.id, status: duel.status, version: duel.version },
@@ -345,13 +371,17 @@ export class PrismaDuelRepository extends DuelRepository {
         if (updated.count !== 1) return false;
         await transaction.duelEvent.create({
           data: {
-            data: { expiredAt: now.toISOString(), reason: 'timeout' },
+            data: {
+              expiredAt: now.toISOString(),
+              hasFinalizedFunding: duel.transactions.length > 0,
+              reason: recovery.reason,
+            },
             duelId: duel.id,
             fromStatus: duel.status,
             id: createId('evt'),
             sequence: duel.version + 1,
-            toStatus: DatabaseDuelStatus.CANCELLED,
-            type: 'duel.timed_out',
+            toStatus: recovery.status,
+            type: recovery.eventType,
           },
         });
         return true;
@@ -645,6 +675,34 @@ export class PrismaDuelRepository extends DuelRepository {
       },
     });
   }
+}
+
+function timedOutDuelRecovery(input: {
+  hasFinalizedFunding: boolean;
+  status: DatabaseDuelStatus;
+}): {
+  eventType: string;
+  reason: string;
+  status: DatabaseDuelStatus;
+} {
+  if (input.status !== DatabaseDuelStatus.COMMITTING) {
+    return {
+      eventType: 'duel.timed_out',
+      reason: 'timeout',
+      status: DatabaseDuelStatus.CANCELLED,
+    };
+  }
+  return input.hasFinalizedFunding
+    ? {
+        eventType: 'duel.funding_commitment_timed_out',
+        reason: 'commitment_timeout_with_finalized_funding',
+        status: DatabaseDuelStatus.REFUNDING,
+      }
+    : {
+        eventType: 'duel.funding_commitment_timed_out',
+        reason: 'commitment_timeout_without_finalized_funding',
+        status: DatabaseDuelStatus.CANCELLED,
+      };
 }
 
 export function resolvedPackTargetStatus(
