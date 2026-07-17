@@ -816,9 +816,11 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             </p>
           ) : null}
           {actionNotice ? <p className="signing-note">{actionNotice}</p> : null}
-          <p className="signing-note">
-            <strong>Cancellation:</strong> {persistedDuel.cancellationRule}
-          </p>
+          {matchmakingSession?.cancellationRule ? (
+            <p className="signing-note">
+              <strong>Cancellation:</strong> {matchmakingSession.cancellationRule}
+            </p>
+          ) : null}
 
           <div className="reveal-grid">
             <DuelCard
