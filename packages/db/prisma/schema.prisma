@@ -395,6 +395,7 @@ model WalletAuthChallenge {
   createdAt  DateTime  @default(now())
 
   @@index([wallet, expiresAt])
+  @@index([wallet, createdAt])
   @@index([expiresAt, consumedAt])
 }
 

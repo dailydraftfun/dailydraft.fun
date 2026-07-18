@@ -6,17 +6,26 @@ import {
   type CreateWalletAuthChallengeRecord,
   type CreateWalletSessionRecord,
   type WalletAuthChallengeRecord,
+  type WalletAuthMaintenancePolicy,
   WalletAuthRepository,
+  type WalletChallengeIssuancePolicy,
+  WalletChallengeRateLimitExceededError,
   type WalletSessionRecord,
 } from './auth.repository.js';
-import { WalletAuthService } from './wallet-auth.service.js';
+import { resolveWalletAuthPolicy, WalletAuthService } from './wallet-auth.service.js';
 
 const originalAppUrl = process.env.OPENPACKSDUEL_APP_URL;
 const originalAuthDomain = process.env.OPENPACKSDUEL_AUTH_DOMAIN;
+const originalChallengeLimit = process.env.OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT;
+const originalChallengeWindow = process.env.OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS;
+const originalCleanupBatchSize = process.env.OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE;
 
 afterEach(() => {
   setEnvironment('OPENPACKSDUEL_APP_URL', originalAppUrl);
   setEnvironment('OPENPACKSDUEL_AUTH_DOMAIN', originalAuthDomain);
+  setEnvironment('OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT', originalChallengeLimit);
+  setEnvironment('OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS', originalChallengeWindow);
+  setEnvironment('OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE', originalCleanupBatchSize);
 });
 
 describe('WalletAuthService', () => {
@@ -68,6 +77,26 @@ describe('WalletAuthService', () => {
     await service.createSession(input);
 
     await expect(service.createSession(input)).rejects.toThrow('expired or already used');
+  });
+
+  test('preserves exactly-once consumption under concurrent session attempts', async () => {
+    const repository = new FakeWalletAuthRepository();
+    const service = new WalletAuthService(repository);
+    const wallet = createWallet();
+    const challenge = await service.issueChallenge(wallet.address);
+    const input = {
+      challengeId: challenge.challengeId,
+      signature: signMessage(challenge.message, wallet.privateKey),
+      wallet: wallet.address,
+    };
+
+    const attempts = await Promise.allSettled([
+      service.createSession(input),
+      service.createSession(input),
+    ]);
+
+    expect(attempts.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(attempts.filter(({ status }) => status === 'rejected')).toHaveLength(1);
   });
 
   test('keeps concurrent challenges independently usable for the same wallet', async () => {
@@ -123,10 +152,41 @@ describe('WalletAuthService', () => {
     });
     expect(session.wallet).toBe(wallet.address);
   });
+
+  test('rejects the N+1 challenge with a stable 429 error', async () => {
+    process.env.OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT = '2';
+    const repository = new FakeWalletAuthRepository();
+    const service = new WalletAuthService(repository);
+    const wallet = createWallet();
+
+    await service.issueChallenge(wallet.address);
+    await service.issueChallenge(wallet.address);
+
+    await expect(service.issueChallenge(wallet.address)).rejects.toMatchObject({
+      message: 'Wallet challenge issuance rate limit exceeded',
+      status: 429,
+    });
+    expect(repository.challengeCount).toBe(2);
+  });
+
+  test('uses safe bounded defaults for absent or invalid rate-limit configuration', () => {
+    expect(
+      resolveWalletAuthPolicy({
+        OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT: '0',
+        OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS: 'disabled',
+        OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE: '999999',
+      }),
+    ).toEqual({
+      challengeLimit: 5,
+      challengeWindowMs: 10 * 60 * 1_000,
+      cleanupBatchSize: 100,
+    });
+  });
 });
 
 class FakeWalletAuthRepository extends WalletAuthRepository {
   readonly #challenges = new Map<string, WalletAuthChallengeRecord>();
+  readonly #challengeCreatedAt = new Map<string, Date>();
   readonly #sessions = new Map<string, WalletSessionRecord>();
   lastSessionTokenHash = '';
 
@@ -136,8 +196,15 @@ class FakeWalletAuthRepository extends WalletAuthRepository {
 
   async createChallenge(
     input: CreateWalletAuthChallengeRecord,
+    policy: WalletChallengeIssuancePolicy,
   ): Promise<WalletAuthChallengeRecord> {
+    this.cleanup(policy);
+    const recent = [...this.#challengeCreatedAt.values()].filter(
+      (createdAt) => createdAt >= policy.challengeWindowStartedAt,
+    ).length;
+    if (recent >= policy.challengeLimit) throw new WalletChallengeRateLimitExceededError();
     this.#challenges.set(input.id, input);
+    this.#challengeCreatedAt.set(input.id, policy.now);
     return input;
   }
 
@@ -148,13 +215,14 @@ class FakeWalletAuthRepository extends WalletAuthRepository {
   async consumeChallengeAndCreateSession(
     challengeId: string,
     input: CreateWalletSessionRecord,
-    now: Date,
+    policy: WalletAuthMaintenancePolicy,
   ): Promise<WalletSessionRecord> {
+    this.cleanup(policy);
     const challenge = this.#challenges.get(challengeId);
-    if (!challenge || challenge.consumedAt || challenge.expiresAt <= now) {
+    if (!challenge || challenge.consumedAt || challenge.expiresAt <= policy.now) {
       throw new Error('Wallet challenge is expired or already used');
     }
-    this.#challenges.set(challengeId, { ...challenge, consumedAt: now });
+    this.#challenges.set(challengeId, { ...challenge, consumedAt: policy.now });
     const session = { ...input, revokedAt: null };
     this.#sessions.set(input.tokenHash, session);
     this.lastSessionTokenHash = input.tokenHash;
@@ -170,6 +238,25 @@ class FakeWalletAuthRepository extends WalletAuthRepository {
   async revokeSession(tokenHash: string, now: Date): Promise<void> {
     const session = this.#sessions.get(tokenHash);
     if (session) this.#sessions.set(tokenHash, { ...session, revokedAt: now });
+  }
+
+  private cleanup(policy: WalletAuthMaintenancePolicy): void {
+    const expiredChallenges = [...this.#challenges.entries()]
+      .filter(
+        ([id, challenge]) =>
+          !challenge.consumedAt &&
+          challenge.expiresAt <= policy.now &&
+          (this.#challengeCreatedAt.get(id) ?? policy.now) < policy.challengeCreatedBefore,
+      )
+      .slice(0, policy.cleanupBatchSize);
+    for (const [id] of expiredChallenges) {
+      this.#challenges.delete(id);
+      this.#challengeCreatedAt.delete(id);
+    }
+    const expiredSessions = [...this.#sessions.entries()]
+      .filter(([, session]) => session.expiresAt <= policy.now || session.revokedAt)
+      .slice(0, policy.cleanupBatchSize);
+    for (const [tokenHash] of expiredSessions) this.#sessions.delete(tokenHash);
   }
 }
 
