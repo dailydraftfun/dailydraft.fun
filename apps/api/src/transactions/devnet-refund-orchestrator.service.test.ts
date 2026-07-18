@@ -190,7 +190,7 @@ class RefundFixture {
     id: 'duel_refund_fixture',
     opponentWallet: OPPONENT.toBase58(),
     providerMode: ProviderMode.OPENPACKSDUEL_DEVNET,
-    status: DuelStatus.REFUNDING,
+    status: DuelStatus.REFUNDING as DuelStatus,
     transactions: [] as Array<
       RefundTransactionFixture & {
         action: DuelTransactionAction;
