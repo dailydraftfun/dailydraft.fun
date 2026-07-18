@@ -14,6 +14,7 @@ import { Button } from '@shipshitdev/ui';
 import Image from 'next/image';
 import { useState } from 'react';
 import { useDialogFocus } from '../accessibility/use-dialog-focus';
+import { journeyTestIds } from '../e2e/journey-test-ids';
 import { getExplorerAddressUrl } from './config';
 import { useWalletAuth } from './wallet-auth-provider';
 import { useSolanaWallet } from './wallet-provider';
@@ -42,6 +43,7 @@ export function WalletControl() {
         onClick={() => setOpen(true)}
         className={wallet.address ? 'wallet-button wallet-button-connected' : 'wallet-button'}
         aria-haspopup="dialog"
+        data-testid={journeyTestIds.walletMenu}
       >
         {wallet.status === 'connecting' || wallet.status === 'discovering' ? (
           <SpinnerGapIcon className="wallet-spinner" size={16} />
@@ -67,6 +69,7 @@ export function WalletControl() {
             aria-labelledby="wallet-dialog-title"
             aria-describedby="wallet-dialog-description"
             tabIndex={-1}
+            data-testid={journeyTestIds.walletDialog}
           >
             <div className="wallet-dialog-heading">
               <div>
@@ -146,6 +149,7 @@ export function WalletControl() {
                         type="button"
                         onClick={authentication.signIn}
                         disabled={authentication.status === 'signing'}
+                        data-testid={journeyTestIds.walletAuthenticationSign}
                       >
                         {authentication.status === 'signing' ? (
                           <SpinnerGapIcon className="wallet-spinner" size={16} />
@@ -162,6 +166,7 @@ export function WalletControl() {
                       type="button"
                       onClick={authentication.prepare}
                       disabled={authentication.status === 'preparing'}
+                      data-testid={journeyTestIds.walletAuthenticationPrepare}
                     >
                       {authentication.status === 'preparing' ? (
                         <SpinnerGapIcon className="wallet-spinner" size={16} />
@@ -178,6 +183,7 @@ export function WalletControl() {
                   type="button"
                   variant="ghost"
                   className="wallet-disconnect"
+                  data-testid={journeyTestIds.walletDisconnect}
                   onClick={async () => {
                     await authentication.signOut();
                     await wallet.disconnect();
@@ -194,6 +200,7 @@ export function WalletControl() {
                     type="button"
                     key={availableWallet.name}
                     disabled={wallet.status === 'connecting'}
+                    data-testid={journeyTestIds.walletOption}
                     onClick={async () => {
                       const connected = await wallet.connect(availableWallet);
                       if (connected) setOpen(false);

@@ -1,0 +1,29 @@
+name: Journey smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/journey.yml"
+      - "apps/app/**"
+      - "bun.lock"
+      - "package.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: journey-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - run: bun --filter @openpacksduel/app test:e2e
