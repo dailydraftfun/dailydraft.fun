@@ -64,7 +64,7 @@ describe('duel player copy', () => {
       },
       matched: {
         headline: 'Opponent found',
-        nextAction: 'Approve the displayed platform fee, or cancel before funding starts.',
+        nextAction: 'The challenge creator approves first; the other wallet is prompted next.',
       },
       opening: {
         headline: 'Both packs are opening',
