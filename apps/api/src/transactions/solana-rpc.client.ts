@@ -26,10 +26,18 @@ export interface LegacySplTokenAccount {
   owner: string;
 }
 
+export interface SolanaAccountInfo {
+  data: Uint8Array;
+  owner: string;
+}
+
 export abstract class SolanaRpcGateway {
   abstract assertDevnet(): Promise<void>;
   abstract getBlockHeight(): Promise<bigint>;
   abstract getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: bigint }>;
+  getAccountInfo(_address: string): Promise<SolanaAccountInfo | null> {
+    throw new SolanaRpcUnavailableError('Raw Solana account reads are not implemented');
+  }
   getLegacyMint(_address: string): Promise<{ decimals: number; supply: bigint }> {
     throw new SolanaRpcUnavailableError('Legacy SPL mint reads are not implemented');
   }
@@ -84,6 +92,31 @@ export class SolanaRpcClient extends SolanaRpcGateway {
       blockhash: result.value.blockhash,
       lastValidBlockHeight: BigInt(Number(result.value.lastValidBlockHeight)),
     };
+  }
+
+  async getAccountInfo(address: string): Promise<SolanaAccountInfo | null> {
+    const result = await this.request('getAccountInfo', [
+      address,
+      { commitment: 'finalized', encoding: 'base64' },
+    ]);
+    if (!isObject(result) || !('value' in result)) throw new SolanaRpcUnavailableError();
+    if (result.value === null) return null;
+    if (
+      !isObject(result.value) ||
+      typeof result.value.owner !== 'string' ||
+      !Array.isArray(result.value.data) ||
+      result.value.data.length !== 2 ||
+      typeof result.value.data[0] !== 'string' ||
+      result.value.data[1] !== 'base64'
+    ) {
+      throw new SolanaRpcUnavailableError('RPC returned an invalid account');
+    }
+    const encoded = result.value.data[0];
+    const data = Buffer.from(encoded, 'base64');
+    if (data.toString('base64').replaceAll('=', '') !== encoded.replaceAll('=', '')) {
+      throw new SolanaRpcUnavailableError('RPC returned invalid base64 account data');
+    }
+    return { data, owner: result.value.owner };
   }
 
   async getLegacyMint(address: string): Promise<{ decimals: number; supply: bigint }> {

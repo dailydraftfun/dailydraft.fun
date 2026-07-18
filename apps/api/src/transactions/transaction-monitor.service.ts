@@ -9,6 +9,8 @@ import {
 import { AnalyticsService } from '../analytics/analytics.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { HouseTreasuryService } from '../treasury/house-treasury.service.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { DevnetRefundOrchestratorService } from './devnet-refund-orchestrator.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
@@ -43,6 +45,7 @@ export class TransactionMonitorService {
     private readonly rpc: SolanaRpcGateway,
     @Optional() private readonly analytics?: AnalyticsService,
     @Optional() private readonly treasury?: HouseTreasuryService,
+    @Optional() private readonly refunds?: DevnetRefundOrchestratorService,
   ) {}
 
   async bindSubmission(input: {
@@ -102,6 +105,7 @@ export class TransactionMonitorService {
       summary.recoveryErrors += 1;
       await this.analytics?.recordServer({ name: 'solana_rpc_error' });
     }
+    await this.refunds?.reconcile(limit);
     const transactions = await this.repository.findPending(limit, now);
     const recoverableTerminal = await this.repository.findRecoverableTerminal(limit);
     if (transactions.length === 0 && recoverableTerminal.length === 0) {
@@ -111,6 +115,7 @@ export class TransactionMonitorService {
 
     await this.reconcileTransactions(transactions, now, summary);
     await this.reconcileTransactions(recoverableTerminal, now, summary);
+    await this.refunds?.reconcile(limit);
     await this.treasury?.reconcileLifecycle(limit);
     return summary;
   }

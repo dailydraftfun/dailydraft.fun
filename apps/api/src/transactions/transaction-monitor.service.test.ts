@@ -142,6 +142,7 @@ describe('TransactionMonitorService', () => {
 
   test.each([
     ['commit_result', 'awaiting_assets', 'awaiting_assets', 'settling'],
+    ['refund', 'refunding', 'refunding', 'refunding'],
     ['settle', 'settling', 'settling', 'settled'],
   ] as const)('recovers an unbound provider %s broadcast only from its exact lifecycle state', async (action, duelStatus, expectedFromStatus, expectedToStatus) => {
     const intent = preparedRecoveryIntent({

@@ -7,6 +7,7 @@ import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
 import { HouseTreasuryModule } from '../treasury/house-treasury.module.js';
 import { DevnetDemoSettlementService } from './devnet-demo-settlement.service.js';
 import { DevnetDemoSignerService } from './devnet-demo-signer.service.js';
+import { DevnetRefundOrchestratorService } from './devnet-refund-orchestrator.service.js';
 import { DuelFundingService } from './duel-funding.service.js';
 import { PrismaTransactionMonitorRepository } from './prisma-transaction-monitor.repository.js';
 import { ProviderSettlementService } from './provider-settlement.service.js';
@@ -38,6 +39,7 @@ import { WorkerKeyGuard } from './worker-key.guard.js';
     IntegrationKeyGuard,
     DevnetDemoSettlementService,
     DevnetDemoSignerService,
+    DevnetRefundOrchestratorService,
     ProviderSettlementService,
     DuelFundingService,
     TransactionMonitorService,

@@ -109,9 +109,15 @@ included in both daily-loss and total-exposure admission checks.
 
 Provider result commitments, settlement, and per-asset refunds are prepared as
 durable unsigned intents and use the same submission/reconciliation path. Card
-deposits remain operator-proof only. Each finalized refund records its asset
-proof but intentionally leaves the duel `refunding`; a full custody quorum is
-still required before any later implementation may mark the duel `refunded`.
+deposits remain operator-proof only. The global reconciliation worker decodes
+the finalized Duel v4 account for `OPENPACKSDUEL_DEVNET` duels in `refunding`,
+uses the isolated provider signer only as the permissionless fee payer, and
+submits refunds only for custody flags still held on-chain. Each finalized
+refund records its public signature and asset proof. The database reaches
+`refunded` only after the on-chain account is refunded, every custody flag is
+clear, and every required refund intent is finalized. A result commitment or
+settled on-chain account routes the duel back to settlement recovery instead of
+attempting a refund.
 Successful demo settlement routes both cards and the fee, then closes all three
 empty custody vaults in the same atomic transaction. Card-vault rent returns to
 the isolated provider signer that created them; payment-vault rent returns to the
