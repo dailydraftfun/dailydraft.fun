@@ -398,11 +398,34 @@ export class DuelJourneyFixture {
 function capabilities(): ProductCapabilities {
   return {
     modes: {
-      direct: { enabled: true },
+      direct: { enabled: true, reason: null },
       house: { enabled: false, reason: 'House mode is disabled in deterministic journeys.' },
-      open: { enabled: true },
+      open: { enabled: true, reason: null },
     },
     network: 'solana-devnet',
+    packs: [
+      {
+        enabled: false,
+        id: 'pokemon_25',
+        name: 'Pokémon $25 Pack',
+        reason: 'The $25 pack tier is coming soon.',
+        tier: 25,
+      },
+      {
+        enabled: true,
+        id: 'pokemon_50',
+        name: 'Pokémon $50 Pack',
+        reason: null,
+        tier: 50,
+      },
+      {
+        enabled: false,
+        id: 'pokemon_100',
+        name: 'Pokémon $100 Pack',
+        reason: 'The $100 pack tier is coming soon.',
+        tier: 100,
+      },
+    ],
     provider: { mode: 'journey-fixture', ready: true },
   };
 }

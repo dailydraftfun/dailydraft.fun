@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { journeyTestIds } from '../../app/e2e/journey-test-ids';
+import { parseProductCapabilities } from '../../app/solana/duel-client';
 import { DuelJourneyFixture } from './journey-fixture';
 
 describe('deterministic duel journey fixture', () => {
@@ -44,6 +45,24 @@ describe('deterministic duel journey fixture', () => {
 
     first.reset();
     expect(first.snapshot()).toEqual(second.snapshot());
+  });
+
+  test('keeps the deterministic capability response compatible with the product contract', () => {
+    const fixture = new DuelJourneyFixture('capabilities');
+    const response = fixture.handleApi({ method: 'GET', path: '/health/capabilities' });
+
+    expect(response.status).toBe(200);
+    expect(parseProductCapabilities(response.body)).toEqual(
+      expect.objectContaining({
+        modes: expect.objectContaining({
+          direct: { enabled: true, reason: null },
+          open: { enabled: true, reason: null },
+        }),
+        packs: expect.arrayContaining([
+          expect.objectContaining({ enabled: true, id: 'pokemon_50', tier: 50 }),
+        ]),
+      }),
+    );
   });
 
   test('fails incomplete and unsupported setup with targeted errors', () => {
