@@ -1,22 +1,50 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { generateKeyPairSync, sign } from 'node:crypto';
+import { HttpException } from '@nestjs/common';
 import bs58 from 'bs58';
 
+import { AuthController } from './auth.controller.js';
 import {
   type CreateWalletAuthChallengeRecord,
   type CreateWalletSessionRecord,
   type WalletAuthChallengeRecord,
+  type WalletAuthMaintenancePolicy,
   WalletAuthRepository,
+  type WalletChallengeIssuancePolicy,
+  WalletChallengeRateLimitExceededError,
   type WalletSessionRecord,
 } from './auth.repository.js';
-import { WalletAuthService } from './wallet-auth.service.js';
+import { resolveWalletAuthPolicy, WalletAuthService } from './wallet-auth.service.js';
 
 const originalAppUrl = process.env.OPENPACKSDUEL_APP_URL;
 const originalAuthDomain = process.env.OPENPACKSDUEL_AUTH_DOMAIN;
+const originalChallengeLimit = process.env.OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT;
+const originalChallengeWindow = process.env.OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS;
+const originalCleanupBatchSize = process.env.OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE;
+const originalNodeEnvironment = process.env.NODE_ENV;
+const originalVercel = process.env.VERCEL;
+const originalVercelEnvironment = process.env.VERCEL_ENV;
+
+beforeEach(() => {
+  delete process.env.OPENPACKSDUEL_APP_URL;
+  delete process.env.OPENPACKSDUEL_AUTH_DOMAIN;
+  delete process.env.OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT;
+  delete process.env.OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS;
+  delete process.env.OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE;
+  process.env.NODE_ENV = 'development';
+  delete process.env.VERCEL;
+  delete process.env.VERCEL_ENV;
+});
 
 afterEach(() => {
   setEnvironment('OPENPACKSDUEL_APP_URL', originalAppUrl);
   setEnvironment('OPENPACKSDUEL_AUTH_DOMAIN', originalAuthDomain);
+  setEnvironment('OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT', originalChallengeLimit);
+  setEnvironment('OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS', originalChallengeWindow);
+  setEnvironment('OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE', originalCleanupBatchSize);
+  setEnvironment('NODE_ENV', originalNodeEnvironment);
+  setEnvironment('VERCEL', originalVercel);
+  setEnvironment('VERCEL_ENV', originalVercelEnvironment);
 });
 
 describe('WalletAuthService', () => {
@@ -68,6 +96,26 @@ describe('WalletAuthService', () => {
     await service.createSession(input);
 
     await expect(service.createSession(input)).rejects.toThrow('expired or already used');
+  });
+
+  test('preserves exactly-once consumption under concurrent session attempts', async () => {
+    const repository = new FakeWalletAuthRepository();
+    const service = new WalletAuthService(repository);
+    const wallet = createWallet();
+    const challenge = await service.issueChallenge(wallet.address);
+    const input = {
+      challengeId: challenge.challengeId,
+      signature: signMessage(challenge.message, wallet.privateKey),
+      wallet: wallet.address,
+    };
+
+    const attempts = await Promise.allSettled([
+      service.createSession(input),
+      service.createSession(input),
+    ]);
+
+    expect(attempts.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(attempts.filter(({ status }) => status === 'rejected')).toHaveLength(1);
   });
 
   test('keeps concurrent challenges independently usable for the same wallet', async () => {
@@ -123,10 +171,96 @@ describe('WalletAuthService', () => {
     });
     expect(session.wallet).toBe(wallet.address);
   });
+
+  test('rejects the N+1 challenge with a stable 429 error', async () => {
+    process.env.OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT = '2';
+    const repository = new FakeWalletAuthRepository();
+    const service = new WalletAuthService(repository);
+    const wallet = createWallet();
+
+    await service.issueChallenge(wallet.address);
+    await service.issueChallenge(wallet.address);
+
+    await expect(service.issueChallenge(wallet.address)).rejects.toMatchObject({
+      message: 'Wallet challenge issuance rate limit exceeded',
+      status: 429,
+    });
+    expect(repository.challengeCount).toBe(2);
+  });
+
+  test('uses safe bounded defaults for absent or invalid rate-limit configuration', () => {
+    expect(
+      resolveWalletAuthPolicy({
+        OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT: '0',
+        OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS: 'disabled',
+        OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE: '999999',
+      }),
+    ).toEqual({
+      challengeLimit: 5,
+      challengeWindowMs: 10 * 60 * 1_000,
+      cleanupBatchSize: 100,
+    });
+  });
+
+  test('returns a stable service-unavailable error when deployed audience config is missing', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.OPENPACKSDUEL_APP_URL;
+    delete process.env.OPENPACKSDUEL_AUTH_DOMAIN;
+    const repository = new FakeWalletAuthRepository();
+    const controller = new AuthController(new WalletAuthService(repository));
+
+    const error = await captureFailure(
+      controller.createChallenge({ wallet: createWallet().address }),
+    );
+
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(503);
+    expect((error as HttpException).getResponse()).toMatchObject({
+      error: 'Service Unavailable',
+      message: 'OPENPACKSDUEL_APP_URL is not configured',
+      statusCode: 503,
+    });
+    expect(repository.challengeCount).toBe(0);
+  });
+
+  test('refuses to create a session after deployed audience config becomes unavailable', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.OPENPACKSDUEL_APP_URL = 'https://openpacksduel.vercel.app';
+    const repository = new FakeWalletAuthRepository();
+    const service = new WalletAuthService(repository);
+    const wallet = createWallet();
+    const challenge = await service.issueChallenge(wallet.address);
+    delete process.env.OPENPACKSDUEL_APP_URL;
+
+    const error = await captureFailure(
+      service.createSession({
+        challengeId: challenge.challengeId,
+        signature: signMessage(challenge.message, wallet.privateKey),
+        wallet: wallet.address,
+      }),
+    );
+
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(503);
+  });
+
+  test('rejects an auth domain that disagrees with the configured public app host', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.OPENPACKSDUEL_APP_URL = 'https://openpacksduel.vercel.app';
+    process.env.OPENPACKSDUEL_AUTH_DOMAIN = 'example.com';
+    const service = new WalletAuthService(new FakeWalletAuthRepository());
+
+    const error = await captureFailure(service.issueChallenge(createWallet().address));
+
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(503);
+    expect((error as Error).message).toContain('must match');
+  });
 });
 
 class FakeWalletAuthRepository extends WalletAuthRepository {
   readonly #challenges = new Map<string, WalletAuthChallengeRecord>();
+  readonly #challengeCreatedAt = new Map<string, Date>();
   readonly #sessions = new Map<string, WalletSessionRecord>();
   lastSessionTokenHash = '';
 
@@ -136,8 +270,15 @@ class FakeWalletAuthRepository extends WalletAuthRepository {
 
   async createChallenge(
     input: CreateWalletAuthChallengeRecord,
+    policy: WalletChallengeIssuancePolicy,
   ): Promise<WalletAuthChallengeRecord> {
+    this.cleanup(policy);
+    const recent = [...this.#challengeCreatedAt.values()].filter(
+      (createdAt) => createdAt >= policy.challengeWindowStartedAt,
+    ).length;
+    if (recent >= policy.challengeLimit) throw new WalletChallengeRateLimitExceededError();
     this.#challenges.set(input.id, input);
+    this.#challengeCreatedAt.set(input.id, policy.now);
     return input;
   }
 
@@ -148,13 +289,14 @@ class FakeWalletAuthRepository extends WalletAuthRepository {
   async consumeChallengeAndCreateSession(
     challengeId: string,
     input: CreateWalletSessionRecord,
-    now: Date,
+    policy: WalletAuthMaintenancePolicy,
   ): Promise<WalletSessionRecord> {
+    this.cleanup(policy);
     const challenge = this.#challenges.get(challengeId);
-    if (!challenge || challenge.consumedAt || challenge.expiresAt <= now) {
+    if (!challenge || challenge.consumedAt || challenge.expiresAt <= policy.now) {
       throw new Error('Wallet challenge is expired or already used');
     }
-    this.#challenges.set(challengeId, { ...challenge, consumedAt: now });
+    this.#challenges.set(challengeId, { ...challenge, consumedAt: policy.now });
     const session = { ...input, revokedAt: null };
     this.#sessions.set(input.tokenHash, session);
     this.lastSessionTokenHash = input.tokenHash;
@@ -171,6 +313,25 @@ class FakeWalletAuthRepository extends WalletAuthRepository {
     const session = this.#sessions.get(tokenHash);
     if (session) this.#sessions.set(tokenHash, { ...session, revokedAt: now });
   }
+
+  private cleanup(policy: WalletAuthMaintenancePolicy): void {
+    const expiredChallenges = [...this.#challenges.entries()]
+      .filter(
+        ([id, challenge]) =>
+          !challenge.consumedAt &&
+          challenge.expiresAt <= policy.now &&
+          (this.#challengeCreatedAt.get(id) ?? policy.now) < policy.challengeCreatedBefore,
+      )
+      .slice(0, policy.cleanupBatchSize);
+    for (const [id] of expiredChallenges) {
+      this.#challenges.delete(id);
+      this.#challengeCreatedAt.delete(id);
+    }
+    const expiredSessions = [...this.#sessions.entries()]
+      .filter(([, session]) => session.expiresAt <= policy.now || session.revokedAt)
+      .slice(0, policy.cleanupBatchSize);
+    for (const [tokenHash] of expiredSessions) this.#sessions.delete(tokenHash);
+  }
 }
 
 function createWallet() {
@@ -181,6 +342,15 @@ function createWallet() {
 
 function signMessage(message: string, privateKey: ReturnType<typeof createWallet>['privateKey']) {
   return sign(null, Buffer.from(message, 'utf8'), privateKey).toString('base64');
+}
+
+async function captureFailure(action: Promise<unknown>): Promise<unknown> {
+  try {
+    await action;
+    throw new Error('Expected action to fail');
+  } catch (error) {
+    return error;
+  }
 }
 
 function setEnvironment(key: string, value: string | undefined): void {

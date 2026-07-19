@@ -28,8 +28,10 @@ describe('duel social card data', () => {
 
   test.each([
     ['waiting', '/overview?challenge=duel_truth', 'Accept challenge'],
-    ['matched', '/duel/duel_truth', 'Watch live'],
-    ['opening', '/duel/duel_truth', 'Watch live'],
+    ['matched', '/duel/duel_truth', 'Spectate duel'],
+    ['opening', '/duel/duel_truth', 'Spectate duel'],
+    ['cancelling', '/duel/duel_truth', 'Spectate duel'],
+    ['refunding', '/duel/duel_truth', 'Spectate duel'],
     ['settled', '/overview?rematch=duel_truth', 'Run a rematch'],
     ['cancelled', '/overview', 'Open a new duel'],
     ['refunded', '/overview', 'Open a new duel'],
@@ -74,10 +76,19 @@ function receipt({
   status: PublicDuelReceipt['duel']['status'];
   withResult?: boolean;
 }): PublicDuelReceipt {
+  const encodedDuelId = 'duel_truth';
+  const primary =
+    status === 'waiting'
+      ? { href: `/overview?challenge=${encodedDuelId}`, label: 'Accept challenge' }
+      : status === 'settled'
+        ? { href: `/overview?rematch=${encodedDuelId}`, label: 'Run a rematch' }
+        : ['cancelled', 'expired', 'failed', 'refunded'].includes(status)
+          ? { href: '/overview', label: 'Open a new duel' }
+          : { href: `/duel/${encodedDuelId}`, label: 'Spectate duel' };
   return {
     actions: {
-      primary: { href: '/duel/duel_truth', label: 'View' },
-      rematch: null,
+      primary,
+      rematch: status === 'settled' ? primary : null,
       share: { href: '/duel/duel_truth', label: 'Share' },
     },
     availability: { complete: withResult, missing: [] },

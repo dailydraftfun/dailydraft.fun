@@ -8,7 +8,9 @@ import {
   XIcon,
 } from '@phosphor-icons/react';
 import { Button, Separator } from '@shipshitdev/ui';
-import { useEffect } from 'react';
+import { useDialogFocus } from '../accessibility/use-dialog-focus';
+import { getDuelPaymentReviewCopy } from '../duel/duel-player-copy';
+import { journeyTestIds } from '../e2e/journey-test-ids';
 import type { DuelTransactionIntent } from './duel-client';
 
 type TransactionIntentReviewProps = {
@@ -26,28 +28,32 @@ export function TransactionIntentReview({
   onClose,
   onConfirm,
 }: TransactionIntentReviewProps) {
-  useEffect(() => {
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !pending) onClose();
-    }
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [onClose, pending]);
+  const copy = getDuelPaymentReviewCopy(intent.feeAmountSol);
+  const dialogRef = useDialogFocus({
+    active: true,
+    closeOnEscape: !pending,
+    onClose,
+  });
 
   return (
     <div className="intent-dialog-backdrop" role="presentation">
       <section
+        ref={dialogRef}
         className="intent-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="intent-dialog-title"
+        aria-describedby="intent-dialog-description"
+        aria-busy={pending}
+        tabIndex={-1}
+        data-testid={journeyTestIds.transactionDialog}
       >
         <div className="intent-dialog-heading">
           <div>
             <span className="network-chip">
               <i /> Solana {intent.cluster}
             </span>
-            <h2 id="intent-dialog-title">Review transaction intent</h2>
+            <h2 id="intent-dialog-title">{copy.heading}</h2>
           </div>
           <button type="button" onClick={onClose} disabled={pending} aria-label="Close review">
             <XIcon size={18} />
@@ -57,44 +63,26 @@ export function TransactionIntentReview({
         <div className="intent-title">
           <LockKeyIcon size={22} weight="fill" />
           <div>
-            <strong>Fund your duel platform fee</strong>
-            <p>
-              Wrap and deposit exactly {intent.feeAmountSol} SOL into the verified devnet escrow.
-            </p>
+            <strong data-testid={journeyTestIds.transactionPurpose}>{copy.title}</strong>
+            <p data-testid={journeyTestIds.transactionValue}>{copy.description}</p>
           </div>
         </div>
 
         <dl className="intent-details">
+          {copy.rows.map((row, index) => (
+            <div className={index === 0 ? 'intent-total' : undefined} key={row.label}>
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          ))}
           <div>
-            <dt>Funding side</dt>
-            <dd>{intent.fundingSide}</dd>
+            <dt>Your turn</dt>
+            <dd data-testid={journeyTestIds.transactionTurn}>
+              {intent.fundingSide === 'creator' ? 'You pay first' : 'You pay second'}
+            </dd>
           </div>
           <div>
-            <dt>Platform fee</dt>
-            <dd>{intent.feeAmountSol} WSOL</dd>
-          </div>
-          <div className="intent-total">
-            <dt>Pack purchase</dt>
-            <dd>Not included</dd>
-          </div>
-          <div>
-            <dt>Wallet</dt>
-            <dd>{shorten(intent.wallet)}</dd>
-          </div>
-          <div>
-            <dt>Escrow PDA</dt>
-            <dd>{shorten(intent.escrowAddress)}</dd>
-          </div>
-          <div>
-            <dt>Program</dt>
-            <dd>{shorten(intent.programId)}</dd>
-          </div>
-          <div>
-            <dt>Fee recipient</dt>
-            <dd>{shorten(intent.feeRecipient)}</dd>
-          </div>
-          <div>
-            <dt>Expires</dt>
+            <dt>Approve by</dt>
             <dd>
               {new Date(intent.expiresAt).toLocaleTimeString([], {
                 hour: '2-digit',
@@ -104,19 +92,42 @@ export function TransactionIntentReview({
           </div>
         </dl>
 
-        <div className="intent-notice">
+        <div id="intent-dialog-description" className="intent-notice">
           <CheckCircleIcon size={18} weight="fill" />
-          <span>
-            The full unsigned message is integrity-bound. Your wallet will broadcast it only after
-            your approval.
-          </span>
+          <span>{copy.safety}</span>
         </div>
 
-        <ul className="intent-warnings">
-          {intent.warnings.map((warning) => (
-            <li key={warning}>{warning}</li>
-          ))}
-        </ul>
+        {intent.warnings.length > 0 ? (
+          <ul className="intent-warnings">
+            {intent.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        ) : null}
+
+        <details className="intent-advanced">
+          <summary>Advanced</summary>
+          <dl className="intent-details intent-technical-details">
+            <div>
+              <dt>Wallet</dt>
+              <dd data-testid={journeyTestIds.transactionAdvancedWallet}>
+                {shorten(intent.wallet)}
+              </dd>
+            </div>
+            <div>
+              <dt>Escrow PDA</dt>
+              <dd>{shorten(intent.escrowAddress)}</dd>
+            </div>
+            <div>
+              <dt>Program</dt>
+              <dd>{shorten(intent.programId)}</dd>
+            </div>
+            <div>
+              <dt>Fee recipient</dt>
+              <dd>{shorten(intent.feeRecipient)}</dd>
+            </div>
+          </dl>
+        </details>
 
         {error ? (
           <div className="intent-error" role="alert">
@@ -125,13 +136,26 @@ export function TransactionIntentReview({
         ) : null}
 
         <Separator className="bg-border" />
-        <div className="intent-actions">
-          <Button type="button" variant="ghost" onClick={onClose} disabled={pending}>
+        <div className="intent-actions" aria-live="polite">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onClose}
+            disabled={pending}
+            data-dialog-initial-focus
+            data-testid={journeyTestIds.transactionCancel}
+          >
             Cancel
           </Button>
-          <Button type="button" className="intent-confirm" onClick={onConfirm} disabled={pending}>
+          <Button
+            type="button"
+            className="intent-confirm"
+            onClick={onConfirm}
+            disabled={pending}
+            data-testid={journeyTestIds.transactionConfirm}
+          >
             {pending ? <SpinnerGapIcon className="wallet-spinner" size={17} /> : null}
-            {pending ? 'Waiting for wallet' : 'Review and broadcast'}
+            {pending ? 'Waiting for wallet' : 'Approve fee in wallet'}
           </Button>
         </div>
         <p className="intent-safety">

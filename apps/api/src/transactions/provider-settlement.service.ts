@@ -170,7 +170,11 @@ export class ProviderSettlementService {
         }),
         instructionName: 'refund_expired_payment',
         prefix: [ata(caller, destination, player, NATIVE_MINT)],
-        proof: { player: player.toBase58(), side },
+        proof: {
+          escrowAddress: addresses.duel.toBase58(),
+          player: player.toBase58(),
+          side,
+        },
       });
     }
 
@@ -360,7 +364,11 @@ export class ProviderSettlementService {
       }),
       instructionName: 'refund_expired_card',
       prefix: [ata(caller, destination, player, outcome.mint)],
-      proof: { cardMint: outcome.mint.toBase58(), side },
+      proof: {
+        cardMint: outcome.mint.toBase58(),
+        escrowAddress: addresses.duel.toBase58(),
+        side,
+      },
     });
   }
 

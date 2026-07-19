@@ -38,6 +38,7 @@ export type DuelSocialSnapshot = StatusPresentation & {
   network: 'devnet';
   opponent: string;
   opponentType: 'house' | 'wallet';
+  primaryAction: DuelAction;
   player: string;
   pulls: DuelSocialPull[];
   requestedStatusMatches: boolean;
@@ -169,6 +170,7 @@ export function getDuelSocialSnapshot(
     network: 'devnet',
     opponent: receipt.participants.opponent?.display ?? 'Waiting for opponent',
     opponentType: receipt.duel.mode === 'house' ? 'house' : 'wallet',
+    primaryAction: { ...receipt.actions.primary },
     player: receipt.participants.creator.display,
     pulls,
     requestedStatusMatches: requestedStatus == null || requestedStatus === status,
@@ -189,29 +191,7 @@ export function getDuelSocialSnapshot(
 }
 
 export function getPrimaryAction(snapshot: DuelSocialSnapshot): DuelAction {
-  if (snapshot.status === 'waiting') {
-    return {
-      href: `/overview?challenge=${encodeURIComponent(snapshot.duelId)}`,
-      label: 'Accept challenge',
-    };
-  }
-  if (snapshot.status === 'settled') {
-    return {
-      href: `/overview?rematch=${encodeURIComponent(snapshot.duelId)}`,
-      label: 'Run a rematch',
-    };
-  }
-  if (
-    ['matched', 'committing', 'funded', 'opening', 'awaiting_assets', 'settling'].includes(
-      snapshot.status,
-    )
-  ) {
-    return {
-      href: `/duel/${encodeURIComponent(snapshot.duelId)}`,
-      label: 'Watch live',
-    };
-  }
-  return { href: '/overview', label: 'Open a new duel' };
+  return snapshot.primaryAction;
 }
 
 export function getSocialDescription(snapshot: DuelSocialSnapshot): string {

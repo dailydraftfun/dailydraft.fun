@@ -10,7 +10,6 @@ import {
   type PublicDuelReceipt,
   type PublicDuelStatus,
   type PublicPostDuelCardActionState,
-  publicReceiptDownloadUrl,
 } from '../public-proof-client';
 import {
   type DuelSocialSnapshot,
@@ -49,7 +48,6 @@ export default async function DuelPage({ params }: DuelPageProps) {
 
   const active = !terminalStatuses.has(receipt.duel.status);
   const socialSnapshot = getDuelSocialSnapshot(receipt);
-  const primaryAction = getPrimaryAction(socialSnapshot);
   const canonicalOrigin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://openpacksduel.vercel.app';
   const canonicalUrl = `${canonicalOrigin}/duel/${encodeURIComponent(receipt.duel.id)}`;
   const socialImagePath = `/duel/${encodeURIComponent(receipt.duel.id)}/social/${receipt.duel.status}`;
@@ -75,9 +73,6 @@ export default async function DuelPage({ params }: DuelPageProps) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link className="proof-primary-action" href={primaryAction.href}>
-            {primaryAction.label}
-          </Link>
           <DuelProofRefresh active={active} />
           <a className="proof-secondary-action" href={shareUrl} target="_blank" rel="noreferrer">
             Share on X
@@ -170,22 +165,6 @@ export default async function DuelPage({ params }: DuelPageProps) {
           <p className="proof-label">Verification references</p>
           <ReferenceList receipt={receipt} />
         </article>
-      </section>
-
-      <section className="flex flex-col justify-between gap-4 rounded-xl border border-border bg-secondary p-5 sm:flex-row sm:items-center">
-        <div>
-          <p className="proof-label">Machine-readable receipt</p>
-          <p className="mt-2 text-sm text-secondary">
-            Strict public DTO · no support errors, private metadata, or credentials.
-          </p>
-        </div>
-        <a
-          className="proof-secondary-action"
-          href={publicReceiptDownloadUrl(receipt.duel.id)}
-          download
-        >
-          Download JSON
-        </a>
       </section>
 
       <p className="text-xs leading-5 text-secondary">

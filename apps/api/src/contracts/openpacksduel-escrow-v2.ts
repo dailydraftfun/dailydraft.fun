@@ -7,6 +7,10 @@ export const ESCROW_V2_SOURCE_SHA = '5268637d961672588c70a1c3b1ccbf6d6ab5f5cb';
 export const ESCROW_V2_IDL_SHA256 =
   'f16eda95787367db629051203dac8a5db61794f1c048528ecfecd868245e070d';
 export const ESCROW_DUEL_VERSION = 4;
+export const ESCROW_V4_DUEL_ACCOUNT_SIZE = 560;
+export const ESCROW_V4_DUEL_ACCOUNT_DISCRIMINATOR = Uint8Array.from([
+  126, 229, 210, 60, 177, 135, 124, 224,
+]);
 export const ESCROW_V2_PROGRAM_ID = new PublicKey('Co198eFfQcmn1WzZRnHV6jxcSLBDCv1qNfPfiBYdCLfS');
 export const ESCROW_V2_MAX_OPENING_FUTURE_SKEW_SECONDS = 30n;
 export const FUND_DUEL_DISCRIMINATOR = Uint8Array.from([135, 82, 1, 209, 16, 87, 207, 32]);
@@ -28,6 +32,26 @@ export const CLOSE_PAYMENT_VAULT_DISCRIMINATOR = Uint8Array.from([
 export const CLOSE_CARD_VAULT_DISCRIMINATOR = Uint8Array.from([123, 45, 120, 22, 36, 197, 169, 86]);
 
 export type EscrowV2Role = 'creator' | 'opponent';
+export type EscrowV4Status =
+  | 'initialized'
+  | 'funded'
+  | 'awaiting_result'
+  | 'result_submitted'
+  | 'refunding'
+  | 'settled'
+  | 'refunded';
+
+export interface EscrowV4RefundState {
+  custody: {
+    creatorCard: boolean;
+    creatorPayment: boolean;
+    opponentCard: boolean;
+    opponentPayment: boolean;
+  };
+  hasResultCommitment: boolean;
+  status: EscrowV4Status;
+  version: typeof ESCROW_DUEL_VERSION;
+}
 
 export interface EscrowV2Addresses {
   duel: PublicKey;
@@ -47,6 +71,62 @@ export interface InitializeDuelArgs {
   providerSigner: PublicKey;
   feeRecipient: PublicKey;
   valuationPolicyHash: Uint8Array;
+}
+
+// Fixed Borsh offsets from the pinned Duel v4 IDL named above.
+const ESCROW_V4_STATUS_OFFSET = 11;
+const ESCROW_V4_CREATOR_FUNDED_OFFSET = 236;
+const ESCROW_V4_OPPONENT_FUNDED_OFFSET = 237;
+const ESCROW_V4_CREATOR_CARD_DEPOSITED_OFFSET = 238;
+const ESCROW_V4_OPPONENT_CARD_DEPOSITED_OFFSET = 239;
+const ESCROW_V4_RESULT_COMMITMENT_OFFSET = 496;
+const ESCROW_V4_STATUSES: readonly EscrowV4Status[] = [
+  'initialized',
+  'funded',
+  'awaiting_result',
+  'result_submitted',
+  'refunding',
+  'settled',
+  'refunded',
+];
+
+export function decodeEscrowV4RefundState(data: Uint8Array): EscrowV4RefundState {
+  if (data.length !== ESCROW_V4_DUEL_ACCOUNT_SIZE) {
+    throw new Error('Escrow duel account has an unexpected size');
+  }
+  if (!ESCROW_V4_DUEL_ACCOUNT_DISCRIMINATOR.every((byte, index) => data[index] === byte)) {
+    throw new Error('Escrow duel account discriminator does not match Duel v4');
+  }
+  if (data[8] !== ESCROW_DUEL_VERSION) {
+    throw new Error('Escrow duel account version is not supported');
+  }
+  const status = ESCROW_V4_STATUSES[data[ESCROW_V4_STATUS_OFFSET] ?? -1];
+  if (!status) throw new Error('Escrow duel account status is not supported');
+  const creatorPayment = decodeBoolean(data, ESCROW_V4_CREATOR_FUNDED_OFFSET);
+  const opponentPayment = decodeBoolean(data, ESCROW_V4_OPPONENT_FUNDED_OFFSET);
+  const creatorCard = decodeBoolean(data, ESCROW_V4_CREATOR_CARD_DEPOSITED_OFFSET);
+  const opponentCard = decodeBoolean(data, ESCROW_V4_OPPONENT_CARD_DEPOSITED_OFFSET);
+  return {
+    custody: {
+      creatorCard,
+      creatorPayment,
+      opponentCard,
+      opponentPayment,
+    },
+    hasResultCommitment: data
+      .subarray(ESCROW_V4_RESULT_COMMITMENT_OFFSET, ESCROW_V4_RESULT_COMMITMENT_OFFSET + 32)
+      .some((byte) => byte !== 0),
+    status,
+    version: ESCROW_DUEL_VERSION,
+  };
+}
+
+function decodeBoolean(data: Uint8Array, offset: number): boolean {
+  const value = data[offset];
+  if (value !== 0 && value !== 1) {
+    throw new Error('Escrow duel account contains an invalid custody flag');
+  }
+  return value === 1;
 }
 
 export function toEscrowV2UnixSeconds(value: Date): bigint {

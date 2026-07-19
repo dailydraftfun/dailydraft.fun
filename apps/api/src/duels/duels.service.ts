@@ -10,6 +10,7 @@ import {
 import { AdminService } from '../admin/admin.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { AnalyticsService } from '../analytics/analytics.service.js';
+import { resolvePublicAppUrl } from '../common/public-app-url.js';
 import type { Duel, DuelEvent, DuelTransactionRecord, PackProviderMode, Page } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { PacksService } from '../packs/packs.service.js';
@@ -184,10 +185,7 @@ export class DuelsService {
     status: Duel['status'];
   }> {
     const duel = await this.findOne(duelId);
-    const appUrl = (process.env.OPENPACKSDUEL_APP_URL ?? 'http://localhost:3001').replace(
-      /\/$/,
-      '',
-    );
+    const appUrl = resolvePublicAppUrl().origin;
     const encodedId = encodeURIComponent(duel.id);
     const socialStatus = toSocialStatus(duel.status);
     return {

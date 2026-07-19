@@ -12,7 +12,6 @@ import {
   LockKeyIcon,
   ShareNetworkIcon,
   ShieldCheckIcon,
-  SparkleIcon,
   SpinnerGapIcon,
   SwordIcon,
   TrophyIcon,
@@ -25,6 +24,7 @@ import { Button, Card, CardContent, Input, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import { getRovingTabIndex } from './accessibility/focus-navigation';
 import { trackProductEvent } from './analytics-client';
 import {
   type DuelGrowthParticipant,
@@ -34,7 +34,27 @@ import {
   resultShareText,
   viewerResult,
 } from './duel/duel-growth';
+import {
+  duelRules,
+  getDuelPlayerStatus,
+  getFundingStatusNotice,
+  getLobbyEconomicsCopy,
+  getMatchmakingSearchCopy,
+  getPlayerActionError,
+} from './duel/duel-player-copy';
 import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
+import {
+  type CapabilityLoadState,
+  capabilityForMode,
+  DuelModeTabs,
+  enabledPackForTier,
+  isModeEnabled,
+  isProductPlayable,
+  PackTierChoices,
+  ProductCapabilityPanel,
+  resolveLobbySelection,
+} from './duel-lobby-options';
+import { journeyTestIds } from './e2e/journey-test-ids';
 import {
   advanceDuelLifecycle,
   cancelDuel,
@@ -49,7 +69,6 @@ import {
   getProductCapabilities,
   joinDuel,
   type MatchmakingSession,
-  type ProductCapabilities,
   prepareDuelIntent,
   reconcileDuelTransactions,
   searchOpenMatchmaking,
@@ -81,7 +100,6 @@ export type DuelLobbyEntry =
       participants: DuelGrowthParticipants;
     });
 
-const tiers = [25, 50, 100] as const;
 const terminalDuelStatuses = new Set<DurableDuel['status']>([
   'cancelled',
   'refunded',
@@ -102,38 +120,6 @@ function Avatar({ color, label }: { color: string; label: string }) {
   );
 }
 
-function TierCard({
-  value,
-  selected,
-  disabled,
-  onSelect,
-}: {
-  value: number;
-  selected: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      className={selected ? 'tier-card tier-card-selected' : 'tier-card'}
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
-      disabled={disabled}
-    >
-      <span className="tier-orb" aria-hidden="true">
-        <SparkleIcon size={value === 100 ? 25 : 21} weight="fill" />
-      </span>
-      <span>
-        <strong>${value}</strong>
-        <small>{value === 25 ? 'Silver' : value === 50 ? 'Gold' : 'Water'} Pack</small>
-      </span>
-      <span className="tier-ev">Devnet</span>
-      {selected ? <CheckCircleIcon className="tier-check" size={18} weight="fill" /> : null}
-    </button>
-  );
-}
-
 function DuelCard({
   pull,
   side,
@@ -151,7 +137,10 @@ function DuelCard({
 }) {
   const visible = phase === 'result' && pull !== null;
   return (
-    <article className={`reveal-column reveal-${side} ${winner && visible ? 'reveal-winner' : ''}`}>
+    <article
+      className={`reveal-column reveal-${side} ${winner && visible ? 'reveal-winner' : ''}`}
+      data-testid={journeyTestIds.pull[side === 'you' ? 'you' : 'opponent']}
+    >
       <div className="player-label">
         <Avatar
           color={side === 'you' ? '#b8ff5a' : '#a78bfa'}
@@ -162,7 +151,10 @@ function DuelCard({
           <strong>{walletLabel}</strong>
         </div>
         {winner && visible ? (
-          <span className="winner-chip">
+          <span
+            className="winner-chip"
+            data-testid={journeyTestIds.winner[side === 'you' ? 'you' : 'opponent']}
+          >
             <TrophyIcon size={12} weight="fill" /> Winner
           </span>
         ) : null}
@@ -211,12 +203,18 @@ function DuelCard({
       </div>
 
       <div className={visible ? 'pull-meta pull-meta-visible' : 'pull-meta'}>
-        <span className="grade-chip">{pull?.provider ?? 'Pending'}</span>
+        <span className="grade-chip" data-testid={journeyTestIds.provider[side]}>
+          {pull?.provider ?? 'Pending'}
+        </span>
         <div>
-          <strong>{pull?.name ?? 'Result pending'}</strong>
+          <strong data-testid={journeyTestIds.pullName[side]}>
+            {pull?.name ?? 'Result pending'}
+          </strong>
           <small>{pull?.label ?? 'No outcome committed yet'}</small>
         </div>
-        <span className="pull-value">{pull?.value ?? '—'}</span>
+        <span className="pull-value" data-testid={journeyTestIds.pullValue[side]}>
+          {pull?.value ?? '—'}
+        </span>
       </div>
     </article>
   );
@@ -239,11 +237,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
   const [matchmakingSession, setMatchmakingSession] = useState<MatchmakingSession | null>(null);
   const [matchmakingRestorePending, setMatchmakingRestorePending] = useState(false);
-  const [capabilities, setCapabilities] = useState<ProductCapabilities | null>(null);
+  const [capabilityState, setCapabilityState] = useState<CapabilityLoadState>({
+    status: 'loading',
+  });
+  const [capabilityReload, setCapabilityReload] = useState(0);
   const matchmakingRestoreKey = useRef<string | null>(null);
   const lifecycleAdvanceKey = useRef<string | null>(null);
+  const modeTabRefs = useRef<Partial<Record<Mode, HTMLButtonElement>>>({});
   const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
   const phase: Phase = liveDuel?.phase ?? 'lobby';
+  const capabilities = capabilityState.status === 'ready' ? capabilityState.value : null;
   const linkedOpponent =
     activeEntry?.action === 'accept'
       ? activeEntry.opponent
@@ -252,35 +255,74 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         : null;
   const opponentWallet = activeEntry ? (linkedOpponent?.address ?? '') : wallet;
   const currentViewerResult = liveDuel?.winner ? viewerResult(liveDuel.winner) : null;
-  const houseEnabled = capabilities?.modes.house.enabled === true;
+  const playerStatus = persistedDuel
+    ? getDuelPlayerStatus(persistedDuel.status, matchmakingSession?.state === 'searching')
+    : null;
+  const matchmakingSearchCopy = matchmakingSession
+    ? getMatchmakingSearchCopy(matchmakingSession)
+    : null;
+  const houseFallbackEnabled = capabilities?.modes.house.enabled === true;
+  const capabilityFormReady = capabilities ? isProductPlayable(capabilities) : false;
+  const selectedPack = capabilities ? enabledPackForTier(capabilities, tier) : undefined;
+  const selectedModeEnabled = capabilities ? isModeEnabled(capabilities, mode) : false;
   const houseFallbackAction = matchmakingSession?.availableActions.find(
     (action) => action.action === 'house_fallback',
   );
+  const availableModes: Mode[] = [];
+  if (capabilities?.modes.direct.enabled) availableModes.push('direct');
+  if (capabilities?.modes.open.enabled) availableModes.push('matchmaking');
+  if (capabilities?.modes.house.enabled) availableModes.push('house');
 
-  function chooseMode(nextMode: Mode) {
-    if (nextMode === mode) return;
-    if (nextMode === 'house' && !houseEnabled) {
-      setActionError('House play remains hidden until API readiness is verified.');
-      return;
+  function chooseMode(nextMode: Mode): boolean {
+    if (nextMode === mode) return true;
+    if (capabilityState.status !== 'ready') {
+      setActionError('Duel availability must be verified before choosing a mode.');
+      return false;
+    }
+    const nextCapability = capabilityForMode(capabilityState.value, nextMode);
+    if (!nextCapability.enabled) {
+      setActionError(nextCapability.reason ?? 'That duel mode is not currently playable.');
+      return false;
     }
     if (matchmakingRestorePending) {
       setActionError('Checking this wallet for an active public matchmaking ticket.');
-      return;
+      return false;
     }
     if (matchmakingSession) {
       setActionError('Cancel the active public search before starting a different duel mode.');
-      return;
+      return false;
     }
     setActiveEntry(undefined);
     setMode(nextMode);
     if (nextMode !== 'direct') setWallet('');
+    return true;
   }
 
   function chooseTier(nextTier: number) {
+    if (
+      capabilityState.status !== 'ready' ||
+      !enabledPackForTier(capabilityState.value, nextTier)
+    ) {
+      setActionError('That pack tier is not currently playable.');
+      return;
+    }
     setTier(nextTier);
     const trackedTier = toTrackedTier(nextTier);
     if (trackedTier) trackProductEvent({ name: 'tier_selected', tier: trackedTier });
     if (activeEntry?.action === 'accept') setActiveEntry(undefined);
+  }
+
+  function handleModeTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, currentMode: Mode) {
+    const currentIndex = availableModes.indexOf(currentMode);
+    const nextIndex = getRovingTabIndex(currentIndex, event.key, availableModes.length);
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextMode = availableModes[nextIndex];
+    if (!nextMode) return;
+    if (chooseMode(nextMode)) {
+      window.requestAnimationFrame(() => modeTabRefs.current[nextMode]?.focus());
+    }
   }
 
   useEffect(() => {
@@ -288,27 +330,50 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }, []);
 
   useEffect(() => {
-    if (!isDuelApiConfigured()) return;
+    void capabilityReload;
     let active = true;
+    setCapabilityState({ status: 'loading' });
     getProductCapabilities()
       .then((nextCapabilities) => {
-        if (active) setCapabilities(nextCapabilities);
+        if (active) setCapabilityState({ status: 'ready', value: nextCapabilities });
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        if (!active) return;
+        setCapabilityState({
+          message:
+            error instanceof Error ? error.message : 'Product capabilities could not be verified.',
+          retryable: isDuelApiConfigured(),
+          status: 'error',
+        });
+      });
     return () => {
       active = false;
     };
-  }, []);
+  }, [capabilityReload]);
 
   useEffect(() => {
-    if (mode !== 'house' || houseEnabled) return;
-    setMode('matchmaking');
-    setActiveEntry(undefined);
-    setActionNotice(
-      capabilities?.modes.house.reason ??
-        'House readiness could not be verified, so house play remains hidden.',
-    );
-  }, [capabilities, houseEnabled, mode]);
+    if (capabilityState.status !== 'ready') return;
+    const nextCapabilities = capabilityState.value;
+    const resolved = resolveLobbySelection(nextCapabilities, { mode, tier });
+
+    if (resolved.mode !== mode) {
+      setMode(resolved.mode);
+      if (mode === 'house') setActiveEntry(undefined);
+      setActionNotice(resolved.modeReason ?? 'The requested duel mode is not currently playable.');
+    }
+
+    if (resolved.tier !== tier) {
+      if (activeEntry) {
+        setActiveEntry(undefined);
+        setActionError(
+          resolved.pack
+            ? `The shared $${tier} pack tier cannot be played. The supported $${resolved.pack.tier} pack is selected for a new duel.`
+            : `The shared $${tier} pack tier is not currently playable.`,
+        );
+      }
+      setTier(resolved.tier);
+    }
+  }, [activeEntry, capabilityState, mode, tier]);
 
   useEffect(() => {
     if (!persistedDuel) return;
@@ -371,12 +436,12 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       .then((duel) => {
         if (!active) return;
         setPersistedDuel(duel);
-        setActionNotice('Both packs are funded. Opening the committed devnet outcomes.');
+        setActionNotice('Both wallets paid. Opening both packs now.');
       })
       .catch((error: unknown) => {
         if (!active) return;
         lifecycleAdvanceKey.current = null;
-        setActionError(error instanceof Error ? error.message : 'Could not open both packs.');
+        setActionError(getPlayerActionError(error, 'Could not open both packs.'));
       });
     return () => {
       active = false;
@@ -434,7 +499,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               ? current
               : session,
           );
-          setActionNotice('Your existing public matchmaking ticket was restored.');
+          setActionNotice('Your active public search is ready to continue.');
         }
       })
       .catch(() => undefined)
@@ -467,7 +532,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             setPersistedDuel(duel);
             setActionNotice(
               duel && duel.status !== 'cancelled'
-                ? `Matchmaking completed with duel status: ${duel.status}.`
+                ? `${getDuelPlayerStatus(duel.status).headline}.`
                 : 'The matchmaking search ended before funding. Start a new search when ready.',
             );
             return;
@@ -506,12 +571,14 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           );
           if (active) setIntent(prepared);
         } else if (active) {
-          setActionNotice('Opponent found. The creator must initialize and fund escrow first.');
+          setActionNotice(
+            'Opponent found. The challenge creator pays first; you will be prompted next.',
+          );
         }
       })
       .catch((error: unknown) => {
         if (active) {
-          setActionError(error instanceof Error ? error.message : 'Could not restore matchmaking.');
+          setActionError(getPlayerActionError(error, 'Could not restore matchmaking.'));
         }
       });
     return () => {
@@ -522,6 +589,20 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   async function reviewDuel(nextTier = tier, nextMode = mode) {
     setActionError(null);
     setActionNotice(null);
+    if (capabilityState.status !== 'ready') {
+      setActionError('Duel availability could not be verified. Retry before continuing.');
+      return;
+    }
+    const nextModeCapability = capabilityForMode(capabilityState.value, nextMode);
+    if (!nextModeCapability.enabled) {
+      setActionError(nextModeCapability.reason ?? 'That duel mode is not currently playable.');
+      return;
+    }
+    const nextPack = enabledPackForTier(capabilityState.value, nextTier);
+    if (!nextPack) {
+      setActionError('That pack tier is not currently playable.');
+      return;
+    }
     setTier(nextTier);
     setMode(nextMode);
     const expectedRestoreKey =
@@ -549,9 +630,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       return;
     }
     if (walletConnection.networkStatus === 'offline') {
-      setActionError(
-        'Solana devnet RPC is unavailable. Wait for the network to recover and retry.',
-      );
+      setActionError('Solana devnet is unavailable. Check your connection, then retry.');
       return;
     }
     if (activeEntry?.action === 'rematch' && !linkedOpponent) {
@@ -566,21 +645,12 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setActionError('Enter a complete Solana wallet address for the opponent.');
       return;
     }
-    if (nextMode === 'house' && !houseEnabled) {
-      setActionError('House play is unavailable until devnet treasury readiness is verified.');
-      return;
-    }
     if (isDuelApiConfigured() && !authentication.sessionToken) {
       setActionError(
         'Authenticate wallet ownership from the top-right wallet menu before creating or joining a duel.',
       );
       return;
     }
-    if (isDuelApiConfigured() && nextTier !== 50) {
-      setActionError('Durable devnet matchmaking currently supports the $50 Pokémon pack only.');
-      return;
-    }
-
     setIntentPending(true);
     try {
       if (isDuelApiConfigured() && authentication.sessionToken && walletConnection.address) {
@@ -588,12 +658,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           const session = await searchOpenMatchmaking(
             walletConnection.address,
             authentication.sessionToken,
+            nextPack.id,
           );
           setMatchmakingSession(session);
           setActionNotice(
             session.state === 'matched'
-              ? 'Opponent found. Preparing the creator funding review.'
-              : 'Searching the exact $50 tier and valuation-policy queue.',
+              ? 'Opponent found. Preparing the first payment review.'
+              : `Searching for another wallet using the same $${nextPack.tier} pack.`,
           );
           return;
         }
@@ -609,6 +680,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                   creatorWallet: walletConnection.address,
                   matchmakingMode: nextMode,
                   ...(nextMode === 'direct' ? { opponentWallet: opponentWallet.trim() } : {}),
+                  packId: nextPack.id,
                 },
                 authentication.sessionToken,
               );
@@ -618,15 +690,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             await prepareDuelIntent(duel.id, walletConnection.address, authentication.sessionToken),
           );
         } else if (duel.status === 'matched') {
-          setActionNotice('Challenge accepted. The creator must initialize and fund escrow first.');
+          setActionNotice(
+            'Challenge accepted. The challenge creator pays first; you will be prompted next.',
+          );
         }
         return;
       }
-      throw new Error('The devnet duel API is not configured. No transaction was prepared.');
+      setActionError('This devnet preview is not available right now. Nothing was submitted.');
+      return;
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : 'Could not prepare the devnet transaction intent.',
-      );
+      setActionError(getPlayerActionError(error, 'Could not prepare the payment review.'));
     } finally {
       setIntentPending(false);
     }
@@ -648,9 +721,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         ),
       );
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : 'Could not prepare the funding transaction.',
-      );
+      setActionError(getPlayerActionError(error, 'Could not prepare the payment review.'));
     } finally {
       setIntentPending(false);
     }
@@ -676,27 +747,26 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       );
       setPersistedDuel(cancelled);
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : 'Could not cancel the persisted devnet duel.',
-      );
+      setActionError(getPlayerActionError(error, 'Could not cancel this duel.'));
     } finally {
       setIntentPending(false);
     }
   }
 
   async function continueMatchmaking(): Promise<void> {
-    if (!authentication.sessionToken || !walletConnection.address) return;
+    if (!authentication.sessionToken || !walletConnection.address || !matchmakingSession) return;
     setIntentPending(true);
     setActionError(null);
     try {
       const session = await continueOpenMatchmaking(
         walletConnection.address,
         authentication.sessionToken,
+        matchmakingSession.queue.packId,
       );
       setMatchmakingSession(session);
-      setActionNotice('Search continues in the same exact queue.');
+      setActionNotice('Searching again for another wallet using the same selected pack.');
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Could not continue matchmaking.');
+      setActionError(getPlayerActionError(error, 'Could not continue matchmaking.'));
     } finally {
       setIntentPending(false);
     }
@@ -704,8 +774,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   async function chooseHouseFallback(): Promise<void> {
     if (!authentication.sessionToken || !walletConnection.address) return;
-    if (!houseEnabled) {
-      setActionError('House fallback is unavailable until API readiness is verified.');
+    if (!houseFallbackEnabled) {
+      setActionError('House play is not available in this devnet preview. Continue matchmaking.');
       return;
     }
     setIntentPending(true);
@@ -717,9 +787,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       );
       setMatchmakingSession(session);
       setMode('house');
-      setActionNotice('House opponent explicitly selected. Preparing creator funding review.');
+      setActionNotice('House opponent selected. Preparing your payment review.');
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'House fallback is unavailable.');
+      setActionError(getPlayerActionError(error, 'House play could not be selected.'));
     } finally {
       setIntentPending(false);
     }
@@ -729,17 +799,21 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     if (!intent || !authentication.sessionToken) return;
     setIntentPending(true);
     setActionError(null);
+    let transactionMayHaveBeenSubmitted = false;
+    let transactionWasSubmitted = false;
     try {
       const binary = window.atob(intent.serializedTransactionBase64);
       const transaction = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      transactionMayHaveBeenSubmitted = true;
       const signature = await walletConnection.signAndSendTransaction(transaction);
+      transactionWasSubmitted = true;
       await submitSignedDuelIntent(
         intent.duelId,
         intent.id,
         signature,
         authentication.sessionToken,
       );
-      setActionNotice('Funding broadcast on Solana devnet. Verifying finalized escrow state…');
+      setActionNotice('Payment sent on Solana devnet. Checking that it completed…');
       const reconciliation = await waitForDuelTransactions(
         intent.duelId,
         authentication.sessionToken,
@@ -747,12 +821,15 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setIntent(null);
       const refreshed = await getDuel(intent.duelId);
       setPersistedDuel(refreshed);
-      setActionNotice(
-        fundingReconciliationNotice(refreshed, reconciliation.activeTransactionCount),
-      );
+      setActionNotice(getFundingStatusNotice(refreshed, reconciliation.activeTransactionCount));
     } catch (error) {
       setActionError(
-        error instanceof Error ? error.message : 'The wallet did not approve the transaction.',
+        getPlayerActionError(
+          error,
+          'The payment did not complete.',
+          transactionMayHaveBeenSubmitted,
+          transactionWasSubmitted,
+        ),
       );
     } finally {
       setIntentPending(false);
@@ -840,15 +917,22 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   if (phase !== 'lobby' && liveDuel && persistedDuel) {
     return (
-      <main className="duel-experience">
+      <main className="duel-experience" data-testid={journeyTestIds.battle}>
         <div className="duel-topline">
-          <button type="button" className="text-button" onClick={() => resetDuel()}>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => resetDuel()}
+            data-testid={journeyTestIds.battleBack}
+          >
             <ArrowCounterClockwiseIcon size={15} /> Back to lobby
           </button>
           <div className="duel-proof">
             <ShieldCheckIcon size={15} weight="fill" />
             <span>Devnet settlement</span>
-            <code>{shortReference(liveDuel.settlementReference) ?? 'Awaiting escrow'}</code>
+            <code data-testid={journeyTestIds.settlementReference}>
+              {shortReference(liveDuel.settlementReference) ?? 'Awaiting escrow'}
+            </code>
           </div>
         </div>
 
@@ -858,19 +942,27 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               <span className="eyebrow">
                 <SwordIcon size={14} weight="fill" /> {liveDuel.tier} Pack Duel
               </span>
-              <h1>{liveDuel.headline}</h1>
+              <h1 data-testid={journeyTestIds.duelHeadline}>{liveDuel.headline}</h1>
             </div>
-            <div className={`phase-indicator phase-${phase}`}>
+            <div
+              className={`phase-indicator phase-${phase}`}
+              data-testid={journeyTestIds.duelPhase}
+            >
               <span />
               {liveDuel.indicator}
             </div>
           </div>
           {actionError ? (
-            <p className="duel-action-error" role="alert">
+            <p className="duel-action-error" role="alert" data-testid={journeyTestIds.error}>
               <WarningCircleIcon size={14} weight="fill" /> {actionError}
             </p>
           ) : null}
           {actionNotice ? <p className="signing-note">{actionNotice}</p> : null}
+          {matchmakingSession?.cancellationRule ? (
+            <p className="signing-note">
+              <strong>Cancellation:</strong> {matchmakingSession.cancellationRule}
+            </p>
+          ) : null}
 
           <div className="reveal-grid">
             <DuelCard
@@ -908,12 +1000,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 <TrophyIcon size={24} weight="fill" />
                 <div>
                   <small>Winning margin</small>
-                  <strong>{liveDuel.margin ?? '—'}</strong>
+                  <strong data-testid={journeyTestIds.resultMargin}>
+                    {liveDuel.margin ?? '—'}
+                  </strong>
                 </div>
                 <Separator orientation="vertical" className="h-9 bg-border" />
                 <div>
                   <small>Total prize value</small>
-                  <strong>{liveDuel.totalValue ?? '—'}</strong>
+                  <strong data-testid={journeyTestIds.resultTotalValue}>
+                    {liveDuel.totalValue ?? '—'}
+                  </strong>
                 </div>
               </div>
               <div className="result-actions">
@@ -921,11 +1017,17 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                   type="button"
                   className="share-button"
                   onClick={() => shareResult('native')}
+                  data-testid={journeyTestIds.resultShare}
                 >
                   <ShareNetworkIcon size={16} weight="fill" /> Share result
                 </Button>
                 {persistedDuel.status === 'settled' ? (
-                  <Button type="button" variant="ghost" onClick={() => resetDuel(true)}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => resetDuel(true)}
+                    data-testid={journeyTestIds.resultRematch}
+                  >
                     <ArrowsLeftRightIcon size={16} />{' '}
                     {currentViewerResult ? rematchLabel(currentViewerResult) : 'Run a rematch'}
                   </Button>
@@ -966,7 +1068,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }
 
   return (
-    <main className="lobby-shell">
+    <main className="lobby-shell" data-testid={journeyTestIds.lobby}>
       <section className="lobby-hero">
         <div className="hero-copy">
           <span className="eyebrow">
@@ -977,9 +1079,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             <br />
             <em>Winner takes all.</em>
           </h1>
-          <p>
-            Two wallets. Two authenticated packs. The higher-value pull wins every card in the duel.
-          </p>
+          <p>{getLobbyEconomicsCopy()}</p>
           <div className="hero-proof-row">
             <span>
               <LockKeyIcon size={15} /> Devnet escrow
@@ -995,207 +1095,221 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
         <Card className="match-card border-border bg-secondary">
           <CardContent className="p-0">
-            <div className="mode-tabs" role="tablist" aria-label="Duel mode">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === 'direct'}
-                onClick={() => chooseMode('direct')}
-              >
-                <UserPlusIcon size={17} weight="bold" />
-                <span className="mode-tab-copy">
-                  <strong className="mode-tab-title">Challenge</strong>
-                  <small className="mode-tab-caption">Invite a wallet</small>
-                </span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === 'matchmaking'}
-                onClick={() => chooseMode('matchmaking')}
-              >
-                <UsersThreeIcon size={17} weight="fill" />
-                <span className="mode-tab-copy">
-                  <strong className="mode-tab-title">Matchmake</strong>
-                  <small className="mode-tab-caption">Find a wallet</small>
-                </span>
-              </button>
-              {houseEnabled ? (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={mode === 'house'}
-                  onClick={() => chooseMode('house')}
-                >
-                  <LightningIcon size={17} weight="fill" />
-                  <span className="mode-tab-copy">
-                    <strong className="mode-tab-title">Instant</strong>
-                    <small className="mode-tab-caption">Play the house</small>
-                  </span>
-                </button>
-              ) : null}
-            </div>
+            {capabilities && capabilityFormReady ? (
+              <>
+                <DuelModeTabs
+                  capabilities={capabilities}
+                  disabled={false}
+                  mode={mode}
+                  onSelect={chooseMode}
+                  onKeyDown={handleModeTabKeyDown}
+                  registerTab={(tabMode, element) => {
+                    modeTabRefs.current[tabMode] = element ?? undefined;
+                  }}
+                />
 
-            <div className="match-card-body">
-              <div className="section-label-row">
-                <span>Choose pack tier</span>
-                <span>Both players open one</span>
-              </div>
-              <div className="tier-grid">
-                {tiers.map((value) => (
-                  <TierCard
-                    key={value}
-                    value={value}
-                    selected={tier === value}
-                    disabled={activeEntry?.action === 'accept'}
-                    onSelect={() => chooseTier(value)}
+                <div className="match-card-body">
+                  <PackTierChoices
+                    capabilities={capabilities}
+                    locked={activeEntry?.action === 'accept'}
+                    onSelect={chooseTier}
+                    selectedTier={tier}
                   />
-                ))}
-              </div>
 
-              {mode === 'direct' ? (
-                <div className="wallet-challenge-panel">
-                  {activeEntry ? (
+                  <div
+                    id="mode-panel-direct"
+                    className="mode-panel"
+                    role="tabpanel"
+                    aria-labelledby="mode-tab-direct"
+                    tabIndex={mode === 'direct' ? 0 : -1}
+                    hidden={mode !== 'direct'}
+                  >
+                    <div className="wallet-challenge-panel">
+                      {activeEntry ? (
+                        <div className="opponent-disclosure">
+                          <UserPlusIcon size={18} weight="fill" />
+                          <span>
+                            <strong>
+                              {activeEntry.action === 'accept'
+                                ? `Challenge from ${activeEntry.opponent.label}`
+                                : linkedOpponent
+                                  ? `Rematch against ${linkedOpponent.label}`
+                                  : 'Original duel rematch'}
+                            </strong>
+                            {activeEntry.action === 'accept'
+                              ? `This link reserves the $${activeEntry.tier} direct-wallet seat. Choose another mode to leave it.`
+                              : linkedOpponent
+                                ? `The original $${activeEntry.tier} tier and opponent are ready for a fresh commitment.`
+                                : walletConnection.address
+                                  ? 'This wallet was not in the original duel, so it cannot use the rematch shortcut.'
+                                  : 'Connect either original participant wallet to select the rival automatically.'}
+                          </span>
+                        </div>
+                      ) : null}
+                      <label htmlFor="opponent-wallet">
+                        {activeEntry ? 'Opponent from shared duel' : 'Opponent wallet'}
+                      </label>
+                      <div className="wallet-input-row">
+                        <Input
+                          id="opponent-wallet"
+                          value={opponentWallet}
+                          onChange={(event) => setWallet(event.target.value)}
+                          placeholder="Solana wallet address"
+                          className="wallet-input"
+                          readOnly={Boolean(activeEntry)}
+                          data-testid={journeyTestIds.opponentWallet}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    id="mode-panel-matchmaking"
+                    className="mode-panel"
+                    role="tabpanel"
+                    aria-labelledby="mode-tab-matchmaking"
+                    tabIndex={mode === 'matchmaking' ? 0 : -1}
+                    hidden={mode !== 'matchmaking'}
+                  >
                     <div className="opponent-disclosure">
-                      <UserPlusIcon size={18} weight="fill" />
+                      <UsersThreeIcon size={18} weight="fill" />
                       <span>
-                        <strong>
-                          {activeEntry.action === 'accept'
-                            ? `Challenge from ${activeEntry.opponent.label}`
-                            : linkedOpponent
-                              ? `Rematch against ${linkedOpponent.label}`
-                              : 'Original duel rematch'}
-                        </strong>
-                        {activeEntry.action === 'accept'
-                          ? `This link reserves the $${activeEntry.tier} direct-wallet seat. Choose another mode to leave it.`
-                          : linkedOpponent
-                            ? `The original $${activeEntry.tier} tier and opponent are ready for a fresh commitment.`
-                            : walletConnection.address
-                              ? 'This wallet was not in the original duel, so it cannot use the rematch shortcut.'
-                              : 'Connect either original participant wallet to select the rival automatically.'}
+                        <strong>Public wallet matchmaking</strong>
+                        We match you with another wallet using the same selected pack. You can
+                        continue searching or cancel before funding starts. House play is never
+                        selected automatically.
                       </span>
                     </div>
-                  ) : null}
-                  <label htmlFor="opponent-wallet">
-                    {activeEntry ? 'Opponent from shared duel' : 'Opponent wallet'}
-                  </label>
-                  <div className="wallet-input-row">
-                    <Input
-                      id="opponent-wallet"
-                      value={opponentWallet}
-                      onChange={(event) => setWallet(event.target.value)}
-                      placeholder="Solana wallet address"
-                      className="wallet-input"
-                      readOnly={Boolean(activeEntry)}
-                    />
                   </div>
-                </div>
-              ) : null}
 
-              {mode === 'house' ? (
-                <div className="opponent-disclosure">
-                  <ShieldCheckIcon size={18} weight="fill" />
-                  <span>
-                    <strong>
-                      {activeEntry?.action === 'rematch'
-                        ? 'House rematch ready'
-                        : 'Instant house opponent'}
-                    </strong>
-                    {activeEntry?.action === 'rematch'
-                      ? `The original $${activeEntry.tier} house tier is preselected for a fresh commitment.`
-                      : 'The house funds the matching pack and must precommit before either reveal.'}
-                  </span>
-                </div>
-              ) : null}
+                  <div
+                    id="mode-panel-house"
+                    className="mode-panel"
+                    role="tabpanel"
+                    aria-labelledby="mode-tab-house"
+                    tabIndex={mode === 'house' ? 0 : -1}
+                    hidden={mode !== 'house'}
+                  >
+                    <div className="opponent-disclosure">
+                      <ShieldCheckIcon size={18} weight="fill" />
+                      <span>
+                        <strong>
+                          {activeEntry?.action === 'rematch'
+                            ? 'House rematch ready'
+                            : 'Instant house opponent'}
+                        </strong>
+                        {activeEntry?.action === 'rematch'
+                          ? `The original $${activeEntry.tier} house tier is preselected for a fresh commitment.`
+                          : 'The house funds the matching pack and must precommit before either reveal.'}
+                      </span>
+                    </div>
+                  </div>
 
-              {mode === 'matchmaking' ? (
-                <div className="opponent-disclosure">
-                  <UsersThreeIcon size={18} weight="fill" />
-                  <span>
-                    <strong>Public wallet matchmaking</strong>
-                    We match the exact tier and valuation policy. You can continue searching or
-                    cancel before funding. House play is never selected automatically.
-                  </span>
-                </div>
-              ) : null}
+                  <div className="fee-summary">
+                    <span>
+                      Platform fee <strong>Shown before approval</strong>
+                    </span>
+                    <span>
+                      Pack tier{' '}
+                      <strong data-testid={journeyTestIds.entryTier}>${tier.toFixed(2)}</strong>
+                    </span>
+                    <span>
+                      Pack purchase <strong>Not charged now</strong>
+                    </span>
+                    <span>
+                      Winner gets <strong>Both cards</strong>
+                    </span>
+                  </div>
 
-              <div className="fee-summary">
-                <span>
-                  Pack tier <strong>${tier.toFixed(2)}</strong>
-                </span>
-                <span>
-                  Pack purchase <strong>Later</strong>
-                </span>
-                <span>
-                  Escrow now <strong>Fee only</strong>
-                </span>
+                  <Button
+                    type="button"
+                    className="duel-cta"
+                    onClick={() => reviewDuel()}
+                    disabled={
+                      intentPending ||
+                      matchmakingRestorePending ||
+                      Boolean(matchmakingSession) ||
+                      !selectedPack ||
+                      !selectedModeEnabled ||
+                      (activeEntry?.action === 'rematch' && !linkedOpponent) ||
+                      (mode === 'direct' && opponentWallet.trim().length === 0)
+                    }
+                    data-testid={journeyTestIds.primaryAction}
+                  >
+                    {intentPending ? (
+                      <SpinnerGapIcon className="wallet-spinner" size={18} />
+                    ) : mode === 'matchmaking' || mode === 'house' ? (
+                      <LightningIcon size={18} weight="fill" />
+                    ) : (
+                      <LinkIcon size={18} weight="bold" />
+                    )}
+                    {intentPending
+                      ? 'Preparing payment review'
+                      : mode === 'direct'
+                        ? activeEntry?.action === 'accept'
+                          ? `Accept $${tier} challenge`
+                          : activeEntry?.action === 'rematch'
+                            ? `Review $${tier} rematch`
+                            : `Create $${tier} challenge`
+                        : mode === 'house'
+                          ? activeEntry?.action === 'rematch'
+                            ? `Review $${tier} house rematch`
+                            : `Play house for $${tier}`
+                          : `Find a $${tier} duel`}
+                  </Button>
+                  <p className="signing-note">
+                    <InfoIcon size={13} /> You will see the exact fee and purpose before your wallet
+                    opens.
+                  </p>
+                  {actionError ? (
+                    <p
+                      className="duel-action-error"
+                      role="alert"
+                      data-testid={journeyTestIds.error}
+                    >
+                      <WarningCircleIcon size={14} weight="fill" /> {actionError}
+                    </p>
+                  ) : null}
+                  {actionNotice ? <p className="signing-note">{actionNotice}</p> : null}
+                </div>
+              </>
+            ) : (
+              <div className="match-card-body">
+                <ProductCapabilityPanel
+                  state={capabilityState}
+                  onRetry={() => {
+                    setActionError(null);
+                    setCapabilityReload((value) => value + 1);
+                  }}
+                />
               </div>
-
-              <Button
-                type="button"
-                className="duel-cta"
-                onClick={() => reviewDuel()}
-                disabled={
-                  intentPending ||
-                  matchmakingRestorePending ||
-                  Boolean(matchmakingSession) ||
-                  (activeEntry?.action === 'rematch' && !linkedOpponent) ||
-                  (mode === 'direct' && opponentWallet.trim().length === 0)
-                }
-              >
-                {intentPending ? (
-                  <SpinnerGapIcon className="wallet-spinner" size={18} />
-                ) : mode === 'matchmaking' || mode === 'house' ? (
-                  <LightningIcon size={18} weight="fill" />
-                ) : (
-                  <LinkIcon size={18} weight="bold" />
-                )}
-                {intentPending
-                  ? 'Preparing devnet intent'
-                  : mode === 'direct'
-                    ? activeEntry?.action === 'accept'
-                      ? `Accept $${tier} challenge`
-                      : activeEntry?.action === 'rematch'
-                        ? `Review $${tier} rematch`
-                        : `Create $${tier} challenge`
-                    : mode === 'house'
-                      ? activeEntry?.action === 'rematch'
-                        ? `Review $${tier} house rematch`
-                        : `Play house for $${tier}`
-                      : `Find a $${tier} duel`}
-              </Button>
-              <p className="signing-note">
-                <InfoIcon size={13} /> Every devnet signature is preceded by an explicit transaction
-                review.
-              </p>
-              {actionError ? (
-                <p className="duel-action-error" role="alert">
-                  <WarningCircleIcon size={14} weight="fill" /> {actionError}
-                </p>
-              ) : null}
-              {actionNotice ? <p className="signing-note">{actionNotice}</p> : null}
-            </div>
+            )}
           </CardContent>
         </Card>
       </section>
 
-      {persistedDuel ? (
-        <section className="persisted-duel-panel" role="status">
+      {persistedDuel && playerStatus ? (
+        <section
+          className="persisted-duel-panel"
+          role="status"
+          data-testid={journeyTestIds.persistedDuel}
+        >
           <div>
             <span className="eyebrow">
-              <ShieldCheckIcon size={14} weight="fill" /> Durable devnet duel
+              <ShieldCheckIcon size={14} weight="fill" /> Devnet duel
             </span>
-            <h2>{persistedStatusHeadline(persistedDuel.status, Boolean(matchmakingSession))}</h2>
-            <p>
-              <code>{persistedDuel.id}</code> is persisted by the API. This screen follows its
-              canonical status and displays card outcomes only after the API commits both results.
-            </p>
-            {matchmakingSession ? (
-              <p>
-                Queue: ${matchmakingSession.queue.tier} · {matchmakingSession.queue.regionSegment} ·{' '}
-                {matchmakingSession.queue.riskSegment}. {matchmakingSession.cancellationRule}{' '}
-                {houseFallbackAction?.disclosure}
+            <h2>{playerStatus.headline}</h2>
+            <p>{playerStatus.detail}</p>
+            {playerStatus.nextAction ? (
+              <p className="duel-next-action">
+                <strong>Next:</strong> {playerStatus.nextAction}
               </p>
+            ) : null}
+            {matchmakingSearchCopy ? (
+              <>
+                <p>{matchmakingSearchCopy}</p>
+                {houseFallbackAction?.disclosure ? <p>{houseFallbackAction.disclosure}</p> : null}
+              </>
             ) : null}
           </div>
           <div className="persisted-duel-actions">
@@ -1205,6 +1319,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 variant="ghost"
                 onClick={continueMatchmaking}
                 disabled={intentPending}
+                data-testid={journeyTestIds.persistedDuelContinue}
               >
                 {intentPending ? <SpinnerGapIcon className="wallet-spinner" size={16} /> : null}
                 Continue search
@@ -1212,12 +1327,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             ) : null}
             {matchmakingSession?.state === 'searching' &&
             houseFallbackAction?.available &&
-            houseEnabled ? (
+            houseFallbackEnabled ? (
               <Button
                 type="button"
                 variant="ghost"
                 onClick={chooseHouseFallback}
                 disabled={intentPending}
+                data-testid={journeyTestIds.persistedDuelHouse}
               >
                 <ShieldCheckIcon size={16} weight="fill" /> Select disclosed house
               </Button>
@@ -1226,7 +1342,12 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               persistedDuel.creatorWallet === walletConnection.address) ||
             (persistedDuel.status === 'committing' &&
               persistedDuel.opponentWallet === walletConnection.address) ? (
-              <Button type="button" onClick={reviewPersistedFunding} disabled={intentPending}>
+              <Button
+                type="button"
+                onClick={reviewPersistedFunding}
+                disabled={intentPending}
+                data-testid={journeyTestIds.persistedDuelFund}
+              >
                 {intentPending ? <SpinnerGapIcon className="wallet-spinner" size={16} /> : null}
                 Review platform fee
               </Button>
@@ -1235,15 +1356,17 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               <Button
                 type="button"
                 variant="ghost"
+                data-testid={journeyTestIds.persistedDuelCopy}
                 onClick={async () => {
                   const challengeUrl = `${window.location.origin}/duel/${encodeURIComponent(persistedDuel.id)}`;
                   await navigator.clipboard.writeText(challengeUrl);
+                  const trackedTier = toTrackedTier(tier);
                   trackProductEvent({
                     duelId: persistedDuel.id,
                     mode: persistedDuel.matchmakingMode,
                     name: 'duel_shared',
                     status: persistedDuel.status,
-                    tier: 50,
+                    ...(trackedTier ? { tier: trackedTier } : {}),
                   });
                   setCopied(true);
                   window.setTimeout(() => setCopied(false), 1800);
@@ -1259,12 +1382,18 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 variant="ghost"
                 onClick={cancelPersistedDuel}
                 disabled={intentPending}
+                data-testid={journeyTestIds.persistedDuelCancel}
               >
                 {intentPending ? <SpinnerGapIcon className="wallet-spinner" size={16} /> : null}
                 Cancel duel
               </Button>
             ) : (
-              <Button type="button" variant="ghost" onClick={() => setPersistedDuel(null)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setPersistedDuel(null)}
+                data-testid={journeyTestIds.persistedDuelRestart}
+              >
                 Start another duel
               </Button>
             )}
@@ -1288,10 +1417,20 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           <strong>Winner takes all</strong>
           <small>Higher verified value gets both cards</small>
         </div>
-        <button type="button">
-          <ShareNetworkIcon size={15} /> Full rules
-        </button>
       </section>
+      <details className="rules-disclosure">
+        <summary>
+          <ShareNetworkIcon size={15} /> Full rules, odds, fees, and cancellations
+        </summary>
+        <div className="rules-disclosure-grid">
+          {duelRules.map((rule) => (
+            <article key={rule.title}>
+              <strong>{rule.title}</strong>
+              <p>{rule.body}</p>
+            </article>
+          ))}
+        </div>
+      </details>
       {intent ? (
         <TransactionIntentReview
           intent={intent}
@@ -1307,17 +1446,6 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   );
 }
 
-function fundingReconciliationNotice(duel: DurableDuel, activeTransactionCount: number): string {
-  if (activeTransactionCount > 0) {
-    return 'Funding is still confirming on Solana devnet. This wallet can resume verification without a background worker.';
-  }
-  if (duel.status === 'funded') return 'Both escrow deposits are finalized. The duel is funded.';
-  if (duel.status === 'committing') {
-    return 'Your escrow deposit is finalized. Waiting for the other wallet to fund.';
-  }
-  return `Funding reconciliation completed with duel status: ${duel.status}.`;
-}
-
 function toTrackedMode(mode: Mode): 'direct' | 'house' | 'open' {
   return mode === 'matchmaking' ? 'open' : mode;
 }
@@ -1330,28 +1458,4 @@ function toTrackedTier(tier: number): 25 | 50 | 100 | undefined {
 function shortReference(value?: string | null): string | null {
   if (!value) return null;
   return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
-}
-
-function persistedStatusHeadline(
-  status: DurableDuel['status'],
-  hasMatchmakingSession: boolean,
-): string {
-  const headlines: Record<DurableDuel['status'], string> = {
-    awaiting_assets: 'Pulls committed; card assets pending',
-    cancelled: 'Duel cancelled before settlement',
-    cancelling: 'Duel cancellation is finalizing',
-    committing: 'Escrow funding in progress',
-    failed: 'Duel requires recovery',
-    funded: 'Both platform fees finalized',
-    matched: 'Both wallets are matched',
-    opening: 'Both packs are opening',
-    refunded: 'Both deposits were refunded',
-    refunding: 'Refund transactions are finalizing',
-    settled: 'Duel settled from committed outcomes',
-    settling: 'Winner settlement is finalizing',
-    waiting: hasMatchmakingSession
-      ? 'Searching the exact public queue'
-      : 'Challenge created and waiting',
-  };
-  return headlines[status];
 }
