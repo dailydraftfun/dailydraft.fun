@@ -235,10 +235,6 @@ export async function fetchPublicWalletProfile(
   );
 }
 
-export function publicReceiptDownloadUrl(duelId: string): string {
-  return `${apiBaseUrl}/duels/${encodeURIComponent(duelId)}/receipt`;
-}
-
 async function fetchPublicJson<T>(url: string): Promise<T | null> {
   try {
     const response = await fetch(url, {

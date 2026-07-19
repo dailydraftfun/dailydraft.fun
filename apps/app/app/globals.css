@@ -3199,19 +3199,6 @@
   color: var(--lime);
 }
 
-.receipt-download-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.receipt-download-row p {
-  margin: 7px 0 0;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
 @media (max-width: 640px) {
   .receipt-artifact-header,
   .receipt-hero {
@@ -3286,8 +3273,7 @@
     margin-left: 18px;
   }
 
-  .receipt-empty-result > div,
-  .receipt-download-row {
+  .receipt-empty-result > div {
     align-items: flex-start;
     flex-direction: column;
   }
