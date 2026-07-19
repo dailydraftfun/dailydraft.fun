@@ -1,17 +1,23 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
-import Link from 'next/link';
 import { cache } from 'react';
 import { buildDuelMetadata, receiptTitle } from '../duel-metadata';
+import { DuelPrimaryAction } from '../duel-primary-action';
 import { DuelProofRefresh } from '../duel-proof-refresh';
+import { DuelUnavailableProof } from '../duel-unavailable-proof';
 import {
   fetchPublicDuelReceipt,
   formatPublicMoney,
   type PublicDuelReceipt,
   type PublicDuelStatus,
   type PublicPostDuelCardActionState,
-  publicReceiptDownloadUrl,
 } from '../public-proof-client';
+import {
+  type DuelSocialSnapshot,
+  getDuelSocialSnapshot,
+  getPrimaryAction,
+  getSocialDescription,
+} from '../social-card-data';
 
 type DuelPageProps = { params: Promise<{ duelId: string }> };
 
@@ -39,13 +45,15 @@ export async function generateMetadata({ params }: DuelPageProps): Promise<Metad
 export default async function DuelPage({ params }: DuelPageProps) {
   const { duelId } = await params;
   const receipt = await getReceipt(duelId);
-  if (!receipt) return <UnavailableProof duelId={duelId} />;
+  if (!receipt) return <DuelUnavailableProof duelId={duelId} />;
 
   const active = !terminalStatuses.has(receipt.duel.status);
+  const socialSnapshot = getDuelSocialSnapshot(receipt);
   const canonicalOrigin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://openpacksduel.vercel.app';
   const canonicalUrl = `${canonicalOrigin}/duel/${encodeURIComponent(receipt.duel.id)}`;
+  const socialImagePath = `/duel/${encodeURIComponent(receipt.duel.id)}/social/${receipt.duel.status}`;
   const shareUrl = `https://x.com/intent/post?${new URLSearchParams({
-    text: `${receiptTitle(receipt)} · ${receipt.pack.name}`,
+    text: getSocialDescription(socialSnapshot),
     url: canonicalUrl,
   }).toString()}`;
 
@@ -67,11 +75,16 @@ export default async function DuelPage({ params }: DuelPageProps) {
         </div>
         <div className="flex flex-wrap gap-2">
           <DuelProofRefresh active={active} />
-          <Link className="proof-primary-action" href={receipt.actions.primary.href}>
-            {receipt.actions.primary.label}
-          </Link>
           <a className="proof-secondary-action" href={shareUrl} target="_blank" rel="noreferrer">
             Share on X
+          </a>
+          <a
+            className="proof-secondary-action"
+            href={socialImagePath}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open social image
           </a>
         </div>
       </header>
@@ -87,6 +100,8 @@ export default async function DuelPage({ params }: DuelPageProps) {
           </p>
         </section>
       ) : null}
+
+      <PublicStateCard receipt={receipt} snapshot={socialSnapshot} />
 
       <section className="proof-stat-grid">
         <ProofStat label="Status" value={receipt.duel.status} />
@@ -153,26 +168,58 @@ export default async function DuelPage({ params }: DuelPageProps) {
         </article>
       </section>
 
-      <section className="flex flex-col justify-between gap-4 rounded-xl border border-border bg-secondary p-5 sm:flex-row sm:items-center">
-        <div>
-          <p className="proof-label">Machine-readable receipt</p>
-          <p className="mt-2 text-sm text-secondary">
-            Strict public DTO · no support errors, private metadata, or credentials.
-          </p>
-        </div>
-        <a
-          className="proof-secondary-action"
-          href={publicReceiptDownloadUrl(receipt.duel.id)}
-          download
-        >
-          Download JSON
-        </a>
-      </section>
-
       <p className="text-xs leading-5 text-secondary">
-        Privacy: {receipt.privacy.reason} This page is excluded from indexing.
+        Privacy: {receipt.privacy.reason} This spectator view uses pseudonymous display names and
+        keeps full wallet addresses out of the rendered page and social metadata.
       </p>
     </main>
+  );
+}
+
+function PublicStateCard({
+  receipt,
+  snapshot,
+}: {
+  receipt: PublicDuelReceipt;
+  snapshot: DuelSocialSnapshot;
+}) {
+  const primaryAction = getPrimaryAction(snapshot);
+  const waiting = receipt.duel.status === 'waiting';
+
+  return (
+    <section className="rounded-xl border border-lime/20 bg-lime/5 p-5 sm:p-6">
+      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+        <div>
+          <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-lime">
+            {snapshot.badge}
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold text-primary">{snapshot.headline}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-secondary">{snapshot.subline}</p>
+        </div>
+        <DuelPrimaryAction action={primaryAction} />
+      </div>
+
+      {waiting ? (
+        <dl className="mt-5 grid gap-3 border-t border-lime/15 pt-5 sm:grid-cols-4">
+          <InvitationFact label="Invited by" value={receipt.participants.creator.display} />
+          <InvitationFact label="Pack tier" value={receipt.pack.name} />
+          <InvitationFact label="Per-player stake" value={formatPublicMoney(receipt.pack.tier)} />
+          <InvitationFact
+            label="Accept before"
+            value={new Date(receipt.duel.expiresAt).toLocaleString()}
+          />
+        </dl>
+      ) : null}
+    </section>
+  );
+}
+
+function InvitationFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="proof-label">{label}</dt>
+      <dd className="mt-2 text-sm font-semibold text-primary">{value}</dd>
+    </div>
   );
 }
 
@@ -360,13 +407,10 @@ function ParticipantCard({
   return (
     <article className="proof-panel">
       <p className="proof-label">{participant.role}</p>
-      <Link
-        href={`/profile/${encodeURIComponent(participant.address)}`}
-        className="mt-2 inline-block text-xl font-semibold text-primary hover:text-lime"
-      >
-        {participant.display}
-      </Link>
-      <p className="mt-3 break-all font-mono text-[10px] text-secondary">{participant.address}</p>
+      <h2 className="mt-2 text-xl font-semibold text-primary">{participant.display}</h2>
+      <p className="mt-3 text-xs leading-5 text-secondary">
+        Pseudonymous wallet identity. Full addresses stay out of the spectator surface.
+      </p>
     </article>
   );
 }
@@ -426,24 +470,6 @@ function ReferenceList({ receipt }: { receipt: PublicDuelReceipt }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-function UnavailableProof({ duelId }: { duelId: string }) {
-  return (
-    <main className="mx-auto min-h-[calc(100svh-4rem)] max-w-3xl px-4 py-16 sm:px-6">
-      <p className="proof-label">Proof unavailable</p>
-      <h1 className="mt-3 text-3xl font-semibold text-primary">
-        This duel is not publicly readable yet.
-      </h1>
-      <p className="mt-4 text-sm leading-6 text-secondary">
-        The API returned no durable public receipt for <code>{duelId}</code>. No status or result is
-        inferred.
-      </p>
-      <Link href="/overview" className="proof-primary-action mt-6">
-        Back to duels
-      </Link>
-    </main>
   );
 }
 

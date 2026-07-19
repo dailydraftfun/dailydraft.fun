@@ -228,13 +228,46 @@ export function selectHouseFallback(
   });
 }
 
-export async function getDuel(duelId: string): Promise<DurableDuel> {
+export async function getDuel(duelId: string, sessionToken: string): Promise<DurableDuel> {
   if (!apiBaseUrl) throw new Error('The duel API is not configured.');
-  const response = await fetch(`${apiBaseUrl}/duels/${encodeURIComponent(duelId)}`, {
+  return requestAuthenticatedDuel(apiBaseUrl, duelId, sessionToken);
+}
+
+export async function requestAuthenticatedDuel(
+  baseUrl: string,
+  duelId: string,
+  sessionToken: string,
+  fetcher: typeof fetch = fetch,
+): Promise<DurableDuel> {
+  const response = await fetcher(`${baseUrl}/duels/${encodeURIComponent(duelId)}`, {
     cache: 'no-store',
+    headers: { authorization: `Bearer ${sessionToken}` },
   });
-  if (!response.ok) throw new Error(`The duel could not be refreshed (${response.status}).`);
-  return (await response.json()) as DurableDuel;
+  return parseMutationResponse(response);
+}
+
+export async function getPrivateRematchOpponent(
+  duelId: string,
+  sessionToken: string,
+): Promise<{ side: 'creator' | 'opponent'; wallet: string }> {
+  if (!apiBaseUrl) throw new Error('The duel API is not configured.');
+  return requestPrivateRematchOpponent(apiBaseUrl, duelId, sessionToken);
+}
+
+export async function requestPrivateRematchOpponent(
+  baseUrl: string,
+  duelId: string,
+  sessionToken: string,
+  fetcher: typeof fetch = fetch,
+): Promise<{ side: 'creator' | 'opponent'; wallet: string }> {
+  const response = await fetcher(
+    `${baseUrl}/duels/${encodeURIComponent(duelId)}/rematch-opponent`,
+    {
+      cache: 'no-store',
+      headers: { authorization: `Bearer ${sessionToken}` },
+    },
+  );
+  return parseMutationResponse(response);
 }
 
 export function advanceDuelLifecycle(duelId: string, sessionToken: string): Promise<DurableDuel> {
@@ -448,14 +481,20 @@ async function parseMutationResponse<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
-class DuelApiRequestError extends Error {
+export class DuelApiRequestError extends Error {
   readonly retryable: boolean;
+  readonly status: number;
 
   constructor(message: string, status: number) {
     super(message);
     this.name = 'DuelApiRequestError';
     this.retryable = status === 429 || status >= 500;
+    this.status = status;
   }
+}
+
+export function isRetryableDuelRequestError(error: unknown): boolean {
+  return error instanceof DuelApiRequestError ? error.retryable : true;
 }
 
 function wait(milliseconds: number): Promise<void> {

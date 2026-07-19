@@ -34,8 +34,9 @@ someone else's signature to the API.
 
 ## 4. Observe finality
 
-Poll `GET /v1/duels/{duelId}` or consume signed webhooks. Treat a duel status as
-final only when its response includes an on-chain signature and the required
+Poll `GET /v1/duels/{duelId}` with the participant wallet-session bearer token,
+or consume signed webhooks with an integration credential. Treat a duel status
+as final only when its response includes an on-chain signature and the required
 confirmation level.
 
 ## 5. Share

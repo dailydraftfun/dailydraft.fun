@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { PublicDuelReceipt } from './public-proof-client';
-import { getDuelSocialSnapshot } from './social-card-data';
+import { getDuelSocialSnapshot, getPrimaryAction, getSocialDescription } from './social-card-data';
 
 describe('duel social card data', () => {
   test('uses the receipt status instead of a forged URL status', () => {
@@ -25,6 +25,46 @@ describe('duel social card data', () => {
     ]);
     expect(snapshot.totalValue).toBe('$103.5');
   });
+
+  test('uses the canonical action projected by the public receipt', () => {
+    const publicReceipt = receipt({ status: 'cancelling' });
+    publicReceipt.actions.primary = {
+      href: '/duel/duel_truth?canonical=receipt',
+      label: 'Follow canonical receipt action',
+    };
+    const snapshot = getDuelSocialSnapshot(publicReceipt);
+
+    expect(getPrimaryAction(snapshot)).toEqual({
+      href: '/duel/duel_truth?canonical=receipt',
+      label: 'Follow canonical receipt action',
+    });
+  });
+
+  test('keeps wallet addresses and transaction references out of social copy', () => {
+    const publicReceipt = receipt({ status: 'opening' });
+    publicReceipt.participants.creator.address = 'creator_sensitive_wallet_address';
+    if (publicReceipt.participants.opponent) {
+      publicReceipt.participants.opponent.address = 'opponent_sensitive_wallet_address';
+    }
+    publicReceipt.references.solana = [
+      {
+        action: 'fund',
+        bindingSource: 'api-submission',
+        explorerUrl: 'https://explorer.solana.com/tx/sensitive_signature',
+        finalizedAt: null,
+        recoveredAt: null,
+        signature: 'sensitive_signature',
+        status: 'finalized',
+      },
+    ];
+
+    const snapshot = getDuelSocialSnapshot(publicReceipt);
+    const sharedText = JSON.stringify({ snapshot, description: getSocialDescription(snapshot) });
+
+    expect(sharedText).not.toContain('creator_sensitive_wallet_address');
+    expect(sharedText).not.toContain('opponent_sensitive_wallet_address');
+    expect(sharedText).not.toContain('sensitive_signature');
+  });
 });
 
 function receipt({
@@ -36,7 +76,7 @@ function receipt({
 }): PublicDuelReceipt {
   return {
     actions: {
-      primary: { href: '/duel/duel_truth', label: 'View' },
+      primary: { href: '/canonical-action-from-receipt', label: 'Canonical receipt action' },
       rematch: null,
       share: { href: '/duel/duel_truth', label: 'Share' },
     },

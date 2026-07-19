@@ -803,7 +803,7 @@ function receiptActions(duelId: string, status: PublicDuelStatus): PublicDuelRec
     return { primary: rematch, rematch, share };
   }
   if (!TERMINAL_STATUSES.has(status)) {
-    return { primary: { href: `/duel/${encoded}`, label: 'Spectate duel' }, rematch: null, share };
+    return { primary: { href: '/overview', label: 'Open a duel' }, rematch: null, share };
   }
   return { primary: { href: '/overview', label: 'Open a new duel' }, rematch: null, share };
 }

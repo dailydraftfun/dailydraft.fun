@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { PublicDuelReceipt, PublicDuelStatus } from './public-proof-client';
+import { getDuelSocialSnapshot, getSocialDescription } from './social-card-data';
 
 const defaultAppUrl = 'https://openpacksduel.vercel.app';
 
@@ -9,7 +10,12 @@ export function buildDuelMetadata(
 ): Metadata {
   const title = `${receiptTitle(receipt)} — Pack Duel`;
   const participantSummary = `${receipt.participants.creator.display} vs ${receipt.participants.opponent?.display ?? 'open seat'}`;
-  const description = `${receipt.pack.name} duel on Solana devnet: ${participantSummary}. Status: ${receipt.duel.status}.`;
+  const snapshot = getDuelSocialSnapshot(receipt);
+  const expiry =
+    receipt.duel.status === 'waiting'
+      ? ` Accept before ${new Date(receipt.duel.expiresAt).toISOString()}.`
+      : '';
+  const description = `${getSocialDescription(snapshot)} ${receipt.pack.name} on Solana devnet.${expiry}`;
   const canonicalUrl = absoluteAppUrl(`/duel/${encodeURIComponent(receipt.duel.id)}`, appUrl);
   const imageUrl = absoluteAppUrl(
     `/duel/${encodeURIComponent(receipt.duel.id)}/social/${receipt.duel.status}`,

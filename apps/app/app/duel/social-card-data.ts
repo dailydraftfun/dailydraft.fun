@@ -38,6 +38,7 @@ export type DuelSocialSnapshot = StatusPresentation & {
   network: 'devnet';
   opponent: string;
   opponentType: 'house' | 'wallet';
+  primaryAction: DuelAction;
   player: string;
   pulls: DuelSocialPull[];
   requestedStatusMatches: boolean;
@@ -169,6 +170,7 @@ export function getDuelSocialSnapshot(
     network: 'devnet',
     opponent: receipt.participants.opponent?.display ?? 'Waiting for opponent',
     opponentType: receipt.duel.mode === 'house' ? 'house' : 'wallet',
+    primaryAction: { ...receipt.actions.primary },
     player: receipt.participants.creator.display,
     pulls,
     requestedStatusMatches: requestedStatus == null || requestedStatus === status,
@@ -189,29 +191,7 @@ export function getDuelSocialSnapshot(
 }
 
 export function getPrimaryAction(snapshot: DuelSocialSnapshot): DuelAction {
-  if (snapshot.status === 'waiting') {
-    return {
-      href: `/overview?challenge=${encodeURIComponent(snapshot.duelId)}`,
-      label: 'Accept challenge',
-    };
-  }
-  if (snapshot.status === 'settled') {
-    return {
-      href: `/overview?rematch=${encodeURIComponent(snapshot.duelId)}`,
-      label: 'Run a rematch',
-    };
-  }
-  if (
-    ['matched', 'committing', 'funded', 'opening', 'awaiting_assets', 'settling'].includes(
-      snapshot.status,
-    )
-  ) {
-    return {
-      href: `/duel/${encodeURIComponent(snapshot.duelId)}?status=${snapshot.status}`,
-      label: 'Watch live',
-    };
-  }
-  return { href: '/overview', label: 'Open a new duel' };
+  return snapshot.primaryAction;
 }
 
 export function getSocialDescription(snapshot: DuelSocialSnapshot): string {
@@ -219,7 +199,19 @@ export function getSocialDescription(snapshot: DuelSocialSnapshot): string {
     return `${snapshot.pulls[0]?.displayName} (${snapshot.pulls[0]?.value}) faced ${snapshot.pulls[1]?.displayName} (${snapshot.pulls[1]?.value}) in a ${snapshot.tier} Pack Duel.`;
   }
 
-  return snapshot.subline;
+  if (snapshot.status === 'waiting') {
+    return `${snapshot.player} opened a ${snapshot.tier} challenge. ${snapshot.subline}`;
+  }
+
+  if (
+    ['matched', 'committing', 'funded', 'opening', 'awaiting_assets', 'settling'].includes(
+      snapshot.status,
+    )
+  ) {
+    return `${snapshot.player} vs ${snapshot.opponent} in a ${snapshot.tier} Pack Duel. ${snapshot.subline}`;
+  }
+
+  return `${snapshot.headline} ${snapshot.subline}`;
 }
 
 function formatMoney(money: PublicMoney): string {
