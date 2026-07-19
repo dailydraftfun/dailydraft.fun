@@ -64,6 +64,7 @@ import {
   type MatchmakingSession,
   prepareDuelIntent,
   reconcileDuelTransactions,
+  recordRejectedDuelIntent,
   searchOpenMatchmaking,
   selectHouseFallback,
   submitSignedDuelIntent,
@@ -230,6 +231,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [restoreDraftPending, setRestoreDraftPending] = useState(false);
   const [restorePending, setRestorePending] = useState(false);
   const [intent, setIntent] = useState<DuelTransactionIntent | null>(null);
+  const [rejectedIntentId, setRejectedIntentId] = useState<string | null>(null);
   const [intentPending, setIntentPending] = useState(false);
   const [fundingPhase, setFundingPhase] = useState<
     'idle' | 'signing' | 'confirming' | 'recovering'
@@ -326,6 +328,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setTier(draft.tier);
       setWallet(draft.opponentAddress);
       setRecoveryDuelId(draft.duelId);
+      setRejectedIntentId(draft.rejectedIntentId);
       setRestoreDraftPending(Boolean(draft.duelId));
       setFundingPhase(draft.broadcastPending ? 'recovering' : 'idle');
       setEntryFlowOpen(true);
@@ -355,6 +358,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           duelId: nextDuelId,
           mode,
           opponentAddress: wallet,
+          rejectedIntentId,
           tier: toDraftTier(tier),
         }),
       ),
@@ -367,6 +371,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     matchmakingSession,
     mode,
     persistedDuel,
+    rejectedIntentId,
     recoveryDuelId,
     tier,
     wallet,
@@ -383,17 +388,19 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     ) {
       return;
     }
-    const recoveryKey = `${recoveryDuelId}:${walletConnection.address}:${authentication.sessionToken}:${fundingPhase}:${recoveryAttempt}`;
+    const recoveryKey = `${recoveryDuelId}:${walletConnection.address}:${authentication.sessionToken}:${fundingPhase}:${rejectedIntentId ?? 'none'}:${recoveryAttempt}`;
     if (duelRecoveryKey.current === recoveryKey) return;
     duelRecoveryKey.current = recoveryKey;
     let active = true;
     setRestorePending(true);
     setActionError(null);
     restoreDuelEntry({
+      abandonRejectedIntent: recordRejectedDuelIntent,
       duelId: recoveryDuelId,
       fundingPossiblyBroadcast: fundingPhase === 'recovering',
       loadDuel: getDuel,
       prepareIntent: prepareDuelIntent,
+      rejectedIntentId,
       sessionToken: authentication.sessionToken,
       wallet: walletConnection.address,
     })
@@ -404,6 +411,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         setPersistedDuel(duel);
         setIntent(restoredIntent);
         if (restoredIntent) {
+          setRejectedIntentId(null);
           setActionNotice('Saved funding restored with a fresh, unsigned transaction review.');
         } else {
           setActionNotice(`Saved duel restored at ${duel.status.replaceAll('_', ' ')}.`);
@@ -426,6 +434,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     fundingPhase,
     recoveryAttempt,
     recoveryDuelId,
+    rejectedIntentId,
     restoreDraftPending,
     walletConnection.address,
   ]);
@@ -436,6 +445,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     }
     window.localStorage.removeItem(DUEL_ENTRY_DRAFT_STORAGE_KEY);
     setRecoveryDuelId(null);
+    setRejectedIntentId(null);
   }, [persistedDuel]);
 
   useEffect(() => {
@@ -678,7 +688,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             walletConnection.address,
             authentication.sessionToken as string,
           );
-          if (active) setIntent(prepared);
+          if (active) {
+            setIntent(prepared);
+            setRejectedIntentId(null);
+          }
         } else if (active) {
           setActionNotice('Opponent found. The creator must initialize and fund escrow first.');
         }
@@ -787,9 +800,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               );
         setPersistedDuel(duel);
         if (duel.status === 'matched' && duel.creatorWallet === walletConnection.address) {
-          setIntent(
-            await prepareDuelIntent(duel.id, walletConnection.address, authentication.sessionToken),
+          const prepared = await prepareDuelIntent(
+            duel.id,
+            walletConnection.address,
+            authentication.sessionToken,
           );
+          setIntent(prepared);
+          setRejectedIntentId(null);
         } else if (duel.status === 'matched') {
           setActionNotice('Challenge accepted. The creator must initialize and fund escrow first.');
         }
@@ -813,13 +830,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     try {
       const refreshed = await getDuel(persistedDuel.id);
       setPersistedDuel(refreshed);
-      setIntent(
-        await prepareDuelIntent(
-          refreshed.id,
-          walletConnection.address,
-          authentication.sessionToken,
-        ),
+      const prepared = await prepareDuelIntent(
+        refreshed.id,
+        walletConnection.address,
+        authentication.sessionToken,
       );
+      setIntent(prepared);
+      setRejectedIntentId(null);
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : 'Could not prepare the funding transaction.',
@@ -907,6 +924,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     if (!intent || !authentication.sessionToken) return;
     setIntentPending(true);
     setFundingPhase('signing');
+    setRejectedIntentId(null);
     setActionError(null);
     window.localStorage.setItem(
       DUEL_ENTRY_DRAFT_STORAGE_KEY,
@@ -916,6 +934,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           duelId: persistedDuel?.id ?? intent.duelId,
           mode,
           opponentAddress: wallet,
+          rejectedIntentId: null,
           tier: toDraftTier(tier),
         }),
       ),
@@ -934,11 +953,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setActionNotice('Funding broadcast on Solana devnet. Verifying finalized escrow state…');
       await reconcileBroadcastFunding(intent.duelId, authentication.sessionToken);
     } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : 'The wallet did not approve the transaction.',
-      );
       if (error instanceof WalletTransactionNotBroadcastError) {
         setFundingPhase('idle');
+        setRejectedIntentId(intent.id);
         window.localStorage.setItem(
           DUEL_ENTRY_DRAFT_STORAGE_KEY,
           JSON.stringify(
@@ -947,16 +964,47 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               duelId: persistedDuel?.id ?? intent.duelId,
               mode,
               opponentAddress: wallet,
+              rejectedIntentId: intent.id,
               tier: toDraftTier(tier),
             }),
           ),
         );
+        try {
+          await recoverRejectedFundingIntent(intent.duelId, intent.id, authentication.sessionToken);
+          setActionNotice(
+            'Nothing was broadcast. Review the fresh unsigned transaction before trying again.',
+          );
+        } catch (recoveryError) {
+          setActionError(
+            recoveryError instanceof Error
+              ? `Nothing was broadcast. ${recoveryError.message}`
+              : 'Nothing was broadcast. Resume to reset the rejected review and try again.',
+          );
+        }
       } else {
         setFundingPhase('recovering');
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : 'The wallet outcome is uncertain. Resume confirmation before signing again.',
+        );
       }
     } finally {
       setIntentPending(false);
     }
+  }
+
+  async function recoverRejectedFundingIntent(
+    duelId: string,
+    rejectedId: string,
+    sessionToken: string,
+  ): Promise<void> {
+    if (!walletConnection.address) throw new Error('Reconnect the funding wallet to continue.');
+    await recordRejectedDuelIntent(duelId, rejectedId, sessionToken);
+    const replacement = await prepareDuelIntent(duelId, walletConnection.address, sessionToken);
+    setIntent(replacement);
+    setRejectedIntentId(null);
+    setFundingPhase('idle');
   }
 
   async function resumeBroadcastConfirmation(): Promise<void> {
@@ -1003,6 +1051,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         sessionToken,
       );
       setIntent(refreshedIntent);
+      setRejectedIntentId(null);
       setFundingPhase('idle');
       setActionNotice(
         'No broadcast funding remains active. Review the fresh fee before choosing whether to sign again.',
@@ -1010,6 +1059,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       return;
     }
     setIntent(null);
+    setRejectedIntentId(null);
     setFundingPhase('idle');
     setActionNotice(fundingReconciliationNotice(refreshed, 0));
   }
@@ -1021,6 +1071,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     }
     window.localStorage.removeItem(DUEL_ENTRY_DRAFT_STORAGE_KEY);
     setRecoveryDuelId(null);
+    setRejectedIntentId(null);
     setIntent(null);
     setPersistedDuel(null);
     setMatchmakingSession(null);
@@ -1029,6 +1080,27 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }
 
   async function resumeGuidedEntry(): Promise<void> {
+    if (rejectedIntentId) {
+      const duelId = intent?.duelId ?? persistedDuel?.id ?? recoveryDuelId;
+      if (!duelId || !authentication.sessionToken) return;
+      setIntentPending(true);
+      setActionError(null);
+      try {
+        await recoverRejectedFundingIntent(duelId, rejectedIntentId, authentication.sessionToken);
+        setActionNotice(
+          'The rejected review was reset. Review the fresh unsigned transaction before trying again.',
+        );
+      } catch (error) {
+        setActionError(
+          error instanceof Error
+            ? `Nothing was broadcast. ${error.message}`
+            : 'Nothing was broadcast. The rejected review could not be reset yet.',
+        );
+      } finally {
+        setIntentPending(false);
+      }
+      return;
+    }
     if (fundingPhase === 'recovering') {
       await resumeBroadcastConfirmation();
       return;
@@ -1060,6 +1132,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setPersistedDuel(null);
     setMatchmakingSession(null);
     setIntent(null);
+    setRejectedIntentId(null);
     setEntryFlowOpen(false);
     setRecoveryDuelId(null);
     window.localStorage.removeItem(DUEL_ENTRY_DRAFT_STORAGE_KEY);
@@ -1437,7 +1510,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                     setCapabilityReload((value) => value + 1);
                   }}
                 />
-            </div>
+              </div>
             )}
           </CardContent>
         </Card>

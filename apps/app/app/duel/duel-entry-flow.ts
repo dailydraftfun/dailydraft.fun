@@ -8,6 +8,7 @@ export type DuelEntryDraft = {
   duelId: string | null;
   mode: DuelOpponentType;
   opponentAddress: string;
+  rejectedIntentId: string | null;
   tier: 25 | 50 | 100;
   updatedAt: string;
   version: 1;
@@ -120,6 +121,11 @@ export function parseDuelEntryDraft(value: string | null, now = Date.now()): Due
       !isTier(parsed.tier) ||
       typeof parsed.opponentAddress !== 'string' ||
       (parsed.duelId !== null && typeof parsed.duelId !== 'string') ||
+      (parsed.rejectedIntentId !== undefined &&
+        parsed.rejectedIntentId !== null &&
+        (typeof parsed.rejectedIntentId !== 'string' ||
+          !/^tx_[A-Za-z0-9]{12,64}$/.test(parsed.rejectedIntentId))) ||
+      (Boolean(parsed.rejectedIntentId) && (!parsed.duelId || parsed.broadcastPending)) ||
       typeof parsed.updatedAt !== 'string' ||
       !Number.isFinite(new Date(parsed.updatedAt).getTime()) ||
       now - new Date(parsed.updatedAt).getTime() > DUEL_ENTRY_DRAFT_MAX_AGE_MS ||
@@ -132,6 +138,7 @@ export function parseDuelEntryDraft(value: string | null, now = Date.now()): Due
       duelId: parsed.duelId,
       mode: parsed.mode,
       opponentAddress: parsed.opponentAddress,
+      rejectedIntentId: parsed.rejectedIntentId ?? null,
       tier: parsed.tier,
       updatedAt: parsed.updatedAt,
       version: 1,

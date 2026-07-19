@@ -11,6 +11,9 @@ describe('duel entry recovery', () => {
   test('awaits a fresh unsigned intent before returning one restored state update', async () => {
     const calls: string[] = [];
     const restored = await restoreDuelEntry({
+      abandonRejectedIntent: async () => {
+        calls.push('rejection');
+      },
       duelId: 'duel_123',
       fundingPossiblyBroadcast: false,
       loadDuel: async () => {
@@ -21,6 +24,7 @@ describe('duel entry recovery', () => {
         calls.push('intent');
         return intent();
       },
+      rejectedIntentId: null,
       sessionToken: 'session',
       wallet: 'creator',
     });
@@ -33,6 +37,9 @@ describe('duel entry recovery', () => {
   test('never prepares another intent while an earlier wallet request may have broadcast', async () => {
     let prepared = false;
     const restored = await restoreDuelEntry({
+      abandonRejectedIntent: async () => {
+        throw new Error('uncertain broadcasts must not be abandoned');
+      },
       duelId: 'duel_123',
       fundingPossiblyBroadcast: true,
       loadDuel: async () => duel('matched'),
@@ -40,6 +47,7 @@ describe('duel entry recovery', () => {
         prepared = true;
         return intent();
       },
+      rejectedIntentId: null,
       sessionToken: 'session',
       wallet: 'creator',
     });
@@ -51,14 +59,42 @@ describe('duel entry recovery', () => {
   test('rejects a different wallet before preparing any transaction', async () => {
     expect(
       restoreDuelEntry({
+        abandonRejectedIntent: async () => undefined,
         duelId: 'duel_123',
         fundingPossiblyBroadcast: false,
         loadDuel: async () => duel('matched'),
         prepareIntent: async () => intent(),
+        rejectedIntentId: null,
         sessionToken: 'session',
         wallet: 'stranger',
       }),
     ).rejects.toThrow('not a participant');
+  });
+
+  test('expires a definite no-broadcast intent before preparing its replacement', async () => {
+    const calls: string[] = [];
+
+    const restored = await restoreDuelEntry({
+      abandonRejectedIntent: async (_duelId, intentId) => {
+        calls.push(`reject:${intentId}`);
+      },
+      duelId: 'duel_123',
+      fundingPossiblyBroadcast: false,
+      loadDuel: async () => {
+        calls.push('duel');
+        return duel('matched');
+      },
+      prepareIntent: async () => {
+        calls.push('intent');
+        return intent();
+      },
+      rejectedIntentId: 'tx_rejected_funding_01',
+      sessionToken: 'session',
+      wallet: 'creator',
+    });
+
+    expect(calls).toEqual(['duel', 'reject:tx_rejected_funding_01', 'intent']);
+    expect(restored.intent?.id).toBe('intent_123');
   });
 
   test('keeps uncertain chain state away from the approve button', () => {

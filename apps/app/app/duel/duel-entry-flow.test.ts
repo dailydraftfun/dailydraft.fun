@@ -93,13 +93,14 @@ describe('guided duel entry flow', () => {
     });
   });
 
-  test('restores a valid reload draft without storing credentials or transactions', () => {
+  test('restores a valid reload draft without storing credentials or serialized transactions', () => {
     const draft = createDuelEntryDraft(
       {
-        broadcastPending: true,
+        broadcastPending: false,
         duelId: 'duel_123',
         mode: 'direct',
         opponentAddress: 'opponent',
+        rejectedIntentId: 'tx_rejected_funding_01',
         tier: 50,
       },
       '2026-07-17T09:00:00.000Z',
@@ -110,7 +111,8 @@ describe('guided duel entry flow', () => {
     ).toEqual(draft);
     expect(JSON.stringify(draft)).not.toContain('session');
     expect(JSON.stringify(draft)).not.toContain('serializedTransaction');
-    expect(draft.broadcastPending).toBe(true);
+    expect(draft.broadcastPending).toBe(false);
+    expect(draft.rejectedIntentId).toBe('tx_rejected_funding_01');
   });
 
   test('discards malformed or outdated reload drafts', () => {
@@ -123,6 +125,12 @@ describe('guided duel entry flow', () => {
     ).toBeNull();
     expect(
       parseDuelEntryDraft(
+        '{"version":1,"broadcastPending":true,"duelId":"duel_123","mode":"direct","opponentAddress":"","rejectedIntentId":"tx_rejected_funding_01","tier":50,"updatedAt":"2026-07-17T09:00:00.000Z"}',
+        new Date('2026-07-17T09:10:00.000Z').getTime(),
+      ),
+    ).toBeNull();
+    expect(
+      parseDuelEntryDraft(
         JSON.stringify(
           createDuelEntryDraft(
             {
@@ -130,6 +138,7 @@ describe('guided duel entry flow', () => {
               duelId: 'expired_duel',
               mode: 'direct',
               opponentAddress: 'opponent',
+              rejectedIntentId: null,
               tier: 50,
             },
             '2026-07-17T08:00:00.000Z',

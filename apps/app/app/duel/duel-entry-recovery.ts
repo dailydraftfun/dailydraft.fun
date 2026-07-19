@@ -1,6 +1,7 @@
 import type { DuelTransactionIntent, DurableDuel } from '../solana/duel-client';
 
 type RestoreDuelEntryInput = {
+  abandonRejectedIntent: (duelId: string, intentId: string, sessionToken: string) => Promise<void>;
   duelId: string;
   fundingPossiblyBroadcast: boolean;
   loadDuel: (duelId: string) => Promise<DurableDuel>;
@@ -9,6 +10,7 @@ type RestoreDuelEntryInput = {
     wallet: string,
     sessionToken: string,
   ) => Promise<DuelTransactionIntent>;
+  rejectedIntentId: string | null;
   sessionToken: string;
   wallet: string;
 };
@@ -23,10 +25,12 @@ export type PostBroadcastRecovery = 'complete' | 'retry-safe' | 'still-confirmin
 export type DuelEntryCancellationTarget = 'duel' | 'matchmaking' | 'none';
 
 export async function restoreDuelEntry({
+  abandonRejectedIntent,
   duelId,
   fundingPossiblyBroadcast,
   loadDuel,
   prepareIntent,
+  rejectedIntentId,
   sessionToken,
   wallet,
 }: RestoreDuelEntryInput): Promise<RestoredDuelEntry> {
@@ -36,6 +40,9 @@ export async function restoreDuelEntry({
   }
   if (fundingPossiblyBroadcast || !shouldPrepareFunding(duel, wallet)) {
     return { duel, intent: null };
+  }
+  if (rejectedIntentId) {
+    await abandonRejectedIntent(duel.id, rejectedIntentId, sessionToken);
   }
   return {
     duel,

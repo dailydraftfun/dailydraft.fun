@@ -363,6 +363,19 @@ export async function submitSignedDuelIntent(
   );
 }
 
+export async function recordRejectedDuelIntent(
+  duelId: string,
+  intentId: string,
+  sessionToken: string,
+): Promise<void> {
+  await authenticatedMutation(
+    `/duels/${encodeURIComponent(duelId)}/transactions/${encodeURIComponent(intentId)}/rejections`,
+    sessionToken,
+    {},
+    `opd-reject-${intentId}`,
+  );
+}
+
 export function reconcileDuelTransactions(
   duelId: string,
   sessionToken: string,

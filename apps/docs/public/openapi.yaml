@@ -683,6 +683,43 @@ paths:
           $ref: '#/components/responses/Conflict'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /duels/{duelId}/transactions/{transactionId}/rejections:
+    post:
+      operationId: recordDuelTransactionWalletRejection
+      tags: [Transactions]
+      summary: Expire a prepared funding intent rejected before broadcast
+      description: |
+        Records an explicit wallet rejection only when the authenticated signer
+        knows that no signature or broadcast occurred. The exact unsigned fund
+        intent is expired idempotently so a replacement can be prepared
+        immediately. Wallet, RPC, or transport failures with an uncertain
+        broadcast outcome must use reconciliation instead.
+      x-openpacksduel-availability: devnet
+      security:
+        - walletSession: []
+        - integrationKey: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+        - $ref: '#/components/parameters/TransactionId'
+      responses:
+        '200':
+          description: Exact prepared funding intent expired or already recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RejectedFundingIntent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Wallet session does not own this funding intent
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /duels/{duelId}/transactions/reconciliation:
     post:
       operationId: reconcileDuelTransactions
@@ -2783,6 +2820,23 @@ components:
         status:
           type: string
           const: submitted
+    RejectedFundingIntent:
+      type: object
+      additionalProperties: false
+      required: [transactionId, duelId, status, reason]
+      properties:
+        transactionId:
+          type: string
+          pattern: '^tx_[A-Za-z0-9]{12,64}$'
+        duelId:
+          type: string
+          pattern: '^duel_[A-Za-z0-9]{12,64}$'
+        status:
+          type: string
+          const: expired
+        reason:
+          type: string
+          const: wallet_rejected_before_broadcast
     ReconciliationSummary:
       type: object
       additionalProperties: false

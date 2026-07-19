@@ -12,7 +12,7 @@ import {
 } from '@phosphor-icons/react';
 import { Button, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
-import { useEffect, useRef } from 'react';
+import { useDialogFocus } from '../accessibility/use-dialog-focus';
 import type { DuelOpponentType, DuelTransactionIntent, DurableDuel } from '../solana/duel-client';
 import { useWalletAuth } from '../solana/wallet-auth-provider';
 import { useSolanaWallet } from '../solana/wallet-provider';
@@ -51,7 +51,6 @@ export function DuelEntryStepper({
 }: DuelEntryStepperProps) {
   const wallet = useSolanaWallet();
   const authentication = useWalletAuth();
-  const dialog = useRef<HTMLElement>(null);
   const stage = getDuelEntryStage({
     authenticationStatus: authentication.status,
     error,
@@ -68,46 +67,17 @@ export function DuelEntryStepper({
     fundingPhase === 'signing' ||
     fundingPhase === 'confirming' ||
     authentication.status === 'signing';
+  const dialog = useDialogFocus({
+    active: true,
+    closeOnEscape: !blocking,
+    onClose,
+  });
   const canCancel =
     fundingPhase === 'idle' &&
     (!persistedDuel ||
       persistedDuel.status === 'waiting' ||
       persistedDuel.status === 'matched' ||
       persistedDuel.status === 'failed');
-
-  useEffect(() => {
-    const previousFocus =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog.current?.focus();
-    return () => previousFocus?.focus();
-  }, []);
-
-  useEffect(() => {
-    function containDialogFocus(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !blocking) onClose();
-      if (event.key !== 'Tab' || !dialog.current) return;
-      const focusable = getFocusableElements(dialog.current);
-      if (focusable.length === 0) {
-        event.preventDefault();
-        dialog.current.focus();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (
-        event.shiftKey &&
-        (document.activeElement === first || document.activeElement === dialog.current)
-      ) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    }
-    window.addEventListener('keydown', containDialogFocus);
-    return () => window.removeEventListener('keydown', containDialogFocus);
-  }, [blocking, onClose]);
 
   return (
     <div className="duel-stepper-backdrop" role="presentation" data-testid="duel-entry-backdrop">
@@ -117,6 +87,7 @@ export function DuelEntryStepper({
         role="dialog"
         aria-modal="true"
         aria-labelledby="duel-stepper-title"
+        aria-describedby="duel-stepper-description"
         data-stage={stage}
         data-testid="duel-entry-stepper"
         tabIndex={-1}
@@ -127,13 +98,16 @@ export function DuelEntryStepper({
               <i /> Solana devnet · {wallet.networkStatus}
             </span>
             <h2 id="duel-stepper-title">Enter this duel</h2>
-            <p>Connect, verify, review, and fund without losing your place.</p>
+            <p id="duel-stepper-description">
+              Connect, verify, review, and fund without losing your place.
+            </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={blocking}
             aria-label="Continue this duel later"
+            data-dialog-initial-focus
             data-testid="duel-entry-close"
           >
             <XIcon size={18} />
@@ -668,12 +642,4 @@ function modeLabel(mode: DuelOpponentType): string {
 
 function shorten(value: string): string {
   return value.length > 14 ? `${value.slice(0, 6)}…${value.slice(-6)}` : value;
-}
-
-function getFocusableElements(root: HTMLElement): HTMLElement[] {
-  return Array.from(
-    root.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), details > summary, [tabindex]:not([tabindex="-1"])',
-    ),
-  );
 }
