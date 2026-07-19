@@ -72,6 +72,33 @@ describe('public duel proof', () => {
     expect(receipt.actions.primary.label).toBe('Open a new duel');
   });
 
+  test.each([
+    ['waiting', '/overview?challenge=duel_receipt00001', 'Accept challenge'],
+    ['matched', '/duel/duel_receipt00001', 'Spectate duel'],
+    ['committing', '/duel/duel_receipt00001', 'Spectate duel'],
+    ['funded', '/duel/duel_receipt00001', 'Spectate duel'],
+    ['opening', '/duel/duel_receipt00001', 'Spectate duel'],
+    ['awaiting_assets', '/duel/duel_receipt00001', 'Spectate duel'],
+    ['settling', '/duel/duel_receipt00001', 'Spectate duel'],
+    ['cancelling', '/duel/duel_receipt00001', 'Spectate duel'],
+    ['refunding', '/duel/duel_receipt00001', 'Spectate duel'],
+    ['settled', '/overview?rematch=duel_receipt00001', 'Run a rematch'],
+    ['cancelled', '/overview', 'Open a new duel'],
+    ['refunded', '/overview', 'Open a new duel'],
+    ['failed', '/overview', 'Open a new duel'],
+  ] as const)('owns the canonical %s primary action in the public receipt', (status, href, label) => {
+    const receipt = buildPublicDuelReceipt(
+      {
+        ...settledDuel(),
+        cancellationReason: null,
+        status,
+      },
+      fundingTransactions(),
+    );
+
+    expect(receipt.actions.primary).toEqual({ href, label });
+  });
+
   test('publishes a settlement-ready receipt for an equal-value tie', () => {
     const duel = settledDuel();
     const result = requireResult(duel);

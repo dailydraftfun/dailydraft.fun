@@ -26,20 +26,18 @@ describe('duel social card data', () => {
     expect(snapshot.totalValue).toBe('$103.5');
   });
 
-  test.each([
-    ['waiting', '/overview?challenge=duel_truth', 'Accept challenge'],
-    ['matched', '/duel/duel_truth', 'Spectate duel'],
-    ['opening', '/duel/duel_truth', 'Spectate duel'],
-    ['cancelling', '/duel/duel_truth', 'Spectate duel'],
-    ['refunding', '/duel/duel_truth', 'Spectate duel'],
-    ['settled', '/overview?rematch=duel_truth', 'Run a rematch'],
-    ['cancelled', '/overview', 'Open a new duel'],
-    ['refunded', '/overview', 'Open a new duel'],
-    ['expired', '/overview', 'Open a new duel'],
-  ] as const)('uses a stable canonical action for %s', (status, href, label) => {
-    const snapshot = getDuelSocialSnapshot(receipt({ status, withResult: status === 'settled' }));
+  test('uses the canonical action projected by the public receipt', () => {
+    const publicReceipt = receipt({ status: 'cancelling' });
+    publicReceipt.actions.primary = {
+      href: '/duel/duel_truth?canonical=receipt',
+      label: 'Follow canonical receipt action',
+    };
+    const snapshot = getDuelSocialSnapshot(publicReceipt);
 
-    expect(getPrimaryAction(snapshot)).toEqual({ href, label });
+    expect(getPrimaryAction(snapshot)).toEqual({
+      href: '/duel/duel_truth?canonical=receipt',
+      label: 'Follow canonical receipt action',
+    });
   });
 
   test('keeps wallet addresses and transaction references out of social copy', () => {
@@ -76,19 +74,10 @@ function receipt({
   status: PublicDuelReceipt['duel']['status'];
   withResult?: boolean;
 }): PublicDuelReceipt {
-  const encodedDuelId = 'duel_truth';
-  const primary =
-    status === 'waiting'
-      ? { href: `/overview?challenge=${encodedDuelId}`, label: 'Accept challenge' }
-      : status === 'settled'
-        ? { href: `/overview?rematch=${encodedDuelId}`, label: 'Run a rematch' }
-        : ['cancelled', 'expired', 'failed', 'refunded'].includes(status)
-          ? { href: '/overview', label: 'Open a new duel' }
-          : { href: `/duel/${encodedDuelId}`, label: 'Spectate duel' };
   return {
     actions: {
-      primary,
-      rematch: status === 'settled' ? primary : null,
+      primary: { href: '/canonical-action-from-receipt', label: 'Canonical receipt action' },
+      rematch: null,
       share: { href: '/duel/duel_truth', label: 'Share' },
     },
     availability: { complete: withResult, missing: [] },
