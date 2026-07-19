@@ -1,14 +1,37 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { buildSharedDuelEntry } from './shared-route-entry';
 
-const pageSource = readFileSync(resolve(import.meta.dir, 'page.tsx'), 'utf8');
+const participantAddresses = {
+  creator: 'creator_sensitive_wallet_address',
+  opponent: 'opponent_sensitive_wallet_address',
+};
+
+const receipt = {
+  duel: { id: 'duel_private', mode: 'direct', status: 'settled' },
+  pack: { tier: { amount: '50000000', currency: 'USDC', decimals: 6 } },
+  participants: {
+    creator: { address: participantAddresses.creator, display: 'Creator abcd…wxyz' },
+    opponent: { address: participantAddresses.opponent, display: 'Opponent abcd…wxyz' },
+  },
+} as const;
 
 describe('overview shared-route boundary', () => {
-  test('never serializes participant wallet addresses into DuelArena props', () => {
-    expect(pageSource).not.toContain('.address');
-    expect(pageSource).not.toContain('address:');
-    expect(pageSource).toContain('opponentLabel: receipt.participants.creator.display');
-    expect(pageSource).toContain('participantLabels:');
+  test('serializes only pseudonymous labels into rematch entry props', () => {
+    const serialized = JSON.stringify(buildSharedDuelEntry(receipt, 'rematch'));
+
+    expect(serialized).toContain('Creator abcd…wxyz');
+    expect(serialized).toContain('Opponent abcd…wxyz');
+    expect(serialized).not.toContain(participantAddresses.creator);
+    expect(serialized).not.toContain(participantAddresses.opponent);
+  });
+
+  test('serializes only the creator label into challenge entry props', () => {
+    const serialized = JSON.stringify(
+      buildSharedDuelEntry({ ...receipt, duel: { ...receipt.duel, status: 'waiting' } }, 'accept'),
+    );
+
+    expect(serialized).toContain('Creator abcd…wxyz');
+    expect(serialized).not.toContain(participantAddresses.creator);
+    expect(serialized).not.toContain(participantAddresses.opponent);
   });
 });

@@ -6,8 +6,7 @@ const pageSource = readFileSync(resolve(import.meta.dir, 'page.tsx'), 'utf8');
 
 describe('public duel page contract', () => {
   test('keeps one dominant receipt action', () => {
-    expect(pageSource).not.toContain('<Link className="proof-primary-action"');
-    expect(pageSource.match(/className="proof-primary-action shrink-0"/g)).toHaveLength(1);
+    expect(pageSource.match(/proof-primary-action/g)).toHaveLength(1);
   });
 
   test('does not expose the raw receipt download from the spectator surface', () => {

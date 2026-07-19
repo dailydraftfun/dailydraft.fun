@@ -88,8 +88,8 @@ export function SharedOpponentControl({
             rematchNeedsConnection
               ? 'Connect and authenticate an original participant wallet from the wallet menu to unlock this private rematch.'
               : rematchPending
-              ? 'Checking whether the connected wallet played in the original duel.'
-              : 'Connect an original participant wallet for the private rematch, or leave the link and choose any duel mode.'
+                ? 'Checking whether the connected wallet played in the original duel.'
+                : 'Connect an original participant wallet for the private rematch, or leave the link and choose any duel mode.'
           }
           headline={
             rematchNeedsConnection

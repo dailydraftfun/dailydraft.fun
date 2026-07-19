@@ -485,7 +485,7 @@ function UnavailableProof({ duelId }: { duelId: string }) {
         The API returned no durable public receipt for <code>{duelId}</code>. No status or result is
         inferred.
       </p>
-      <Link href="/overview" className="proof-primary-action mt-6">
+      <Link href="/overview" className="proof-secondary-action mt-6">
         Back to duels
       </Link>
     </main>

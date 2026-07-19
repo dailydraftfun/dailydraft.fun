@@ -237,6 +237,21 @@ export async function getDuel(duelId: string): Promise<DurableDuel> {
   return (await response.json()) as DurableDuel;
 }
 
+export async function getPrivateRematchOpponent(
+  duelId: string,
+  sessionToken: string,
+): Promise<{ side: 'creator' | 'opponent'; wallet: string }> {
+  if (!apiBaseUrl) throw new Error('The duel API is not configured.');
+  const response = await fetch(
+    `${apiBaseUrl}/duels/${encodeURIComponent(duelId)}/rematch-opponent`,
+    {
+      cache: 'no-store',
+      headers: { authorization: `Bearer ${sessionToken}` },
+    },
+  );
+  return parseMutationResponse(response);
+}
+
 export function advanceDuelLifecycle(duelId: string, sessionToken: string): Promise<DurableDuel> {
   return authenticatedMutation<DurableDuel>(
     `/duels/${encodeURIComponent(duelId)}/open-packs`,

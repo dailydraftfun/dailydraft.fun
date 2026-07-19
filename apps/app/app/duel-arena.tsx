@@ -42,6 +42,7 @@ import {
 } from './duel/duel-entry-recovery';
 import { DuelEntryStepper } from './duel/duel-entry-stepper';
 import {
+  type DuelGrowthParticipant,
   type DuelGrowthParticipants,
   rematchLabel,
   resolveRematchOpponent,
@@ -91,6 +92,7 @@ import {
   type DurableDuel,
   getDuel,
   getOpenMatchmakingStatus,
+  getPrivateRematchOpponent,
   getProductCapabilities,
   joinDuel,
   type MatchmakingSession,
@@ -280,9 +282,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
   const [duelRestorePending, setDuelRestorePending] = useState(true);
-  const [rematchParticipants, setRematchParticipants] = useState<DuelGrowthParticipants | null>(
-    null,
-  );
+  const [resolvedRematchOpponent, setResolvedRematchOpponent] = useState<
+    (DuelGrowthParticipant & { duelId: string }) | null
+  >(null);
   const [rematchResolutionPending, setRematchResolutionPending] = useState(false);
   const [matchmakingSession, setMatchmakingSession] = useState<MatchmakingSession | null>(null);
   const [matchmakingRestorePending, setMatchmakingRestorePending] = useState(false);
@@ -301,8 +303,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const phase: Phase = liveDuel?.phase ?? 'lobby';
   const capabilities = capabilityState.status === 'ready' ? capabilityState.value : null;
   const linkedOpponent =
-    activeEntry?.action === 'rematch' && rematchParticipants
-      ? resolveRematchOpponent(rematchParticipants, walletConnection.address)
+    activeEntry?.action === 'rematch' && resolvedRematchOpponent?.duelId === activeEntry.duelId
+      ? resolvedRematchOpponent
       : null;
   const opponentWallet =
     activeEntry?.action === 'rematch' ? (linkedOpponent?.address ?? '') : wallet;
@@ -355,7 +357,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       return false;
     }
     setActiveEntry(undefined);
-    setRematchParticipants(null);
+    setResolvedRematchOpponent(null);
     setMode(nextMode);
     if (nextMode !== 'direct') setWallet('');
     return true;
@@ -377,7 +379,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   function startFreshDuel(): void {
     setActiveEntry(undefined);
-    setRematchParticipants(null);
+    setResolvedRematchOpponent(null);
     setWallet('');
     setActionError(null);
     setActionNotice('Choose a wallet, public matchmaking, or an available house for a fresh duel.');
@@ -571,36 +573,26 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       !walletConnection.address ||
       !authentication.sessionToken
     ) {
-      setRematchParticipants(null);
+      setResolvedRematchOpponent(null);
       setRematchResolutionPending(false);
       return;
     }
 
     let active = true;
-    const viewerWallet = walletConnection.address;
+    const duelId = activeEntry.duelId;
+    setResolvedRematchOpponent(null);
     setRematchResolutionPending(true);
-    getDuel(activeEntry.duelId)
-      .then((duel) => {
-        if (!active || duel.status !== 'settled' || duel.houseOpponent || !duel.opponentWallet) {
-          if (active) setRematchParticipants(null);
-          return;
-        }
-        const participants: DuelGrowthParticipants = {
-          creator: {
-            address: duel.creatorWallet,
-            label: activeEntry.participantLabels.creator,
-          },
-          opponent: {
-            address: duel.opponentWallet,
-            label: activeEntry.participantLabels.opponent,
-          },
-        };
-        setRematchParticipants(
-          resolveRematchOpponent(participants, viewerWallet) ? participants : null,
-        );
+    getPrivateRematchOpponent(duelId, authentication.sessionToken)
+      .then((opponent) => {
+        if (!active) return;
+        setResolvedRematchOpponent({
+          address: opponent.wallet,
+          duelId,
+          label: activeEntry.participantLabels[opponent.side],
+        });
       })
       .catch(() => {
-        if (active) setRematchParticipants(null);
+        if (active) setResolvedRematchOpponent(null);
       })
       .finally(() => {
         if (active) setRematchResolutionPending(false);
@@ -1409,7 +1401,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             label: shortReference(persistedDuel.opponentWallet) ?? 'Opponent wallet',
           },
         };
-        setRematchParticipants(participants);
+        const opponent = resolveRematchOpponent(participants, walletConnection.address);
+        setResolvedRematchOpponent(opponent ? { ...opponent, duelId: persistedDuel.id } : null);
         setActiveEntry({
           action: 'rematch',
           duelId: persistedDuel.id,
