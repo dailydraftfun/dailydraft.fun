@@ -17,6 +17,7 @@ import type { DuelOpponentType, DuelTransactionIntent, DurableDuel } from '../so
 import { useWalletAuth } from '../solana/wallet-auth-provider';
 import { useSolanaWallet } from '../solana/wallet-provider';
 import { getDuelEntryStage, getPlainMoneySummary } from './duel-entry-flow';
+import { getDuelPaymentReviewCopy } from './duel-player-copy';
 
 type DuelEntryStepperProps = {
   error: string | null;
@@ -407,14 +408,18 @@ function FundingReviewStep({
   tier: number;
 }) {
   const summary = getPlainMoneySummary(tier, intent);
+  const copy = getDuelPaymentReviewCopy(intent.feeAmountSol);
+  const additionalRows = copy.rows.filter(
+    (row) => row.label !== 'Platform fee now' && row.label !== 'Pack purchase',
+  );
   return (
     <div className="duel-step-panel">
       <div className="duel-step-title">
         <LockKeyIcon size={23} weight="fill" />
         <div>
           <span>Step 4</span>
-          <h3>Approve the exact devnet fee</h3>
-          <p>This is the only value-bearing wallet request in the entry flow.</p>
+          <h3>{copy.heading}</h3>
+          <p>{copy.description}</p>
         </div>
       </div>
       <div className="duel-signature-kind duel-signature-value">
@@ -441,7 +446,14 @@ function FundingReviewStep({
           <dt>Wallet approval</dt>
           <dd>{summary.walletApproval}</dd>
         </div>
+        {additionalRows.map((row) => (
+          <div key={row.label}>
+            <dt>{row.label}</dt>
+            <dd>{row.value}</dd>
+          </div>
+        ))}
       </dl>
+      <p className="duel-payment-safety">{copy.safety}</p>
       <details className="duel-technical-details">
         <summary>Technical transaction details</summary>
         <dl>
@@ -456,6 +468,14 @@ function FundingReviewStep({
           <div>
             <dt>Program</dt>
             <dd>{shorten(intent.programId)}</dd>
+          </div>
+          <div>
+            <dt>Wallet</dt>
+            <dd>{shorten(intent.wallet)}</dd>
+          </div>
+          <div>
+            <dt>Fee recipient</dt>
+            <dd>{shorten(intent.feeRecipient)}</dd>
           </div>
           <div>
             <dt>Expires</dt>
@@ -523,7 +543,7 @@ function WaitingStep({
         {notice ??
           (status === 'committing'
             ? 'Waiting for the other wallet to fund. You can close and resume without signing again.'
-            : 'The duel or matchmaking search is durable. Close now or cancel it explicitly.')}
+            : 'The duel or matchmaking search is saved. Close now or cancel it explicitly.')}
       </p>
     </div>
   );
@@ -583,7 +603,7 @@ function RecoveryStep({
                 ? 'No transaction will open until the RPC responds on the expected network.'
                 : (error ??
                   (persistedStatus === 'matched'
-                    ? 'The duel is matched. Refresh its funding intent, then approve it explicitly.'
+                    ? 'The duel is matched. Refresh its payment review, then approve it explicitly.'
                     : 'The previous attempt did not complete. Retry from the last safe boundary.'))}
           </p>
           {error ? <p className="duel-recovery-error">{error}</p> : null}

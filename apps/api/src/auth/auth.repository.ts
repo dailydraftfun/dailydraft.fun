@@ -27,9 +27,28 @@ export interface CreateWalletSessionRecord {
   wallet: string;
 }
 
+export interface WalletAuthMaintenancePolicy {
+  challengeCreatedBefore: Date;
+  cleanupBatchSize: number;
+  now: Date;
+}
+
+export interface WalletChallengeIssuancePolicy extends WalletAuthMaintenancePolicy {
+  challengeLimit: number;
+  challengeWindowStartedAt: Date;
+}
+
+export class WalletChallengeRateLimitExceededError extends Error {
+  constructor() {
+    super('Wallet challenge issuance rate limit exceeded');
+    this.name = 'WalletChallengeRateLimitExceededError';
+  }
+}
+
 export abstract class WalletAuthRepository {
   abstract createChallenge(
     input: CreateWalletAuthChallengeRecord,
+    policy: WalletChallengeIssuancePolicy,
   ): Promise<WalletAuthChallengeRecord>;
 
   abstract findChallenge(challengeId: string): Promise<WalletAuthChallengeRecord | null>;
@@ -37,7 +56,7 @@ export abstract class WalletAuthRepository {
   abstract consumeChallengeAndCreateSession(
     challengeId: string,
     input: CreateWalletSessionRecord,
-    now: Date,
+    policy: WalletAuthMaintenancePolicy,
   ): Promise<WalletSessionRecord>;
 
   abstract findSession(tokenHash: string): Promise<WalletSessionRecord | null>;

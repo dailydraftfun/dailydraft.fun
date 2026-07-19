@@ -1,4 +1,5 @@
 import type { DurableDuel } from '../solana/duel-client';
+import { getDuelPlayerStatus } from './duel-player-copy';
 
 export type LiveDuelPhase = 'lobby' | 'matching' | 'opening' | 'result';
 
@@ -81,16 +82,26 @@ function headlineForStatus(
     return status === 'settled' ? 'Opponent takes the vault' : 'Opponent pull leads';
   }
   if (hasResult && winner === 'tie') return 'The pulls are tied';
-  return `Duel status: ${status.replaceAll('_', ' ')}`;
+  return getDuelPlayerStatus(status).headline;
 }
 
 function indicatorForStatus(status: DurableDuel['status']): string {
-  if (status === 'funded') return 'Escrow funded';
-  if (status === 'opening') return 'Reveal in progress';
-  if (status === 'awaiting_assets') return 'Assets entering escrow';
-  if (status === 'settling') return 'Settlement pending';
-  if (status === 'settled') return 'Settled';
-  return status.replaceAll('_', ' ');
+  const indicators: Record<DurableDuel['status'], string> = {
+    awaiting_assets: 'Cards moving',
+    cancelled: 'Cancelled',
+    cancelling: 'Closing',
+    committing: 'Payments pending',
+    failed: 'Needs attention',
+    funded: 'Both paid',
+    matched: 'Opponent found',
+    opening: 'Opening packs',
+    refunded: 'Payments returned',
+    refunding: 'Returning payments',
+    settled: 'Complete',
+    settling: 'Final transfer',
+    waiting: 'Challenge open',
+  };
+  return indicators[status] ?? indicators.failed;
 }
 
 function toPull(

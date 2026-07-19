@@ -372,6 +372,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           in: [
             DuelTransactionAction.FUND,
             DuelTransactionAction.COMMIT_RESULT,
+            DuelTransactionAction.REFUND,
             DuelTransactionAction.SETTLE,
           ],
         },
@@ -397,7 +398,10 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           row.expectedToStatus === DatabaseDuelStatus.SETTLING) ||
         (row.action === DuelTransactionAction.SETTLE &&
           row.expectedFromStatus === DatabaseDuelStatus.SETTLING &&
-          row.expectedToStatus === DatabaseDuelStatus.SETTLED);
+          row.expectedToStatus === DatabaseDuelStatus.SETTLED) ||
+        (row.action === DuelTransactionAction.REFUND &&
+          row.expectedFromStatus === DatabaseDuelStatus.REFUNDING &&
+          row.expectedToStatus === DatabaseDuelStatus.REFUNDING);
       if (
         !row.expectedSigner ||
         row.expectedSigner !== row.wallet ||
