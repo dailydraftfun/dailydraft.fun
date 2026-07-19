@@ -105,7 +105,7 @@ export class TransactionMonitorService {
       summary.recoveryErrors += 1;
       await this.analytics?.recordServer({ name: 'solana_rpc_error' });
     }
-    await this.refunds?.reconcile(limit);
+    await this.reconcileRefunds(limit, summary);
     const transactions = await this.repository.findPending(limit, now);
     const recoverableTerminal = await this.repository.findRecoverableTerminal(limit);
     if (transactions.length === 0 && recoverableTerminal.length === 0) {
@@ -115,9 +115,18 @@ export class TransactionMonitorService {
 
     await this.reconcileTransactions(transactions, now, summary);
     await this.reconcileTransactions(recoverableTerminal, now, summary);
-    await this.refunds?.reconcile(limit);
+    await this.reconcileRefunds(limit, summary);
     await this.treasury?.reconcileLifecycle(limit);
     return summary;
+  }
+
+  private async reconcileRefunds(limit: number, summary: ReconciliationSummary): Promise<void> {
+    if (!this.refunds || process.env.OPENPACKSDUEL_NETWORK !== 'solana-devnet') return;
+    try {
+      await this.refunds.reconcile(limit);
+    } catch {
+      summary.recoveryErrors += 1;
+    }
   }
 
   private async reconcileTransactions(
