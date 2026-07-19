@@ -3,23 +3,25 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type { Pack, Page } from '../domain.js';
 import { currentValuationPolicy } from '../providers/valuation-policy.js';
 import type { ListPacksQuery } from './list-packs.query.js';
+import { PACK_TIER_CATALOG } from './pack-catalog.js';
 
 function packs(): readonly Pack[] {
   const { policyHash } = currentValuationPolicy();
-  return [
-    {
-      active: true,
-      id: 'pokemon_50',
-      name: 'Pokémon $50 Pack',
-      price: { amount: '50000000', currency: 'USDC', decimals: 6 },
-      provider:
-        process.env.OPENPACKSDUEL_PROVIDER_MODE === 'openpacksduel-devnet'
-          ? 'openpacksduel-devnet'
-          : 'collector-crypt',
-      providerPackId: 'pokemon_50',
-      valuationPolicyHash: policyHash,
-    },
-  ];
+  return PACK_TIER_CATALOG.filter((pack) => pack.supported).map(
+    (pack) =>
+      ({
+        active: true,
+        id: pack.id,
+        name: pack.name,
+        price: { amount: String(pack.tier * 1_000_000), currency: 'USDC', decimals: 6 },
+        provider:
+          process.env.OPENPACKSDUEL_PROVIDER_MODE === 'openpacksduel-devnet'
+            ? 'openpacksduel-devnet'
+            : 'collector-crypt',
+        providerPackId: pack.id,
+        valuationPolicyHash: policyHash,
+      }) satisfies Pack,
+  );
 }
 
 @Injectable()

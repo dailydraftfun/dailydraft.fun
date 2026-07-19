@@ -2,40 +2,66 @@
 @source "../../../node_modules/@shipshitdev/ui/dist";
 
 :root {
-  --bg-primary: #070807;
-  --bg-secondary: #0d100f;
-  --bg-tertiary: #131714;
-  --bg-elevated: #191e1b;
-  --bg-hover: #202721;
-  --text-primary: #f6f8f3;
-  --text-secondary: #a8b0a7;
-  --text-muted: #687168;
-  --lime: #b8ff5a;
+  --opd-bg-primary: #070807;
+  --opd-bg-secondary: #0d100f;
+  --opd-bg-tertiary: #131714;
+  --opd-bg-elevated: #191e1b;
+  --opd-bg-hover: #202721;
+  --opd-text-primary: #f6f8f3;
+  --opd-text-secondary: #b7c0b6;
+  --opd-text-muted: #909a90;
+  --opd-accent: #b8ff5a;
+  --opd-accent-foreground: #10150d;
+  --opd-success: #48e08a;
+  --opd-warning: #f7c948;
+  --opd-danger: #ff6464;
+  --opd-agent: #62d8ff;
+  --opd-done: #a78bfa;
+  --opd-font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --opd-font-mono: "JetBrains Mono", "SF Mono", monospace;
+  --opd-space-base: 4px;
+  --opd-space-sm: 8px;
+  --opd-space-md: 16px;
+  --opd-space-lg: 24px;
+  --opd-space-xl: 32px;
+  --opd-radius-sm: 4px;
+  --opd-radius-md: 6px;
+  --opd-radius-lg: 10px;
+  --opd-radius-xl: 16px;
+  --bg-primary: var(--opd-bg-primary);
+  --bg-secondary: var(--opd-bg-secondary);
+  --bg-tertiary: var(--opd-bg-tertiary);
+  --bg-elevated: var(--opd-bg-elevated);
+  --bg-hover: var(--opd-bg-hover);
+  --text-primary: var(--opd-text-primary);
+  --text-secondary: var(--opd-text-secondary);
+  --text-muted: var(--opd-text-muted);
+  --lime: var(--opd-accent);
   --lime-strong: #9ded39;
-  --gold: #f7c948;
-  --violet: #a78bfa;
+  --gold: var(--opd-warning);
+  --violet: var(--opd-done);
 }
 
 @theme {
   --color-border: rgba(230, 255, 224, 0.1);
   --color-border-strong: rgba(231, 255, 224, 0.2);
-  --color-accent: #b8ff5a;
+  --color-accent: var(--opd-accent);
   --color-accent-hover: #c9ff82;
-  --color-accent-foreground: #10150d;
-  --color-success: #48e08a;
-  --color-warning: #f7c948;
-  --color-danger: #ff6464;
-  --color-agent: #62d8ff;
-  --color-done: #a78bfa;
-  --color-lime: #b8ff5a;
-  --color-gold: #f7c948;
-  --color-violet: #a78bfa;
+  --color-accent-foreground: var(--opd-accent-foreground);
+  --color-success: var(--opd-success);
+  --color-warning: var(--opd-warning);
+  --color-danger: var(--opd-danger);
+  --color-agent: var(--opd-agent);
+  --color-done: var(--opd-done);
+  --color-lime: var(--opd-accent);
+  --color-gold: var(--opd-warning);
+  --color-violet: var(--opd-done);
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", monospace;
-  --radius-sm: 4px;
-  --radius-md: 7px;
-  --radius-lg: 11px;
-  --radius-xl: 16px;
+  --radius-sm: var(--opd-radius-sm);
+  --radius-md: var(--opd-radius-md);
+  --radius-lg: var(--opd-radius-lg);
+  --radius-xl: var(--opd-radius-xl);
 }
 
 @utility bg-primary {
@@ -80,6 +106,8 @@
       radial-gradient(circle at 50% -10%, rgba(184, 255, 90, 0.07), transparent 32rem),
       var(--bg-primary);
     color: var(--text-primary);
+    font-family: var(--opd-font-sans);
+    font-synthesis: none;
   }
 
   button,
@@ -110,6 +138,10 @@
     outline: 2px solid var(--lime);
     outline-offset: 3px;
   }
+}
+
+.mode-panel:focus-visible {
+  border-radius: var(--opd-radius-md);
 }
 
 ::-webkit-scrollbar {
@@ -258,7 +290,7 @@
 .proof-label {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.14em;
   line-height: 1.5;
@@ -376,7 +408,7 @@
   padding: 4px 6px;
   color: var(--gold);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -424,7 +456,7 @@
   gap: 6px;
   color: var(--gold);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -443,7 +475,7 @@
     align-items: flex-start;
     gap: 7px;
     padding-inline: 12px;
-    font-size: 10px;
+    font-size: 12px;
     text-align: left;
   }
 }
@@ -483,7 +515,7 @@
 
 .wallet-list small {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .wallet-account-panel {
@@ -515,7 +547,7 @@
 .wallet-account-name code {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
   text-overflow: ellipsis;
 }
 
@@ -535,7 +567,7 @@
   border-radius: 7px;
   padding: 7px 10px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .wallet-authentication-panel {
@@ -567,7 +599,7 @@
 .wallet-auth-message p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -577,7 +609,7 @@
   padding: 3px 6px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -607,7 +639,7 @@
   background: rgba(0, 0, 0, 0.24);
   padding: 9px;
   color: var(--text-secondary);
-  font-size: 8px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -636,7 +668,7 @@
 .wallet-safety-note {
   margin: 0;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -651,7 +683,7 @@
   background: rgba(255, 100, 100, 0.07);
   padding: 10px;
   color: #ff9494;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -705,7 +737,7 @@
   gap: 7px;
   color: var(--lime);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -763,10 +795,13 @@
 
 .mode-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   border-bottom: 1px solid var(--color-border);
   background: rgba(0, 0, 0, 0.18);
   padding: 7px;
+}
+.mode-tabs-three {
+  grid-template-columns: repeat(3, 1fr);
 }
 
 .mode-tabs button {
@@ -789,6 +824,13 @@
   background: var(--bg-elevated);
   color: var(--lime);
 }
+.mode-tabs button:disabled {
+  cursor: not-allowed;
+  color: var(--text-secondary);
+}
+.mode-tabs button:disabled svg {
+  opacity: 0.45;
+}
 .mode-tab-copy {
   display: grid;
   gap: 1px;
@@ -799,7 +841,10 @@
 }
 .mode-tab-caption {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
+}
+.mode-tabs button:disabled .mode-tab-caption {
+  color: var(--text-secondary);
 }
 
 .match-card-body {
@@ -851,8 +896,17 @@
   cursor: not-allowed;
 }
 .tier-card:disabled:hover {
-  border-color: rgba(184, 255, 90, 0.5);
+  border-color: var(--color-border);
   transform: none;
+}
+.tier-card-fixed:disabled {
+  cursor: default;
+}
+.tier-card-selected:disabled:hover {
+  border-color: rgba(184, 255, 90, 0.5);
+}
+.tier-card-unavailable {
+  color: var(--text-secondary);
 }
 .tier-card-selected {
   border-color: rgba(184, 255, 90, 0.5);
@@ -891,12 +945,12 @@
 }
 .tier-card small {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
 }
-.tier-ev {
+.tier-availability {
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 12px;
 }
 .tier-check {
   position: absolute;
@@ -938,7 +992,7 @@
   background: rgba(0, 0, 0, 0.18);
   padding: 10px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -954,7 +1008,7 @@
 
 .opponent-disclosure strong {
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .fee-summary {
@@ -971,7 +1025,7 @@
   gap: 3px;
   padding: 10px 11px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .fee-summary span + span {
@@ -1006,7 +1060,7 @@
   gap: 5px;
   margin: 9px 0 0;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .duel-action-error {
@@ -1016,13 +1070,63 @@
   gap: 5px;
   margin: 9px 0 0;
   color: #ff9494;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.4;
   text-align: center;
 }
 
 .duel-action-error svg {
   flex: 0 0 auto;
+}
+
+.capability-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 176px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 22px;
+  color: var(--text-secondary);
+}
+
+.capability-panel > svg {
+  flex: 0 0 auto;
+  color: var(--lime);
+}
+
+.capability-panel > div {
+  display: grid;
+  gap: 7px;
+}
+
+.capability-panel strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.capability-panel p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.capability-panel button {
+  width: fit-content;
+  margin-top: 5px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  padding: 8px 11px;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.capability-panel-error > svg {
+  color: var(--color-danger);
 }
 
 .intent-title {
@@ -1048,7 +1152,7 @@
 .intent-title p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1079,7 +1183,7 @@
 
 .intent-details dt {
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
@@ -1088,7 +1192,7 @@
   margin: 0;
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 12px;
   text-overflow: ellipsis;
 }
 
@@ -1106,7 +1210,7 @@
   background: rgba(72, 224, 138, 0.06);
   padding: 10px;
   color: var(--text-secondary);
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1156,7 +1260,7 @@
 .intent-safety {
   margin: 9px 0 0;
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 12px;
   text-align: center;
 }
 
@@ -1277,7 +1381,7 @@
   align-items: center;
   gap: 4px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .duel-avatar {
@@ -1306,7 +1410,7 @@
 }
 .queue-stake small {
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 12px;
 }
 .queue-stake strong {
   font-family: var(--font-mono);
@@ -1315,12 +1419,12 @@
 .queue-card button {
   height: 34px;
   border: 1px solid var(--color-border);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .rules-strip {
   display: grid;
-  grid-template-columns: repeat(3, 1fr) auto;
+  grid-template-columns: repeat(3, 1fr);
   align-items: center;
   gap: 0;
   margin-top: 50px;
@@ -1344,15 +1448,15 @@
   grid-row: 1 / 3;
   color: var(--lime);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
 }
 .rules-strip strong {
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: 12px;
 }
 .rules-strip small {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 .rules-strip button {
   display: inline-flex;
@@ -1361,7 +1465,7 @@
   border: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .duel-experience {
@@ -1392,7 +1496,7 @@
   align-items: center;
   gap: 7px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 .duel-proof svg {
   color: var(--success);
@@ -1429,7 +1533,7 @@
   background: var(--bg-secondary);
   padding: 7px 9px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 12px;
 }
 .phase-indicator span {
   width: 6px;
@@ -1464,13 +1568,13 @@
 }
 .player-label small {
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
 .player-label strong {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
 }
 .result-chip {
   display: inline-flex;
@@ -1479,7 +1583,7 @@
   margin-left: auto;
   border-radius: 4px;
   padding: 4px 6px;
-  font-size: 8px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -1640,7 +1744,7 @@
   margin-top: 10px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 7px;
+  font-size: 12px;
   letter-spacing: 0.17em;
 }
 .pack-tier {
@@ -1653,7 +1757,7 @@
   padding: 4px 7px;
   color: #10140d;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
 }
 .pull-shell {
@@ -1692,7 +1796,7 @@
   gap: 6px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 12px;
   white-space: nowrap;
   transform: translateX(50%);
 }
@@ -1733,7 +1837,7 @@
   padding: 4px 5px;
   color: #ff8787;
   font-family: var(--font-mono);
-  font-size: 7px;
+  font-size: 12px;
   font-weight: 700;
 }
 .pull-meta > div {
@@ -1743,14 +1847,14 @@
 }
 .pull-meta strong {
   overflow: hidden;
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .pull-meta small {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1786,7 +1890,7 @@
 .versus-mark span {
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .opening-timeline {
@@ -1795,7 +1899,7 @@
   justify-content: center;
   margin-top: 42px;
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
@@ -1850,7 +1954,7 @@
 }
 .result-summary small {
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 12px;
 }
 .result-summary strong {
   font-family: var(--font-mono);
@@ -1862,7 +1966,7 @@
 }
 .result-actions button {
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
 }
 .share-button {
   background: var(--text-primary);
@@ -1930,18 +2034,18 @@
   .rules-strip {
     grid-template-columns: repeat(3, 1fr);
   }
-  .rules-strip button {
-    display: none;
-  }
 }
 
 @media (max-width: 700px) {
   .wallet-button {
+    max-width: min(48vw, 180px);
     min-width: 38px;
     padding-inline: 10px;
   }
   .wallet-button > span {
-    display: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .wallet-dialog-backdrop,
   .intent-dialog-backdrop {
@@ -1992,7 +2096,7 @@
     display: none;
   }
   .mode-tabs button small {
-    display: none;
+    display: block;
   }
   .tier-grid {
     gap: 5px;
@@ -2005,7 +2109,7 @@
     height: 36px;
   }
   .tier-card small {
-    font-size: 8px;
+    font-size: 12px;
   }
   .fee-summary span {
     padding: 9px 7px;
@@ -2052,7 +2156,11 @@
     padding: 20px 14px 34px;
   }
   .duel-proof span {
-    display: none;
+    display: inline;
+  }
+  .duel-proof {
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
   .battle-shell {
     margin-top: 28px;
@@ -2106,10 +2214,10 @@
     display: none;
   }
   .pull-meta small {
-    display: none;
+    display: block;
   }
   .pull-meta strong {
-    font-size: 9px;
+    font-size: 12px;
   }
   .pull-value {
     font-size: 11px;
@@ -2174,4 +2282,13 @@
   .queue-card:hover {
     transform: none;
   }
+}
+
+.tier-card-unavailable .tier-orb {
+  opacity: 0.45;
+}
+
+.tier-card-unavailable small,
+.tier-card-unavailable .tier-availability {
+  color: var(--text-secondary);
 }
