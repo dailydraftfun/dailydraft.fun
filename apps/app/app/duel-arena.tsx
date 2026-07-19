@@ -262,7 +262,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     entry?.mode === 'house' ? 'matchmaking' : (entry?.mode ?? 'matchmaking'),
   );
   const [tier, setTier] = useState(entry?.tier ?? 50);
-  const [wallet, setWallet] = useState(entry?.opponentAddress ?? '');
+  const [wallet, setWallet] = useState('');
   const [copied, setCopied] = useState(false);
   const [entryFlowOpen, setEntryFlowOpen] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
