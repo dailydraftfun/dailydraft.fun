@@ -57,6 +57,31 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /health/capabilities:
+    get:
+      operationId: getProductCapabilities
+      summary: Resolve the currently playable duel modes and pack tiers
+      description: |
+        This fail-closed response is the product UI source of truth. Disabled
+        modes and pack tiers remain visible only as explicit unavailable or
+        coming-soon choices and must never be submitted as playable.
+      x-openpacksduel-availability: devnet
+      responses:
+        '200':
+          description: Current public product capabilities
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductCapabilities'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /valuation-policies/current:
     get:
       operationId: getCurrentValuationPolicy
@@ -658,6 +683,43 @@ paths:
           $ref: '#/components/responses/Conflict'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /duels/{duelId}/transactions/{transactionId}/rejections:
+    post:
+      operationId: recordDuelTransactionWalletRejection
+      tags: [Transactions]
+      summary: Expire a prepared funding intent rejected before broadcast
+      description: |
+        Records an explicit wallet rejection only when the authenticated signer
+        knows that no signature or broadcast occurred. The exact unsigned fund
+        intent is expired idempotently so a replacement can be prepared
+        immediately. Wallet, RPC, or transport failures with an uncertain
+        broadcast outcome must use reconciliation instead.
+      x-openpacksduel-availability: devnet
+      security:
+        - walletSession: []
+        - integrationKey: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+        - $ref: '#/components/parameters/TransactionId'
+      responses:
+        '200':
+          description: Exact prepared funding intent expired or already recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RejectedFundingIntent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Wallet session does not own this funding intent
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /duels/{duelId}/transactions/reconciliation:
     post:
       operationId: reconcileDuelTransactions
@@ -1577,6 +1639,64 @@ components:
             database:
               type: string
               const: ok
+    CapabilityAvailability:
+      type: object
+      additionalProperties: false
+      required: [enabled, reason]
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: [string, 'null']
+    PackCapability:
+      type: object
+      additionalProperties: false
+      required: [enabled, id, name, reason, tier]
+      properties:
+        enabled:
+          type: boolean
+        id:
+          $ref: '#/components/schemas/PackId'
+        name:
+          type: string
+        reason:
+          type: [string, 'null']
+        tier:
+          type: integer
+          enum: [25, 50, 100]
+    ProductCapabilities:
+      type: object
+      additionalProperties: false
+      required: [modes, network, packs, provider]
+      properties:
+        modes:
+          type: object
+          additionalProperties: false
+          required: [direct, house, open]
+          properties:
+            direct:
+              $ref: '#/components/schemas/CapabilityAvailability'
+            house:
+              $ref: '#/components/schemas/CapabilityAvailability'
+            open:
+              $ref: '#/components/schemas/CapabilityAvailability'
+        network:
+          type: string
+          const: solana-devnet
+        packs:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PackCapability'
+        provider:
+          type: object
+          additionalProperties: false
+          required: [mode, ready]
+          properties:
+            mode:
+              type: string
+            ready:
+              type: boolean
     SolanaAddress:
       type: string
       pattern: '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
@@ -2700,6 +2820,23 @@ components:
         status:
           type: string
           const: submitted
+    RejectedFundingIntent:
+      type: object
+      additionalProperties: false
+      required: [transactionId, duelId, status, reason]
+      properties:
+        transactionId:
+          type: string
+          pattern: '^tx_[A-Za-z0-9]{12,64}$'
+        duelId:
+          type: string
+          pattern: '^duel_[A-Za-z0-9]{12,64}$'
+        status:
+          type: string
+          const: expired
+        reason:
+          type: string
+          const: wallet_rejected_before_broadcast
     ReconciliationSummary:
       type: object
       additionalProperties: false

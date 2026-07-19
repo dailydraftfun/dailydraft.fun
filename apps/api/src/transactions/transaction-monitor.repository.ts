@@ -11,6 +11,11 @@ export interface ParticipantReconciliationBatch {
   transactions: MonitoredTransaction[];
 }
 
+export interface PreparedRecoveryScope {
+  duelId: string;
+  ignoreSchedule?: boolean;
+}
+
 export interface TransactionDuelAnalytics {
   mode: 'direct' | 'house' | 'open';
   status: DuelStatus;
@@ -54,7 +59,9 @@ export abstract class TransactionMonitorRepository {
     limit: number,
     preparedAfter: Date,
     now: Date,
+    scope?: PreparedRecoveryScope,
   ): Promise<PreparedRecoveryIntent[]>;
+  abstract recordPreparedRecoveryExpired(transactionId: string, now: Date): Promise<void>;
   abstract recordRecoveryAttempt(
     transactionId: string,
     now: Date,

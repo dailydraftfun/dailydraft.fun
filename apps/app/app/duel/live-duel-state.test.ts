@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { DurableDuel } from '../solana/duel-client';
+import { prohibitedPrimaryUiTerms } from './duel-player-copy';
 import { toLiveDuelState } from './live-duel-state';
 
 describe('live duel state', () => {
@@ -29,7 +30,37 @@ describe('live duel state', () => {
     const state = toLiveDuelState(duel({ status: 'settled', result: null }), 'creator');
 
     expect(state.phase).toBe('lobby');
-    expect(state.headline).toBe('Duel status: settled');
+    expect(state.headline).toBe('Duel complete');
+  });
+
+  test('keeps raw lifecycle labels and prohibited jargon out of the arena', () => {
+    const statuses: DurableDuel['status'][] = [
+      'waiting',
+      'matched',
+      'committing',
+      'funded',
+      'opening',
+      'awaiting_assets',
+      'settling',
+      'settled',
+      'cancelling',
+      'cancelled',
+      'refunding',
+      'refunded',
+      'failed',
+    ];
+    const renderedCopy = statuses
+      .flatMap((status) => {
+        const state = toLiveDuelState(duel({ status, result: null }), 'creator');
+        return [state.headline, state.indicator];
+      })
+      .join(' ')
+      .toLowerCase();
+
+    expect(renderedCopy).not.toContain('_');
+    for (const term of prohibitedPrimaryUiTerms) {
+      expect(renderedCopy).not.toContain(term);
+    }
   });
 });
 

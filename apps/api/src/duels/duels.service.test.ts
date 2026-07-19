@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { HttpException } from '@nestjs/common';
 
 import type { Duel, DuelEvent, DuelTransactionRecord, Page } from '../domain.js';
 import { PacksService } from '../packs/packs.service.js';
@@ -14,6 +15,13 @@ import { DuelsService } from './duels.service.js';
 
 const WALLET = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
 const OPPONENT = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
+const originalAppUrl = process.env.OPENPACKSDUEL_APP_URL;
+const originalNodeEnvironment = process.env.NODE_ENV;
+
+afterEach(() => {
+  setEnvironment('OPENPACKSDUEL_APP_URL', originalAppUrl);
+  setEnvironment('NODE_ENV', originalNodeEnvironment);
+});
 
 describe('DuelsService', () => {
   test('allows only forward or recovery state transitions', () => {
@@ -59,6 +67,8 @@ describe('DuelsService', () => {
   });
 
   test('creates a disclosed devnet house match without marking it funded', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.OPENPACKSDUEL_APP_URL = 'https://openpacksduel.vercel.app';
     const service = new DuelsService(new FakeDuelRepository(), new PacksService());
 
     const duel = await service.create(
@@ -77,6 +87,29 @@ describe('DuelsService', () => {
     expect((await service.getSocialCard(duel.id)).imageUrl).toEndWith(
       `/duel/${duel.id}/social/matched`,
     );
+  });
+
+  test('fails closed instead of generating localhost social links in production', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.OPENPACKSDUEL_APP_URL;
+    const service = new DuelsService(new FakeDuelRepository(), new PacksService());
+    const duel = await service.create(
+      {
+        creatorWallet: WALLET,
+        expiresAt: futureDate(),
+        matchmakingMode: 'open',
+        packId: 'pokemon_50',
+      },
+      'idempotency-key-social-card',
+    );
+
+    try {
+      await service.getSocialCard(duel.id);
+      throw new Error('Expected social link generation to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(HttpException);
+      expect((error as HttpException).getStatus()).toBe(503);
+    }
   });
 
   test('joins an open duel once and records the opponent wallet', async () => {
@@ -216,4 +249,9 @@ class FakeDuelRepository extends DuelRepository {
 
 function futureDate(): string {
   return new Date(Date.now() + 60 * 60 * 1_000).toISOString();
+}
+
+function setEnvironment(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
 }

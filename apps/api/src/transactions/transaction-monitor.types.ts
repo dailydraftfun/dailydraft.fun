@@ -70,6 +70,7 @@ export interface DuelReconciliationResult {
   duelId: string;
   duelStatus: DuelStatus;
   reconciliation: ReconciliationSummary;
+  unboundTransactionCount: number;
 }
 
 export interface SolanaAddressSignature {

@@ -23,6 +23,13 @@ pass calls `GET /v1/internal/reconciliation/solana` with `CRON_SECRET`; operator
 can run the same global batch with `POST` and either the cron secret or an
 integration key. Normal finality does not wait for that recovery pass.
 
+An authenticated signer can explicitly record a wallet rejection at
+`POST /v1/duels/{duelId}/transactions/{transactionId}/rejections` only when the
+wallet confirms that no signature or broadcast occurred. The exact prepared
+funding intent is expired idempotently so a fresh intent can be prepared
+immediately. Ambiguous wallet, RPC, and transport failures remain on the
+reconciliation path and never use this endpoint.
+
 Funding reconciliation follows Duel v4's two-sided fee-deposit protocol. A
 single finalized `fund` transaction records that participant's side but keeps
 the duel `committing`; only one finalized deposit from each distinct creator and
@@ -211,5 +218,7 @@ ordered migration and deploy procedure in `docs/devnet-runbook.md`.
 
 Set `OPENPACKSDUEL_APP_URL` to the canonical HTTPS app origin and
 `OPENPACKSDUEL_AUTH_DOMAIN` to its matching host. Only localhost may use HTTP.
+The localhost URL fallback is available only when `NODE_ENV=development`; deployed
+environments fail with `503 Service Unavailable` when the canonical app URL is missing or invalid.
 Every signed message is hard-bound to `solana:devnet`; there is no mainnet
 configuration switch.

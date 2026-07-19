@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { HouseTreasuryService } from '../treasury/house-treasury.service.js';
+import type { DevnetRefundOrchestratorService } from './devnet-refund-orchestrator.service.js';
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
 import {
   type BoundSubmission,
@@ -41,6 +43,45 @@ describe('TransactionMonitorService', () => {
     expect(repository.finalized).toEqual(['tx_123456789012']);
   });
 
+  test('continues finality and treasury reconciliation when Devnet refunds fail', async () => {
+    const repository = new FakeRepository(monitoredTransaction());
+    const refunds = new FailingRefundOrchestrator();
+    const treasury = new FakeTreasury();
+    const service = new TransactionMonitorService(
+      repository,
+      new FakeRpc({ confirmationStatus: 'finalized', err: null }),
+      undefined,
+      treasury as unknown as HouseTreasuryService,
+      refunds as unknown as DevnetRefundOrchestratorService,
+    );
+
+    const summary = await withNetwork('solana-devnet', () => service.reconcile());
+
+    expect(summary.finalized).toBe(1);
+    expect(summary.recoveryErrors).toBe(2);
+    expect(repository.finalized).toEqual(['tx_123456789012']);
+    expect(refunds.reconciliations).toBe(2);
+    expect(treasury.lifecycleReconciliations).toBe(1);
+  });
+
+  test('skips Devnet refund orchestration on other configured networks', async () => {
+    const repository = new FakeRepository(monitoredTransaction());
+    const refunds = new FailingRefundOrchestrator();
+    const service = new TransactionMonitorService(
+      repository,
+      new FakeRpc({ confirmationStatus: 'finalized', err: null }),
+      undefined,
+      undefined,
+      refunds as unknown as DevnetRefundOrchestratorService,
+    );
+
+    const summary = await withNetwork('solana-mainnet', () => service.reconcile());
+
+    expect(summary.finalized).toBe(1);
+    expect(summary.recoveryErrors).toBe(0);
+    expect(refunds.reconciliations).toBe(0);
+  });
+
   test('reconciles only the authenticated duel batch without running global recovery', async () => {
     const transaction = monitoredTransaction();
     const repository = new FakeRepository(transaction);
@@ -49,16 +90,65 @@ describe('TransactionMonitorService', () => {
       new FakeRpc({ confirmationStatus: 'finalized', err: null }),
     );
 
-    const result = await service.reconcileDuel({
-      actorWallet: transaction.wallet,
-      duelId: transaction.duelId,
-    });
+    const result = await withEscrowProgram(transaction.expectedProgramId, () =>
+      service.reconcileDuel({
+        actorWallet: transaction.wallet,
+        duelId: transaction.duelId,
+      }),
+    );
 
     expect(result.reconciliation.checked).toBe(1);
     expect(result.reconciliation.finalized).toBe(1);
     expect(result.activeTransactionCount).toBe(0);
     expect(result.duelStatus).toBe('settled');
-    expect(repository.recoveryLookups).toBe(0);
+    expect(result.unboundTransactionCount).toBe(0);
+    expect(repository.recoveryLookups).toBe(2);
+  });
+
+  test('recovers an unbound broadcast from participant-triggered reconciliation', async () => {
+    const intent = preparedRecoveryIntent();
+    const repository = new RecoveryRepository(intent);
+    const service = new TransactionMonitorService(
+      repository,
+      new RecoveryRpc(transactionEnvelope()),
+    );
+
+    const result = await withEscrowProgram(intent.expectedProgramId, () =>
+      service.reconcileDuel({ actorWallet: intent.wallet, duelId: intent.duelId }),
+    );
+
+    expect(result.reconciliation.recovered).toBe(1);
+    expect(result.reconciliation.finalized).toBe(1);
+    expect(result.activeTransactionCount).toBe(0);
+    expect(result.unboundTransactionCount).toBe(0);
+    expect(result.duelStatus).toBe('funded');
+  });
+
+  test('keeps an unbound intent active until absence is finality-safe', async () => {
+    const intent = preparedRecoveryIntent({ lastValidBlockHeight: 2_000n });
+    const repository = new RecoveryRepository(intent);
+    const service = new TransactionMonitorService(repository, new FakeRpc(null, 2_010n));
+
+    const result = await withEscrowProgram(intent.expectedProgramId, () =>
+      service.reconcileDuel({ actorWallet: intent.wallet, duelId: intent.duelId }),
+    );
+
+    expect(result.unboundTransactionCount).toBe(1);
+    expect(result.reconciliation.expired).toBe(0);
+  });
+
+  test('certifies an unbound intent absent only after blockhash finality', async () => {
+    const intent = preparedRecoveryIntent({ lastValidBlockHeight: 1_000n });
+    const repository = new RecoveryRepository(intent);
+    const service = new TransactionMonitorService(repository, new FakeRpc(null, 1_065n));
+
+    const result = await withEscrowProgram(intent.expectedProgramId, () =>
+      service.reconcileDuel({ actorWallet: intent.wallet, duelId: intent.duelId }),
+    );
+
+    expect(result.unboundTransactionCount).toBe(0);
+    expect(result.reconciliation.expired).toBe(1);
+    expect(repository.expired).toEqual([intent.id]);
   });
 
   test('opportunistically checks finality after binding a submitted signature', async () => {
@@ -142,6 +232,7 @@ describe('TransactionMonitorService', () => {
 
   test.each([
     ['commit_result', 'awaiting_assets', 'awaiting_assets', 'settling'],
+    ['refund', 'refunding', 'refunding', 'refunding'],
     ['settle', 'settling', 'settling', 'settled'],
   ] as const)('recovers an unbound provider %s broadcast only from its exact lifecycle state', async (action, duelStatus, expectedFromStatus, expectedToStatus) => {
     const intent = preparedRecoveryIntent({
@@ -306,6 +397,23 @@ class FakeRpc extends SolanaRpcGateway {
   }
 }
 
+class FailingRefundOrchestrator {
+  reconciliations = 0;
+
+  async reconcile(): Promise<never> {
+    this.reconciliations += 1;
+    throw new Error('Refund reconciliation unavailable');
+  }
+}
+
+class FakeTreasury {
+  lifecycleReconciliations = 0;
+
+  async reconcileLifecycle(): Promise<void> {
+    this.lifecycleReconciliations += 1;
+  }
+}
+
 class FakeRepository extends TransactionMonitorRepository {
   readonly confirmed: string[] = [];
   readonly finalized: string[] = [];
@@ -342,6 +450,8 @@ class FakeRepository extends TransactionMonitorRepository {
     this.recoveryLookups += 1;
     return [];
   }
+
+  async recordPreparedRecoveryExpired(): Promise<void> {}
 
   async recordRecoveryAlert(): Promise<void> {}
 
@@ -457,6 +567,7 @@ class RecoveryRepository extends TransactionMonitorRepository {
   readonly alerts: string[] = [];
   readonly bound: string[] = [];
   readonly checkedBlockHeights: Array<bigint | null> = [];
+  readonly expired: string[] = [];
   readonly finalized: string[] = [];
   #boundSignature: string | null = null;
 
@@ -487,7 +598,7 @@ class RecoveryRepository extends TransactionMonitorRepository {
   }
 
   async findPreparedForRecovery(): Promise<PreparedRecoveryIntent[]> {
-    return this.#boundSignature ? [] : [this.intent];
+    return this.#boundSignature || this.expired.length > 0 ? [] : [this.intent];
   }
 
   async findPending(): Promise<MonitoredTransaction[]> {
@@ -533,6 +644,10 @@ class RecoveryRepository extends TransactionMonitorRepository {
     checkedBlockHeight?: bigint,
   ): Promise<void> {
     this.checkedBlockHeights.push(checkedBlockHeight ?? null);
+  }
+
+  override async recordPreparedRecoveryExpired(transactionId: string): Promise<void> {
+    this.expired.push(transactionId);
   }
 
   async recordConfirmed(): Promise<void> {}
@@ -603,6 +718,18 @@ function preparedRecoveryIntent(
     recoveryCheckAttempts: 0,
     ...overrides,
   };
+}
+
+async function withNetwork<T>(network: string | undefined, callback: () => Promise<T>): Promise<T> {
+  const previous = process.env.OPENPACKSDUEL_NETWORK;
+  if (network === undefined) delete process.env.OPENPACKSDUEL_NETWORK;
+  else process.env.OPENPACKSDUEL_NETWORK = network;
+  try {
+    return await callback();
+  } finally {
+    if (previous === undefined) delete process.env.OPENPACKSDUEL_NETWORK;
+    else process.env.OPENPACKSDUEL_NETWORK = previous;
+  }
 }
 
 async function withEscrowProgram<T>(programId: string, callback: () => Promise<T>): Promise<T> {

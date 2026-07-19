@@ -85,11 +85,18 @@ export type DurableDuel = {
 
 export type ProductCapabilities = {
   modes: {
-    direct: { enabled: boolean };
+    direct: { enabled: boolean; reason: string | null };
     house: { enabled: boolean; reason: string | null };
-    open: { enabled: boolean };
+    open: { enabled: boolean; reason: string | null };
   };
   network: 'solana-devnet';
+  packs: Array<{
+    enabled: boolean;
+    id: string;
+    name: string;
+    reason: string | null;
+    tier: 25 | 50 | 100;
+  }>;
   provider: { mode: string; ready: boolean };
 };
 
@@ -132,6 +139,7 @@ export type DuelReconciliationResult = {
     pending: number;
     stuck: number;
   };
+  unboundTransactionCount: number;
 };
 
 const RECONCILIATION_POLL_ATTEMPTS = 20;
@@ -154,6 +162,7 @@ export async function createDuel(
     creatorWallet: string;
     matchmakingMode: 'direct' | 'house';
     opponentWallet?: string;
+    packId: string;
   },
   sessionToken: string,
 ): Promise<DurableDuel> {
@@ -161,16 +170,16 @@ export async function createDuel(
     ...input,
     analyticsSessionId: getAnalyticsSessionId(),
     expiresAt: new Date(Date.now() + 15 * 60 * 1_000).toISOString(),
-    packId: 'pokemon_50',
   });
 }
 
 export function searchOpenMatchmaking(
   wallet: string,
   sessionToken: string,
+  packId: string,
 ): Promise<MatchmakingSession> {
   return authenticatedMutation<MatchmakingSession>('/matchmaking/search', sessionToken, {
-    packId: 'pokemon_50',
+    packId,
     wallet,
   });
 }
@@ -178,9 +187,10 @@ export function searchOpenMatchmaking(
 export function continueOpenMatchmaking(
   wallet: string,
   sessionToken: string,
+  packId: string,
 ): Promise<MatchmakingSession> {
   return authenticatedMutation<MatchmakingSession>('/matchmaking/continue', sessionToken, {
-    packId: 'pokemon_50',
+    packId,
     wallet,
   });
 }
@@ -218,13 +228,46 @@ export function selectHouseFallback(
   });
 }
 
-export async function getDuel(duelId: string): Promise<DurableDuel> {
+export async function getDuel(duelId: string, sessionToken: string): Promise<DurableDuel> {
   if (!apiBaseUrl) throw new Error('The duel API is not configured.');
-  const response = await fetch(`${apiBaseUrl}/duels/${encodeURIComponent(duelId)}`, {
+  return requestAuthenticatedDuel(apiBaseUrl, duelId, sessionToken);
+}
+
+export async function requestAuthenticatedDuel(
+  baseUrl: string,
+  duelId: string,
+  sessionToken: string,
+  fetcher: typeof fetch = fetch,
+): Promise<DurableDuel> {
+  const response = await fetcher(`${baseUrl}/duels/${encodeURIComponent(duelId)}`, {
     cache: 'no-store',
+    headers: { authorization: `Bearer ${sessionToken}` },
   });
-  if (!response.ok) throw new Error(`The duel could not be refreshed (${response.status}).`);
-  return (await response.json()) as DurableDuel;
+  return parseMutationResponse(response);
+}
+
+export async function getPrivateRematchOpponent(
+  duelId: string,
+  sessionToken: string,
+): Promise<{ side: 'creator' | 'opponent'; wallet: string }> {
+  if (!apiBaseUrl) throw new Error('The duel API is not configured.');
+  return requestPrivateRematchOpponent(apiBaseUrl, duelId, sessionToken);
+}
+
+export async function requestPrivateRematchOpponent(
+  baseUrl: string,
+  duelId: string,
+  sessionToken: string,
+  fetcher: typeof fetch = fetch,
+): Promise<{ side: 'creator' | 'opponent'; wallet: string }> {
+  const response = await fetcher(
+    `${baseUrl}/duels/${encodeURIComponent(duelId)}/rematch-opponent`,
+    {
+      cache: 'no-store',
+      headers: { authorization: `Bearer ${sessionToken}` },
+    },
+  );
+  return parseMutationResponse(response);
 }
 
 export function advanceDuelLifecycle(duelId: string, sessionToken: string): Promise<DurableDuel> {
@@ -240,7 +283,71 @@ export async function getProductCapabilities(): Promise<ProductCapabilities> {
   if (!apiBaseUrl) throw new Error('The duel API is not configured.');
   const response = await fetch(`${apiBaseUrl}/health/capabilities`, { cache: 'no-store' });
   if (!response.ok) throw new Error(`Product capabilities are unavailable (${response.status}).`);
-  return (await response.json()) as ProductCapabilities;
+  return parseProductCapabilities(await response.json());
+}
+
+export function parseProductCapabilities(value: unknown): ProductCapabilities {
+  if (!value || typeof value !== 'object') throw malformedCapabilitiesError();
+  const candidate = value as Partial<ProductCapabilities>;
+  if (
+    candidate.network !== 'solana-devnet' ||
+    !isCapabilityModes(candidate.modes) ||
+    !Array.isArray(candidate.packs) ||
+    !candidate.packs.every(isCapabilityPack) ||
+    !isCapabilityProvider(candidate.provider)
+  ) {
+    throw malformedCapabilitiesError();
+  }
+  return candidate as ProductCapabilities;
+}
+
+function isCapabilityModes(value: unknown): value is ProductCapabilities['modes'] {
+  if (!value || typeof value !== 'object') return false;
+  const modes = value as Partial<ProductCapabilities['modes']>;
+  return (
+    isCapabilityState(modes.direct) &&
+    isCapabilityState(modes.house) &&
+    isCapabilityState(modes.open)
+  );
+}
+
+function isCapabilityState(
+  value: unknown,
+): value is ProductCapabilities['modes'][keyof ProductCapabilities['modes']] {
+  if (!value || typeof value !== 'object') return false;
+  const state = value as { enabled?: unknown; reason?: unknown };
+  return (
+    typeof state.enabled === 'boolean' &&
+    (state.reason === null || typeof state.reason === 'string')
+  );
+}
+
+function isCapabilityPack(value: unknown): value is ProductCapabilities['packs'][number] {
+  if (!value || typeof value !== 'object') return false;
+  const pack = value as {
+    enabled?: unknown;
+    id?: unknown;
+    name?: unknown;
+    reason?: unknown;
+    tier?: unknown;
+  };
+  return (
+    typeof pack.enabled === 'boolean' &&
+    typeof pack.id === 'string' &&
+    typeof pack.name === 'string' &&
+    (pack.reason === null || typeof pack.reason === 'string') &&
+    (pack.tier === 25 || pack.tier === 50 || pack.tier === 100)
+  );
+}
+
+function isCapabilityProvider(value: unknown): value is ProductCapabilities['provider'] {
+  if (!value || typeof value !== 'object') return false;
+  const provider = value as { mode?: unknown; ready?: unknown };
+  return typeof provider.mode === 'string' && typeof provider.ready === 'boolean';
+}
+
+function malformedCapabilitiesError(): Error {
+  return new Error('Product capabilities are unavailable (malformed response).');
 }
 
 export async function joinDuel(
@@ -289,6 +396,19 @@ export async function submitSignedDuelIntent(
   );
 }
 
+export async function recordRejectedDuelIntent(
+  duelId: string,
+  intentId: string,
+  sessionToken: string,
+): Promise<void> {
+  await authenticatedMutation(
+    `/duels/${encodeURIComponent(duelId)}/transactions/${encodeURIComponent(intentId)}/rejections`,
+    sessionToken,
+    {},
+    `opd-reject-${intentId}`,
+  );
+}
+
 export function reconcileDuelTransactions(
   duelId: string,
   sessionToken: string,
@@ -309,7 +429,9 @@ export async function waitForDuelTransactions(
   for (let attempt = 0; attempt < RECONCILIATION_POLL_ATTEMPTS; attempt += 1) {
     try {
       latest = await reconcileDuelTransactions(duelId, sessionToken);
-      if (latest.activeTransactionCount === 0) return latest;
+      if (latest.activeTransactionCount === 0 && latest.unboundTransactionCount === 0) {
+        return latest;
+      }
     } catch (error) {
       if (!(error instanceof DuelApiRequestError) || !error.retryable) throw error;
       lastError = error;
@@ -359,14 +481,20 @@ async function parseMutationResponse<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
-class DuelApiRequestError extends Error {
+export class DuelApiRequestError extends Error {
   readonly retryable: boolean;
+  readonly status: number;
 
   constructor(message: string, status: number) {
     super(message);
     this.name = 'DuelApiRequestError';
     this.retryable = status === 429 || status >= 500;
+    this.status = status;
   }
+}
+
+export function isRetryableDuelRequestError(error: unknown): boolean {
+  return error instanceof DuelApiRequestError ? error.retryable : true;
 }
 
 function wait(milliseconds: number): Promise<void> {

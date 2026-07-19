@@ -1,11 +1,46 @@
 :root {
-  --opd-accent: #b8ff32;
+  --opd-bg-primary: #070807;
+  --opd-bg-secondary: #0d100f;
+  --opd-bg-tertiary: #131714;
+  --opd-bg-elevated: #191e1b;
+  --opd-bg-hover: #202721;
+  --opd-text-primary: #f6f8f3;
+  --opd-text-secondary: #b7c0b6;
+  --opd-text-muted: #909a90;
+  --opd-accent: #b8ff5a;
+  --opd-accent-foreground: #10150d;
+  --opd-success: #48e08a;
+  --opd-warning: #f7c948;
+  --opd-danger: #ff6464;
+  --opd-agent: #62d8ff;
+  --opd-done: #a78bfa;
+  --opd-font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --opd-font-mono: "JetBrains Mono", "SF Mono", monospace;
+  --opd-space-base: 4px;
+  --opd-space-sm: 8px;
+  --opd-space-md: 16px;
+  --opd-space-lg: 24px;
+  --opd-space-xl: 32px;
+  --opd-radius-sm: 4px;
+  --opd-radius-md: 6px;
+  --opd-radius-lg: 10px;
+  --opd-radius-xl: 16px;
   --opd-accent-soft: color-mix(in srgb, var(--opd-accent) 16%, transparent);
   --opd-border: color-mix(in srgb, currentColor 14%, transparent);
 }
 
+body {
+  font-family: var(--opd-font-sans);
+  font-synthesis: none;
+}
+
+code,
+pre {
+  font-family: var(--opd-font-mono);
+}
+
 ::selection {
-  color: #080b08;
+  color: var(--opd-accent-foreground);
   background: var(--opd-accent);
 }
 
@@ -18,9 +53,9 @@
 
 .docs-logo > span:last-child {
   padding: 0.15rem 0.35rem;
-  color: #273014;
-  font-size: 0.65rem;
-  font-weight: 800;
+  color: var(--opd-accent-foreground);
+  font-size: 0.75rem;
+  font-weight: 700;
   letter-spacing: 0.08em;
   background: var(--opd-accent);
   border-radius: 0.25rem;
@@ -50,10 +85,10 @@
   padding: clamp(2rem, 6vw, 4.5rem);
   margin: 0 0 2rem;
   overflow: hidden;
-  color: #f5f7f4;
+  color: var(--opd-text-primary);
   background:
     radial-gradient(circle at 85% 15%, rgb(184 255 50 / 18%), transparent 28rem),
-    linear-gradient(145deg, #10140f, #080b09 68%);
+    linear-gradient(145deg, var(--opd-bg-tertiary), var(--opd-bg-primary) 68%);
   border: 1px solid rgb(184 255 50 / 22%);
   border-radius: 1.25rem;
 }
@@ -81,7 +116,7 @@
   margin: 0 0 1.25rem;
   color: var(--opd-accent);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.11em;
   text-transform: uppercase;
   background: rgb(184 255 50 / 8%);
@@ -104,7 +139,7 @@
   z-index: 1;
   max-width: 42rem;
   margin: 1.5rem 0 0;
-  color: #bfc6bd;
+  color: var(--opd-text-secondary);
   font-size: 1.08rem;
   line-height: 1.75;
 }
@@ -123,7 +158,7 @@
   align-items: center;
   min-height: 2.65rem;
   padding: 0.6rem 0.95rem;
-  color: #f5f7f4;
+  color: var(--opd-text-primary);
   font-weight: 700;
   text-decoration: none;
   border: 1px solid rgb(255 255 255 / 18%);
@@ -131,7 +166,7 @@
 }
 
 .docs-hero-actions a:first-child {
-  color: #080b08;
+  color: var(--opd-accent-foreground);
   background: var(--opd-accent);
   border-color: var(--opd-accent);
 }
@@ -165,7 +200,7 @@
 .docs-card span {
   color: var(--opd-accent);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }

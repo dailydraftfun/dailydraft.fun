@@ -11,6 +11,14 @@ const DEVNET_GENESIS_HASH = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_RETRIES = 2;
 
+interface SolanaRpcRequestOptions {
+  delay?: (milliseconds: number) => Promise<void>;
+  fetcher?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+  retries: number;
+  rpcUrl: string;
+  timeoutMs: number;
+}
+
 export class SolanaRpcUnavailableError extends Error {
   constructor(message = 'Solana devnet RPC is unavailable') {
     super(message);
@@ -26,10 +34,18 @@ export interface LegacySplTokenAccount {
   owner: string;
 }
 
+export interface SolanaAccountInfo {
+  data: Uint8Array;
+  owner: string;
+}
+
 export abstract class SolanaRpcGateway {
   abstract assertDevnet(): Promise<void>;
   abstract getBlockHeight(): Promise<bigint>;
   abstract getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: bigint }>;
+  getAccountInfo(_address: string): Promise<SolanaAccountInfo | null> {
+    throw new SolanaRpcUnavailableError('Raw Solana account reads are not implemented');
+  }
   getLegacyMint(_address: string): Promise<{ decimals: number; supply: bigint }> {
     throw new SolanaRpcUnavailableError('Legacy SPL mint reads are not implemented');
   }
@@ -50,12 +66,8 @@ export abstract class SolanaRpcGateway {
 @Injectable()
 export class SolanaRpcClient extends SolanaRpcGateway {
   readonly #rpcUrl = resolveRpcUrl();
-  readonly #timeoutMs = resolvePositiveInteger(
-    process.env.SOLANA_RPC_TIMEOUT_MS,
-    DEFAULT_TIMEOUT_MS,
-    30_000,
-  );
-  readonly #retries = resolvePositiveInteger(process.env.SOLANA_RPC_RETRIES, DEFAULT_RETRIES, 4);
+  readonly #requestPolicy = resolveSolanaRpcRequestPolicy();
+
   async assertDevnet(): Promise<void> {
     const genesisHash = await this.request('getGenesisHash', []);
     if (genesisHash !== DEVNET_GENESIS_HASH) {
@@ -84,6 +96,31 @@ export class SolanaRpcClient extends SolanaRpcGateway {
       blockhash: result.value.blockhash,
       lastValidBlockHeight: BigInt(Number(result.value.lastValidBlockHeight)),
     };
+  }
+
+  async getAccountInfo(address: string): Promise<SolanaAccountInfo | null> {
+    const result = await this.request('getAccountInfo', [
+      address,
+      { commitment: 'finalized', encoding: 'base64' },
+    ]);
+    if (!isObject(result) || !('value' in result)) throw new SolanaRpcUnavailableError();
+    if (result.value === null) return null;
+    if (
+      !isObject(result.value) ||
+      typeof result.value.owner !== 'string' ||
+      !Array.isArray(result.value.data) ||
+      result.value.data.length !== 2 ||
+      typeof result.value.data[0] !== 'string' ||
+      result.value.data[1] !== 'base64'
+    ) {
+      throw new SolanaRpcUnavailableError('RPC returned an invalid account');
+    }
+    const encoded = result.value.data[0];
+    const data = Buffer.from(encoded, 'base64');
+    if (data.toString('base64').replaceAll('=', '') !== encoded.replaceAll('=', '')) {
+      throw new SolanaRpcUnavailableError('RPC returned invalid base64 account data');
+    }
+    return { data, owner: result.value.owner };
   }
 
   async getLegacyMint(address: string): Promise<{ decimals: number; supply: bigint }> {
@@ -144,29 +181,10 @@ export class SolanaRpcClient extends SolanaRpcGateway {
   }
 
   private async request(method: string, params: unknown[]): Promise<unknown> {
-    for (let attempt = 0; attempt <= this.#retries; attempt += 1) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), this.#timeoutMs);
-      try {
-        const response = await fetch(this.#rpcUrl, {
-          body: JSON.stringify({ id: 1, jsonrpc: '2.0', method, params }),
-          headers: { 'content-type': 'application/json' },
-          method: 'POST',
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`RPC HTTP ${response.status}`);
-        const payload: unknown = await response.json();
-        if (!isObject(payload) || 'error' in payload || !('result' in payload)) {
-          throw new Error('RPC returned an invalid response');
-        }
-        return payload.result;
-      } catch {
-        if (attempt < this.#retries) await wait(100 * (attempt + 1));
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-    throw new SolanaRpcUnavailableError();
+    return requestSolanaRpc(method, params, {
+      ...this.#requestPolicy,
+      rpcUrl: this.#rpcUrl,
+    });
   }
 
   private async getParsedTokenInfo(address: string): Promise<{ info: unknown; type: unknown }> {
@@ -367,14 +385,62 @@ function resolveRpcUrl(): string {
   }
 }
 
-function resolvePositiveInteger(
+export function resolveSolanaRpcRequestPolicy(environment: NodeJS.ProcessEnv = process.env): {
+  retries: number;
+  timeoutMs: number;
+} {
+  return {
+    retries: resolveBoundedInteger(environment.SOLANA_RPC_RETRIES, DEFAULT_RETRIES, 0, 4),
+    timeoutMs: resolveBoundedInteger(
+      environment.SOLANA_RPC_TIMEOUT_MS,
+      DEFAULT_TIMEOUT_MS,
+      1,
+      30_000,
+    ),
+  };
+}
+
+export async function requestSolanaRpc(
+  method: string,
+  params: unknown[],
+  options: SolanaRpcRequestOptions,
+): Promise<unknown> {
+  const delay = options.delay ?? wait;
+  const fetcher = options.fetcher ?? fetch;
+  for (let attempt = 0; attempt <= options.retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
+    try {
+      const response = await fetcher(options.rpcUrl, {
+        body: JSON.stringify({ id: 1, jsonrpc: '2.0', method, params }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error('RPC returned a failed HTTP status');
+      const payload: unknown = await response.json();
+      if (!isObject(payload) || 'error' in payload || !('result' in payload)) {
+        throw new Error('RPC returned an invalid response');
+      }
+      return payload.result;
+    } catch {
+      if (attempt < options.retries) await delay(100 * (attempt + 1));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw new SolanaRpcUnavailableError(`Solana devnet RPC method ${method} is unavailable`);
+}
+
+function resolveBoundedInteger(
   value: string | undefined,
   fallback: number,
+  minimum: number,
   maximum: number,
 ): number {
   if (!value) return fallback;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isInteger(parsed) && parsed >= 0 ? Math.min(parsed, maximum) : fallback;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= minimum ? Math.min(parsed, maximum) : fallback;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

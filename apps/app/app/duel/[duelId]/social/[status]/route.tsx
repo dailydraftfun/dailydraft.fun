@@ -1,4 +1,5 @@
 import { ImageResponse } from 'next/og';
+import { getDuelPullPresentation } from '../../../duel-receipt-presentation';
 import { fetchPublicDuelReceipt } from '../../../public-proof-client';
 import { getDuelSocialSnapshot, resolveDuelStatus } from '../../../social-card-data';
 
@@ -74,6 +75,21 @@ export async function GET(
   const isResult = duel.status === 'settled' && duel.pulls.length === 2;
   const firstPull = duel.pulls[0];
   const secondPull = duel.pulls[1];
+  const winnerSide = receipt.result?.winnerSide ?? null;
+  const firstPullPresentation = firstPull
+    ? getDuelPullPresentation({
+        mockPreview: duel.mockPreview,
+        side: firstPull.side,
+        winnerSide,
+      })
+    : null;
+  const secondPullPresentation = secondPull
+    ? getDuelPullPresentation({
+        mockPreview: duel.mockPreview,
+        side: secondPull.side,
+        winnerSide,
+      })
+    : null;
 
   return new ImageResponse(
     <div
@@ -217,37 +233,21 @@ export async function GET(
         {isResult && firstPull && secondPull ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
             <PullCard
-              label={
-                duel.mockPreview
-                  ? firstPull.winner
-                    ? 'Higher mock value'
-                    : 'Mock pull'
-                  : firstPull.winner
-                    ? 'Winner'
-                    : 'Creator pull'
-              }
+              label={firstPullPresentation?.label ?? 'Pull'}
               name={firstPull.displayName}
               value={firstPull.value}
               accent={duel.accent}
-              faded={!firstPull.winner}
+              faded={!firstPullPresentation?.emphasized}
             />
             <div style={{ display: 'flex', color: '#65717b', fontSize: 20, fontWeight: 700 }}>
               VS
             </div>
             <PullCard
-              label={
-                duel.mockPreview
-                  ? secondPull.winner
-                    ? 'Higher mock value'
-                    : 'Mock pull'
-                  : secondPull.winner
-                    ? 'Winner'
-                    : 'Opponent pull'
-              }
+              label={secondPullPresentation?.label ?? 'Pull'}
               name={secondPull.displayName}
               value={secondPull.value}
               accent={duel.accent}
-              faded={!secondPull.winner}
+              faded={!secondPullPresentation?.emphasized}
             />
           </div>
         ) : (

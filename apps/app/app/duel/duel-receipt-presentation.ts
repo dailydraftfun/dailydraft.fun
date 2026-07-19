@@ -14,12 +14,56 @@ export type DuelReceiptPresentation = {
   headline: string;
   mockPreview: boolean;
   outcomeStates: Array<{
-    label: 'Runner-up' | 'Tie' | 'Winner';
+    emphasized: boolean;
+    label: DuelPullLabel;
     side: 'creator' | 'opponent';
   }>;
+  scoreboard: {
+    comparisonLabel: string;
+    comparisonValue: string;
+    marginLabel: string;
+  } | null;
   statusLabel: string;
   subline: string;
 };
+
+export type DuelPullLabel =
+  | 'Equal mock value'
+  | 'Higher mock value'
+  | 'Mock pull'
+  | 'Runner-up'
+  | 'Tie'
+  | 'Winner';
+
+export function getDuelPullPresentation({
+  mockPreview,
+  side,
+  winnerSide,
+}: {
+  mockPreview: boolean;
+  side: 'creator' | 'opponent';
+  winnerSide: 'creator' | 'opponent' | null;
+}): { emphasized: boolean; label: DuelPullLabel } {
+  if (winnerSide === null) {
+    return {
+      emphasized: true,
+      label: mockPreview ? 'Equal mock value' : 'Tie',
+    };
+  }
+
+  const emphasized = side === winnerSide;
+  if (mockPreview) {
+    return {
+      emphasized,
+      label: emphasized ? 'Higher mock value' : 'Mock pull',
+    };
+  }
+
+  return {
+    emphasized,
+    label: emphasized ? 'Winner' : 'Runner-up',
+  };
+}
 
 export function getDuelReceiptPresentation(receipt: PublicDuelReceipt): DuelReceiptPresentation {
   const result = receipt.result;
@@ -40,6 +84,7 @@ export function getDuelReceiptPresentation(receipt: PublicDuelReceipt): DuelRece
       finality: finalityWithoutResult(receipt),
       mockPreview: false,
       outcomeStates: [],
+      scoreboard: null,
       statusLabel,
     };
   }
@@ -68,14 +113,24 @@ export function getDuelReceiptPresentation(receipt: PublicDuelReceipt): DuelRece
     headline,
     mockPreview,
     outcomeStates: result.outcomes.map((outcome) => ({
-      label:
-        result.winnerSide === null
-          ? 'Tie'
-          : outcome.side === result.winnerSide
-            ? 'Winner'
-            : 'Runner-up',
+      ...getDuelPullPresentation({
+        mockPreview,
+        side: outcome.side,
+        winnerSide: result.winnerSide,
+      }),
       side: outcome.side,
     })),
+    scoreboard: {
+      comparisonLabel: mockPreview
+        ? result.winner
+          ? 'Higher mock value'
+          : 'Mock result'
+        : result.winner
+          ? 'Winner'
+          : 'Result',
+      comparisonValue: result.winner?.display ?? (mockPreview ? 'Equal mock values' : 'Tie'),
+      marginLabel: mockPreview ? 'Mock margin' : result.winner ? 'Winning margin' : 'Margin',
+    },
     statusLabel,
     subline,
   };

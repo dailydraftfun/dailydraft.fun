@@ -6,6 +6,8 @@ import { IdempotencyKey } from '../common/idempotency-key.decorator.js';
 import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
 // biome-ignore lint/style/useImportType: Nest needs the DTO constructor for runtime route validation metadata.
 import { DuelIdParams } from '../duels/duel.dto.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { DuelFundingService } from './duel-funding.service.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
 import { PrepareProviderEscrowRequest } from './provider-settlement.dto.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
@@ -22,7 +24,10 @@ import { WorkerKeyGuard } from './worker-key.guard.js';
 
 @Controller('duels/:duelId/transactions')
 export class TransactionSubmissionController {
-  constructor(private readonly monitor: TransactionMonitorService) {}
+  constructor(
+    private readonly monitor: TransactionMonitorService,
+    private readonly funding: DuelFundingService,
+  ) {}
 
   @Post('reconciliation')
   @HttpCode(200)
@@ -34,6 +39,20 @@ export class TransactionSubmissionController {
     return this.monitor.reconcileDuel({
       ...(authentication.kind === 'wallet-session' ? { actorWallet: authentication.wallet } : {}),
       duelId: params.duelId,
+    });
+  }
+
+  @Post(':transactionId/rejections')
+  @HttpCode(200)
+  @UseGuards(DuelMutationGuard)
+  recordWalletRejection(
+    @Param() params: TransactionSubmissionParams,
+    @CurrentDuelAuthentication() authentication: DuelAuthentication,
+  ) {
+    return this.funding.recordWalletRejection({
+      ...(authentication.kind === 'wallet-session' ? { actorWallet: authentication.wallet } : {}),
+      duelId: params.duelId,
+      transactionId: params.transactionId,
     });
   }
 

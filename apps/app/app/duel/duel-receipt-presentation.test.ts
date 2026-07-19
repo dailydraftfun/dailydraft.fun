@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { getDuelReceiptPresentation } from './duel-receipt-presentation';
+import { getDuelPullPresentation, getDuelReceiptPresentation } from './duel-receipt-presentation';
 import type { PublicDuelReceipt } from './public-proof-client';
 
 describe('duel receipt presentation', () => {
@@ -14,9 +14,14 @@ describe('duel receipt presentation', () => {
       }),
     );
     expect(presentation.outcomeStates).toEqual([
-      { label: 'Winner', side: 'creator' },
-      { label: 'Runner-up', side: 'opponent' },
+      { emphasized: true, label: 'Winner', side: 'creator' },
+      { emphasized: false, label: 'Runner-up', side: 'opponent' },
     ]);
+    expect(presentation.scoreboard).toEqual({
+      comparisonLabel: 'Winner',
+      comparisonValue: 'Creator',
+      marginLabel: 'Winning margin',
+    });
   });
 
   test('treats both pulls as tied when authoritative values are equal', () => {
@@ -26,6 +31,7 @@ describe('duel receipt presentation', () => {
 
     expect(presentation.headline).toBe('The committed pulls are tied.');
     expect(presentation.outcomeStates.map((outcome) => outcome.label)).toEqual(['Tie', 'Tie']);
+    expect(presentation.outcomeStates.every((outcome) => outcome.emphasized)).toBe(true);
     expect(presentation.subline).toContain('return each original card');
   });
 
@@ -105,6 +111,29 @@ describe('duel receipt presentation', () => {
         tone: 'neutral',
       }),
     );
+    expect(presentation.outcomeStates).toEqual([
+      { emphasized: true, label: 'Higher mock value', side: 'creator' },
+      { emphasized: false, label: 'Mock pull', side: 'opponent' },
+    ]);
+    expect(presentation.scoreboard).toEqual({
+      comparisonLabel: 'Higher mock value',
+      comparisonValue: 'Creator',
+      marginLabel: 'Mock margin',
+    });
+    expect(JSON.stringify(presentation)).not.toContain('"Winner"');
+  });
+
+  test('labels equal mock values without winner semantics', () => {
+    expect(
+      getDuelPullPresentation({
+        mockPreview: true,
+        side: 'creator',
+        winnerSide: null,
+      }),
+    ).toEqual({
+      emphasized: true,
+      label: 'Equal mock value',
+    });
   });
 
   test('keeps refunded committed results as safe terminal evidence', () => {

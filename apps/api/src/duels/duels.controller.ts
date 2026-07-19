@@ -43,6 +43,7 @@ export class DuelsController {
   ) {}
 
   @Get()
+  @UseGuards(IntegrationKeyGuard)
   findAll(@Query() query: ListDuelsQuery): Promise<Page<Duel>> {
     return this.duels.findAll(query);
   }
@@ -64,8 +65,17 @@ export class DuelsController {
   }
 
   @Get(':duelId')
-  findOne(@Param() params: DuelIdParams): Promise<Duel> {
-    return this.duels.findOne(params.duelId);
+  @UseGuards(DuelMutationGuard)
+  async findOne(
+    @Param() params: DuelIdParams,
+    @CurrentDuelAuthentication() authentication: DuelAuthentication,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ): Promise<Duel> {
+    response.header('cache-control', 'private, no-store');
+    response.header('x-robots-tag', 'noindex, nofollow, noarchive');
+    const duel = await this.duels.findOne(params.duelId);
+    assertDuelParticipant(authentication, duel);
+    return duel;
   }
 
   @Post(':duelId/join')
@@ -128,6 +138,19 @@ export class DuelsController {
     return this.duels.getSocialCard(params.duelId);
   }
 
+  @Get(':duelId/rematch-opponent')
+  @UseGuards(DuelMutationGuard)
+  async getRematchOpponent(
+    @Param() params: DuelIdParams,
+    @CurrentDuelAuthentication() authentication: DuelAuthentication,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    response.header('cache-control', 'private, no-store');
+    response.header('x-robots-tag', 'noindex, nofollow, noarchive');
+    const duel = await this.duels.findOne(params.duelId);
+    return resolvePrivateRematchOpponent(authentication, duel);
+  }
+
   @Get(':duelId/receipt')
   getReceipt(@Param() params: DuelIdParams, @Res({ passthrough: true }) response: FastifyReply) {
     response.header('content-disposition', `attachment; filename="${params.duelId}.receipt.json"`);
@@ -175,4 +198,25 @@ export function assertDuelParticipant(authentication: DuelAuthentication, duel: 
   ) {
     throw new ForbiddenException('Wallet session is not a participant in this duel');
   }
+}
+
+export function resolvePrivateRematchOpponent(
+  authentication: DuelAuthentication,
+  duel: Pick<Duel, 'creatorWallet' | 'houseOpponent' | 'opponentWallet' | 'status'>,
+): { side: 'creator' | 'opponent'; wallet: string } {
+  if (
+    authentication.kind !== 'wallet-session' ||
+    duel.status !== 'settled' ||
+    duel.houseOpponent ||
+    !duel.opponentWallet
+  ) {
+    throw new ForbiddenException('Private rematch is unavailable for this wallet');
+  }
+  if (authentication.wallet === duel.creatorWallet) {
+    return { side: 'opponent', wallet: duel.opponentWallet };
+  }
+  if (authentication.wallet === duel.opponentWallet) {
+    return { side: 'creator', wallet: duel.creatorWallet };
+  }
+  throw new ForbiddenException('Private rematch is unavailable for this wallet');
 }
