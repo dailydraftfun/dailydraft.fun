@@ -81,6 +81,23 @@ describe('duel lobby capability controls', () => {
     });
   });
 
+  test('never auto-selects house play when it is the only enabled mode', () => {
+    const capabilities = capabilityFixture({ coreEnabled: false, houseEnabled: true });
+    capabilities.modes.house = { enabled: true, reason: null };
+    const markup = renderToStaticMarkup(
+      <DuelModeTabs
+        capabilities={capabilities}
+        disabled={false}
+        mode="direct"
+        onSelect={() => undefined}
+      />,
+    );
+
+    expect(resolveLobbySelection(capabilities, { mode: 'direct', tier: 50 }).mode).toBe('direct');
+    expect(markup.match(/<button[^>]*id="mode-tab-house"[^>]*>/)?.[0]).toContain('tabindex="0"');
+    expect(markup).not.toContain('aria-selected="true"');
+  });
+
   test('fails closed when the server reports no playable combination', () => {
     const markup = renderToStaticMarkup(
       <ProductCapabilityPanel
@@ -150,6 +167,12 @@ describe('duel lobby capability controls', () => {
       {
         ...valid,
         modes: { ...valid.modes, direct: { enabled: true, reason: 503 } },
+      },
+      { ...valid, network: 'solana-mainnet' },
+      { ...valid, provider: { mode: 'openpacksduel-devnet' } },
+      {
+        ...valid,
+        packs: valid.packs.map((pack, index) => (index === 0 ? { ...pack, reason: 503 } : pack)),
       },
     ];
 

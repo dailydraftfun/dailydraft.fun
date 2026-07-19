@@ -7,7 +7,7 @@ import {
   UsersThreeIcon,
   WarningCircleIcon,
 } from '@phosphor-icons/react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import type { DuelOpponentType, ProductCapabilities } from './solana/duel-client';
 
 export type CapabilityLoadState =
@@ -63,15 +63,33 @@ export function DuelModeTabs({
   capabilities,
   disabled,
   mode,
+  onKeyDown,
   onSelect,
+  registerTab,
 }: {
   capabilities: ProductCapabilities;
   disabled: boolean;
   mode: Mode;
+  onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>, mode: Mode) => void;
   onSelect: (mode: Mode) => void;
+  registerTab?: (mode: Mode, element: HTMLButtonElement | null) => void;
 }) {
+  const selectedModeEnabled = isModeEnabled(capabilities, mode);
+  const firstPlayableMode: Mode | undefined = capabilities.modes.direct.enabled
+    ? 'direct'
+    : capabilities.modes.open.enabled
+      ? 'matchmaking'
+      : capabilities.modes.house.enabled
+        ? 'house'
+        : undefined;
+
   return (
-    <div className="mode-tabs" role="tablist" aria-label="Duel mode">
+    <div
+      className="mode-tabs mode-tabs-three"
+      role="tablist"
+      aria-label="Duel mode"
+      aria-orientation="horizontal"
+    >
       <ModeTab
         caption="Invite a wallet"
         capability={capabilities.modes.direct}
@@ -79,8 +97,11 @@ export function DuelModeTabs({
         icon={<UserPlusIcon size={17} weight="bold" />}
         label="Challenge"
         mode="direct"
+        onKeyDown={onKeyDown}
+        focusable={selectedModeEnabled ? mode === 'direct' : firstPlayableMode === 'direct'}
         selected={mode === 'direct'}
         onSelect={onSelect}
+        registerTab={registerTab}
       />
       <ModeTab
         caption="Find a wallet"
@@ -89,8 +110,13 @@ export function DuelModeTabs({
         icon={<UsersThreeIcon size={17} weight="fill" />}
         label="Matchmake"
         mode="matchmaking"
+        onKeyDown={onKeyDown}
+        focusable={
+          selectedModeEnabled ? mode === 'matchmaking' : firstPlayableMode === 'matchmaking'
+        }
         selected={mode === 'matchmaking'}
         onSelect={onSelect}
+        registerTab={registerTab}
       />
       <ModeTab
         caption="Play the house"
@@ -99,8 +125,11 @@ export function DuelModeTabs({
         icon={<LightningIcon size={17} weight="fill" />}
         label="Instant"
         mode="house"
+        onKeyDown={onKeyDown}
+        focusable={selectedModeEnabled ? mode === 'house' : firstPlayableMode === 'house'}
         selected={mode === 'house'}
         onSelect={onSelect}
+        registerTab={registerTab}
       />
     </div>
   );
@@ -208,9 +237,7 @@ export function resolveLobbySelection(
     ? 'direct'
     : capabilities.modes.open.enabled
       ? 'matchmaking'
-      : capabilities.modes.house.enabled
-        ? 'house'
-        : undefined;
+      : undefined;
   const pack = enabledPackForTier(capabilities, selection.tier) ?? firstEnabledPack(capabilities);
 
   return {
@@ -225,28 +252,39 @@ function ModeTab({
   capability,
   caption,
   disabled,
+  focusable,
   icon,
   label,
   mode,
+  onKeyDown,
   onSelect,
+  registerTab,
   selected,
 }: {
   capability: { enabled: boolean; reason: string | null };
   caption: string;
   disabled: boolean;
+  focusable: boolean;
   icon: ReactNode;
   label: string;
   mode: Mode;
+  onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>, mode: Mode) => void;
   onSelect: (mode: Mode) => void;
+  registerTab?: (mode: Mode, element: HTMLButtonElement | null) => void;
   selected: boolean;
 }) {
   return (
     <button
+      id={`mode-tab-${mode}`}
       type="button"
       role="tab"
-      aria-selected={selected}
+      aria-selected={selected && capability.enabled}
+      aria-controls={`mode-panel-${mode}`}
+      tabIndex={focusable ? 0 : -1}
+      ref={(element) => registerTab?.(mode, element)}
       disabled={disabled || !capability.enabled}
       onClick={() => onSelect(mode)}
+      onKeyDown={(event) => onKeyDown?.(event, mode)}
       title={capability.reason ?? undefined}
     >
       {icon}
