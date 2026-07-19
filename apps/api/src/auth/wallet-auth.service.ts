@@ -3,9 +3,11 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import bs58 from 'bs58';
+import { resolvePublicAppUrl } from '../common/public-app-url.js';
 import type { CreateWalletSessionRequest } from './auth.dto.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract repository as a runtime injection token.
 import { WalletAuthRepository } from './auth.repository.js';
@@ -80,6 +82,7 @@ export class WalletAuthService {
     token: string;
     wallet: string;
   }> {
+    resolveAudience();
     const challenge = await this.repository.findChallenge(input.challengeId);
     const now = new Date();
     if (!challenge || challenge.wallet !== input.wallet) {
@@ -193,19 +196,12 @@ export function hashSecret(value: string): string {
 }
 
 function resolveAudience(): { domain: string; uri: string } {
-  const configuredUri = process.env.OPENPACKSDUEL_APP_URL ?? 'http://localhost:3001';
-  let appUrl: URL;
-  try {
-    appUrl = new URL(configuredUri);
-  } catch {
-    throw new BadRequestException('OPENPACKSDUEL_APP_URL must be an absolute URL');
-  }
-  if (appUrl.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(appUrl.hostname)) {
-    throw new BadRequestException('Wallet authentication requires HTTPS outside local development');
-  }
+  const appUrl = resolvePublicAppUrl();
   const configuredDomain = process.env.OPENPACKSDUEL_AUTH_DOMAIN?.trim();
   if (configuredDomain && configuredDomain !== appUrl.host) {
-    throw new BadRequestException('OPENPACKSDUEL_AUTH_DOMAIN must match OPENPACKSDUEL_APP_URL');
+    throw new ServiceUnavailableException(
+      'OPENPACKSDUEL_AUTH_DOMAIN must match OPENPACKSDUEL_APP_URL',
+    );
   }
   return { domain: configuredDomain ?? appUrl.host, uri: appUrl.origin };
 }

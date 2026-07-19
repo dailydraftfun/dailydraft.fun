@@ -7,6 +7,7 @@ import {
   ProductCapabilityPanel,
   resolveLobbySelection,
 } from './duel-lobby-options';
+import { journeyTestIds } from './e2e/journey-test-ids';
 import { type ProductCapabilities, parseProductCapabilities } from './solana/duel-client';
 
 describe('duel lobby capability controls', () => {
@@ -39,6 +40,11 @@ describe('duel lobby capability controls', () => {
     expect(markup).not.toContain('Coming soon');
     expect(markup).toContain('Pokémon $25 Pack');
     expect(markup).toContain('Pokémon $100 Pack');
+    expect(markup).toContain(`data-testid="${journeyTestIds.mode.direct}"`);
+    expect(markup).toContain(`data-testid="${journeyTestIds.mode.matchmaking}"`);
+    expect(markup).toContain(`data-testid="${journeyTestIds.mode.house}"`);
+    expect(markup).toContain(`data-testid="${journeyTestIds.tier(25)}"`);
+    expect(markup).toContain(`data-testid="${journeyTestIds.tier(100)}"`);
   });
 
   test('auto-selects the sole playable tier and labels unsupported choices coming soon', () => {

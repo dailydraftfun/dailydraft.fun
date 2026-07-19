@@ -8,6 +8,7 @@ import {
   WarningCircleIcon,
 } from '@phosphor-icons/react';
 import type { KeyboardEvent, ReactNode } from 'react';
+import { journeyTestIds } from './e2e/journey-test-ids';
 import type { DuelOpponentType, ProductCapabilities } from './solana/duel-client';
 
 export type CapabilityLoadState =
@@ -173,6 +174,7 @@ export function PackTierChoices({
               onClick={() => onSelect(pack.tier)}
               aria-pressed={selected}
               disabled={locked || !pack.enabled || fixedSelection}
+              data-testid={journeyTestIds.tier(pack.tier)}
               title={
                 pack.reason ??
                 (fixedSelection ? 'The only playable tier is selected automatically.' : undefined)
@@ -283,6 +285,7 @@ function ModeTab({
       tabIndex={focusable ? 0 : -1}
       ref={(element) => registerTab?.(mode, element)}
       disabled={disabled || !capability.enabled}
+      data-testid={journeyTestIds.mode[mode]}
       onClick={() => onSelect(mode)}
       onKeyDown={(event) => onKeyDown?.(event, mode)}
       title={capability.reason ?? undefined}
