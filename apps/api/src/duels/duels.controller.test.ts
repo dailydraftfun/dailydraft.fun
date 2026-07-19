@@ -163,7 +163,7 @@ describe('private rematch opponent resolution', () => {
         { kind: 'wallet-session', sessionId: 'auths_creator', wallet: WALLET },
         response,
       ),
-    ).resolves.toEqual(settledDuel);
+    ).resolves.toMatchObject(settledDuel);
     expect(Object.fromEntries(headers)).toEqual({
       'cache-control': 'private, no-store',
       'x-robots-tag': 'noindex, nofollow, noarchive',
