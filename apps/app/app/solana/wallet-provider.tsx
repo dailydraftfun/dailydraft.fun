@@ -21,6 +21,7 @@ import {
 import bs58 from 'bs58';
 import { createContext, useCallback, useContext, useEffect, useEffectEvent, useState } from 'react';
 import { trackProductEvent } from '../analytics-client';
+import { createJourneyFixtureWallet, readJourneyFixtureBootstrap } from '../e2e/journey-wallet';
 import { SOLANA_CHAIN, SOLANA_CLUSTER, SOLANA_RPC_URL, shortenAddress } from './config';
 import {
   isExplicitWalletRejection,
@@ -120,6 +121,17 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   });
 
   useEffect(() => {
+    const fixtureBootstrap = readJourneyFixtureBootstrap();
+    if (fixtureBootstrap) {
+      const fixtureWallet = createJourneyFixtureWallet(fixtureBootstrap);
+      if (!isCompatibleWallet(fixtureWallet)) {
+        throw new Error('Journey fixture wallet does not satisfy the application wallet contract.');
+      }
+      setWallets([fixtureWallet]);
+      setStatus('disconnected');
+      return;
+    }
+
     const walletRegistry = getWallets();
     syncWallets();
     const offRegister = walletRegistry.on('register', syncWallets);

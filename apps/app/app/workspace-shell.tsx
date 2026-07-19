@@ -1,6 +1,6 @@
 'use client';
 
-import { ChartBarIcon, LightningIcon } from '@phosphor-icons/react';
+import { LightningIcon } from '@phosphor-icons/react';
 import { WalletControl } from './solana/wallet-control';
 
 function BrandMark() {
@@ -36,10 +36,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
               <LightningIcon size={15} weight="fill" />
               Duels
             </a>
-            <button className="nav-link" type="button" title="Coming after the MVP">
-              <ChartBarIcon size={15} />
-              Leaderboard
-            </button>
           </nav>
 
           <div className="ml-auto flex items-center gap-2">

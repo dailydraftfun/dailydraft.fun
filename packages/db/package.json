@@ -14,8 +14,10 @@
     "build": "bunx --bun prisma generate && bun build src/index.ts --target=node --packages=external --outdir=dist",
     "clean": "rm -rf dist generated",
     "db:deploy": "bunx --bun prisma migrate deploy",
+    "db:drift-check": "bunx --bun prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code",
     "db:generate": "bunx --bun prisma generate",
     "db:migrate": "bunx --bun prisma migrate dev",
+    "db:validate": "bunx --bun prisma validate",
     "lint": "biome check src/ prisma.config.ts",
     "test": "bun test --pass-with-no-tests",
     "typecheck": "bun run db:generate && tsc --noEmit"

@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { generateKeyPairSync, sign } from 'node:crypto';
+import { HttpException } from '@nestjs/common';
 import bs58 from 'bs58';
 
+import { AuthController } from './auth.controller.js';
 import {
   type CreateWalletAuthChallengeRecord,
   type CreateWalletSessionRecord,
@@ -13,10 +15,24 @@ import { WalletAuthService } from './wallet-auth.service.js';
 
 const originalAppUrl = process.env.OPENPACKSDUEL_APP_URL;
 const originalAuthDomain = process.env.OPENPACKSDUEL_AUTH_DOMAIN;
+const originalNodeEnvironment = process.env.NODE_ENV;
+const originalVercel = process.env.VERCEL;
+const originalVercelEnvironment = process.env.VERCEL_ENV;
+
+beforeEach(() => {
+  delete process.env.OPENPACKSDUEL_APP_URL;
+  delete process.env.OPENPACKSDUEL_AUTH_DOMAIN;
+  process.env.NODE_ENV = 'development';
+  delete process.env.VERCEL;
+  delete process.env.VERCEL_ENV;
+});
 
 afterEach(() => {
   setEnvironment('OPENPACKSDUEL_APP_URL', originalAppUrl);
   setEnvironment('OPENPACKSDUEL_AUTH_DOMAIN', originalAuthDomain);
+  setEnvironment('NODE_ENV', originalNodeEnvironment);
+  setEnvironment('VERCEL', originalVercel);
+  setEnvironment('VERCEL_ENV', originalVercelEnvironment);
 });
 
 describe('WalletAuthService', () => {
@@ -123,6 +139,61 @@ describe('WalletAuthService', () => {
     });
     expect(session.wallet).toBe(wallet.address);
   });
+
+  test('returns a stable service-unavailable error when deployed audience config is missing', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.OPENPACKSDUEL_APP_URL;
+    delete process.env.OPENPACKSDUEL_AUTH_DOMAIN;
+    const repository = new FakeWalletAuthRepository();
+    const controller = new AuthController(new WalletAuthService(repository));
+
+    const error = await captureFailure(
+      controller.createChallenge({ wallet: createWallet().address }),
+    );
+
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(503);
+    expect((error as HttpException).getResponse()).toMatchObject({
+      error: 'Service Unavailable',
+      message: 'OPENPACKSDUEL_APP_URL is not configured',
+      statusCode: 503,
+    });
+    expect(repository.challengeCount).toBe(0);
+  });
+
+  test('refuses to create a session after deployed audience config becomes unavailable', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.OPENPACKSDUEL_APP_URL = 'https://openpacksduel.vercel.app';
+    const repository = new FakeWalletAuthRepository();
+    const service = new WalletAuthService(repository);
+    const wallet = createWallet();
+    const challenge = await service.issueChallenge(wallet.address);
+    delete process.env.OPENPACKSDUEL_APP_URL;
+
+    const error = await captureFailure(
+      service.createSession({
+        challengeId: challenge.challengeId,
+        signature: signMessage(challenge.message, wallet.privateKey),
+        wallet: wallet.address,
+      }),
+    );
+
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(503);
+  });
+
+  test('rejects an auth domain that disagrees with the configured public app host', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.OPENPACKSDUEL_APP_URL = 'https://openpacksduel.vercel.app';
+    process.env.OPENPACKSDUEL_AUTH_DOMAIN = 'example.com';
+    const service = new WalletAuthService(new FakeWalletAuthRepository());
+
+    const error = await captureFailure(service.issueChallenge(createWallet().address));
+
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(503);
+    expect((error as Error).message).toContain('must match');
+  });
 });
 
 class FakeWalletAuthRepository extends WalletAuthRepository {
@@ -181,6 +252,15 @@ function createWallet() {
 
 function signMessage(message: string, privateKey: ReturnType<typeof createWallet>['privateKey']) {
   return sign(null, Buffer.from(message, 'utf8'), privateKey).toString('base64');
+}
+
+async function captureFailure(action: Promise<unknown>): Promise<unknown> {
+  try {
+    await action;
+    throw new Error('Expected action to fail');
+  } catch (error) {
+    return error;
+  }
 }
 
 function setEnvironment(key: string, value: string | undefined): void {
