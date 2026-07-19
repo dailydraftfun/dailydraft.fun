@@ -126,10 +126,13 @@ describe('duel player copy', () => {
   });
 
   test('keeps payment, outcome, and demo-pool claims scoped to known facts', () => {
+    const lobby = getLobbyEconomicsCopy();
     const payment = getDuelPaymentReviewCopy('0.001');
     const poolRule = duelRules.find((rule) => rule.title === 'Pack source and odds');
     const winnerRule = duelRules.find((rule) => rule.title === 'How the winner is chosen');
 
+    expect(lobby).toContain('higher verified value wins both demo cards');
+    expect(lobby).not.toContain('market value');
     expect(payment.description).toContain('The platform fee is exactly 0.001 SOL');
     expect(payment.description).toContain('network fee and any recoverable rent');
     expect(getDuelPlayerStatus('settled').detail).toContain(

@@ -10,6 +10,7 @@ import {
   LightningIcon,
   LinkIcon,
   LockKeyIcon,
+  ShareNetworkIcon,
   ShieldCheckIcon,
   SpinnerGapIcon,
   SwordIcon,

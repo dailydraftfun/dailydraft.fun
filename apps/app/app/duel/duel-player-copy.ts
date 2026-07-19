@@ -43,7 +43,7 @@ export const duelRules = [
 ] as const;
 
 export function getLobbyEconomicsCopy(): string {
-  return 'Approve the displayed devnet platform fee now; normal Solana network fees and recoverable account rent are additional, pack purchase is separate, and the higher verified market value wins both demo cards.';
+  return 'Approve the displayed devnet platform fee now; normal Solana network fees and recoverable account rent are additional, pack purchase is separate, and the higher verified value wins both demo cards.';
 }
 
 type MatchmakingSearchSession = Pick<MatchmakingSession, 'state'> & {
