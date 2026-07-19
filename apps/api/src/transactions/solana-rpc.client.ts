@@ -11,11 +11,6 @@ const DEVNET_GENESIS_HASH = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_RETRIES = 2;
 
-interface SolanaRpcEnvironment {
-  SOLANA_RPC_RETRIES?: string;
-  SOLANA_RPC_TIMEOUT_MS?: string;
-}
-
 interface SolanaRpcRequestOptions {
   delay?: (milliseconds: number) => Promise<void>;
   fetcher?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -357,7 +352,7 @@ function resolveRpcUrl(): string {
   }
 }
 
-export function resolveSolanaRpcRequestPolicy(environment: SolanaRpcEnvironment = process.env): {
+export function resolveSolanaRpcRequestPolicy(environment: NodeJS.ProcessEnv = process.env): {
   retries: number;
   timeoutMs: number;
 } {
