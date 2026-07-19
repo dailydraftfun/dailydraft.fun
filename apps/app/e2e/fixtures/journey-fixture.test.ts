@@ -65,6 +65,70 @@ describe('deterministic duel journey fixture', () => {
     );
   });
 
+  test('keeps preflight reconciliation matched until a funding submission exists', () => {
+    const fixture = new DuelJourneyFixture('funding-boundary');
+    const authorization = authenticate(fixture);
+    const duel = createDirectDuel(fixture, authorization);
+
+    const preflight = fixture.handleApi({
+      authorization,
+      body: {},
+      method: 'POST',
+      path: `/duels/${duel.id}/transactions/reconciliation`,
+    });
+    expect(preflight.body).toEqual(
+      expect.objectContaining({
+        duelStatus: 'matched',
+        reconciliation: expect.objectContaining({ checked: 0, finalized: 0 }),
+      }),
+    );
+    expect(fixture.snapshot().duel?.status).toBe('matched');
+
+    const intent = fixture.handleApi({
+      authorization,
+      body: { action: 'fund', wallet: fixture.bootstrap().wallet.address },
+      method: 'POST',
+      path: `/duels/${duel.id}/transactions`,
+    }).body as { id: string };
+    expect(
+      fixture.handleApi({
+        authorization,
+        body: { signature: 'fixture-signature' },
+        method: 'POST',
+        path: `/duels/${duel.id}/transactions/${intent.id}/submissions`,
+      }).status,
+    ).toBe(200);
+
+    const funded = fixture.handleApi({
+      authorization,
+      body: {},
+      method: 'POST',
+      path: `/duels/${duel.id}/transactions/reconciliation`,
+    });
+    expect(funded.body).toEqual(
+      expect.objectContaining({
+        duelStatus: 'funded',
+        reconciliation: expect.objectContaining({ checked: 1, finalized: 1 }),
+      }),
+    );
+    expect(fixture.snapshot().duel?.status).toBe('funded');
+
+    settle(fixture, duel.id, authorization);
+    const postSettlement = fixture.handleApi({
+      authorization,
+      body: {},
+      method: 'POST',
+      path: `/duels/${duel.id}/transactions/reconciliation`,
+    });
+    expect(postSettlement.body).toEqual(
+      expect.objectContaining({
+        duelStatus: 'settled',
+        reconciliation: expect.objectContaining({ checked: 1, finalized: 1 }),
+      }),
+    );
+    expect(fixture.snapshot().duel?.status).toBe('settled');
+  });
+
   test('fails incomplete and unsupported setup with targeted errors', () => {
     expect(() => new DuelJourneyFixture('INVALID SEED')).toThrow(
       'Journey fixture seed must use 1-32 lowercase letters, numbers, or hyphens.',
