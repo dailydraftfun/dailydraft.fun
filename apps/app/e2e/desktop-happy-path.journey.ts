@@ -69,7 +69,10 @@ test('completes the deterministic desktop duel from lobby through share and rema
   await expect(stepper).toHaveAttribute('data-stage', 'funding-review');
   await expect(stepper).toContainText('Value-bearing transaction');
   await expect(stepper).toContainText('Moves 0.01 SOL after your explicit wallet approval');
-  await expect(stepper).toContainText('Pack purchase Not charged in this devnet step');
+  await expect(stepper.getByText('Pack purchase', { exact: true })).toBeVisible();
+  await expect(
+    stepper.getByText('Not charged in this devnet step', { exact: true }),
+  ).toBeVisible();
   await expect(stepper.getByTestId(entryTestIds.confirmFunding)).toHaveText(
     'Approve 0.01 SOL in wallet',
   );
