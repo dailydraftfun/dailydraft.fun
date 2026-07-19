@@ -1,4 +1,8 @@
-import type { DuelTransactionIntent, DurableDuel } from '../solana/duel-client';
+import type {
+  DuelReconciliationResult,
+  DuelTransactionIntent,
+  DurableDuel,
+} from '../solana/duel-client';
 
 type RestoreDuelEntryInput = {
   abandonRejectedIntent: (duelId: string, intentId: string, sessionToken: string) => Promise<void>;
@@ -10,6 +14,10 @@ type RestoreDuelEntryInput = {
     wallet: string,
     sessionToken: string,
   ) => Promise<DuelTransactionIntent>;
+  reconcileTransactions: (
+    duelId: string,
+    sessionToken: string,
+  ) => Promise<DuelReconciliationResult>;
   rejectedIntentId: string | null;
   sessionToken: string;
   wallet: string;
@@ -18,6 +26,7 @@ type RestoreDuelEntryInput = {
 export type RestoredDuelEntry = {
   duel: DurableDuel;
   intent: DuelTransactionIntent | null;
+  recoveryState: 'ready' | 'still-reconciling';
 };
 
 export type PostBroadcastRecovery = 'complete' | 'retry-safe' | 'still-confirming' | 'waiting';
@@ -30,6 +39,7 @@ export async function restoreDuelEntry({
   fundingPossiblyBroadcast,
   loadDuel,
   prepareIntent,
+  reconcileTransactions,
   rejectedIntentId,
   sessionToken,
   wallet,
@@ -39,14 +49,23 @@ export async function restoreDuelEntry({
     throw new Error('The connected wallet is not a participant in this saved duel.');
   }
   if (fundingPossiblyBroadcast || !shouldPrepareFunding(duel, wallet)) {
-    return { duel, intent: null };
+    return { duel, intent: null, recoveryState: 'ready' };
   }
   if (rejectedIntentId) {
     await abandonRejectedIntent(duel.id, rejectedIntentId, sessionToken);
   }
+  const reconciliation = await reconcileTransactions(duel.id, sessionToken);
+  if (reconciliation.activeTransactionCount > 0 || reconciliation.unboundTransactionCount > 0) {
+    return { duel, intent: null, recoveryState: 'still-reconciling' };
+  }
+  const reconciledDuel = await loadDuel(duel.id);
+  if (!shouldPrepareFunding(reconciledDuel, wallet)) {
+    return { duel: reconciledDuel, intent: null, recoveryState: 'ready' };
+  }
   return {
-    duel,
-    intent: await prepareIntent(duel.id, wallet, sessionToken),
+    duel: reconciledDuel,
+    intent: await prepareIntent(reconciledDuel.id, wallet, sessionToken),
+    recoveryState: 'ready',
   };
 }
 

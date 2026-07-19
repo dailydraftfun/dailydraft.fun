@@ -125,6 +125,8 @@ const completedEntryStatuses = new Set<DurableDuel['status']>([
   'settling',
   'settled',
 ]);
+const STILL_RECONCILING_PAYMENT =
+  'The previous payment is still reconciling on Solana devnet. Retry shortly; no wallet prompt will open until it is safe.';
 
 function Avatar({ color, label }: { color: string; label: string }) {
   return (
@@ -452,17 +454,21 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       fundingPossiblyBroadcast: fundingPhase === 'recovering',
       loadDuel: getDuel,
       prepareIntent: prepareDuelIntent,
+      reconcileTransactions: reconcileDuelTransactions,
       rejectedIntentId,
       sessionToken: authentication.sessionToken,
       wallet: walletConnection.address,
     })
-      .then(({ duel, intent: restoredIntent }) => {
+      .then(({ duel, intent: restoredIntent, recoveryState }) => {
         if (!active) return;
         setRestorePending(false);
         setRestoreDraftPending(false);
         setPersistedDuel(duel);
         setIntent(restoredIntent);
-        if (restoredIntent) {
+        if (recoveryState === 'still-reconciling') {
+          setActionNotice(null);
+          setActionError(STILL_RECONCILING_PAYMENT);
+        } else if (restoredIntent) {
           setRejectedIntentId(null);
           setActionNotice('Saved funding restored with a fresh, unsigned transaction review.');
         } else {
@@ -812,13 +818,24 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         setPersistedDuel(duel);
         if (matchmakingSession.state !== 'matched') return;
         if (duel.creatorWallet === walletConnection.address && duel.status === 'matched') {
-          const prepared = await prepareDuelIntent(
-            duel.id,
-            walletConnection.address,
-            authentication.sessionToken as string,
-          );
-          if (active) {
-            setIntent(prepared);
+          const restored = await restoreDuelEntry({
+            abandonRejectedIntent: recordRejectedDuelIntent,
+            duelId: duel.id,
+            fundingPossiblyBroadcast: false,
+            loadDuel: getDuel,
+            prepareIntent: prepareDuelIntent,
+            reconcileTransactions: reconcileDuelTransactions,
+            rejectedIntentId,
+            sessionToken: authentication.sessionToken as string,
+            wallet: walletConnection.address,
+          });
+          if (!active) return;
+          setPersistedDuel(restored.duel);
+          setIntent(restored.intent);
+          if (restored.recoveryState === 'still-reconciling') {
+            setActionNotice(null);
+            setActionError(STILL_RECONCILING_PAYMENT);
+          } else if (restored.intent) {
             setRejectedIntentId(null);
           }
         } else if (active) {
@@ -835,7 +852,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     return () => {
       active = false;
     };
-  }, [authentication.sessionToken, matchmakingSession, walletConnection.address]);
+  }, [authentication.sessionToken, matchmakingSession, rejectedIntentId, walletConnection.address]);
 
   async function reviewDuel(nextTier = tier, nextMode = mode) {
     setActionError(null);
@@ -962,15 +979,26 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setActionError(null);
     setActionNotice(null);
     try {
-      const refreshed = await getDuel(persistedDuel.id);
-      setPersistedDuel(refreshed);
-      const prepared = await prepareDuelIntent(
-        refreshed.id,
-        walletConnection.address,
-        authentication.sessionToken,
-      );
-      setIntent(prepared);
-      setRejectedIntentId(null);
+      const restored = await restoreDuelEntry({
+        abandonRejectedIntent: recordRejectedDuelIntent,
+        duelId: persistedDuel.id,
+        fundingPossiblyBroadcast: false,
+        loadDuel: getDuel,
+        prepareIntent: prepareDuelIntent,
+        reconcileTransactions: reconcileDuelTransactions,
+        rejectedIntentId,
+        sessionToken: authentication.sessionToken,
+        wallet: walletConnection.address,
+      });
+      setPersistedDuel(restored.duel);
+      setIntent(restored.intent);
+      if (restored.recoveryState === 'still-reconciling') {
+        setActionError(STILL_RECONCILING_PAYMENT);
+      } else if (restored.intent) {
+        setRejectedIntentId(null);
+      } else {
+        setActionNotice(getFundingStatusNotice(restored.duel, 0));
+      }
     } catch (error) {
       setActionError(getPlayerActionError(error, 'Could not prepare the payment review.'));
     } finally {
@@ -1104,9 +1132,15 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           ),
         );
         try {
-          await recoverRejectedFundingIntent(intent.duelId, intent.id, authentication.sessionToken);
+          const prepared = await recoverRejectedFundingIntent(
+            intent.duelId,
+            intent.id,
+            authentication.sessionToken,
+          );
           setActionNotice(
-            'Nothing was broadcast. Review the fresh unsigned transaction before trying again.',
+            prepared
+              ? 'Nothing was broadcast. Review the fresh unsigned transaction before trying again.'
+              : 'Nothing was broadcast. This duel no longer needs a new payment review.',
           );
         } catch (recoveryError) {
           setActionError(
@@ -1135,13 +1169,27 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     duelId: string,
     rejectedId: string,
     sessionToken: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (!walletConnection.address) throw new Error('Reconnect the funding wallet to continue.');
-    await recordRejectedDuelIntent(duelId, rejectedId, sessionToken);
-    const replacement = await prepareDuelIntent(duelId, walletConnection.address, sessionToken);
-    setIntent(replacement);
+    const restored = await restoreDuelEntry({
+      abandonRejectedIntent: recordRejectedDuelIntent,
+      duelId,
+      fundingPossiblyBroadcast: false,
+      loadDuel: getDuel,
+      prepareIntent: prepareDuelIntent,
+      reconcileTransactions: reconcileDuelTransactions,
+      rejectedIntentId: rejectedId,
+      sessionToken,
+      wallet: walletConnection.address,
+    });
+    setPersistedDuel(restored.duel);
+    setIntent(restored.intent);
+    if (restored.recoveryState === 'still-reconciling') {
+      throw new Error(STILL_RECONCILING_PAYMENT);
+    }
     setRejectedIntentId(null);
     setFundingPhase('idle');
+    return Boolean(restored.intent);
   }
 
   async function resumeBroadcastConfirmation(): Promise<void> {
@@ -1219,9 +1267,15 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setIntentPending(true);
       setActionError(null);
       try {
-        await recoverRejectedFundingIntent(duelId, rejectedIntentId, authentication.sessionToken);
+        const prepared = await recoverRejectedFundingIntent(
+          duelId,
+          rejectedIntentId,
+          authentication.sessionToken,
+        );
         setActionNotice(
-          'The rejected review was reset. Review the fresh unsigned transaction before trying again.',
+          prepared
+            ? 'The rejected review was reset. Review the fresh unsigned transaction before trying again.'
+            : 'The rejected review was reset. This duel no longer needs a new payment review.',
         );
       } catch (error) {
         setActionError(

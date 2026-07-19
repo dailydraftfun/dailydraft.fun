@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { DuelTransactionIntent, DurableDuel } from '../solana/duel-client';
+import type {
+  DuelReconciliationResult,
+  DuelTransactionIntent,
+  DurableDuel,
+} from '../solana/duel-client';
 import {
   classifyPostBroadcastRecovery,
   getDuelEntryCancellationTarget,
@@ -8,7 +12,7 @@ import {
 } from './duel-entry-recovery';
 
 describe('duel entry recovery', () => {
-  test('awaits a fresh unsigned intent before returning one restored state update', async () => {
+  test('reconciles successfully before returning a fresh unsigned intent', async () => {
     const calls: string[] = [];
     const restored = await restoreDuelEntry({
       abandonRejectedIntent: async () => {
@@ -24,14 +28,107 @@ describe('duel entry recovery', () => {
         calls.push('intent');
         return intent();
       },
+      reconcileTransactions: async () => {
+        calls.push('reconcile');
+        return reconciliation();
+      },
       rejectedIntentId: null,
       sessionToken: 'session',
       wallet: 'creator',
     });
 
-    expect(calls).toEqual(['duel', 'intent']);
+    expect(calls).toEqual(['duel', 'reconcile', 'duel', 'intent']);
     expect(restored.duel.id).toBe('duel_123');
     expect(restored.intent?.id).toBe('intent_123');
+    expect(restored.recoveryState).toBe('ready');
+  });
+
+  test('keeps a tab reload wallet-prompt-free until reconciliation completes', async () => {
+    let finishReconciliation: ((result: DuelReconciliationResult) => void) | undefined;
+    let markStarted: (() => void) | undefined;
+    const reconciliationStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let prepared = false;
+
+    const restoring = restoreDuelEntry({
+      abandonRejectedIntent: async () => undefined,
+      duelId: 'duel_123',
+      fundingPossiblyBroadcast: false,
+      loadDuel: async () => duel('matched'),
+      prepareIntent: async () => {
+        prepared = true;
+        return intent();
+      },
+      reconcileTransactions: () => {
+        markStarted?.();
+        return new Promise((resolve) => {
+          finishReconciliation = resolve;
+        });
+      },
+      rejectedIntentId: null,
+      sessionToken: 'session',
+      wallet: 'creator',
+    });
+
+    await reconciliationStarted;
+    expect(prepared).toBe(false);
+    finishReconciliation?.(reconciliation({ unboundTransactionCount: 1 }));
+
+    const restored = await restoring;
+    expect(prepared).toBe(false);
+    expect(restored.intent).toBeNull();
+    expect(restored.recoveryState).toBe('still-reconciling');
+  });
+
+  test('expires a stale prepared transaction through reconciliation before replacing it', async () => {
+    const calls: string[] = [];
+
+    const restored = await restoreDuelEntry({
+      abandonRejectedIntent: async () => undefined,
+      duelId: 'duel_123',
+      fundingPossiblyBroadcast: false,
+      loadDuel: async () => {
+        calls.push('duel');
+        return duel('matched');
+      },
+      prepareIntent: async () => {
+        calls.push('intent');
+        return intent();
+      },
+      reconcileTransactions: async () => {
+        calls.push('reconcile:expired');
+        return reconciliation({ expired: 1 });
+      },
+      rejectedIntentId: null,
+      sessionToken: 'session',
+      wallet: 'creator',
+    });
+
+    expect(calls).toEqual(['duel', 'reconcile:expired', 'duel', 'intent']);
+    expect(restored.intent?.id).toBe('intent_123');
+  });
+
+  test('does not prepare while an unbound transaction is still present', async () => {
+    let prepared = false;
+    const restored = await restoreDuelEntry({
+      abandonRejectedIntent: async () => undefined,
+      duelId: 'duel_123',
+      fundingPossiblyBroadcast: false,
+      loadDuel: async () => duel('matched'),
+      prepareIntent: async () => {
+        prepared = true;
+        return intent();
+      },
+      reconcileTransactions: async () => reconciliation({ unboundTransactionCount: 1 }),
+      rejectedIntentId: null,
+      sessionToken: 'session',
+      wallet: 'creator',
+    });
+
+    expect(prepared).toBe(false);
+    expect(restored.intent).toBeNull();
+    expect(restored.recoveryState).toBe('still-reconciling');
   });
 
   test('never prepares another intent while an earlier wallet request may have broadcast', async () => {
@@ -46,6 +143,9 @@ describe('duel entry recovery', () => {
       prepareIntent: async () => {
         prepared = true;
         return intent();
+      },
+      reconcileTransactions: async () => {
+        throw new Error('uncertain broadcasts use post-broadcast recovery');
       },
       rejectedIntentId: null,
       sessionToken: 'session',
@@ -64,6 +164,7 @@ describe('duel entry recovery', () => {
         fundingPossiblyBroadcast: false,
         loadDuel: async () => duel('matched'),
         prepareIntent: async () => intent(),
+        reconcileTransactions: async () => reconciliation(),
         rejectedIntentId: null,
         sessionToken: 'session',
         wallet: 'stranger',
@@ -88,12 +189,16 @@ describe('duel entry recovery', () => {
         calls.push('intent');
         return intent();
       },
+      reconcileTransactions: async () => {
+        calls.push('reconcile');
+        return reconciliation();
+      },
       rejectedIntentId: 'tx_rejectedfunding01',
       sessionToken: 'session',
       wallet: 'creator',
     });
 
-    expect(calls).toEqual(['duel', 'reject:tx_rejectedfunding01', 'intent']);
+    expect(calls).toEqual(['duel', 'reject:tx_rejectedfunding01', 'reconcile', 'duel', 'intent']);
     expect(restored.intent?.id).toBe('intent_123');
   });
 
@@ -161,5 +266,28 @@ function intent(): DuelTransactionIntent {
     status: 'prepared',
     wallet: 'creator',
     warnings: [],
+  };
+}
+
+function reconciliation(
+  overrides: Partial<DuelReconciliationResult['reconciliation']> &
+    Partial<
+      Pick<DuelReconciliationResult, 'activeTransactionCount' | 'unboundTransactionCount'>
+    > = {},
+): DuelReconciliationResult {
+  return {
+    activeTransactionCount: overrides.activeTransactionCount ?? 0,
+    duelId: 'duel_123',
+    duelStatus: 'matched',
+    reconciliation: {
+      checked: 1,
+      confirmed: 0,
+      expired: overrides.expired ?? 0,
+      failed: 0,
+      finalized: 0,
+      pending: 0,
+      stuck: 0,
+    },
+    unboundTransactionCount: overrides.unboundTransactionCount ?? 0,
   };
 }
