@@ -535,8 +535,6 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   async function reviewDuel(nextTier = tier, nextMode = mode) {
     setActionError(null);
     setActionNotice(null);
-    setTier(nextTier);
-    setMode(nextMode);
     if (capabilityState.status !== 'ready') {
       setActionError('Duel availability could not be verified. Retry before continuing.');
       return;
@@ -551,6 +549,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setActionError('That pack tier is not currently playable.');
       return;
     }
+    setTier(nextTier);
+    setMode(nextMode);
     const expectedRestoreKey =
       walletConnection.address && authentication.sessionToken
         ? `${walletConnection.address}:${authentication.sessionToken}`
@@ -1191,12 +1191,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 onClick={async () => {
                   const challengeUrl = `${window.location.origin}/overview?challenge=${encodeURIComponent(persistedDuel.id)}`;
                   await navigator.clipboard.writeText(challengeUrl);
+                  const trackedTier = toTrackedTier(tier);
                   trackProductEvent({
                     duelId: persistedDuel.id,
                     mode: persistedDuel.matchmakingMode,
                     name: 'duel_shared',
                     status: persistedDuel.status,
-                    tier: 50,
+                    ...(trackedTier ? { tier: trackedTier } : {}),
                   });
                   setCopied(true);
                   window.setTimeout(() => setCopied(false), 1800);
