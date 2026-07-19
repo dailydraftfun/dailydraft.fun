@@ -127,7 +127,7 @@ test('completes the deterministic desktop duel from lobby through share and rema
     'aria-selected',
     'true',
   );
-  await expect(page.getByTestId(journeyTestIds.opponentWallet)).toContainText(
+  await expect(page.getByTestId(journeyTestIds.opponentWallet)).toHaveValue(
     'So111111…111112',
   );
   await expect(primaryAction).toHaveText(/Review \$50 rematch/);
