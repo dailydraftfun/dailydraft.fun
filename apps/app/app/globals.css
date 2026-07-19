@@ -2668,6 +2668,10 @@
   white-space: nowrap;
 }
 
+.receipt-kicker-warning {
+  color: var(--color-warning);
+}
+
 .receipt-status {
   display: inline-flex;
   min-height: 28px;

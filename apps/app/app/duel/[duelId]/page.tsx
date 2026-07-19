@@ -128,7 +128,7 @@ export default async function DuelPage({ params }: DuelPageProps) {
 
       {!receipt.availability.complete ? (
         <section className="rounded-xl border border-warning/30 bg-warning/5 p-5">
-          <p className="receipt-kicker text-warning">Partial receipt</p>
+          <p className="receipt-kicker receipt-kicker-warning">Partial receipt</p>
           <p className="mt-2 text-sm leading-6 text-secondary">
             Durable state is available, but these proof fields are still missing:{' '}
             {receipt.availability.missing.join(', ')}.
