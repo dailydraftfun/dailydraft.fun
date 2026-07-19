@@ -1,0 +1,74 @@
+import { afterEach, describe, expect, test } from 'bun:test';
+import { HttpException } from '@nestjs/common';
+
+import { resolvePublicAppUrl } from './public-app-url.js';
+
+const originalEnvironment = {
+  appUrl: process.env.OPENPACKSDUEL_APP_URL,
+  nodeEnvironment: process.env.NODE_ENV,
+  vercel: process.env.VERCEL,
+  vercelEnvironment: process.env.VERCEL_ENV,
+};
+
+afterEach(() => {
+  setEnvironment('OPENPACKSDUEL_APP_URL', originalEnvironment.appUrl);
+  setEnvironment('NODE_ENV', originalEnvironment.nodeEnvironment);
+  setEnvironment('VERCEL', originalEnvironment.vercel);
+  setEnvironment('VERCEL_ENV', originalEnvironment.vercelEnvironment);
+});
+
+describe('resolvePublicAppUrl', () => {
+  test('fails closed when deployed app configuration is missing', () => {
+    delete process.env.OPENPACKSDUEL_APP_URL;
+    process.env.NODE_ENV = 'production';
+
+    expectConfigurationFailure(() => resolvePublicAppUrl(), 'is not configured');
+  });
+
+  test('does not let a deployment marker inherit the local fallback', () => {
+    delete process.env.OPENPACKSDUEL_APP_URL;
+    process.env.NODE_ENV = 'development';
+    process.env.VERCEL = '1';
+
+    expectConfigurationFailure(() => resolvePublicAppUrl(), 'is not configured');
+  });
+
+  test('returns the canonical origin for valid deployed configuration', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.OPENPACKSDUEL_APP_URL = 'https://play.openpacksduel.com/';
+
+    expect(resolvePublicAppUrl().toString()).toBe('https://play.openpacksduel.com/');
+  });
+
+  test('preserves the localhost fallback only in explicit local development', () => {
+    delete process.env.OPENPACKSDUEL_APP_URL;
+    process.env.NODE_ENV = 'development';
+    delete process.env.VERCEL;
+    delete process.env.VERCEL_ENV;
+
+    expect(resolvePublicAppUrl().toString()).toBe('http://localhost:3001/');
+  });
+
+  test('rejects non-HTTPS public configuration', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.OPENPACKSDUEL_APP_URL = 'http://play.openpacksduel.com';
+
+    expectConfigurationFailure(() => resolvePublicAppUrl(), 'must use HTTPS');
+  });
+});
+
+function expectConfigurationFailure(action: () => unknown, message: string): void {
+  try {
+    action();
+    throw new Error('Expected public app configuration to fail');
+  } catch (error) {
+    expect(error).toBeInstanceOf(HttpException);
+    expect((error as HttpException).getStatus()).toBe(503);
+    expect((error as Error).message).toContain(message);
+  }
+}
+
+function setEnvironment(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}

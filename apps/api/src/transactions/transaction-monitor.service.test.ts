@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { HouseTreasuryService } from '../treasury/house-treasury.service.js';
+import type { DevnetRefundOrchestratorService } from './devnet-refund-orchestrator.service.js';
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
 import {
   type BoundSubmission,
@@ -39,6 +41,45 @@ describe('TransactionMonitorService', () => {
 
     expect(summary.finalized).toBe(1);
     expect(repository.finalized).toEqual(['tx_123456789012']);
+  });
+
+  test('continues finality and treasury reconciliation when Devnet refunds fail', async () => {
+    const repository = new FakeRepository(monitoredTransaction());
+    const refunds = new FailingRefundOrchestrator();
+    const treasury = new FakeTreasury();
+    const service = new TransactionMonitorService(
+      repository,
+      new FakeRpc({ confirmationStatus: 'finalized', err: null }),
+      undefined,
+      treasury as unknown as HouseTreasuryService,
+      refunds as unknown as DevnetRefundOrchestratorService,
+    );
+
+    const summary = await withNetwork('solana-devnet', () => service.reconcile());
+
+    expect(summary.finalized).toBe(1);
+    expect(summary.recoveryErrors).toBe(2);
+    expect(repository.finalized).toEqual(['tx_123456789012']);
+    expect(refunds.reconciliations).toBe(2);
+    expect(treasury.lifecycleReconciliations).toBe(1);
+  });
+
+  test('skips Devnet refund orchestration on other configured networks', async () => {
+    const repository = new FakeRepository(monitoredTransaction());
+    const refunds = new FailingRefundOrchestrator();
+    const service = new TransactionMonitorService(
+      repository,
+      new FakeRpc({ confirmationStatus: 'finalized', err: null }),
+      undefined,
+      undefined,
+      refunds as unknown as DevnetRefundOrchestratorService,
+    );
+
+    const summary = await withNetwork('solana-mainnet', () => service.reconcile());
+
+    expect(summary.finalized).toBe(1);
+    expect(summary.recoveryErrors).toBe(0);
+    expect(refunds.reconciliations).toBe(0);
   });
 
   test('reconciles only the authenticated duel batch without running global recovery', async () => {
@@ -142,6 +183,7 @@ describe('TransactionMonitorService', () => {
 
   test.each([
     ['commit_result', 'awaiting_assets', 'awaiting_assets', 'settling'],
+    ['refund', 'refunding', 'refunding', 'refunding'],
     ['settle', 'settling', 'settling', 'settled'],
   ] as const)('recovers an unbound provider %s broadcast only from its exact lifecycle state', async (action, duelStatus, expectedFromStatus, expectedToStatus) => {
     const intent = preparedRecoveryIntent({
@@ -303,6 +345,23 @@ class FakeRpc extends SolanaRpcGateway {
 
   async getTransaction(): Promise<SolanaTransactionEnvelope | null> {
     return this.envelope;
+  }
+}
+
+class FailingRefundOrchestrator {
+  reconciliations = 0;
+
+  async reconcile(): Promise<never> {
+    this.reconciliations += 1;
+    throw new Error('Refund reconciliation unavailable');
+  }
+}
+
+class FakeTreasury {
+  lifecycleReconciliations = 0;
+
+  async reconcileLifecycle(): Promise<void> {
+    this.lifecycleReconciliations += 1;
   }
 }
 
@@ -603,6 +662,18 @@ function preparedRecoveryIntent(
     recoveryCheckAttempts: 0,
     ...overrides,
   };
+}
+
+async function withNetwork<T>(network: string | undefined, callback: () => Promise<T>): Promise<T> {
+  const previous = process.env.OPENPACKSDUEL_NETWORK;
+  if (network === undefined) delete process.env.OPENPACKSDUEL_NETWORK;
+  else process.env.OPENPACKSDUEL_NETWORK = network;
+  try {
+    return await callback();
+  } finally {
+    if (previous === undefined) delete process.env.OPENPACKSDUEL_NETWORK;
+    else process.env.OPENPACKSDUEL_NETWORK = previous;
+  }
 }
 
 async function withEscrowProgram<T>(programId: string, callback: () => Promise<T>): Promise<T> {
