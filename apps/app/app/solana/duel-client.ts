@@ -85,11 +85,18 @@ export type DurableDuel = {
 
 export type ProductCapabilities = {
   modes: {
-    direct: { enabled: boolean };
+    direct: { enabled: boolean; reason: string | null };
     house: { enabled: boolean; reason: string | null };
-    open: { enabled: boolean };
+    open: { enabled: boolean; reason: string | null };
   };
   network: 'solana-devnet';
+  packs: Array<{
+    enabled: boolean;
+    id: string;
+    name: string;
+    reason: string | null;
+    tier: 25 | 50 | 100;
+  }>;
   provider: { mode: string; ready: boolean };
 };
 
@@ -154,6 +161,7 @@ export async function createDuel(
     creatorWallet: string;
     matchmakingMode: 'direct' | 'house';
     opponentWallet?: string;
+    packId: string;
   },
   sessionToken: string,
 ): Promise<DurableDuel> {
@@ -161,16 +169,16 @@ export async function createDuel(
     ...input,
     analyticsSessionId: getAnalyticsSessionId(),
     expiresAt: new Date(Date.now() + 15 * 60 * 1_000).toISOString(),
-    packId: 'pokemon_50',
   });
 }
 
 export function searchOpenMatchmaking(
   wallet: string,
   sessionToken: string,
+  packId: string,
 ): Promise<MatchmakingSession> {
   return authenticatedMutation<MatchmakingSession>('/matchmaking/search', sessionToken, {
-    packId: 'pokemon_50',
+    packId,
     wallet,
   });
 }
@@ -178,9 +186,10 @@ export function searchOpenMatchmaking(
 export function continueOpenMatchmaking(
   wallet: string,
   sessionToken: string,
+  packId: string,
 ): Promise<MatchmakingSession> {
   return authenticatedMutation<MatchmakingSession>('/matchmaking/continue', sessionToken, {
-    packId: 'pokemon_50',
+    packId,
     wallet,
   });
 }
@@ -240,7 +249,71 @@ export async function getProductCapabilities(): Promise<ProductCapabilities> {
   if (!apiBaseUrl) throw new Error('The duel API is not configured.');
   const response = await fetch(`${apiBaseUrl}/health/capabilities`, { cache: 'no-store' });
   if (!response.ok) throw new Error(`Product capabilities are unavailable (${response.status}).`);
-  return (await response.json()) as ProductCapabilities;
+  return parseProductCapabilities(await response.json());
+}
+
+export function parseProductCapabilities(value: unknown): ProductCapabilities {
+  if (!value || typeof value !== 'object') throw malformedCapabilitiesError();
+  const candidate = value as Partial<ProductCapabilities>;
+  if (
+    candidate.network !== 'solana-devnet' ||
+    !isCapabilityModes(candidate.modes) ||
+    !Array.isArray(candidate.packs) ||
+    !candidate.packs.every(isCapabilityPack) ||
+    !isCapabilityProvider(candidate.provider)
+  ) {
+    throw malformedCapabilitiesError();
+  }
+  return candidate as ProductCapabilities;
+}
+
+function isCapabilityModes(value: unknown): value is ProductCapabilities['modes'] {
+  if (!value || typeof value !== 'object') return false;
+  const modes = value as Partial<ProductCapabilities['modes']>;
+  return (
+    isCapabilityState(modes.direct) &&
+    isCapabilityState(modes.house) &&
+    isCapabilityState(modes.open)
+  );
+}
+
+function isCapabilityState(
+  value: unknown,
+): value is ProductCapabilities['modes'][keyof ProductCapabilities['modes']] {
+  if (!value || typeof value !== 'object') return false;
+  const state = value as { enabled?: unknown; reason?: unknown };
+  return (
+    typeof state.enabled === 'boolean' &&
+    (state.reason === null || typeof state.reason === 'string')
+  );
+}
+
+function isCapabilityPack(value: unknown): value is ProductCapabilities['packs'][number] {
+  if (!value || typeof value !== 'object') return false;
+  const pack = value as {
+    enabled?: unknown;
+    id?: unknown;
+    name?: unknown;
+    reason?: unknown;
+    tier?: unknown;
+  };
+  return (
+    typeof pack.enabled === 'boolean' &&
+    typeof pack.id === 'string' &&
+    typeof pack.name === 'string' &&
+    (pack.reason === null || typeof pack.reason === 'string') &&
+    (pack.tier === 25 || pack.tier === 50 || pack.tier === 100)
+  );
+}
+
+function isCapabilityProvider(value: unknown): value is ProductCapabilities['provider'] {
+  if (!value || typeof value !== 'object') return false;
+  const provider = value as { mode?: unknown; ready?: unknown };
+  return typeof provider.mode === 'string' && typeof provider.ready === 'boolean';
+}
+
+function malformedCapabilitiesError(): Error {
+  return new Error('Product capabilities are unavailable (malformed response).');
 }
 
 export async function joinDuel(
