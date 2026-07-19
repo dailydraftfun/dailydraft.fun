@@ -65,7 +65,7 @@ describe('private rematch opponent client', () => {
       Response.json(
         { detail: 'Private rematch is unavailable for this wallet' },
         { status: 403 },
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
 
     let thrown: unknown;
     try {
