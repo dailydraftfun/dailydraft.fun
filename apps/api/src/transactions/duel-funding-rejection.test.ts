@@ -113,7 +113,7 @@ function rejectionFixture({
     duelId: 'duel_rejected_funding_01',
     errorCode,
     expectedSigner: CREATOR,
-    id: 'tx_rejected_funding_01',
+    id: 'tx_rejectedfunding01',
     lastCheckedAt: null as Date | null,
     nextCheckAt: null as Date | null,
     nextRecoveryCheckAt: null as Date | null,

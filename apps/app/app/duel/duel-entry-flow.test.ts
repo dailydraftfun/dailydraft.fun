@@ -100,7 +100,7 @@ describe('guided duel entry flow', () => {
         duelId: 'duel_123',
         mode: 'direct',
         opponentAddress: 'opponent',
-        rejectedIntentId: 'tx_rejected_funding_01',
+        rejectedIntentId: 'tx_rejectedfunding01',
         tier: 50,
       },
       '2026-07-17T09:00:00.000Z',
@@ -112,7 +112,7 @@ describe('guided duel entry flow', () => {
     expect(JSON.stringify(draft)).not.toContain('session');
     expect(JSON.stringify(draft)).not.toContain('serializedTransaction');
     expect(draft.broadcastPending).toBe(false);
-    expect(draft.rejectedIntentId).toBe('tx_rejected_funding_01');
+    expect(draft.rejectedIntentId).toBe('tx_rejectedfunding01');
   });
 
   test('discards malformed or outdated reload drafts', () => {
@@ -125,7 +125,7 @@ describe('guided duel entry flow', () => {
     ).toBeNull();
     expect(
       parseDuelEntryDraft(
-        '{"version":1,"broadcastPending":true,"duelId":"duel_123","mode":"direct","opponentAddress":"","rejectedIntentId":"tx_rejected_funding_01","tier":50,"updatedAt":"2026-07-17T09:00:00.000Z"}',
+        '{"version":1,"broadcastPending":true,"duelId":"duel_123","mode":"direct","opponentAddress":"","rejectedIntentId":"tx_rejectedfunding01","tier":50,"updatedAt":"2026-07-17T09:00:00.000Z"}',
         new Date('2026-07-17T09:10:00.000Z').getTime(),
       ),
     ).toBeNull();

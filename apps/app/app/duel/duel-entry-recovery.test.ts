@@ -88,12 +88,12 @@ describe('duel entry recovery', () => {
         calls.push('intent');
         return intent();
       },
-      rejectedIntentId: 'tx_rejected_funding_01',
+      rejectedIntentId: 'tx_rejectedfunding01',
       sessionToken: 'session',
       wallet: 'creator',
     });
 
-    expect(calls).toEqual(['duel', 'reject:tx_rejected_funding_01', 'intent']);
+    expect(calls).toEqual(['duel', 'reject:tx_rejectedfunding01', 'intent']);
     expect(restored.intent?.id).toBe('intent_123');
   });
 
