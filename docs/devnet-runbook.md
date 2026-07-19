@@ -63,7 +63,7 @@ smoke workflow.
 | `POKEMON_TCG_API_RETRIES` | Optional transient Pokémon TCG retry count; defaults to one and is bounded to three retries. |
 | `POKEMON_TCG_API_RETRY_DELAY_MS` | Optional linear retry backoff; defaults to 250 ms and is bounded to five seconds. |
 | `OPENPACKSDUEL_API_KEYS` | Server-to-server integration keys; never expose to the browser. |
-| `OPENPACKSDUEL_APP_URL` | Canonical product URL. |
+| `OPENPACKSDUEL_APP_URL` | Canonical HTTPS product origin; required outside explicit local development. |
 | `OPENPACKSDUEL_AUTH_DOMAIN` | Host matching the canonical product URL in wallet sign-in messages. |
 | `OPENPACKSDUEL_STUCK_FUNDED_MINUTES` | Alert threshold for funded duels that have not progressed; defaults to 5. |
 | `OPENPACKSDUEL_ALLOWED_TIERS` | Comma-separated enabled USD tiers; defaults to `50`. |
