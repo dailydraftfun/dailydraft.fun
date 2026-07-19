@@ -336,7 +336,7 @@
 }
 
 .wallet-dialog-backdrop,
-.intent-dialog-backdrop {
+.duel-stepper-backdrop {
   position: fixed;
   z-index: 100;
   inset: 0;
@@ -348,7 +348,7 @@
 }
 
 .wallet-dialog,
-.intent-dialog {
+.duel-stepper-dialog {
   position: relative;
   z-index: 1;
   width: min(100%, 440px);
@@ -371,7 +371,7 @@
 }
 
 .wallet-dialog-heading,
-.intent-dialog-heading {
+.duel-stepper-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -379,14 +379,14 @@
 }
 
 .wallet-dialog-heading h2,
-.intent-dialog-heading h2 {
+.duel-stepper-heading h2 {
   margin: 10px 0 0;
   font-size: 23px;
   letter-spacing: -0.035em;
 }
 
 .wallet-dialog-heading > button,
-.intent-dialog-heading > button {
+.duel-stepper-heading > button {
   display: grid;
   width: 34px;
   height: 34px;
@@ -672,8 +672,7 @@
   line-height: 1.55;
 }
 
-.wallet-error,
-.intent-error {
+.wallet-error {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -1129,100 +1128,6 @@
   color: var(--color-danger);
 }
 
-.intent-title {
-  display: flex;
-  gap: 11px;
-  margin: 24px 0 17px;
-}
-
-.intent-title > svg {
-  flex: 0 0 auto;
-  color: var(--lime);
-}
-
-.intent-title div {
-  display: grid;
-  gap: 4px;
-}
-
-.intent-title strong {
-  font-size: 13px;
-}
-
-.intent-title p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.intent-details {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin: 0 0 16px;
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: 9px;
-  background: rgba(0, 0, 0, 0.18);
-}
-
-.intent-details > div {
-  display: grid;
-  gap: 4px;
-  padding: 10px 11px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.intent-details > div:nth-child(even) {
-  border-left: 1px solid var(--color-border);
-}
-
-.intent-details > div:nth-last-child(-n + 2) {
-  border-bottom: 0;
-}
-
-.intent-details > div:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
-
-.intent-details dt {
-  color: var(--text-muted);
-  font-size: 12px;
-  text-transform: uppercase;
-}
-
-.intent-details dd {
-  overflow: hidden;
-  margin: 0;
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  text-overflow: ellipsis;
-}
-
-.intent-total dd {
-  color: var(--lime);
-}
-
-.intent-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 16px;
-  border: 1px solid rgba(72, 224, 138, 0.2);
-  border-radius: 8px;
-  background: rgba(72, 224, 138, 0.06);
-  padding: 10px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.intent-notice svg {
-  flex: 0 0 auto;
-  color: var(--success);
-}
-
 .intent-warnings {
   display: grid;
   gap: 0.35rem;
@@ -1233,61 +1138,377 @@
   line-height: 1.45;
 }
 
-.intent-advanced {
-  margin-top: 14px;
-  border-top: 1px solid var(--color-border);
-  padding-top: 12px;
+.duel-stepper-dialog {
+  width: min(100%, 560px);
 }
 
-.intent-advanced summary {
-  width: fit-content;
-  cursor: pointer;
-  color: var(--text-secondary);
+.duel-stepper-heading > div {
+  min-width: 0;
+}
+
+.duel-stepper-heading h2 {
+  margin-bottom: 4px;
+}
+
+.duel-stepper-heading p {
+  margin: 0;
+  color: var(--text-muted);
   font-size: 11px;
-  font-weight: 700;
+  line-height: 1.5;
 }
 
-.intent-advanced[open] summary {
+.duel-stepper-progress {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.duel-stepper-progress li {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.duel-stepper-progress li::before {
+  position: absolute;
+  z-index: -1;
+  top: 11px;
+  right: 50%;
+  left: -50%;
+  height: 1px;
+  background: var(--color-border);
+  content: "";
+}
+
+.duel-stepper-progress li:first-child::before {
+  display: none;
+}
+
+.duel-stepper-progress li > span {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.duel-stepper-progress li svg {
+  width: 14px;
+  height: 14px;
+}
+
+.duel-stepper-progress .duel-step-active,
+.duel-stepper-progress .duel-step-complete {
+  color: var(--text-primary);
+}
+
+.duel-stepper-progress .duel-step-active > span,
+.duel-stepper-progress .duel-step-complete > span {
+  border-color: rgba(184, 255, 90, 0.42);
+  background: rgba(184, 255, 90, 0.1);
   color: var(--lime);
 }
 
-.intent-technical-details {
-  margin-top: 11px;
+.duel-stepper-progress .duel-step-complete::before {
+  background: rgba(184, 255, 90, 0.35);
 }
 
-.intent-notice-preview {
-  border-color: rgba(247, 201, 72, 0.2);
-  background: rgba(247, 201, 72, 0.06);
+.duel-stepper-content {
+  min-height: 250px;
+  margin: 20px 0 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.18);
+  padding: 16px;
 }
 
-.intent-notice-preview svg {
-  color: var(--gold);
-}
-
-.intent-actions {
+.duel-step-panel {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 16px;
 }
 
-.intent-actions button {
-  min-height: 42px;
-  gap: 7px;
+.duel-step-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.duel-step-title > svg {
+  flex: 0 0 auto;
+  color: var(--lime);
+}
+
+.duel-step-title > div {
+  display: grid;
+  gap: 3px;
+}
+
+.duel-step-title span,
+.duel-progress-signature {
+  color: var(--lime);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.duel-step-title h3,
+.duel-progress-panel h3 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.duel-step-title p,
+.duel-progress-panel p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.duel-step-title .duel-recovery-error {
+  color: #ff9494;
+}
+
+.duel-signature-kind {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid rgba(72, 224, 138, 0.2);
+  border-radius: 8px;
+  background: rgba(72, 224, 138, 0.06);
+  padding: 10px;
+  color: var(--success);
+}
+
+.duel-signature-kind > span {
+  display: grid;
+  gap: 2px;
+  color: var(--text-muted);
   font-size: 11px;
 }
 
-.intent-confirm {
-  background: var(--lime);
-  color: #0e1509;
+.duel-signature-kind strong {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.duel-signature-value {
+  border-color: rgba(247, 201, 72, 0.24);
+  background: rgba(247, 201, 72, 0.07);
+  color: var(--gold);
+}
+
+.duel-entry-selection {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+}
+
+.duel-entry-selection > span {
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.duel-entry-selection > span + span {
+  border-left: 1px solid var(--color-border);
+}
+
+.duel-entry-selection strong {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: none;
+}
+
+.duel-entry-selection p {
+  grid-column: 1 / -1;
+  margin: 0;
+  border-top: 1px solid var(--color-border);
+  padding: 11px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.duel-money-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+}
+
+.duel-money-summary > div {
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.duel-money-summary > div:nth-child(even) {
+  border-left: 1px solid var(--color-border);
+}
+
+.duel-money-summary > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.duel-money-summary dt,
+.duel-technical-details dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.duel-money-summary dd,
+.duel-technical-details dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.duel-money-total dd {
+  color: var(--lime);
+  font-family: var(--font-mono);
+  font-size: 13px;
   font-weight: 700;
 }
 
-.intent-safety {
-  margin: 9px 0 0;
+.duel-payment-safety {
+  margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.duel-technical-details {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.duel-technical-details summary {
+  padding: 10px;
+  cursor: pointer;
+}
+
+.duel-technical-details dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.duel-technical-details dl > div {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+}
+
+.duel-technical-details dd {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+.duel-stepper-primary {
+  width: 100%;
+  min-height: 42px;
+  gap: 7px;
+}
+
+.duel-progress-panel {
+  min-height: 215px;
+  place-content: center;
+  justify-items: center;
   text-align: center;
+}
+
+.duel-progress-panel > svg {
+  color: var(--lime);
+}
+
+.duel-progress-panel p {
+  max-width: 390px;
+}
+
+.duel-progress-panel > svg.duel-complete-icon {
+  color: var(--success);
+}
+
+.duel-stepper-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  border: 1px solid rgba(255, 100, 100, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 100, 100, 0.07);
+  padding: 10px;
+  color: #ff9494;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.duel-stepper-error > svg {
+  flex: 0 0 auto;
+}
+
+.duel-stepper-error button {
+  display: grid;
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.duel-stepper-notice {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.duel-stepper-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.duel-stepper-footer > p {
+  max-width: 280px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.duel-stepper-footer > div {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
 }
 
 @keyframes wallet-spin {
@@ -2144,12 +2365,12 @@
     white-space: nowrap;
   }
   .wallet-dialog-backdrop,
-  .intent-dialog-backdrop {
+  .duel-stepper-backdrop {
     align-items: end;
     padding: 0;
   }
   .wallet-dialog,
-  .intent-dialog {
+  .duel-stepper-dialog {
     width: 100%;
     max-height: min(82dvh, 720px);
     border-right: 0;
@@ -2210,18 +2431,34 @@
   .fee-summary span {
     padding: 9px 7px;
   }
-  .intent-details {
+  .duel-stepper-progress li {
+    font-size: 11px;
+  }
+  .duel-stepper-content {
+    min-height: 0;
+    padding: 13px;
+  }
+  .duel-money-summary {
     grid-template-columns: 1fr;
   }
-  .intent-details > div,
-  .intent-details > div:nth-child(even),
-  .intent-details > div:nth-last-child(-n + 2) {
-    border-right: 0;
+  .duel-money-summary > div,
+  .duel-money-summary > div:nth-child(even),
+  .duel-money-summary > div:nth-last-child(-n + 2) {
     border-bottom: 1px solid var(--color-border);
     border-left: 0;
   }
-  .intent-details > div:last-child {
+  .duel-money-summary > div:last-child {
     border-bottom: 0;
+  }
+  .duel-stepper-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .duel-stepper-footer > p {
+    max-width: none;
+  }
+  .duel-stepper-footer > div {
+    justify-content: flex-end;
   }
   .queue-section {
     margin-top: 64px;

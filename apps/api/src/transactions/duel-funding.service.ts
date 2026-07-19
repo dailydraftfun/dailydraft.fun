@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -73,6 +74,13 @@ export interface PreparedFundingIntent {
   status: 'prepared';
   wallet: string;
   warnings: string[];
+}
+
+export interface RejectedFundingIntent {
+  duelId: string;
+  reason: 'wallet_rejected_before_broadcast';
+  status: 'expired';
+  transactionId: string;
 }
 
 @Injectable()
@@ -231,6 +239,77 @@ export class DuelFundingService {
     return toIntent(row, metadata);
   }
 
+  async recordWalletRejection(input: {
+    actorWallet?: string;
+    duelId: string;
+    transactionId: string;
+  }): Promise<RejectedFundingIntent> {
+    return this.database.$transaction(async (database) => {
+      const transaction = await database.duelTransaction.findUnique({
+        include: {
+          duel: {
+            select: {
+              creatorWallet: true,
+              opponentWallet: true,
+            },
+          },
+        },
+        where: { id: input.transactionId },
+      });
+      if (!transaction || transaction.duelId !== input.duelId) {
+        throw new NotFoundException(`Transaction ${input.transactionId} was not found`);
+      }
+      assertWalletRejectionActor({
+        ...(input.actorWallet ? { actorWallet: input.actorWallet } : {}),
+        creatorWallet: transaction.duel.creatorWallet,
+        expectedSigner: transaction.expectedSigner,
+        opponentWallet: transaction.duel.opponentWallet,
+        transactionWallet: transaction.wallet,
+      });
+      if (isNoBroadcastExpiredFunding(transaction)) {
+        return rejectedFundingIntent(transaction.duelId, transaction.id);
+      }
+      if (
+        transaction.action !== DuelTransactionAction.FUND ||
+        transaction.signature ||
+        transaction.status !== DuelTransactionStatus.PREPARED
+      ) {
+        throw new ConflictException(
+          'Only an unsubmitted prepared funding intent can record a wallet rejection',
+        );
+      }
+      const now = new Date();
+      const changed = await database.duelTransaction.updateMany({
+        data: {
+          errorCode: 'WALLET_REJECTED_BEFORE_BROADCAST',
+          errorMessage: 'The wallet explicitly rejected the transaction before broadcast',
+          lastCheckedAt: now,
+          nextCheckAt: null,
+          nextRecoveryCheckAt: null,
+          status: DuelTransactionStatus.EXPIRED,
+        },
+        where: {
+          action: DuelTransactionAction.FUND,
+          duelId: input.duelId,
+          id: input.transactionId,
+          signature: null,
+          status: DuelTransactionStatus.PREPARED,
+          wallet: transaction.wallet,
+        },
+      });
+      if (changed.count === 1) {
+        return rejectedFundingIntent(transaction.duelId, transaction.id);
+      }
+      const current = await database.duelTransaction.findUnique({
+        where: { id: input.transactionId },
+      });
+      if (current && isNoBroadcastExpiredFunding(current)) {
+        return rejectedFundingIntent(current.duelId, current.id);
+      }
+      throw new ConflictException('Transaction state changed while recording wallet rejection');
+    });
+  }
+
   private async findReusable(
     input: { duelId: string; idempotencyKey: string; wallet: string },
     configuration: EscrowConfiguration,
@@ -271,7 +350,9 @@ export class DuelFundingService {
     ) {
       return toIntent(existing, metadata);
     }
-    return null;
+    throw new ConflictException(
+      'The previous funding review is being reconciled before another transaction can be prepared',
+    );
   }
 
   private async persistPrepared(input: PersistPreparedInput) {
@@ -292,6 +373,7 @@ export class DuelFundingService {
           wallet: input.wallet,
         },
       });
+      assertNoPreparedFundingReplacement(stale);
       const data = {
         allowMultipleInstructionMatches: false,
         errorCode: null,
@@ -311,9 +393,6 @@ export class DuelFundingService {
         recentBlockhash: input.recentBlockhash,
         serializedTransaction: input.serializedTransaction,
       };
-      if (stale) {
-        return database.duelTransaction.update({ data, where: { id: stale.id } });
-      }
       return database.duelTransaction.create({
         data: {
           ...data,
@@ -451,6 +530,33 @@ export function assertNoActiveFunding(active: { id: string } | null): void {
   if (active) throw new ConflictException('This wallet already has an active funding transaction');
 }
 
+export function assertNoPreparedFundingReplacement(prepared: { id: string } | null): void {
+  if (prepared) {
+    throw new ConflictException(
+      'The previous funding review must be reconciled before another transaction can be prepared',
+    );
+  }
+}
+
+export function assertWalletRejectionActor(input: {
+  actorWallet?: string;
+  creatorWallet: string;
+  expectedSigner: string | null;
+  opponentWallet: string | null;
+  transactionWallet: string;
+}): void {
+  if (!input.actorWallet) return;
+  if (
+    input.actorWallet !== input.transactionWallet ||
+    input.actorWallet !== input.expectedSigner ||
+    ![input.creatorWallet, input.opponentWallet].includes(input.actorWallet)
+  ) {
+    throw new ForbiddenException(
+      'Wallet session cannot reject a transaction for another signer or duel participant',
+    );
+  }
+}
+
 export function fundingPreparationStatus(status: DuelStatus): DuelStatus {
   if (status !== DuelStatus.MATCHED && status !== DuelStatus.COMMITTING) {
     throw new ConflictException('Duel state changed before funding preparation');
@@ -582,4 +688,25 @@ function formatSol(lamports: string): string {
 
 function createId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replaceAll('-', '')}`;
+}
+
+function isNoBroadcastExpiredFunding(transaction: {
+  action: DuelTransactionAction;
+  signature: string | null;
+  status: DuelTransactionStatus;
+}): boolean {
+  return (
+    transaction.action === DuelTransactionAction.FUND &&
+    transaction.signature === null &&
+    transaction.status === DuelTransactionStatus.EXPIRED
+  );
+}
+
+function rejectedFundingIntent(duelId: string, transactionId: string): RejectedFundingIntent {
+  return {
+    duelId,
+    reason: 'wallet_rejected_before_broadcast',
+    status: 'expired',
+    transactionId,
+  };
 }

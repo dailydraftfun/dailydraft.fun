@@ -74,8 +74,8 @@ describe('cross-surface design system contract', () => {
       resolve(repositoryRoot, 'apps/app/app/solana/wallet-control.tsx'),
       'utf8',
     );
-    const intentDialog = readFileSync(
-      resolve(repositoryRoot, 'apps/app/app/solana/transaction-intent-review.tsx'),
+    const duelStepper = readFileSync(
+      resolve(repositoryRoot, 'apps/app/app/duel/duel-entry-stepper.tsx'),
       'utf8',
     );
     const duelArena = readFileSync(resolve(repositoryRoot, 'apps/app/app/duel-arena.tsx'), 'utf8');
@@ -86,7 +86,7 @@ describe('cross-surface design system contract', () => {
     const appCss = readSurface('apps/app/app/globals.css');
     const webCss = readSurface('apps/web/app/globals.css');
 
-    for (const dialog of [walletDialog, intentDialog]) {
+    for (const dialog of [walletDialog, duelStepper]) {
       expect(dialog).toContain('useDialogFocus');
       expect(dialog).toContain('data-dialog-initial-focus');
       expect(dialog).toContain('aria-describedby');

@@ -14,7 +14,10 @@ import { DevnetRefundOrchestratorService } from './devnet-refund-orchestrator.se
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from './solana-rpc.client.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
-import { TransactionMonitorRepository } from './transaction-monitor.repository.js';
+import {
+  type PreparedRecoveryScope,
+  TransactionMonitorRepository,
+} from './transaction-monitor.repository.js';
 import type {
   DuelReconciliationResult,
   MonitoredTransaction,
@@ -37,6 +40,7 @@ const DEFAULT_RECOVERY_CANDIDATE_BUDGET = 50;
 const DEFAULT_RECOVERY_RETRY_MS = 60_000;
 const MAX_RECOVERY_RETRY_MS = 60 * 60 * 1_000;
 const RECOVERY_BLOCK_TIME_SKEW_MS = 2 * 60 * 1_000;
+const RECOVERY_FINALITY_BLOCK_BUFFER = 64n;
 
 @Injectable()
 export class TransactionMonitorService {
@@ -82,15 +86,37 @@ export class TransactionMonitorService {
     duelId: string;
   }): Promise<DuelReconciliationResult> {
     await this.assertDevnet(input.duelId);
-    const batch = await this.repository.findParticipantReconciliationBatch(input);
+    await this.repository.findParticipantReconciliationBatch(input);
+    const now = new Date();
+    const recoveryScope: PreparedRecoveryScope = {
+      duelId: input.duelId,
+      ignoreSchedule: true,
+    };
     const summary = emptySummary();
-    await this.reconcileTransactions(batch.transactions, new Date(), summary);
+    try {
+      await this.recoverUnboundBroadcasts(DEFAULT_BATCH_LIMIT, now, summary, recoveryScope);
+    } catch {
+      summary.recoveryErrors += 1;
+      await this.analytics?.recordServer({
+        duelId: input.duelId,
+        name: 'solana_rpc_error',
+      });
+    }
+    const batch = await this.repository.findParticipantReconciliationBatch(input);
+    await this.reconcileTransactions(batch.transactions, now, summary);
     const current = await this.repository.findParticipantReconciliationBatch(input);
+    const remainingUnbound = await this.repository.findPreparedForRecovery(
+      recoveryIntentBudget(),
+      new Date(now.getTime() - recoveryRetentionMs()),
+      now,
+      recoveryScope,
+    );
     return {
       activeTransactionCount: current.transactions.length,
       duelId: current.duelId,
       duelStatus: current.duelStatus,
       reconciliation: summary,
+      unboundTransactionCount: remainingUnbound.length,
     };
   }
 
@@ -189,6 +215,7 @@ export class TransactionMonitorService {
     limit: number,
     now: Date,
     summary: ReconciliationSummary,
+    scope?: PreparedRecoveryScope,
   ): Promise<void> {
     const requiredProgramId = process.env.ESCROW_PROGRAM_ID?.trim();
     if (!requiredProgramId) return;
@@ -197,6 +224,7 @@ export class TransactionMonitorService {
       Math.min(limit, recoveryIntentBudget()),
       preparedAfter,
       now,
+      scope,
     );
     let remainingCandidateBudget = recoveryCandidateBudget();
 
@@ -324,12 +352,21 @@ export class TransactionMonitorService {
         break;
       }
       if (!handled) {
-        await this.repository.recordRecoveryAttempt(
-          intent.id,
-          now,
-          nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
-          scanComplete ? checkedBlockHeight : undefined,
-        );
+        if (
+          scanComplete &&
+          intent.lastValidBlockHeight !== null &&
+          checkedBlockHeight > intent.lastValidBlockHeight + RECOVERY_FINALITY_BLOCK_BUFFER
+        ) {
+          await this.repository.recordPreparedRecoveryExpired(intent.id, now);
+          summary.expired += 1;
+        } else {
+          await this.repository.recordRecoveryAttempt(
+            intent.id,
+            now,
+            nextRecoveryCheckAt(now, intent.recoveryCheckAttempts),
+            scanComplete ? checkedBlockHeight : undefined,
+          );
+        }
       }
       if (remainingCandidateBudget === 0) break;
     }

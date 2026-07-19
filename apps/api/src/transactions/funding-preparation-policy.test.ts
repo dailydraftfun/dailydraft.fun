@@ -7,6 +7,7 @@ import {
 import {
   ACTIVE_FUNDING_STATUSES,
   assertNoActiveFunding,
+  assertNoPreparedFundingReplacement,
   fundingPreparationStatus,
   isPreparedBlockhashReusable,
   parsePolicyHash,
@@ -90,6 +91,13 @@ describe('funding preparation policy', () => {
     expect(isPreparedBlockhashReusable(1_021n, 1_000n)).toBe(true);
     expect(isPreparedBlockhashReusable(1_020n, 1_000n)).toBe(false);
     expect(isPreparedBlockhashReusable(999n, 1_000n)).toBe(false);
+  });
+
+  test('never overwrites a prepared transaction that the wallet may have broadcast', () => {
+    expect(() => assertNoPreparedFundingReplacement({ id: 'tx_prepared' })).toThrow(
+      'must be reconciled before another transaction can be prepared',
+    );
+    expect(() => assertNoPreparedFundingReplacement(null)).not.toThrow();
   });
 
   test('never reuses a prepared intent after duel cancellation or expiry', () => {

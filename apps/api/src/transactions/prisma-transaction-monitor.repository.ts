@@ -25,6 +25,7 @@ import {
   type BindSubmissionInput,
   type BoundSubmission,
   type ParticipantReconciliationBatch,
+  type PreparedRecoveryScope,
   type TransactionDuelAnalytics,
   TransactionMonitorRepository,
 } from './transaction-monitor.repository.js';
@@ -352,6 +353,7 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
     limit: number,
     preparedAfter: Date,
     now: Date,
+    scope?: PreparedRecoveryScope,
   ): Promise<PreparedRecoveryIntent[]> {
     const rows = await this.database.duelTransaction.findMany({
       include: {
@@ -375,7 +377,10 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           ],
         },
         createdAt: { gte: preparedAfter },
-        OR: [{ nextRecoveryCheckAt: null }, { nextRecoveryCheckAt: { lte: now } }],
+        ...(scope?.duelId ? { duelId: scope.duelId } : {}),
+        ...(scope?.ignoreSchedule
+          ? {}
+          : { OR: [{ nextRecoveryCheckAt: null }, { nextRecoveryCheckAt: { lte: now } }] }),
         recoveredAt: null,
         signature: null,
         status: DuelTransactionStatus.PREPARED,
@@ -468,6 +473,24 @@ export class PrismaTransactionMonitorRepository extends TransactionMonitorReposi
           : { lastRecoveryCheckedBlockHeight: checkedBlockHeight }),
         nextRecoveryCheckAt,
         recoveryCheckAttempts: { increment: 1 },
+      },
+      where: {
+        id: transactionId,
+        signature: null,
+        status: DuelTransactionStatus.PREPARED,
+      },
+    });
+  }
+
+  override async recordPreparedRecoveryExpired(transactionId: string, now: Date): Promise<void> {
+    await this.database.duelTransaction.updateMany({
+      data: {
+        errorCode: 'UNBOUND_BROADCAST_NOT_FOUND_AFTER_FINALITY',
+        errorMessage: 'No matching escrow broadcast was found after blockhash finality',
+        lastCheckedAt: now,
+        nextCheckAt: null,
+        nextRecoveryCheckAt: null,
+        status: DuelTransactionStatus.EXPIRED,
       },
       where: {
         id: transactionId,

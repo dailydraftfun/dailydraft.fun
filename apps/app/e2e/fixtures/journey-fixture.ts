@@ -367,6 +367,7 @@ export class DuelJourneyFixture {
         pending: 0,
         stuck: 0,
       },
+      unboundTransactionCount: 0,
     };
   }
 
