@@ -9,6 +9,12 @@
     />
     <meta name="theme-color" content="#070907" />
     <title>OpenPacks Duel MCP — Connect Claude and Codex</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/styles.css" />
     <script src="/connect.js" defer></script>
   </head>
@@ -38,7 +44,12 @@
     <main>
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-glow" aria-hidden="true"></div>
-        <div class="status-pill" data-service-status="checking">
+        <div
+          class="status-pill"
+          data-service-status="checking"
+          role="status"
+          aria-live="polite"
+        >
           <span class="status-dot" aria-hidden="true"></span>
           <span data-service-label>Checking hosted endpoint</span>
         </div>
@@ -104,7 +115,12 @@
         </div>
 
         <div class="setup-card">
-          <div class="tab-list" role="tablist" aria-label="MCP client setup">
+          <div
+            class="tab-list"
+            role="tablist"
+            aria-label="MCP client setup"
+            aria-orientation="horizontal"
+          >
             <button
               id="tab-claude"
               class="tab-button"

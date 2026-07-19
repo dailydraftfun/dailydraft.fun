@@ -25,7 +25,7 @@ export const duelRules = [
     title: 'Pack source and odds',
   },
   {
-    body: 'The higher snapshotted TCGPlayer market value in USDC wins both demo cards. The value source is selected before either wallet pays.',
+    body: 'The higher verified value snapshot recorded before either wallet pays wins both demo cards.',
     title: 'How the winner is chosen',
   },
   {

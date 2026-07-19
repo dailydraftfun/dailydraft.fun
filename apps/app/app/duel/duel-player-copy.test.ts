@@ -128,6 +128,7 @@ describe('duel player copy', () => {
   test('keeps payment, outcome, and demo-pool claims scoped to known facts', () => {
     const payment = getDuelPaymentReviewCopy('0.001');
     const poolRule = duelRules.find((rule) => rule.title === 'Pack source and odds');
+    const winnerRule = duelRules.find((rule) => rule.title === 'How the winner is chosen');
 
     expect(payment.description).toContain('The platform fee is exactly 0.001 SOL');
     expect(payment.description).toContain('network fee and any recoverable rent');
@@ -142,6 +143,8 @@ describe('duel player copy', () => {
     );
     expect(poolRule?.body).toContain('server-provided');
     expect(poolRule?.body).not.toMatch(/five-card|1-in-5/);
+    expect(winnerRule?.body).toContain('higher verified value snapshot');
+    expect(winnerRule?.body).not.toContain('TCGPlayer');
   });
 
   test('turns recoverable failures into explicit player actions', () => {

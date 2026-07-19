@@ -66,6 +66,7 @@
       "name": "@openpacksduel/docs",
       "version": "0.0.1",
       "dependencies": {
+        "@fontsource/dm-sans": "5.2.8",
         "@scalar/nextjs-api-reference": "0.11.10",
         "next": "16.2.4",
         "nextra": "4.6.1",

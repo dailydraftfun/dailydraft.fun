@@ -57,6 +57,31 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /health/capabilities:
+    get:
+      operationId: getProductCapabilities
+      summary: Resolve the currently playable duel modes and pack tiers
+      description: |
+        This fail-closed response is the product UI source of truth. Disabled
+        modes and pack tiers remain visible only as explicit unavailable or
+        coming-soon choices and must never be submitted as playable.
+      x-openpacksduel-availability: devnet
+      responses:
+        '200':
+          description: Current public product capabilities
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductCapabilities'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /valuation-policies/current:
     get:
       operationId: getCurrentValuationPolicy
@@ -1577,6 +1602,64 @@ components:
             database:
               type: string
               const: ok
+    CapabilityAvailability:
+      type: object
+      additionalProperties: false
+      required: [enabled, reason]
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: [string, 'null']
+    PackCapability:
+      type: object
+      additionalProperties: false
+      required: [enabled, id, name, reason, tier]
+      properties:
+        enabled:
+          type: boolean
+        id:
+          $ref: '#/components/schemas/PackId'
+        name:
+          type: string
+        reason:
+          type: [string, 'null']
+        tier:
+          type: integer
+          enum: [25, 50, 100]
+    ProductCapabilities:
+      type: object
+      additionalProperties: false
+      required: [modes, network, packs, provider]
+      properties:
+        modes:
+          type: object
+          additionalProperties: false
+          required: [direct, house, open]
+          properties:
+            direct:
+              $ref: '#/components/schemas/CapabilityAvailability'
+            house:
+              $ref: '#/components/schemas/CapabilityAvailability'
+            open:
+              $ref: '#/components/schemas/CapabilityAvailability'
+        network:
+          type: string
+          const: solana-devnet
+        packs:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/PackCapability'
+        provider:
+          type: object
+          additionalProperties: false
+          required: [mode, ready]
+          properties:
+            mode:
+              type: string
+            ready:
+              type: boolean
     SolanaAddress:
       type: string
       pattern: '^[1-9A-HJ-NP-Za-km-z]{32,44}$'

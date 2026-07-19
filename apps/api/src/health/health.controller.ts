@@ -3,16 +3,29 @@ import type { DatabaseClient } from '@openpacksduel/db';
 
 import { AdminService } from '../admin/admin.service.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
+import { PACK_TIER_CATALOG } from '../packs/pack-catalog.js';
 
 type Readiness = Awaited<ReturnType<AdminService['getReadiness']>>;
 
+type PublicCapabilityAvailability = {
+  enabled: boolean;
+  reason: string | null;
+};
+
 export type PublicProductCapabilities = {
   modes: {
-    direct: { enabled: true };
-    house: { enabled: boolean; reason: string | null };
-    open: { enabled: true };
+    direct: PublicCapabilityAvailability;
+    house: PublicCapabilityAvailability;
+    open: PublicCapabilityAvailability;
   };
   network: 'solana-devnet';
+  packs: Array<
+    PublicCapabilityAvailability & {
+      id: string;
+      name: string;
+      tier: 25 | 50 | 100;
+    }
+  >;
   provider: { mode: string; ready: boolean };
 };
 
@@ -53,23 +66,27 @@ export class HealthController {
 
 export function publicProductCapabilities(readiness: Readiness): PublicProductCapabilities {
   const providerReady = readiness.provider.configured && readiness.provider.verified;
-  const houseReady =
-    readiness.database.reachable &&
-    readiness.rpc.verifiedDevnet &&
-    providerReady &&
-    readiness.treasury.entryEnabled &&
-    readiness.treasury.verified;
+  const duelReady = readiness.database.reachable && readiness.rpc.verifiedDevnet && providerReady;
+  const duelReason = duelReady ? null : 'Duel play is not ready on Solana devnet.';
+  const houseReady = duelReady && readiness.treasury.entryEnabled && readiness.treasury.verified;
 
   return {
     modes: {
-      direct: { enabled: true },
+      direct: { enabled: duelReady, reason: duelReason },
       house: {
         enabled: houseReady,
         reason: houseReady ? null : 'House play is not ready on Solana devnet.',
       },
-      open: { enabled: true },
+      open: { enabled: duelReady, reason: duelReason },
     },
     network: 'solana-devnet',
+    packs: PACK_TIER_CATALOG.map((pack) => ({
+      enabled: pack.supported && duelReady,
+      id: pack.id,
+      name: pack.name,
+      reason: pack.supported ? duelReason : pack.comingSoonReason,
+      tier: pack.tier,
+    })),
     provider: { mode: readiness.provider.mode, ready: providerReady },
   };
 }
