@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   DuelApiRequestError,
+  isRetryableDuelRequestError,
   requestAuthenticatedDuel,
   requestPrivateRematchOpponent,
 } from './duel-client';
@@ -80,5 +81,12 @@ describe('private rematch opponent client', () => {
 
     expect(thrown).toBeInstanceOf(DuelApiRequestError);
     expect(thrown).toMatchObject({ retryable: false, status: 403 });
+  });
+
+  test('retries only transient API and network failures', () => {
+    expect(isRetryableDuelRequestError(new DuelApiRequestError('missing', 404))).toBe(false);
+    expect(isRetryableDuelRequestError(new DuelApiRequestError('rate limited', 429))).toBe(true);
+    expect(isRetryableDuelRequestError(new DuelApiRequestError('unavailable', 503))).toBe(true);
+    expect(isRetryableDuelRequestError(new TypeError('network failed'))).toBe(true);
   });
 });

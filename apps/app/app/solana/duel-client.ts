@@ -493,6 +493,10 @@ export class DuelApiRequestError extends Error {
   }
 }
 
+export function isRetryableDuelRequestError(error: unknown): boolean {
+  return error instanceof DuelApiRequestError ? error.retryable : true;
+}
+
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

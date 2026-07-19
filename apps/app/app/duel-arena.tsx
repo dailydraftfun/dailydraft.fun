@@ -88,7 +88,6 @@ import {
   cancelOpenMatchmaking,
   continueOpenMatchmaking,
   createDuel,
-  DuelApiRequestError,
   type DuelOpponentType,
   type DuelTransactionIntent,
   type DurableDuel,
@@ -96,6 +95,7 @@ import {
   getOpenMatchmakingStatus,
   getPrivateRematchOpponent,
   getProductCapabilities,
+  isRetryableDuelRequestError,
   joinDuel,
   type MatchmakingSession,
   prepareDuelIntent,
@@ -625,7 +625,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       .catch((error) => {
         if (!active) return;
         setResolvedRematchOpponent(null);
-        setRematchResolutionFailed(!(error instanceof DuelApiRequestError && error.status === 403));
+        setRematchResolutionFailed(isRetryableDuelRequestError(error));
       })
       .finally(() => {
         if (active) setRematchResolutionPending(false);

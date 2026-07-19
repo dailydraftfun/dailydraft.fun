@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
-import Link from 'next/link';
 import { cache } from 'react';
 import { buildDuelMetadata, receiptTitle } from '../duel-metadata';
 import { DuelPrimaryAction } from '../duel-primary-action';
 import { DuelProofRefresh } from '../duel-proof-refresh';
+import { DuelUnavailableProof } from '../duel-unavailable-proof';
 import {
   fetchPublicDuelReceipt,
   formatPublicMoney,
@@ -45,7 +45,7 @@ export async function generateMetadata({ params }: DuelPageProps): Promise<Metad
 export default async function DuelPage({ params }: DuelPageProps) {
   const { duelId } = await params;
   const receipt = await getReceipt(duelId);
-  if (!receipt) return <UnavailableProof duelId={duelId} />;
+  if (!receipt) return <DuelUnavailableProof duelId={duelId} />;
 
   const active = !terminalStatuses.has(receipt.duel.status);
   const socialSnapshot = getDuelSocialSnapshot(receipt);
@@ -470,24 +470,6 @@ function ReferenceList({ receipt }: { receipt: PublicDuelReceipt }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-function UnavailableProof({ duelId }: { duelId: string }) {
-  return (
-    <main className="mx-auto min-h-[calc(100svh-4rem)] max-w-3xl px-4 py-16 sm:px-6">
-      <p className="proof-label">Proof unavailable</p>
-      <h1 className="mt-3 text-3xl font-semibold text-primary">
-        This duel is not publicly readable yet.
-      </h1>
-      <p className="mt-4 text-sm leading-6 text-secondary">
-        The API returned no durable public receipt for <code>{duelId}</code>. No status or result is
-        inferred.
-      </p>
-      <Link href="/overview" className="proof-secondary-action mt-6">
-        Back to duels
-      </Link>
-    </main>
   );
 }
 
