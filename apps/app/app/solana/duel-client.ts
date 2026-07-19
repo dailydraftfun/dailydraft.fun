@@ -139,6 +139,7 @@ export type DuelReconciliationResult = {
     pending: number;
     stuck: number;
   };
+  unboundTransactionCount: number;
 };
 
 const RECONCILIATION_POLL_ATTEMPTS = 20;
@@ -362,6 +363,19 @@ export async function submitSignedDuelIntent(
   );
 }
 
+export async function recordRejectedDuelIntent(
+  duelId: string,
+  intentId: string,
+  sessionToken: string,
+): Promise<void> {
+  await authenticatedMutation(
+    `/duels/${encodeURIComponent(duelId)}/transactions/${encodeURIComponent(intentId)}/rejections`,
+    sessionToken,
+    {},
+    `opd-reject-${intentId}`,
+  );
+}
+
 export function reconcileDuelTransactions(
   duelId: string,
   sessionToken: string,
@@ -382,7 +396,9 @@ export async function waitForDuelTransactions(
   for (let attempt = 0; attempt < RECONCILIATION_POLL_ATTEMPTS; attempt += 1) {
     try {
       latest = await reconcileDuelTransactions(duelId, sessionToken);
-      if (latest.activeTransactionCount === 0) return latest;
+      if (latest.activeTransactionCount === 0 && latest.unboundTransactionCount === 0) {
+        return latest;
+      }
     } catch (error) {
       if (!(error instanceof DuelApiRequestError) || !error.retryable) throw error;
       lastError = error;
