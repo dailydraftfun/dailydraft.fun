@@ -31,13 +31,6 @@ import {
   storeActiveDuel,
 } from './duel/active-duel-storage';
 import {
-  type DuelGrowthParticipants,
-  rematchLabel,
-  resolveRematchOpponent,
-  resultShareText,
-  viewerResult,
-} from './duel/duel-growth';
-import {
   createDuelEntryDraft,
   DUEL_ENTRY_DRAFT_STORAGE_KEY,
   parseDuelEntryDraft,
@@ -48,6 +41,13 @@ import {
   restoreDuelEntry,
 } from './duel/duel-entry-recovery';
 import { DuelEntryStepper } from './duel/duel-entry-stepper';
+import {
+  type DuelGrowthParticipants,
+  rematchLabel,
+  resolveRematchOpponent,
+  resultShareText,
+  viewerResult,
+} from './duel/duel-growth';
 import {
   duelRules,
   getDuelPlayerStatus,
