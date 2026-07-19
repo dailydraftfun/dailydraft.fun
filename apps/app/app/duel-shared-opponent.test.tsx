@@ -14,17 +14,18 @@ describe('shared duel opponent control', () => {
         {...callbacks}
         entry={{ action: 'accept', opponentLabel: 'Creator abcd…wxyz', tier: 50 }}
         localWallet=""
+        rematchNeedsConnection={false}
         rematchPending={false}
         resolvedOpponentLabel={null}
       />,
     );
 
     expect(markup).toContain('value="Creator abcd…wxyz"');
-    expect(markup).toContain('readonly=""');
+    expect(markup).toContain('readOnly=""');
     expect(markup).toContain('The creator wallet stays private on this public route.');
   });
 
-  test('gives disconnected and non-participant rematch viewers a fresh-duel path', () => {
+  test('asks disconnected rematch viewers to connect an original wallet', () => {
     const markup = renderToStaticMarkup(
       <SharedOpponentControl
         {...callbacks}
@@ -34,6 +35,28 @@ describe('shared duel opponent control', () => {
           tier: 50,
         }}
         localWallet=""
+        rematchNeedsConnection={true}
+        rematchPending={false}
+        resolvedOpponentLabel={null}
+      />,
+    );
+
+    expect(markup).toContain('Connect the original wallet');
+    expect(markup).toContain('Connect and authenticate an original participant wallet');
+    expect(markup).not.toContain('Fresh duel available');
+  });
+
+  test('gives connected non-participant rematch viewers a fresh-duel path', () => {
+    const markup = renderToStaticMarkup(
+      <SharedOpponentControl
+        {...callbacks}
+        entry={{
+          action: 'rematch',
+          participantLabels: { creator: 'Creator', opponent: 'Opponent' },
+          tier: 50,
+        }}
+        localWallet=""
+        rematchNeedsConnection={false}
         rematchPending={false}
         resolvedOpponentLabel={null}
       />,
@@ -42,7 +65,7 @@ describe('shared duel opponent control', () => {
     expect(markup).toContain('Fresh duel available');
     expect(markup).toContain('Start a fresh duel');
     expect(markup).toContain('public matchmaking');
-    expect(markup).not.toContain('readonly=""');
+    expect(markup).not.toContain('readOnly=""');
   });
 
   test('locks a verified rematch opponent and leaves fresh direct entry editable', () => {
@@ -55,6 +78,7 @@ describe('shared duel opponent control', () => {
           tier: 50,
         }}
         localWallet=""
+        rematchNeedsConnection={false}
         rematchPending={false}
         resolvedOpponentLabel="Opponent abcd…wxyz"
       />,
@@ -63,14 +87,15 @@ describe('shared duel opponent control', () => {
       <SharedOpponentControl
         {...callbacks}
         localWallet="editable_wallet"
+        rematchNeedsConnection={false}
         rematchPending={false}
         resolvedOpponentLabel={null}
       />,
     );
 
-    expect(resolvedMarkup).toContain('readonly=""');
+    expect(resolvedMarkup).toContain('readOnly=""');
     expect(resolvedMarkup).toContain('verified as an original participant');
     expect(freshMarkup).toContain('value="editable_wallet"');
-    expect(freshMarkup).not.toContain('readonly=""');
+    expect(freshMarkup).not.toContain('readOnly=""');
   });
 });

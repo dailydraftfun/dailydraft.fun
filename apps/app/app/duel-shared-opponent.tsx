@@ -22,6 +22,7 @@ export function SharedOpponentControl({
   localWallet,
   onLocalWalletChange,
   onStartFreshDuel,
+  rematchNeedsConnection,
   rematchPending,
   resolvedOpponentLabel,
 }: {
@@ -29,6 +30,7 @@ export function SharedOpponentControl({
   localWallet: string;
   onLocalWalletChange: (wallet: string) => void;
   onStartFreshDuel: () => void;
+  rematchNeedsConnection: boolean;
   rematchPending: boolean;
   resolvedOpponentLabel: string | null;
 }) {
@@ -83,11 +85,19 @@ export function SharedOpponentControl({
       <div className="wallet-challenge-panel">
         <OpponentDisclosure
           detail={
-            rematchPending
+            rematchNeedsConnection
+              ? 'Connect and authenticate an original participant wallet from the wallet menu to unlock this private rematch.'
+              : rematchPending
               ? 'Checking whether the connected wallet played in the original duel.'
               : 'Connect an original participant wallet for the private rematch, or leave the link and choose any duel mode.'
           }
-          headline={rematchPending ? 'Checking rematch eligibility' : 'Fresh duel available'}
+          headline={
+            rematchNeedsConnection
+              ? 'Connect the original wallet'
+              : rematchPending
+                ? 'Checking rematch eligibility'
+                : 'Fresh duel available'
+          }
         />
         <Button type="button" variant="ghost" onClick={onStartFreshDuel}>
           Start a fresh duel

@@ -1783,6 +1783,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                       localWallet={wallet}
                       onLocalWalletChange={setWallet}
                       onStartFreshDuel={startFreshDuel}
+                      rematchNeedsConnection={
+                        activeEntry?.action === 'rematch' &&
+                        (!walletConnection.address || !authentication.sessionToken)
+                      }
                       rematchPending={rematchResolutionPending}
                       resolvedOpponentLabel={linkedOpponent?.label ?? null}
                     />
