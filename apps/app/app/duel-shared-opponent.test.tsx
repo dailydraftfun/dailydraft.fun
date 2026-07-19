@@ -20,7 +20,7 @@ describe('shared duel opponent control', () => {
     );
 
     expect(markup).toContain('value="Creator abcd…wxyz"');
-    expect(markup).toContain('readonly=""');
+    expect(markup).toContain('readOnly=""');
     expect(markup).toContain('The creator wallet stays private on this public route.');
   });
 
@@ -42,7 +42,7 @@ describe('shared duel opponent control', () => {
     expect(markup).toContain('Fresh duel available');
     expect(markup).toContain('Start a fresh duel');
     expect(markup).toContain('public matchmaking');
-    expect(markup).not.toContain('readonly=""');
+    expect(markup).not.toContain('readOnly=""');
   });
 
   test('locks a verified rematch opponent and leaves fresh direct entry editable', () => {
@@ -68,9 +68,9 @@ describe('shared duel opponent control', () => {
       />,
     );
 
-    expect(resolvedMarkup).toContain('readonly=""');
+    expect(resolvedMarkup).toContain('readOnly=""');
     expect(resolvedMarkup).toContain('verified as an original participant');
     expect(freshMarkup).toContain('value="editable_wallet"');
-    expect(freshMarkup).not.toContain('readonly=""');
+    expect(freshMarkup).not.toContain('readOnly=""');
   });
 });
