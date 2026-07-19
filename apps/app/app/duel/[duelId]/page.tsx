@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { cache } from 'react';
 import { buildDuelMetadata, receiptTitle } from '../duel-metadata';
+import { DuelPrimaryAction } from '../duel-primary-action';
 import { DuelProofRefresh } from '../duel-proof-refresh';
 import {
   fetchPublicDuelReceipt,
@@ -195,9 +196,7 @@ function PublicStateCard({
           <h2 className="mt-2 text-2xl font-semibold text-primary">{snapshot.headline}</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-secondary">{snapshot.subline}</p>
         </div>
-        <Link className="proof-primary-action shrink-0" href={primaryAction.href}>
-          {primaryAction.label}
-        </Link>
+        <DuelPrimaryAction action={primaryAction} />
       </div>
 
       {waiting ? (

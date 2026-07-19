@@ -58,6 +58,7 @@ import {
   getPlayerActionError,
 } from './duel/duel-player-copy';
 import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
+import { shareNativeResult } from './duel/result-sharing';
 import {
   parseStoredRevealTimeline,
   type RevealSideResolution,
@@ -87,6 +88,7 @@ import {
   cancelOpenMatchmaking,
   continueOpenMatchmaking,
   createDuel,
+  DuelApiRequestError,
   type DuelOpponentType,
   type DuelTransactionIntent,
   type DurableDuel,
@@ -283,9 +285,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
   const [duelRestorePending, setDuelRestorePending] = useState(true);
   const [resolvedRematchOpponent, setResolvedRematchOpponent] = useState<
-    (DuelGrowthParticipant & { duelId: string }) | null
+    | (DuelGrowthParticipant & {
+        duelId: string;
+        resolutionAttempt: number;
+        viewerWallet: string;
+      })
+    | null
   >(null);
   const [rematchResolutionPending, setRematchResolutionPending] = useState(false);
+  const [rematchResolutionFailed, setRematchResolutionFailed] = useState(false);
+  const [rematchResolutionAttempt, setRematchResolutionAttempt] = useState(0);
   const [matchmakingSession, setMatchmakingSession] = useState<MatchmakingSession | null>(null);
   const [matchmakingRestorePending, setMatchmakingRestorePending] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -303,7 +312,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const phase: Phase = liveDuel?.phase ?? 'lobby';
   const capabilities = capabilityState.status === 'ready' ? capabilityState.value : null;
   const linkedOpponent =
-    activeEntry?.action === 'rematch' && resolvedRematchOpponent?.duelId === activeEntry.duelId
+    activeEntry?.action === 'rematch' &&
+    resolvedRematchOpponent?.duelId === activeEntry.duelId &&
+    resolvedRematchOpponent.viewerWallet === walletConnection.address
       ? resolvedRematchOpponent
       : null;
   const opponentWallet =
@@ -358,6 +369,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     }
     setActiveEntry(undefined);
     setResolvedRematchOpponent(null);
+    setRematchResolutionFailed(false);
     setMode(nextMode);
     if (nextMode !== 'direct') setWallet('');
     return true;
@@ -380,6 +392,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   function startFreshDuel(): void {
     setActiveEntry(undefined);
     setResolvedRematchOpponent(null);
+    setRematchResolutionFailed(false);
     setWallet('');
     setActionError(null);
     setActionNotice('Choose a wallet, public matchmaking, or an available house for a fresh duel.');
@@ -480,7 +493,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       abandonRejectedIntent: recordRejectedDuelIntent,
       duelId: recoveryDuelId,
       fundingPossiblyBroadcast: fundingPhase === 'recovering',
-      loadDuel: getDuel,
+      loadDuel: (duelId) => getDuel(duelId, authentication.sessionToken as string),
       prepareIntent: prepareDuelIntent,
       reconcileTransactions: reconcileDuelTransactions,
       rejectedIntentId,
@@ -539,6 +552,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       setDuelRestorePending(false);
       return;
     }
+    if (!authentication.sessionToken) {
+      setDuelRestorePending(false);
+      return;
+    }
 
     const storedDuel = readStoredActiveDuel(window.sessionStorage);
     if (!storedDuel) {
@@ -547,7 +564,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     }
 
     let active = true;
-    getDuel(storedDuel.duelId)
+    getDuel(storedDuel.duelId, authentication.sessionToken)
       .then((duel) => {
         if (active) setPersistedDuel(duel);
       })
@@ -565,7 +582,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     return () => {
       active = false;
     };
-  }, [entry]);
+  }, [authentication.sessionToken, entry]);
 
   useEffect(() => {
     if (
@@ -575,6 +592,17 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     ) {
       setResolvedRematchOpponent(null);
       setRematchResolutionPending(false);
+      setRematchResolutionFailed(false);
+      return;
+    }
+
+    const viewerWallet = walletConnection.address;
+    if (
+      resolvedRematchOpponent?.duelId === activeEntry.duelId &&
+      resolvedRematchOpponent.viewerWallet === viewerWallet
+    ) {
+      setRematchResolutionPending(false);
+      setRematchResolutionFailed(false);
       return;
     }
 
@@ -582,6 +610,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     const duelId = activeEntry.duelId;
     setResolvedRematchOpponent(null);
     setRematchResolutionPending(true);
+    setRematchResolutionFailed(false);
     getPrivateRematchOpponent(duelId, authentication.sessionToken)
       .then((opponent) => {
         if (!active) return;
@@ -589,10 +618,14 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           address: opponent.wallet,
           duelId,
           label: activeEntry.participantLabels[opponent.side],
+          resolutionAttempt: rematchResolutionAttempt,
+          viewerWallet,
         });
       })
-      .catch(() => {
-        if (active) setResolvedRematchOpponent(null);
+      .catch((error) => {
+        if (!active) return;
+        setResolvedRematchOpponent(null);
+        setRematchResolutionFailed(!(error instanceof DuelApiRequestError && error.status === 403));
       })
       .finally(() => {
         if (active) setRematchResolutionPending(false);
@@ -601,7 +634,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     return () => {
       active = false;
     };
-  }, [activeEntry, authentication.sessionToken, walletConnection.address]);
+  }, [
+    activeEntry,
+    authentication.sessionToken,
+    rematchResolutionAttempt,
+    resolvedRematchOpponent,
+    walletConnection.address,
+  ]);
 
   useEffect(() => {
     if (persistedDuel) {
@@ -720,10 +759,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }, [actionError, mode, persistedDuel, tier]);
 
   useEffect(() => {
-    if (!persistedDuel || terminalDuelStatuses.has(persistedDuel.status)) return;
+    if (
+      !persistedDuel ||
+      terminalDuelStatuses.has(persistedDuel.status) ||
+      !authentication.sessionToken
+    ) {
+      return;
+    }
     let active = true;
     const interval = window.setInterval(() => {
-      getDuel(persistedDuel.id)
+      getDuel(persistedDuel.id, authentication.sessionToken as string)
         .then((duel) => {
           if (active) setPersistedDuel(duel);
         })
@@ -733,7 +778,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       active = false;
       window.clearInterval(interval);
     };
-  }, [persistedDuel]);
+  }, [authentication.sessionToken, persistedDuel]);
 
   useEffect(() => {
     if (
@@ -777,7 +822,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     let active = true;
     const poll = () => {
       reconcileDuelTransactions(persistedDuel.id, authentication.sessionToken as string)
-        .then(() => getDuel(persistedDuel.id))
+        .then(() => getDuel(persistedDuel.id, authentication.sessionToken as string))
         .then((duel) => {
           if (active) setPersistedDuel(duel);
         })
@@ -844,7 +889,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         .then(async (session) => {
           if (!active) return;
           if (!session) {
-            const duel = await getDuel(matchmakingSession.duelId).catch(() => null);
+            const duel = await getDuel(
+              matchmakingSession.duelId,
+              authentication.sessionToken as string,
+            ).catch(() => null);
             if (!active) return;
             setMatchmakingSession(null);
             setPersistedDuel(duel);
@@ -876,7 +924,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   useEffect(() => {
     if (!matchmakingSession || !authentication.sessionToken || !walletConnection.address) return;
     let active = true;
-    getDuel(matchmakingSession.duelId)
+    getDuel(matchmakingSession.duelId, authentication.sessionToken)
       .then(async (duel) => {
         if (!active) return;
         setPersistedDuel(duel);
@@ -886,7 +934,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             abandonRejectedIntent: recordRejectedDuelIntent,
             duelId: duel.id,
             fundingPossiblyBroadcast: false,
-            loadDuel: getDuel,
+            loadDuel: (duelId) => getDuel(duelId, authentication.sessionToken as string),
             prepareIntent: prepareDuelIntent,
             reconcileTransactions: reconcileDuelTransactions,
             rejectedIntentId,
@@ -970,11 +1018,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       return;
     }
     if (activeEntry?.action === 'rematch' && !linkedOpponent) {
-      setActionError(
-        walletConnection.address
-          ? 'This wallet did not play in the original duel. Open a new duel instead.'
-          : 'Connect the wallet that played in the original duel to run this rematch.',
-      );
+      setActionError('This wallet did not play in the original duel. Open a new duel instead.');
       return;
     }
     if (
@@ -1059,7 +1103,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         abandonRejectedIntent: recordRejectedDuelIntent,
         duelId: persistedDuel.id,
         fundingPossiblyBroadcast: false,
-        loadDuel: getDuel,
+        loadDuel: (duelId) => getDuel(duelId, authentication.sessionToken as string),
         prepareIntent: prepareDuelIntent,
         reconcileTransactions: reconcileDuelTransactions,
         rejectedIntentId,
@@ -1251,7 +1295,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       abandonRejectedIntent: recordRejectedDuelIntent,
       duelId,
       fundingPossiblyBroadcast: false,
-      loadDuel: getDuel,
+      loadDuel: (restoredDuelId) => getDuel(restoredDuelId, sessionToken),
       prepareIntent: prepareDuelIntent,
       reconcileTransactions: reconcileDuelTransactions,
       rejectedIntentId: rejectedId,
@@ -1286,7 +1330,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   async function reconcileBroadcastFunding(duelId: string, sessionToken: string): Promise<void> {
     const reconciliation = await waitForDuelTransactions(duelId, sessionToken);
-    const refreshed = await getDuel(duelId);
+    const refreshed = await getDuel(duelId, sessionToken);
     setPersistedDuel(refreshed);
     const outcome = classifyPostBroadcastRecovery(
       refreshed,
@@ -1401,8 +1445,18 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             label: shortReference(persistedDuel.opponentWallet) ?? 'Opponent wallet',
           },
         };
-        const opponent = resolveRematchOpponent(participants, walletConnection.address);
-        setResolvedRematchOpponent(opponent ? { ...opponent, duelId: persistedDuel.id } : null);
+        const viewerWallet = walletConnection.address;
+        const opponent = resolveRematchOpponent(participants, viewerWallet);
+        setResolvedRematchOpponent(
+          opponent && viewerWallet
+            ? {
+                ...opponent,
+                duelId: persistedDuel.id,
+                resolutionAttempt: rematchResolutionAttempt,
+                viewerWallet,
+              }
+            : null,
+        );
         setActiveEntry({
           action: 'rematch',
           duelId: persistedDuel.id,
@@ -1454,14 +1508,18 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       );
     } else {
       try {
-        if (navigator.share) {
-          await navigator.share({ text, title: 'Pack Duel result', url: shareUrl });
-        } else {
-          await navigator.clipboard.writeText(`${text}\n${shareUrl}`);
+        const outcome = await shareNativeResult(
+          { text, title: 'Pack Duel result', url: shareUrl },
+          {
+            ...(navigator.share ? { share: navigator.share.bind(navigator) } : {}),
+            writeClipboard: (value) => navigator.clipboard.writeText(value),
+          },
+        );
+        if (outcome === 'cancelled') return;
+        if (outcome === 'copied') {
           setActionNotice('Result link copied with its status-aware social preview.');
         }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
+      } catch {
         setActionError('Could not share this result. Open the verified receipt and copy its URL.');
         return;
       }
@@ -1775,11 +1833,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                       entry={activeEntry}
                       localWallet={wallet}
                       onLocalWalletChange={setWallet}
+                      onRetryRematch={() => setRematchResolutionAttempt((attempt) => attempt + 1)}
                       onStartFreshDuel={startFreshDuel}
                       rematchNeedsConnection={
                         activeEntry?.action === 'rematch' &&
                         (!walletConnection.address || !authentication.sessionToken)
                       }
+                      rematchResolutionFailed={rematchResolutionFailed}
                       rematchPending={rematchResolutionPending}
                       resolvedOpponentLabel={linkedOpponent?.label ?? null}
                     />

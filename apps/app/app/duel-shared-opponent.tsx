@@ -21,17 +21,21 @@ export function SharedOpponentControl({
   entry,
   localWallet,
   onLocalWalletChange,
+  onRetryRematch,
   onStartFreshDuel,
   rematchNeedsConnection,
   rematchPending,
+  rematchResolutionFailed,
   resolvedOpponentLabel,
 }: {
   entry?: SharedOpponentEntry;
   localWallet: string;
   onLocalWalletChange: (wallet: string) => void;
+  onRetryRematch: () => void;
   onStartFreshDuel: () => void;
   rematchNeedsConnection: boolean;
   rematchPending: boolean;
+  rematchResolutionFailed: boolean;
   resolvedOpponentLabel: string | null;
 }) {
   if (entry?.action === 'accept') {
@@ -89,16 +93,25 @@ export function SharedOpponentControl({
               ? 'Connect and authenticate an original participant wallet from the wallet menu to unlock this private rematch.'
               : rematchPending
                 ? 'Checking whether the connected wallet played in the original duel.'
-                : 'Connect an original participant wallet for the private rematch, or leave the link and choose any duel mode.'
+                : rematchResolutionFailed
+                  ? 'The private rematch could not be verified. Retry the participant check without leaving this page.'
+                  : 'Connect an original participant wallet for the private rematch, or leave the link and choose any duel mode.'
           }
           headline={
             rematchNeedsConnection
               ? 'Connect the original wallet'
               : rematchPending
                 ? 'Checking rematch eligibility'
-                : 'Fresh duel available'
+                : rematchResolutionFailed
+                  ? 'Could not verify rematch'
+                  : 'Fresh duel available'
           }
         />
+        {rematchResolutionFailed ? (
+          <Button type="button" variant="ghost" onClick={onRetryRematch}>
+            Retry rematch check
+          </Button>
+        ) : null}
         <Button type="button" variant="ghost" onClick={onStartFreshDuel}>
           Start a fresh duel
         </Button>

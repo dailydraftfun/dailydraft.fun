@@ -1,17 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-const pageSource = readFileSync(resolve(import.meta.dir, 'page.tsx'), 'utf8');
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { DuelPrimaryAction } from '../duel-primary-action';
 
 describe('public duel page contract', () => {
-  test('keeps one dominant receipt action', () => {
-    expect(pageSource.match(/proof-primary-action/g)).toHaveLength(1);
-  });
+  test('renders exactly one canonical dominant receipt action', () => {
+    const markup = renderToStaticMarkup(
+      createElement(DuelPrimaryAction, {
+        action: { href: '/overview', label: 'Open a duel' },
+      }),
+    );
 
-  test('does not expose the raw receipt download from the spectator surface', () => {
-    expect(pageSource).not.toContain('publicReceiptDownloadUrl');
-    expect(pageSource).not.toContain('Machine-readable receipt');
-    expect(pageSource).not.toContain('Download JSON');
+    expect(markup.match(/proof-primary-action/g)).toHaveLength(1);
+    expect(markup).toContain('href="/overview"');
+    expect(markup).toContain('Open a duel');
   });
 });

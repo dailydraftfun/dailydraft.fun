@@ -43,6 +43,7 @@ export class DuelsController {
   ) {}
 
   @Get()
+  @UseGuards(IntegrationKeyGuard)
   findAll(@Query() query: ListDuelsQuery): Promise<Page<Duel>> {
     return this.duels.findAll(query);
   }
@@ -64,8 +65,17 @@ export class DuelsController {
   }
 
   @Get(':duelId')
-  findOne(@Param() params: DuelIdParams): Promise<Duel> {
-    return this.duels.findOne(params.duelId);
+  @UseGuards(DuelMutationGuard)
+  async findOne(
+    @Param() params: DuelIdParams,
+    @CurrentDuelAuthentication() authentication: DuelAuthentication,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ): Promise<Duel> {
+    response.header('cache-control', 'private, no-store');
+    response.header('x-robots-tag', 'noindex, nofollow, noarchive');
+    const duel = await this.duels.findOne(params.duelId);
+    assertDuelParticipant(authentication, duel);
+    return duel;
   }
 
   @Post(':duelId/join')

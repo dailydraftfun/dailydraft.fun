@@ -4,6 +4,7 @@ import { SharedOpponentControl } from './duel-shared-opponent';
 
 const callbacks = {
   onLocalWalletChange: () => undefined,
+  onRetryRematch: () => undefined,
   onStartFreshDuel: () => undefined,
 };
 
@@ -16,6 +17,7 @@ describe('shared duel opponent control', () => {
         localWallet=""
         rematchNeedsConnection={false}
         rematchPending={false}
+        rematchResolutionFailed={false}
         resolvedOpponentLabel={null}
       />,
     );
@@ -37,6 +39,7 @@ describe('shared duel opponent control', () => {
         localWallet=""
         rematchNeedsConnection={true}
         rematchPending={false}
+        rematchResolutionFailed={false}
         resolvedOpponentLabel={null}
       />,
     );
@@ -58,6 +61,7 @@ describe('shared duel opponent control', () => {
         localWallet=""
         rematchNeedsConnection={false}
         rematchPending={false}
+        rematchResolutionFailed={false}
         resolvedOpponentLabel={null}
       />,
     );
@@ -66,6 +70,28 @@ describe('shared duel opponent control', () => {
     expect(markup).toContain('Start a fresh duel');
     expect(markup).toContain('public matchmaking');
     expect(markup).not.toContain('readOnly=""');
+  });
+
+  test('offers a retry instead of declaring ineligibility after verification fails', () => {
+    const markup = renderToStaticMarkup(
+      <SharedOpponentControl
+        {...callbacks}
+        entry={{
+          action: 'rematch',
+          participantLabels: { creator: 'Creator', opponent: 'Opponent' },
+          tier: 50,
+        }}
+        localWallet=""
+        rematchNeedsConnection={false}
+        rematchPending={false}
+        rematchResolutionFailed={true}
+        resolvedOpponentLabel={null}
+      />,
+    );
+
+    expect(markup).toContain('Could not verify rematch');
+    expect(markup).toContain('Retry rematch check');
+    expect(markup).not.toContain('Fresh duel available');
   });
 
   test('locks a verified rematch opponent and leaves fresh direct entry editable', () => {
@@ -80,6 +106,7 @@ describe('shared duel opponent control', () => {
         localWallet=""
         rematchNeedsConnection={false}
         rematchPending={false}
+        rematchResolutionFailed={false}
         resolvedOpponentLabel="Opponent abcd…wxyz"
       />,
     );
@@ -89,6 +116,7 @@ describe('shared duel opponent control', () => {
         localWallet="editable_wallet"
         rematchNeedsConnection={false}
         rematchPending={false}
+        rematchResolutionFailed={false}
         resolvedOpponentLabel={null}
       />,
     );
