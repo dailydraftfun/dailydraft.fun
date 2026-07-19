@@ -21,8 +21,8 @@ declare global {
   }
 }
 
-const fixtureIcon =
-  'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="32" height="32"%3E%3Crect width="32" height="32" rx="8" fill="%23b8ff5a"/%3E%3Cpath d="M9 10h14v12H9z" fill="%230c1510"/%3E%3C/svg%3E';
+const fixtureIcon: NonNullable<WalletAccount['icon']> =
+  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iI2I4ZmY1YSIvPjxwYXRoIGQ9Ik05IDEwaDE0djEySDl6IiBmaWxsPSIjMGMxNTEwIi8+PC9zdmc+';
 
 export function readJourneyFixtureBootstrap(): JourneyFixtureBootstrap | null {
   if (process.env.NEXT_PUBLIC_E2E_FIXTURES !== '1' || typeof window === 'undefined') return null;
