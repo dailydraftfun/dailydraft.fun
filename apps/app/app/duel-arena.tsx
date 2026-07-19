@@ -26,6 +26,11 @@ import { useEffect, useRef, useState } from 'react';
 import { getRovingTabIndex } from './accessibility/focus-navigation';
 import { trackProductEvent } from './analytics-client';
 import {
+  clearStoredActiveDuel,
+  readStoredActiveDuel,
+  storeActiveDuel,
+} from './duel/active-duel-storage';
+import {
   createDuelEntryDraft,
   DUEL_ENTRY_DRAFT_STORAGE_KEY,
   parseDuelEntryDraft,
@@ -45,6 +50,16 @@ import {
   getPlayerActionError,
 } from './duel/duel-player-copy';
 import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
+import {
+  parseStoredRevealTimeline,
+  type RevealSideResolution,
+  recoverRevealStartedAt,
+  revealCommitmentCopy,
+  revealPresentationAt,
+  revealSideResolution,
+  revealStorageKey,
+  type StoredRevealTimeline,
+} from './duel/reveal-presentation';
 import {
   type CapabilityLoadState,
   capabilityForMode,
@@ -86,6 +101,7 @@ import { WalletTransactionNotBroadcastError } from './solana/wallet-transaction-
 
 type Mode = DuelOpponentType;
 type Phase = LiveDuelPhase;
+type DuelCardStage = 'opening' | 'revealed' | 'sealed';
 
 export type DuelLobbyEntry = {
   action: 'accept' | 'rematch';
@@ -126,22 +142,23 @@ function Avatar({ color, label }: { color: string; label: string }) {
 function DuelCard({
   pull,
   side,
-  phase,
-  winner,
+  stage,
+  resolution,
   tier,
   walletLabel,
 }: {
   pull: LivePull | null;
   side: 'you' | 'opponent';
-  phase: Phase;
-  winner: boolean;
+  stage: DuelCardStage;
+  resolution: RevealSideResolution | null;
   tier: string;
   walletLabel: string;
 }) {
-  const visible = phase === 'result' && pull !== null;
+  const visible = stage === 'revealed' && pull !== null;
+  const displayPull = visible ? pull : null;
   return (
     <article
-      className={`reveal-column reveal-${side} ${winner && visible ? 'reveal-winner' : ''}`}
+      className={`reveal-column reveal-${side} ${resolution === 'winner' && visible ? 'reveal-winner' : ''}`}
       data-testid={journeyTestIds.pull[side === 'you' ? 'you' : 'opponent']}
     >
       <div className="player-label">
@@ -153,17 +170,23 @@ function DuelCard({
           <small>{side === 'you' ? 'You' : 'Opponent'}</small>
           <strong>{walletLabel}</strong>
         </div>
-        {winner && visible ? (
+        {resolution && visible ? (
           <span
-            className="winner-chip"
-            data-testid={journeyTestIds.winner[side === 'you' ? 'you' : 'opponent']}
+            className={`result-chip result-${resolution}`}
+            data-testid={
+              resolution === 'winner'
+                ? journeyTestIds.winner[side === 'you' ? 'you' : 'opponent']
+                : undefined
+            }
           >
-            <TrophyIcon size={12} weight="fill" /> Winner
+            {resolution === 'winner' ? <TrophyIcon size={12} weight="fill" /> : null}
+            {resolution === 'tie' ? <ArrowsLeftRightIcon size={12} weight="bold" /> : null}
+            {resolution === 'winner' ? 'Winner' : resolution === 'tie' ? 'Tie' : 'Runner-up'}
           </span>
         ) : null}
       </div>
 
-      <div className={`card-stage card-stage-${phase}`}>
+      <div className={`card-stage card-stage-${stage}`}>
         <div className="pack-shell" aria-hidden={visible}>
           <div className="pack-glint" />
           <div className="pack-brand">
@@ -181,42 +204,42 @@ function DuelCard({
           <span className="pack-tier">{visible ? '—' : tier}</span>
         </div>
         <div className="pull-shell" aria-hidden={!visible}>
-          {pull?.image ? (
+          {displayPull?.image ? (
             <Image
-              src={pull.image}
-              alt={pull.name}
+              src={displayPull.image}
+              alt={displayPull.name}
               fill
               sizes="(max-width: 768px) 42vw, 260px"
               className="pull-image"
               priority
             />
-          ) : pull ? (
+          ) : displayPull ? (
             <div className="pack-brand">
               <span>VERIFIED PULL</span>
-              <strong>{pull.name}</strong>
-              <small>{pull.label}</small>
+              <strong>{displayPull.name}</strong>
+              <small>{displayPull.label}</small>
             </div>
           ) : null}
         </div>
-        {phase === 'opening' ? (
+        {stage === 'opening' ? (
           <div className="opening-status" role="status">
             <span /> Opening pack
           </div>
         ) : null}
       </div>
 
-      <div className={visible ? 'pull-meta pull-meta-visible' : 'pull-meta'}>
+      <div className={visible ? 'pull-meta pull-meta-visible' : 'pull-meta'} aria-hidden={!visible}>
         <span className="grade-chip" data-testid={journeyTestIds.provider[side]}>
-          {pull?.provider ?? 'Pending'}
+          {displayPull?.provider ?? 'Pending'}
         </span>
         <div>
           <strong data-testid={journeyTestIds.pullName[side]}>
-            {pull?.name ?? 'Result pending'}
+            {displayPull?.name ?? 'Result pending'}
           </strong>
-          <small>{pull?.label ?? 'No outcome committed yet'}</small>
+          <small>{displayPull?.label ?? 'No outcome committed yet'}</small>
         </div>
         <span className="pull-value" data-testid={journeyTestIds.pullValue[side]}>
-          {pull?.value ?? '—'}
+          {displayPull?.value ?? '—'}
         </span>
       </div>
     </article>
@@ -248,8 +271,12 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
+  const [duelRestorePending, setDuelRestorePending] = useState(true);
   const [matchmakingSession, setMatchmakingSession] = useState<MatchmakingSession | null>(null);
   const [matchmakingRestorePending, setMatchmakingRestorePending] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const [revealClock, setRevealClock] = useState(() => Date.now());
+  const [revealTimeline, setRevealTimeline] = useState<StoredRevealTimeline | null>(null);
   const [capabilityState, setCapabilityState] = useState<CapabilityLoadState>({
     status: 'loading',
   });
@@ -260,6 +287,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const modeTabRefs = useRef<Partial<Record<Mode, HTMLButtonElement>>>({});
   const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
   const phase: Phase = liveDuel?.phase ?? 'lobby';
+  const duelId = persistedDuel?.id ?? null;
+  const resultKey = persistedDuel?.result?.resultHash ?? null;
+  const committedResultReady = Boolean(
+    phase === 'result' && duelId && resultKey && liveDuel?.left && liveDuel.right,
+  );
+  const revealStartedAt = revealTimeline?.resultKey === resultKey ? revealTimeline.startedAt : null;
+  const revealPresentation =
+    committedResultReady && revealStartedAt !== null
+      ? revealPresentationAt(revealClock - revealStartedAt, reducedMotion)
+      : null;
   const playerStatus = persistedDuel
     ? getDuelPlayerStatus(persistedDuel.status, matchmakingSession?.state === 'searching')
     : null;
@@ -462,6 +499,83 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setRecoveryDuelId(null);
     setRejectedIntentId(null);
   }, [persistedDuel]);
+
+  useEffect(() => {
+    if (entry) {
+      setDuelRestorePending(false);
+      return;
+    }
+
+    const storedDuel = readStoredActiveDuel(window.sessionStorage);
+    if (!storedDuel) {
+      setDuelRestorePending(false);
+      return;
+    }
+
+    let active = true;
+    getDuel(storedDuel.duelId)
+      .then((duel) => {
+        if (active) setPersistedDuel(duel);
+      })
+      .catch(() => {
+        if (active) {
+          setActionError(
+            'Could not restore your active duel. Refresh to retry, or start another duel.',
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setDuelRestorePending(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [entry]);
+
+  useEffect(() => {
+    if (persistedDuel) {
+      storeActiveDuel(window.sessionStorage, persistedDuel.id);
+    }
+  }, [persistedDuel]);
+
+  useEffect(() => {
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updatePreference = () => setReducedMotion(motionQuery.matches);
+    updatePreference();
+    motionQuery.addEventListener('change', updatePreference);
+    return () => motionQuery.removeEventListener('change', updatePreference);
+  }, []);
+
+  useEffect(() => {
+    if (!committedResultReady || !duelId || !resultKey) {
+      setRevealTimeline(null);
+      return;
+    }
+
+    const now = Date.now();
+    const storageKey = revealStorageKey(duelId);
+    let stored: StoredRevealTimeline | null = null;
+    try {
+      stored = parseStoredRevealTimeline(window.sessionStorage.getItem(storageKey));
+    } catch {
+      stored = null;
+    }
+    const startedAt = recoverRevealStartedAt(stored, resultKey, now);
+    try {
+      window.sessionStorage.setItem(storageKey, JSON.stringify({ resultKey, startedAt }));
+    } catch {
+      // A denied storage write only disables reload recovery; it never changes the result.
+    }
+    setRevealClock(now);
+    setRevealTimeline({ resultKey, startedAt });
+  }, [committedResultReady, duelId, resultKey]);
+
+  useEffect(() => {
+    if (!committedResultReady || revealStartedAt === null || revealPresentation?.isComplete) return;
+    const interval = window.setInterval(() => setRevealClock(Date.now()), 100);
+    return () => window.clearInterval(interval);
+  }, [committedResultReady, revealPresentation?.isComplete, revealStartedAt]);
 
   useEffect(() => {
     void capabilityReload;
@@ -726,6 +840,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   async function reviewDuel(nextTier = tier, nextMode = mode) {
     setActionError(null);
     setActionNotice(null);
+    if (duelRestorePending) {
+      setActionError('Wait while we restore your active duel.');
+      return;
+    }
     if (capabilityState.status !== 'ready') {
       setActionError('Duel availability could not be verified. Retry before continuing.');
       return;
@@ -869,7 +987,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       if (target === 'matchmaking') {
         await cancelOpenMatchmaking(walletConnection.address, authentication.sessionToken);
         setMatchmakingSession(null);
-        setPersistedDuel(null);
+        clearActiveDuel();
         setActionNotice('Public matchmaking cancelled before funding.');
         return true;
       }
@@ -1088,7 +1206,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setRecoveryDuelId(null);
     setRejectedIntentId(null);
     setIntent(null);
-    setPersistedDuel(null);
+    clearActiveDuel();
     setMatchmakingSession(null);
     setEntryFlowOpen(false);
     setActionNotice(persistedDuel || matchmakingSession ? 'Duel entry cancelled.' : null);
@@ -1144,13 +1262,18 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       });
       setActionNotice('Rematch ready. Review and approve a fresh transaction to continue.');
     }
-    setPersistedDuel(null);
+    clearActiveDuel();
     setMatchmakingSession(null);
     setIntent(null);
     setRejectedIntentId(null);
     setEntryFlowOpen(false);
     setRecoveryDuelId(null);
     window.localStorage.removeItem(DUEL_ENTRY_DRAFT_STORAGE_KEY);
+  }
+
+  function clearActiveDuel(): void {
+    setPersistedDuel(null);
+    clearStoredActiveDuel(window.sessionStorage);
   }
 
   function shareResult() {
@@ -1180,6 +1303,32 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }
 
   if (phase !== 'lobby' && liveDuel && persistedDuel) {
+    const showResolution = revealPresentation?.showResolution ?? false;
+    const leftStage: DuelCardStage =
+      phase === 'result'
+        ? revealPresentation?.showLeft
+          ? 'revealed'
+          : 'sealed'
+        : phase === 'opening'
+          ? 'opening'
+          : 'sealed';
+    const rightStage: DuelCardStage =
+      phase === 'result'
+        ? revealPresentation?.showRight
+          ? 'revealed'
+          : 'sealed'
+        : phase === 'opening'
+          ? 'opening'
+          : 'sealed';
+    const presentationHeadline =
+      phase === 'result' && !showResolution
+        ? (revealPresentation?.headline ?? 'Outcome committed. Preparing reveal…')
+        : liveDuel.headline;
+    const presentationIndicator =
+      phase === 'result' && !showResolution
+        ? (revealPresentation?.indicator ?? 'Outcome committed')
+        : liveDuel.indicator;
+
     return (
       <main className="duel-experience" data-testid={journeyTestIds.battle}>
         <div className="duel-topline">
@@ -1206,14 +1355,14 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               <span className="eyebrow">
                 <SwordIcon size={14} weight="fill" /> {liveDuel.tier} Pack Duel
               </span>
-              <h1 data-testid={journeyTestIds.duelHeadline}>{liveDuel.headline}</h1>
+              <h1 data-testid={journeyTestIds.duelHeadline}>{presentationHeadline}</h1>
             </div>
             <div
-              className={`phase-indicator phase-${phase}`}
+              className={`phase-indicator phase-${showResolution ? 'result' : phase === 'result' ? 'opening' : phase}`}
               data-testid={journeyTestIds.duelPhase}
             >
               <span />
-              {liveDuel.indicator}
+              {presentationIndicator}
             </div>
           </div>
           {actionError ? (
@@ -1228,12 +1377,30 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             </p>
           ) : null}
 
-          <div className="reveal-grid">
+          {committedResultReady ? (
+            <div className="commitment-banner">
+              <ShieldCheckIcon size={17} weight="fill" />
+              <span>
+                <strong>{revealCommitmentCopy}</strong>
+                <small>Result hash {shortReference(resultKey) ?? 'verified'}</small>
+              </span>
+            </div>
+          ) : null}
+
+          {revealPresentation?.countdown ? (
+            <div className="reveal-countdown" role="status" aria-atomic="true">
+              <small>Committed reveal</small>
+              <strong>{revealPresentation.countdown}</strong>
+              <span>Both outcomes are locked</span>
+            </div>
+          ) : null}
+
+          <div className={`reveal-grid reveal-grid-${revealPresentation?.phase ?? phase}`}>
             <DuelCard
               pull={liveDuel.left}
               side="you"
-              phase={phase}
-              winner={liveDuel.winner === 'you'}
+              stage={leftStage}
+              resolution={showResolution ? revealSideResolution(liveDuel.winner, 'you') : null}
               tier={liveDuel.tier}
               walletLabel={walletConnection.shortAddress ?? 'Your wallet'}
             />
@@ -1243,8 +1410,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             <DuelCard
               pull={liveDuel.right}
               side="opponent"
-              phase={phase}
-              winner={liveDuel.winner === 'opponent'}
+              stage={rightStage}
+              resolution={showResolution ? revealSideResolution(liveDuel.winner, 'opponent') : null}
               tier={liveDuel.tier}
               walletLabel={
                 persistedDuel.houseOpponent
@@ -1258,10 +1425,15 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             />
           </div>
 
-          {phase === 'result' ? (
+          {showResolution ? (
             <div className="result-panel">
               <div className="result-summary">
                 <TrophyIcon size={24} weight="fill" />
+                <div>
+                  <small>Winner</small>
+                  <strong>{resultWinnerLabel(liveDuel.winner)}</strong>
+                </div>
+                <Separator orientation="vertical" className="h-9 bg-border" />
                 <div>
                   <small>Winning margin</small>
                   <strong data-testid={journeyTestIds.resultMargin}>
@@ -1270,7 +1442,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 </div>
                 <Separator orientation="vertical" className="h-9 bg-border" />
                 <div>
-                  <small>Total prize value</small>
+                  <small>Total haul</small>
                   <strong data-testid={journeyTestIds.resultTotalValue}>
                     {liveDuel.totalValue ?? '—'}
                   </strong>
@@ -1296,6 +1468,44 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                   <XLogoIcon size={16} weight="fill" /> Share result
                 </Button>
               </div>
+            </div>
+          ) : revealPresentation ? (
+            <div
+              className="opening-timeline reveal-timeline"
+              role="status"
+              aria-label="Reveal progress"
+            >
+              <span className="timeline-complete">
+                <CheckCircleIcon size={14} weight="fill" /> Committed
+              </span>
+              <span className="timeline-line">
+                <i />
+              </span>
+              <span
+                className={revealPresentation.showLeft ? 'timeline-complete' : 'timeline-active'}
+              >
+                <FireIcon size={14} weight="fill" /> Your pull
+              </span>
+              <span className="timeline-line">
+                <i />
+              </span>
+              <span
+                className={
+                  revealPresentation.showRight
+                    ? 'timeline-complete'
+                    : revealPresentation.showLeft
+                      ? 'timeline-active'
+                      : ''
+                }
+              >
+                <FireIcon size={14} weight="fill" /> Rival pull
+              </span>
+              <span className="timeline-line">
+                <i />
+              </span>
+              <span className={revealPresentation.showRight ? 'timeline-active' : ''}>
+                <TrophyIcon size={14} /> Resolve
+              </span>
             </div>
           ) : (
             <div className="opening-timeline" aria-hidden="true">
@@ -1478,6 +1688,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                     }}
                     disabled={
                       intentPending ||
+                      duelRestorePending ||
                       matchmakingRestorePending ||
                       Boolean(matchmakingSession) ||
                       !selectedPack ||
@@ -1644,7 +1855,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => setPersistedDuel(null)}
+                onClick={clearActiveDuel}
                 data-testid={journeyTestIds.persistedDuelRestart}
               >
                 Start another duel
@@ -1730,4 +1941,11 @@ function toDraftTier(tier: number): 25 | 50 | 100 {
 function shortReference(value?: string | null): string | null {
   if (!value) return null;
   return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
+}
+
+function resultWinnerLabel(winner: 'opponent' | 'tie' | 'you' | null): string {
+  if (winner === 'you') return 'You';
+  if (winner === 'opponent') return 'Opponent';
+  if (winner === 'tie') return 'Tie';
+  return 'Pending';
 }
