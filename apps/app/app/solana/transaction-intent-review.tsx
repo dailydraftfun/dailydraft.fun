@@ -77,7 +77,7 @@ export function TransactionIntentReview({
           ))}
           <div>
             <dt>Your turn</dt>
-            <dd data-testid={journeyTestIds.transactionFundingSide}>
+            <dd data-testid={journeyTestIds.transactionTurn}>
               {intent.fundingSide === 'creator' ? 'You pay first' : 'You pay second'}
             </dd>
           </div>
@@ -110,7 +110,9 @@ export function TransactionIntentReview({
           <dl className="intent-details intent-technical-details">
             <div>
               <dt>Wallet</dt>
-              <dd data-testid={journeyTestIds.transactionWallet}>{shorten(intent.wallet)}</dd>
+              <dd data-testid={journeyTestIds.transactionAdvancedWallet}>
+                {shorten(intent.wallet)}
+              </dd>
             </div>
             <div>
               <dt>Escrow PDA</dt>

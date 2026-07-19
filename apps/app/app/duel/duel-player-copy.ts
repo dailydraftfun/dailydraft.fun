@@ -164,7 +164,7 @@ export function getFundingStatusNotice(
   activeTransactionCount: number,
 ): string {
   if (activeTransactionCount > 0) {
-    return 'Your payment is still confirming on Solana devnet. Keep this page open; checking will continue automatically.';
+    return 'Your payment is still confirming on Solana devnet. Refresh this duel before retrying so verification can continue without submitting a duplicate payment.';
   }
   if (duel.status === 'funded') return 'Both wallets paid. Pack opening can start now.';
   if (duel.status === 'committing') {
