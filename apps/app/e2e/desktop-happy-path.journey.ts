@@ -138,7 +138,7 @@ test('completes the deterministic desktop duel from lobby through share and rema
       'POST /auth/challenges',
       'POST /auth/sessions',
       'POST /matchmaking/search',
-      'RPC sendTransaction',
+      `POST /duels/${settled?.id}/transactions`,
       `POST /duels/${settled?.id}/transactions/reconciliation`,
       `POST /duels/${settled?.id}/open-packs`,
     ]),
