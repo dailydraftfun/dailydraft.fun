@@ -36,6 +36,7 @@ import {
   ProductCapabilityPanel,
   resolveLobbySelection,
 } from './duel-lobby-options';
+import { journeyTestIds } from './e2e/journey-test-ids';
 import {
   advanceDuelLifecycle,
   cancelDuel,
@@ -111,7 +112,10 @@ function DuelCard({
 }) {
   const visible = phase === 'result' && pull !== null;
   return (
-    <article className={`reveal-column reveal-${side} ${winner && visible ? 'reveal-winner' : ''}`}>
+    <article
+      className={`reveal-column reveal-${side} ${winner && visible ? 'reveal-winner' : ''}`}
+      data-testid={journeyTestIds.pull[side === 'you' ? 'you' : 'opponent']}
+    >
       <div className="player-label">
         <Avatar
           color={side === 'you' ? '#b8ff5a' : '#a78bfa'}
@@ -122,7 +126,10 @@ function DuelCard({
           <strong>{walletLabel}</strong>
         </div>
         {winner && visible ? (
-          <span className="winner-chip">
+          <span
+            className="winner-chip"
+            data-testid={journeyTestIds.winner[side === 'you' ? 'you' : 'opponent']}
+          >
             <TrophyIcon size={12} weight="fill" /> Winner
           </span>
         ) : null}
@@ -171,12 +178,18 @@ function DuelCard({
       </div>
 
       <div className={visible ? 'pull-meta pull-meta-visible' : 'pull-meta'}>
-        <span className="grade-chip">{pull?.provider ?? 'Pending'}</span>
+        <span className="grade-chip" data-testid={journeyTestIds.provider[side]}>
+          {pull?.provider ?? 'Pending'}
+        </span>
         <div>
-          <strong>{pull?.name ?? 'Result pending'}</strong>
+          <strong data-testid={journeyTestIds.pullName[side]}>
+            {pull?.name ?? 'Result pending'}
+          </strong>
           <small>{pull?.label ?? 'No outcome committed yet'}</small>
         </div>
-        <span className="pull-value">{pull?.value ?? '—'}</span>
+        <span className="pull-value" data-testid={journeyTestIds.pullValue[side]}>
+          {pull?.value ?? '—'}
+        </span>
       </div>
     </article>
   );
@@ -816,15 +829,22 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   if (phase !== 'lobby' && liveDuel && persistedDuel) {
     return (
-      <main className="duel-experience">
+      <main className="duel-experience" data-testid={journeyTestIds.battle}>
         <div className="duel-topline">
-          <button type="button" className="text-button" onClick={() => resetDuel()}>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => resetDuel()}
+            data-testid={journeyTestIds.battleBack}
+          >
             <ArrowCounterClockwiseIcon size={15} /> Back to lobby
           </button>
           <div className="duel-proof">
             <ShieldCheckIcon size={15} weight="fill" />
             <span>Devnet settlement</span>
-            <code>{shortReference(liveDuel.settlementReference) ?? 'Awaiting escrow'}</code>
+            <code data-testid={journeyTestIds.settlementReference}>
+              {shortReference(liveDuel.settlementReference) ?? 'Awaiting escrow'}
+            </code>
           </div>
         </div>
 
@@ -834,15 +854,18 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               <span className="eyebrow">
                 <SwordIcon size={14} weight="fill" /> {liveDuel.tier} Pack Duel
               </span>
-              <h1>{liveDuel.headline}</h1>
+              <h1 data-testid={journeyTestIds.duelHeadline}>{liveDuel.headline}</h1>
             </div>
-            <div className={`phase-indicator phase-${phase}`}>
+            <div
+              className={`phase-indicator phase-${phase}`}
+              data-testid={journeyTestIds.duelPhase}
+            >
               <span />
               {liveDuel.indicator}
             </div>
           </div>
           {actionError ? (
-            <p className="duel-action-error" role="alert">
+            <p className="duel-action-error" role="alert" data-testid={journeyTestIds.error}>
               <WarningCircleIcon size={14} weight="fill" /> {actionError}
             </p>
           ) : null}
@@ -884,21 +907,35 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 <TrophyIcon size={24} weight="fill" />
                 <div>
                   <small>Winning margin</small>
-                  <strong>{liveDuel.margin ?? '—'}</strong>
+                  <strong data-testid={journeyTestIds.resultMargin}>
+                    {liveDuel.margin ?? '—'}
+                  </strong>
                 </div>
                 <Separator orientation="vertical" className="h-9 bg-border" />
                 <div>
                   <small>Total prize value</small>
-                  <strong>{liveDuel.totalValue ?? '—'}</strong>
+                  <strong data-testid={journeyTestIds.resultTotalValue}>
+                    {liveDuel.totalValue ?? '—'}
+                  </strong>
                 </div>
               </div>
               <div className="result-actions">
                 {persistedDuel.status === 'settled' ? (
-                  <Button type="button" variant="ghost" onClick={() => resetDuel(true)}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => resetDuel(true)}
+                    data-testid={journeyTestIds.resultRematch}
+                  >
                     <ArrowsLeftRightIcon size={16} /> Rematch
                   </Button>
                 ) : null}
-                <Button type="button" className="share-button" onClick={shareResult}>
+                <Button
+                  type="button"
+                  className="share-button"
+                  onClick={shareResult}
+                  data-testid={journeyTestIds.resultShare}
+                >
                   <XLogoIcon size={16} weight="fill" /> Share result
                 </Button>
               </div>
@@ -928,7 +965,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }
 
   return (
-    <main className="lobby-shell">
+    <main className="lobby-shell" data-testid={journeyTestIds.lobby}>
       <section className="lobby-hero">
         <div className="hero-copy">
           <span className="eyebrow">
@@ -1013,6 +1050,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                           placeholder="Solana wallet address"
                           className="wallet-input"
                           readOnly={Boolean(activeEntry)}
+                          data-testid={journeyTestIds.opponentWallet}
                         />
                       </div>
                     </div>
@@ -1061,7 +1099,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
                   <div className="fee-summary">
                     <span>
-                      Pack tier <strong>${tier.toFixed(2)}</strong>
+                      Pack tier{' '}
+                      <strong data-testid={journeyTestIds.entryTier}>${tier.toFixed(2)}</strong>
                     </span>
                     <span>
                       Pack purchase <strong>Later</strong>
@@ -1083,6 +1122,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                       !selectedModeEnabled ||
                       (mode === 'direct' && wallet.trim().length === 0)
                     }
+                    data-testid={journeyTestIds.primaryAction}
                   >
                     {intentPending ? (
                       <SpinnerGapIcon className="wallet-spinner" size={18} />
@@ -1110,7 +1150,11 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                     transaction review.
                   </p>
                   {actionError ? (
-                    <p className="duel-action-error" role="alert">
+                    <p
+                      className="duel-action-error"
+                      role="alert"
+                      data-testid={journeyTestIds.error}
+                    >
                       <WarningCircleIcon size={14} weight="fill" /> {actionError}
                     </p>
                   ) : null}
@@ -1133,7 +1177,11 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       </section>
 
       {persistedDuel ? (
-        <section className="persisted-duel-panel" role="status">
+        <section
+          className="persisted-duel-panel"
+          role="status"
+          data-testid={journeyTestIds.persistedDuel}
+        >
           <div>
             <span className="eyebrow">
               <ShieldCheckIcon size={14} weight="fill" /> Durable devnet duel
@@ -1158,6 +1206,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 variant="ghost"
                 onClick={continueMatchmaking}
                 disabled={intentPending}
+                data-testid={journeyTestIds.persistedDuelContinue}
               >
                 {intentPending ? <SpinnerGapIcon className="wallet-spinner" size={16} /> : null}
                 Continue search
@@ -1171,6 +1220,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 variant="ghost"
                 onClick={chooseHouseFallback}
                 disabled={intentPending}
+                data-testid={journeyTestIds.persistedDuelHouse}
               >
                 <ShieldCheckIcon size={16} weight="fill" /> Select disclosed house
               </Button>
@@ -1179,7 +1229,12 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               persistedDuel.creatorWallet === walletConnection.address) ||
             (persistedDuel.status === 'committing' &&
               persistedDuel.opponentWallet === walletConnection.address) ? (
-              <Button type="button" onClick={reviewPersistedFunding} disabled={intentPending}>
+              <Button
+                type="button"
+                onClick={reviewPersistedFunding}
+                disabled={intentPending}
+                data-testid={journeyTestIds.persistedDuelFund}
+              >
                 {intentPending ? <SpinnerGapIcon className="wallet-spinner" size={16} /> : null}
                 Review platform fee
               </Button>
@@ -1188,6 +1243,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               <Button
                 type="button"
                 variant="ghost"
+                data-testid={journeyTestIds.persistedDuelCopy}
                 onClick={async () => {
                   const challengeUrl = `${window.location.origin}/overview?challenge=${encodeURIComponent(persistedDuel.id)}`;
                   await navigator.clipboard.writeText(challengeUrl);
@@ -1213,12 +1269,18 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 variant="ghost"
                 onClick={cancelPersistedDuel}
                 disabled={intentPending}
+                data-testid={journeyTestIds.persistedDuelCancel}
               >
                 {intentPending ? <SpinnerGapIcon className="wallet-spinner" size={16} /> : null}
                 Cancel duel
               </Button>
             ) : (
-              <Button type="button" variant="ghost" onClick={() => setPersistedDuel(null)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setPersistedDuel(null)}
+                data-testid={journeyTestIds.persistedDuelRestart}
+              >
                 Start another duel
               </Button>
             )}

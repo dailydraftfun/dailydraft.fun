@@ -9,6 +9,7 @@ import {
 } from '@phosphor-icons/react';
 import { Button, Separator } from '@shipshitdev/ui';
 import { useDialogFocus } from '../accessibility/use-dialog-focus';
+import { journeyTestIds } from '../e2e/journey-test-ids';
 import type { DuelTransactionIntent } from './duel-client';
 
 type TransactionIntentReviewProps = {
@@ -43,6 +44,7 @@ export function TransactionIntentReview({
         aria-describedby="intent-dialog-description"
         aria-busy={pending}
         tabIndex={-1}
+        data-testid={journeyTestIds.transactionDialog}
       >
         <div className="intent-dialog-heading">
           <div>
@@ -59,8 +61,10 @@ export function TransactionIntentReview({
         <div className="intent-title">
           <LockKeyIcon size={22} weight="fill" />
           <div>
-            <strong>Fund your duel platform fee</strong>
-            <p>
+            <strong data-testid={journeyTestIds.transactionPurpose}>
+              Fund your duel platform fee
+            </strong>
+            <p data-testid={journeyTestIds.transactionValue}>
               Wrap and deposit exactly {intent.feeAmountSol} SOL into the verified devnet escrow.
             </p>
           </div>
@@ -69,7 +73,7 @@ export function TransactionIntentReview({
         <dl className="intent-details">
           <div>
             <dt>Funding side</dt>
-            <dd>{intent.fundingSide}</dd>
+            <dd data-testid={journeyTestIds.transactionFundingSide}>{intent.fundingSide}</dd>
           </div>
           <div>
             <dt>Platform fee</dt>
@@ -81,7 +85,7 @@ export function TransactionIntentReview({
           </div>
           <div>
             <dt>Wallet</dt>
-            <dd>{shorten(intent.wallet)}</dd>
+            <dd data-testid={journeyTestIds.transactionWallet}>{shorten(intent.wallet)}</dd>
           </div>
           <div>
             <dt>Escrow PDA</dt>
@@ -134,10 +138,17 @@ export function TransactionIntentReview({
             onClick={onClose}
             disabled={pending}
             data-dialog-initial-focus
+            data-testid={journeyTestIds.transactionCancel}
           >
             Cancel
           </Button>
-          <Button type="button" className="intent-confirm" onClick={onConfirm} disabled={pending}>
+          <Button
+            type="button"
+            className="intent-confirm"
+            onClick={onConfirm}
+            disabled={pending}
+            data-testid={journeyTestIds.transactionConfirm}
+          >
             {pending ? <SpinnerGapIcon className="wallet-spinner" size={17} /> : null}
             {pending ? 'Waiting for wallet' : 'Review and broadcast'}
           </Button>
