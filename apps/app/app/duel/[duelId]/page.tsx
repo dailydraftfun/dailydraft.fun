@@ -1,9 +1,13 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import { cache } from 'react';
-import { buildDuelMetadata, receiptTitle } from '../duel-metadata';
+import { buildDuelMetadata } from '../duel-metadata';
 import { DuelPrimaryAction } from '../duel-primary-action';
 import { DuelProofRefresh } from '../duel-proof-refresh';
+import {
+  type DuelReceiptPresentation,
+  getDuelReceiptPresentation,
+} from '../duel-receipt-presentation';
 import { DuelUnavailableProof } from '../duel-unavailable-proof';
 import {
   fetchPublicDuelReceipt,
@@ -12,12 +16,7 @@ import {
   type PublicDuelStatus,
   type PublicPostDuelCardActionState,
 } from '../public-proof-client';
-import {
-  type DuelSocialSnapshot,
-  getDuelSocialSnapshot,
-  getPrimaryAction,
-  getSocialDescription,
-} from '../social-card-data';
+import { getDuelSocialSnapshot, getPrimaryAction, getSocialDescription } from '../social-card-data';
 
 type DuelPageProps = { params: Promise<{ duelId: string }> };
 
@@ -56,161 +55,103 @@ export default async function DuelPage({ params }: DuelPageProps) {
     text: getSocialDescription(socialSnapshot),
     url: canonicalUrl,
   }).toString()}`;
+  const presentation = getDuelReceiptPresentation(receipt);
 
   return (
-    <main className="mx-auto flex min-h-[calc(100svh-4rem)] max-w-6xl flex-col gap-7 px-4 py-10 sm:px-6">
-      <header className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-        <div>
-          <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-lime">
-            Durable public receipt · {receipt.duel.network}
-          </p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-primary sm:text-5xl">
-            {receiptTitle(receipt)}
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-secondary">
-            {receipt.participants.creator.display} vs{' '}
-            {receipt.participants.opponent?.display ?? 'open seat'} · observed{' '}
-            {new Date(receipt.duel.observedAt).toLocaleString()}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <main className="mx-auto flex min-h-[calc(100svh-4rem)] max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6 sm:py-12">
+      <article className="receipt-artifact">
+        <header className="receipt-artifact-header">
+          <div className="min-w-0">
+            <p className="receipt-serial">
+              Pack Duel receipt · {receipt.duel.id} · {receipt.duel.network}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <span
+                className="receipt-status"
+                style={{
+                  backgroundColor: `${presentation.accent}14`,
+                  borderColor: `${presentation.accent}59`,
+                  color: presentation.accent,
+                }}
+              >
+                {presentation.badge}
+              </span>
+              <span className="text-xs font-semibold capitalize text-secondary">
+                {presentation.statusLabel}
+              </span>
+            </div>
+          </div>
           <DuelProofRefresh active={active} />
-          <a className="proof-secondary-action" href={shareUrl} target="_blank" rel="noreferrer">
-            Share on X
-          </a>
-          <a
-            className="proof-secondary-action"
-            href={socialImagePath}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open social image
-          </a>
-        </div>
-      </header>
+        </header>
+
+        <section className="receipt-hero">
+          <div className="max-w-3xl">
+            <p className="receipt-kicker">
+              {receipt.result ? 'Committed duel result' : 'Durable duel state'}
+            </p>
+            <h1>{presentation.headline}</h1>
+            <p className="receipt-hero-subline">{presentation.subline}</p>
+            <p className="receipt-pack-line">
+              {receipt.pack.name} · {formatPublicMoney(receipt.pack.tier)}
+            </p>
+            <p className="mt-2 text-sm font-semibold text-primary">
+              {receipt.participants.creator.display} vs{' '}
+              {receipt.participants.opponent?.display ?? 'open seat'}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <DuelPrimaryAction action={getPrimaryAction(socialSnapshot)} />
+            <a className="proof-secondary-action" href={shareUrl} target="_blank" rel="noreferrer">
+              Share on X
+            </a>
+            <a
+              className="proof-secondary-action"
+              href={socialImagePath}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open social image
+            </a>
+          </div>
+        </section>
+
+        {receipt.duel.status === 'waiting' ? <InvitationFacts receipt={receipt} /> : null}
+
+        {receipt.result ? (
+          <ResultArtifact receipt={receipt} presentation={presentation} />
+        ) : (
+          <StatusArtifact receipt={receipt} presentation={presentation} />
+        )}
+
+        <FinalityNotice presentation={presentation} />
+      </article>
 
       {!receipt.availability.complete ? (
-        <section className="rounded-xl border border-amber-400/25 bg-amber-400/5 p-5">
-          <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-amber-300">
-            Partial proof
-          </p>
+        <section className="rounded-xl border border-warning/30 bg-warning/5 p-5">
+          <p className="receipt-kicker receipt-kicker-warning">Partial receipt</p>
           <p className="mt-2 text-sm leading-6 text-secondary">
-            This receipt reflects durable state only. Missing:{' '}
+            Durable state is available, but these proof fields are still missing:{' '}
             {receipt.availability.missing.join(', ')}.
           </p>
         </section>
       ) : null}
 
-      <PublicStateCard receipt={receipt} snapshot={socialSnapshot} />
-
-      <section className="proof-stat-grid">
-        <ProofStat label="Status" value={receipt.duel.status} />
-        <ProofStat label="Pack tier" value={formatPublicMoney(receipt.pack.tier)} />
-        <ProofStat label="Mode" value={receipt.duel.mode} />
-        <ProofStat
-          label="Provider"
-          value={`${receipt.pack.provider} · ${receipt.pack.providerMode}`}
-        />
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2">
-        <ParticipantCard participant={receipt.participants.creator} />
-        {receipt.participants.opponent ? (
-          <ParticipantCard participant={receipt.participants.opponent} />
-        ) : (
-          <article className="proof-panel">
-            <p className="proof-label">Opponent</p>
-            <h2>Open seat</h2>
-          </article>
-        )}
-      </section>
-
-      {receipt.result ? (
-        <ResultPanel receipt={receipt} />
-      ) : (
-        <PendingResult status={receipt.duel.status} />
-      )}
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <article className="proof-panel">
-          <p className="proof-label">Fees and custody</p>
-          <dl className="proof-definition-list">
-            <div>
-              <dt>Per-side fee</dt>
-              <dd>
-                {receipt.fees.perSideAmountLamports
-                  ? `${receipt.fees.perSideAmountLamports} lamports`
-                  : 'Not recorded'}
-              </dd>
-            </div>
-            <div>
-              <dt>Finalized sides</dt>
-              <dd>
-                {receipt.fees.finalizedSides} / {receipt.fees.requiredSides}
-              </dd>
-            </div>
-            <div>
-              <dt>Fee escrow</dt>
-              <dd>{receipt.custody.platformFee.escrowAddress ?? 'Not created'}</dd>
-            </div>
-            <div>
-              <dt>Card custody</dt>
-              <dd>{receipt.custody.cardAssets.status}</dd>
-            </div>
-          </dl>
-          <p className="mt-4 text-xs leading-5 text-secondary">
-            {receipt.custody.cardAssets.detail}
-          </p>
-        </article>
-        <article className="proof-panel">
-          <p className="proof-label">Verification references</p>
-          <ReferenceList receipt={receipt} />
-        </article>
-      </section>
-
-      <p className="text-xs leading-5 text-secondary">
-        Privacy: {receipt.privacy.reason} This spectator view uses pseudonymous display names and
-        keeps full wallet addresses out of the rendered page and social metadata.
-      </p>
+      <VerificationDrawer receipt={receipt} />
     </main>
   );
 }
 
-function PublicStateCard({
-  receipt,
-  snapshot,
-}: {
-  receipt: PublicDuelReceipt;
-  snapshot: DuelSocialSnapshot;
-}) {
-  const primaryAction = getPrimaryAction(snapshot);
-  const waiting = receipt.duel.status === 'waiting';
-
+function InvitationFacts({ receipt }: { receipt: PublicDuelReceipt }) {
   return (
-    <section className="rounded-xl border border-lime/20 bg-lime/5 p-5 sm:p-6">
-      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-        <div>
-          <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-lime">
-            {snapshot.badge}
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold text-primary">{snapshot.headline}</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-secondary">{snapshot.subline}</p>
-        </div>
-        <DuelPrimaryAction action={primaryAction} />
-      </div>
-
-      {waiting ? (
-        <dl className="mt-5 grid gap-3 border-t border-lime/15 pt-5 sm:grid-cols-4">
-          <InvitationFact label="Invited by" value={receipt.participants.creator.display} />
-          <InvitationFact label="Pack tier" value={receipt.pack.name} />
-          <InvitationFact label="Per-player stake" value={formatPublicMoney(receipt.pack.tier)} />
-          <InvitationFact
-            label="Accept before"
-            value={new Date(receipt.duel.expiresAt).toLocaleString()}
-          />
-        </dl>
-      ) : null}
-    </section>
+    <dl className="mx-7 grid gap-3 border-y border-lime/15 py-5 sm:grid-cols-4">
+      <InvitationFact label="Invited by" value={receipt.participants.creator.display} />
+      <InvitationFact label="Pack tier" value={receipt.pack.name} />
+      <InvitationFact label="Per-player stake" value={formatPublicMoney(receipt.pack.tier)} />
+      <InvitationFact
+        label="Accept before"
+        value={new Date(receipt.duel.expiresAt).toLocaleString()}
+      />
+    </dl>
   );
 }
 
@@ -223,91 +164,269 @@ function InvitationFact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ResultPanel({ receipt }: { receipt: PublicDuelReceipt }) {
+function ResultArtifact({
+  presentation,
+  receipt,
+}: {
+  presentation: DuelReceiptPresentation;
+  receipt: PublicDuelReceipt;
+}) {
   const result = receipt.result;
-  if (!result) return null;
-  const mockPreview =
-    receipt.pack.providerMode === 'mock' || result.outcomes.some((outcome) => outcome.isMock);
+  const scoreboard = presentation.scoreboard;
+  if (!result || !scoreboard) return null;
+
   return (
-    <section className="proof-panel">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="proof-label">
-            {mockPreview ? 'Devnet mock preview · no real asset settlement' : 'Provider result'}
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold">
-            {result.winner
-              ? `${result.winner.display} ${mockPreview ? 'leads the preview' : 'wins'}`
-              : 'Tie / no winner'}
-          </h2>
-        </div>
-        <div className="text-right">
-          <p className="proof-label">Total value</p>
-          <strong className="text-xl text-lime">{formatPublicMoney(result.totalValue)}</strong>
-        </div>
+    <section aria-label="Duel result">
+      <div className="receipt-scoreboard">
+        <ResultMetric label={scoreboard.comparisonLabel} value={scoreboard.comparisonValue} />
+        <ResultMetric accent label="Total haul" value={formatPublicMoney(result.totalValue)} />
+        <ResultMetric
+          accent={Boolean(result.winner)}
+          label={scoreboard.marginLabel}
+          value={formatPublicMoney(result.margin)}
+        />
       </div>
-      {mockPreview ? (
-        <p className="mt-4 rounded-lg border border-amber-400/25 bg-amber-400/5 p-3 text-xs leading-5 text-amber-200">
-          These deterministic devnet values test the reveal and comparison flow only. They do not
-          represent purchased cards, transferred NFTs, or a settled prize.
+
+      {presentation.mockPreview ? (
+        <p className="receipt-preview-note">
+          Devnet mock values test the reveal and comparison flow only. No purchased card,
+          transferred NFT, or settled prize is represented.
         </p>
       ) : null}
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
+
+      <div className="receipt-pulls">
         {result.outcomes.map((outcome) => {
+          const outcomeState = presentation.outcomeStates.find(
+            (candidate) => candidate.side === outcome.side,
+          );
           const actionState = receipt.cardActions.cards.find(
             (candidate) => candidate.side === outcome.side,
           );
           return (
-            <article key={outcome.side} className="rounded-lg border border-border bg-primary p-4">
-              <p className="proof-label">{outcome.side} pull</p>
+            <article
+              key={outcome.side}
+              className={
+                outcomeState?.emphasized ? 'receipt-pull receipt-pull-winner' : 'receipt-pull'
+              }
+            >
+              <div className="receipt-pull-heading">
+                <div>
+                  <p className="receipt-kicker">{outcomeState?.label ?? outcome.side}</p>
+                  <p className="mt-1 text-sm font-semibold text-secondary">
+                    {outcome.side === 'creator'
+                      ? receipt.participants.creator.display
+                      : (receipt.participants.opponent?.display ?? 'Opponent')}
+                  </p>
+                </div>
+                <strong>{formatPublicMoney(outcome.insuredValue)}</strong>
+              </div>
               {outcome.imageUrl ? (
-                <Image
-                  alt={outcome.displayName}
-                  className="mt-3 h-auto w-full rounded-lg"
-                  height={500}
-                  sizes="(min-width: 768px) 320px, 80vw"
-                  src={outcome.imageUrl}
-                  width={360}
-                />
-              ) : null}
-              <h3 className="mt-3 text-lg font-semibold text-primary">{outcome.displayName}</h3>
-              <p className="mt-1 text-lg font-semibold text-lime">
-                {formatPublicMoney(outcome.insuredValue)}
-              </p>
-              <p className="mt-3 break-all font-mono text-[10px] leading-4 text-secondary">
-                {outcome.assetReference}
-              </p>
-              <p className="mt-2 font-mono text-[10px] leading-4 text-secondary">
-                Opened {new Date(outcome.openedAt).toLocaleString()} · value snapshot{' '}
-                {new Date(outcome.sourceTimestamp).toLocaleString()} · {outcome.poolVersion}
-              </p>
+                <div className="receipt-pull-image">
+                  <Image
+                    alt={outcome.displayName}
+                    fill
+                    sizes="(min-width: 768px) 360px, 88vw"
+                    src={outcome.imageUrl}
+                  />
+                </div>
+              ) : (
+                <div className="receipt-pull-placeholder" aria-hidden="true">
+                  <span>Verified pull</span>
+                  <strong>PACK DUEL</strong>
+                </div>
+              )}
+              <h2>{outcome.displayName}</h2>
               {actionState ? <CardActionState state={actionState} /> : null}
             </article>
           );
         })}
       </div>
+
       {receipt.cardActions.availability === 'hidden' ? (
-        <p className="mt-5 rounded-lg border border-border bg-secondary p-3 text-xs leading-5 text-secondary">
-          {cardActionGateMessage(receipt.cardActions.reason)}
-        </p>
+        <p className="receipt-action-gate">{cardActionGateMessage(receipt.cardActions.reason)}</p>
       ) : null}
-      <dl className="proof-definition-list mt-5">
+    </section>
+  );
+}
+
+function StatusArtifact({
+  presentation,
+  receipt,
+}: {
+  presentation: DuelReceiptPresentation;
+  receipt: PublicDuelReceipt;
+}) {
+  return (
+    <section className="receipt-empty-result" aria-label="Duel status">
+      <p className="receipt-kicker">No committed result</p>
+      <div>
+        <strong>{receipt.pack.name}</strong>
+        <span>{formatPublicMoney(receipt.pack.tier)}</span>
+      </div>
+      <p>
+        Observed {new Date(receipt.duel.observedAt).toLocaleString()} · {presentation.statusLabel}
+      </p>
+    </section>
+  );
+}
+
+function ResultMetric({
+  accent = false,
+  label,
+  value,
+}: {
+  accent?: boolean;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className={accent ? 'receipt-metric-accent' : undefined}>
+      <p className="receipt-kicker">{label}</p>
+      <strong title={value}>{value}</strong>
+    </div>
+  );
+}
+
+function FinalityNotice({ presentation }: { presentation: DuelReceiptPresentation }) {
+  return (
+    <section
+      className={`receipt-finality receipt-finality-${presentation.finality.tone}`}
+      aria-label="Result and ownership finality"
+    >
+      <div className="receipt-finality-mark" aria-hidden="true" />
+      <div>
+        <strong>{presentation.finality.label}</strong>
+        <p>{presentation.finality.detail}</p>
+      </div>
+    </section>
+  );
+}
+
+function VerificationDrawer({ receipt }: { receipt: PublicDuelReceipt }) {
+  return (
+    <details className="receipt-drawer">
+      <summary>
+        <span>
+          <strong>Verify this receipt</strong>
+          <small>Provider, valuation, escrow, signatures, and chain evidence</small>
+        </span>
+        <span className="receipt-drawer-action" aria-hidden="true">
+          Open proof
+        </span>
+      </summary>
+      <div className="receipt-drawer-content">
+        <section className="receipt-proof-section">
+          <h2>Receipt overview</h2>
+          <div className="proof-stat-grid mt-4">
+            <ProofStat label="Status" value={receipt.duel.status} />
+            <ProofStat label="Pack tier" value={formatPublicMoney(receipt.pack.tier)} />
+            <ProofStat label="Mode" value={receipt.duel.mode} />
+            <ProofStat
+              label="Provider"
+              value={`${receipt.pack.provider} · ${receipt.pack.providerMode}`}
+            />
+          </div>
+          <dl className="proof-definition-list mt-5">
+            <ParticipantRow label="Creator" participant={receipt.participants.creator} />
+            {receipt.participants.opponent ? (
+              <ParticipantRow label="Opponent" participant={receipt.participants.opponent} />
+            ) : null}
+            <div>
+              <dt>Receipt schema</dt>
+              <dd className="font-mono">{receipt.schemaVersion}</dd>
+            </div>
+            <div>
+              <dt>Observed</dt>
+              <dd>{new Date(receipt.duel.observedAt).toLocaleString()}</dd>
+            </div>
+          </dl>
+        </section>
+
+        {receipt.result ? <ResultProof receipt={receipt} /> : null}
+
+        <section className="receipt-proof-section">
+          <h2>Fees and custody</h2>
+          <dl className="proof-definition-list mt-4">
+            <div>
+              <dt>Per-side fee</dt>
+              <dd>
+                {receipt.fees.perSideAmountLamports
+                  ? `${receipt.fees.perSideAmountLamports} lamports`
+                  : 'Not recorded'}
+              </dd>
+            </div>
+            <div>
+              <dt>Finalized funding</dt>
+              <dd>
+                {receipt.fees.finalizedSides} / {receipt.fees.requiredSides} sides
+              </dd>
+            </div>
+            <div>
+              <dt>Total finalized fee</dt>
+              <dd>
+                {receipt.fees.totalFinalizedAmountLamports
+                  ? `${receipt.fees.totalFinalizedAmountLamports} lamports`
+                  : 'Not recorded'}
+              </dd>
+            </div>
+            <div>
+              <dt>Fee escrow</dt>
+              <dd className="break-all font-mono">
+                {receipt.custody.platformFee.escrowAddress ?? 'Not created'}
+              </dd>
+            </div>
+            <div>
+              <dt>Card custody</dt>
+              <dd>{receipt.custody.cardAssets.status}</dd>
+            </div>
+          </dl>
+          <p className="mt-4 text-xs leading-5 text-secondary">
+            {receipt.custody.cardAssets.detail}
+          </p>
+        </section>
+
+        <section className="receipt-proof-section">
+          <h2>Provider and chain references</h2>
+          <ReferenceList receipt={receipt} />
+        </section>
+
+        <p className="text-xs leading-5 text-secondary">
+          Privacy: {receipt.privacy.reason} This spectator view uses pseudonymous display names and
+          keeps full wallet addresses out of the rendered page and social metadata.
+        </p>
+      </div>
+    </details>
+  );
+}
+
+function ResultProof({ receipt }: { receipt: PublicDuelReceipt }) {
+  const result = receipt.result;
+  if (!result) return null;
+
+  return (
+    <section className="receipt-proof-section">
+      <h2>Committed result proof</h2>
+      <dl className="proof-definition-list mt-4">
         <div>
-          <dt>Winner metric</dt>
+          <dt>Authoritative value</dt>
           <dd>
             {result.policy.authoritativeField} · {result.policy.currency} / 10^
             {result.policy.decimals} · no rounding
           </dd>
         </div>
         <div>
-          <dt>Winning margin</dt>
-          <dd>{formatPublicMoney(result.margin)}</dd>
-        </div>
-        <div>
           <dt>Valuation policy</dt>
-          <dd className="break-all font-mono text-xs">
+          <dd className="break-all font-mono">
             {result.policy.policyVersion} · {result.valuationPolicyHash}
           </dd>
+        </div>
+        <div>
+          <dt>Policy hash algorithm</dt>
+          <dd>{result.policy.hashAlgorithm}</dd>
+        </div>
+        <div>
+          <dt>Maximum source age</dt>
+          <dd>{result.policy.maxSourceAgeSeconds} seconds</dd>
         </div>
         <div>
           <dt>Tie rule</dt>
@@ -318,56 +437,115 @@ function ResultPanel({ receipt }: { receipt: PublicDuelReceipt }) {
           <dd>{result.proof.providerAttestation.status}</dd>
         </div>
         <div>
-          <dt>Result hash</dt>
-          <dd className="break-all font-mono text-xs">{result.resultHash}</dd>
+          <dt>Proof schema</dt>
+          <dd className="font-mono">{result.proof.schemaVersion}</dd>
+        </div>
+        <div>
+          <dt>Pool version</dt>
+          <dd className="font-mono">{result.proof.poolVersion}</dd>
+        </div>
+        <div>
+          <dt>Escrow</dt>
+          <dd className="break-all font-mono">{result.proof.context.escrowAddress}</dd>
+        </div>
+        <div>
+          <dt>Creator result hash</dt>
+          <dd className="break-all font-mono">{result.proof.creatorResultHash}</dd>
+        </div>
+        <div>
+          <dt>Opponent result hash</dt>
+          <dd className="break-all font-mono">{result.proof.opponentResultHash}</dd>
+        </div>
+        <div>
+          <dt>Combined result hash</dt>
+          <dd className="break-all font-mono">{result.resultHash}</dd>
         </div>
       </dl>
+      <div className="receipt-outcome-proof">
+        {result.outcomes.map((outcome) => (
+          <dl key={outcome.side}>
+            <div>
+              <dt>{outcome.side} asset</dt>
+              <dd>{outcome.assetReference}</dd>
+            </div>
+            <div>
+              <dt>Provider result hash</dt>
+              <dd>{outcome.resultHash}</dd>
+            </div>
+            <div>
+              <dt>Pool version</dt>
+              <dd>{outcome.poolVersion}</dd>
+            </div>
+            <div>
+              <dt>Valuation source</dt>
+              <dd>{outcome.valuationSourceReference ?? 'Not recorded'}</dd>
+            </div>
+            <div>
+              <dt>Pack opened</dt>
+              <dd>{new Date(outcome.openedAt).toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Value observed</dt>
+              <dd>{new Date(outcome.sourceTimestamp).toLocaleString()}</dd>
+            </div>
+          </dl>
+        ))}
+      </div>
     </section>
+  );
+}
+
+function ParticipantRow({
+  label,
+  participant,
+}: {
+  label: string;
+  participant: PublicDuelReceipt['participants']['creator'];
+}) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>
+        <span className="font-semibold text-primary">{participant.display}</span>
+        <span className="mt-1 block text-[11px] text-secondary">
+          Pseudonymous participant identity
+        </span>
+      </dd>
+    </div>
   );
 }
 
 function CardActionState({ state }: { state: PublicPostDuelCardActionState }) {
   return (
-    <section
-      className="mt-4 border-t border-border pt-4"
-      aria-label={`${state.displayName} actions`}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="proof-label">Reconciled owner</p>
-          <p className="mt-1 text-sm font-semibold text-primary">{state.owner.display}</p>
-        </div>
-        <span className="rounded-full border border-lime/30 bg-lime/10 px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-lime">
-          Finalized
-        </span>
+    <section className="receipt-card-actions" aria-label={`${state.displayName} actions`}>
+      <div>
+        <p className="receipt-kicker">Final owner</p>
+        <strong>{state.owner.display}</strong>
       </div>
-      <ul className="mt-4 grid gap-2">
+      <ul>
         {state.actions.map((action) => (
-          <li key={action.action} className="rounded-md border border-border bg-secondary p-3">
-            <div className="flex items-center justify-between gap-3">
-              <strong className="text-sm text-primary">{action.label}</strong>
-              <span
+          <li key={action.action}>
+            <div>
+              <span>{action.label}</span>
+              <small
                 className={
-                  action.availability === 'available'
-                    ? 'font-mono text-[10px] uppercase tracking-[0.12em] text-lime'
-                    : 'font-mono text-[10px] uppercase tracking-[0.12em] text-secondary'
+                  action.availability === 'available' ? 'receipt-action-available' : undefined
                 }
               >
                 {action.availability}
-              </span>
+              </small>
             </div>
-            <p className="mt-2 text-xs leading-5 text-secondary">{action.detail}</p>
+            <p>{action.detail}</p>
             {action.alternative ? (
-              <p className="mt-2 text-xs font-semibold text-primary">
+              <p className="receipt-card-action-alternative">
                 Available alternative: {action.alternative.label}
               </p>
             ) : null}
           </li>
         ))}
       </ul>
-      <p className="mt-3 font-mono text-[10px] leading-4 text-secondary">
-        Settlement {shorten(state.ownership.settlementSignature)} · no post-duel transaction has
-        been created.
+      <p className="receipt-card-settlement">
+        Settlement reference: {state.ownership.settlementSignature}
       </p>
     </section>
   );
@@ -376,43 +554,13 @@ function CardActionState({ state }: { state: PublicPostDuelCardActionState }) {
 function cardActionGateMessage(reason: PublicDuelReceipt['cardActions']['reason']): string {
   const messages: Record<Exclude<typeof reason, null>, string> = {
     'duel-not-settled': 'Card actions stay hidden until the duel reaches settled state.',
-    'mock-assets':
-      'Card actions stay hidden for mock results because no real card was transferred.',
+    'mock-assets': 'Card actions stay hidden because mock results do not transfer real cards.',
     'ownership-mismatch':
       'Card actions are hidden because recorded ownership disagrees with the canonical result.',
     'ownership-pending':
       'Card actions stay hidden until an exact finalized settlement reference reconciles ownership.',
   };
   return reason ? messages[reason] : 'Card actions are unavailable.';
-}
-
-function PendingResult({ status }: { status: PublicDuelStatus }) {
-  return (
-    <section className="proof-panel">
-      <p className="proof-label">Card result</p>
-      <h2 className="mt-2 text-xl font-semibold">No result recorded</h2>
-      <p className="mt-2 text-sm leading-6 text-secondary">
-        Current state: {status}. This page will not infer card values, a winner, or custody before
-        durable provider state exists.
-      </p>
-    </section>
-  );
-}
-
-function ParticipantCard({
-  participant,
-}: {
-  participant: PublicDuelReceipt['participants']['creator'];
-}) {
-  return (
-    <article className="proof-panel">
-      <p className="proof-label">{participant.role}</p>
-      <h2 className="mt-2 text-xl font-semibold text-primary">{participant.display}</h2>
-      <p className="mt-3 text-xs leading-5 text-secondary">
-        Pseudonymous wallet identity. Full addresses stay out of the spectator surface.
-      </p>
-    </article>
-  );
 }
 
 function ProofStat({ label, value }: { label: string; value: string }) {
@@ -431,48 +579,47 @@ function ReferenceList({ receipt }: { receipt: PublicDuelReceipt }) {
     receipt.references.solana.length === 0 &&
     receipt.references.provider.length === 0 &&
     receipt.recovery.alerts.length === 0
-  )
+  ) {
     return <p className="mt-3 text-sm text-secondary">No public references recorded yet.</p>;
+  }
+
   return (
-    <ul className="mt-4 grid gap-3">
+    <ul className="receipt-reference-list">
       {receipt.recovery.alerts.map((alert) => (
         <li key={`recovery:${alert.signature}`}>
-          <a
-            href={alert.explorerUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm font-semibold text-amber-300 hover:underline"
-          >
-            Custody recovery required · funding {shorten(alert.signature)}
+          <a href={alert.explorerUrl} target="_blank" rel="noreferrer">
+            <strong>Recovery required · {alert.action}</strong>
+            <span>{alert.code}</span>
+            <code>{alert.signature}</code>
           </a>
         </li>
       ))}
       {receipt.references.solana.map((reference) => (
         <li key={reference.signature}>
-          <a
-            href={reference.explorerUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm font-semibold text-lime hover:underline"
-          >
-            Solana {reference.action} · {shorten(reference.signature)}
-            {reference.bindingSource === 'rpc-recovery' ? ' · recovered binding' : ''}
+          <a href={reference.explorerUrl} target="_blank" rel="noreferrer">
+            <strong>
+              Solana {reference.action} · {reference.status}
+            </strong>
+            <span>
+              {reference.bindingSource === 'rpc-recovery'
+                ? 'Recovered RPC binding'
+                : 'API submission'}
+            </span>
+            <code>{reference.signature}</code>
           </a>
         </li>
       ))}
       {receipt.references.provider.map((reference) => (
-        <li
-          key={`${reference.side}:${reference.providerReference}`}
-          className="text-sm text-secondary"
-        >
-          {reference.provider} {reference.side} ·{' '}
-          <span className="font-mono text-xs">{shorten(reference.providerReference)}</span>
+        <li key={`${reference.side}:${reference.providerReference}`}>
+          <div>
+            <strong>
+              {reference.provider} · {reference.side}
+            </strong>
+            <span>{reference.assetReference}</span>
+            <code>{reference.providerReference}</code>
+          </div>
         </li>
       ))}
     </ul>
   );
-}
-
-function shorten(value: string): string {
-  return value.length > 16 ? `${value.slice(0, 7)}…${value.slice(-7)}` : value;
 }

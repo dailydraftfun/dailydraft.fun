@@ -19,7 +19,7 @@ export const duelStatuses = [
 
 export type DuelStatus = (typeof duelStatuses)[number];
 
-type StatusPresentation = {
+export type StatusPresentation = {
   accent: string;
   badge: string;
   headline: string;
@@ -35,6 +35,7 @@ export type DuelSocialPull = {
 
 export type DuelSocialSnapshot = StatusPresentation & {
   duelId: string;
+  mockPreview: boolean;
   network: 'devnet';
   opponent: string;
   opponentType: 'house' | 'wallet';
@@ -141,6 +142,10 @@ const statusPresentation: Record<DuelStatus, StatusPresentation> = {
   },
 };
 
+export function getDuelStatusPresentation(status: DuelStatus): StatusPresentation {
+  return statusPresentation[status];
+}
+
 export function isDuelStatus(value: string): value is DuelStatus {
   return duelStatuses.includes(value as DuelStatus);
 }
@@ -151,22 +156,32 @@ export function resolveDuelStatus(value: string | string[] | undefined): DuelSta
   return candidate && isDuelStatus(candidate) ? candidate : null;
 }
 
+export function isMockDuelResult(receipt: PublicDuelReceipt): boolean {
+  return Boolean(
+    receipt.result &&
+      (receipt.pack.providerMode === 'mock' ||
+        receipt.result.outcomes.some((outcome) => outcome.isMock)),
+  );
+}
+
 export function getDuelSocialSnapshot(
   receipt: PublicDuelReceipt,
   requestedStatus?: DuelStatus | null,
 ): DuelSocialSnapshot {
   const status = receipt.duel.status;
   const winner = receipt.result?.winner ?? null;
+  const mockPreview = isMockDuelResult(receipt);
   const pulls = (receipt.result?.outcomes ?? []).map((outcome) => ({
     displayName: outcome.displayName,
     side: outcome.side,
     value: formatMoney(outcome.insuredValue),
     winner: outcome.side === receipt.result?.winnerSide,
   }));
-  const presentation = statusPresentation[status];
+  const presentation = getDuelStatusPresentation(status);
 
   return {
     duelId: receipt.duel.id,
+    mockPreview,
     network: 'devnet',
     opponent: receipt.participants.opponent?.display ?? 'Waiting for opponent',
     opponentType: receipt.duel.mode === 'house' ? 'house' : 'wallet',
@@ -182,11 +197,17 @@ export function getDuelSocialSnapshot(
       : null,
     winner: winner?.display ?? null,
     ...presentation,
-    ...(status === 'settled' && winner
-      ? { headline: `${winner.display} won the vault.` }
-      : status === 'settled' && receipt.result
-        ? { headline: 'The duel ended in a tie.' }
-        : {}),
+    ...(mockPreview
+      ? {
+          badge: 'Devnet preview',
+          headline: 'Devnet result preview.',
+          subline: 'Committed mock values do not represent purchased cards or transferred assets.',
+        }
+      : status === 'settled' && winner
+        ? { headline: `${winner.display} won the vault.` }
+        : status === 'settled' && receipt.result
+          ? { headline: 'The duel ended in a tie.' }
+          : {}),
   };
 }
 

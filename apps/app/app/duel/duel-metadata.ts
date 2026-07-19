@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import type { PublicDuelReceipt, PublicDuelStatus } from './public-proof-client';
-import { getDuelSocialSnapshot, getSocialDescription } from './social-card-data';
+import { getDuelSocialSnapshot, getSocialDescription, isMockDuelResult } from './social-card-data';
 
 const defaultAppUrl = 'https://openpacksduel.vercel.app';
 
@@ -71,11 +71,7 @@ function statusTitle(status: PublicDuelStatus): string {
 }
 
 export function receiptTitle(receipt: PublicDuelReceipt): string {
-  if (
-    receipt.result &&
-    (receipt.pack.providerMode === 'mock' ||
-      receipt.result.outcomes.some((outcome) => outcome.isMock))
-  ) {
+  if (isMockDuelResult(receipt)) {
     return 'Devnet mock result';
   }
   return statusTitle(receipt.duel.status);

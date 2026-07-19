@@ -26,6 +26,22 @@ describe('duel social card data', () => {
     expect(snapshot.totalValue).toBe('$103.5');
   });
 
+  test('never turns a mock result into a real win claim', () => {
+    const base = receipt({ status: 'settled', withResult: true });
+    const snapshot = getDuelSocialSnapshot({
+      ...base,
+      pack: { ...base.pack, providerMode: 'mock' },
+    });
+
+    expect(snapshot).toEqual(
+      expect.objectContaining({
+        badge: 'Devnet preview',
+        headline: 'Devnet result preview.',
+        mockPreview: true,
+      }),
+    );
+  });
+
   test('uses the canonical action projected by the public receipt', () => {
     const publicReceipt = receipt({ status: 'cancelling' });
     publicReceipt.actions.primary = {
