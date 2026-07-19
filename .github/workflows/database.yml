@@ -1,0 +1,68 @@
+name: Database migrations
+
+on:
+  pull_request:
+    paths:
+      - packages/db/**
+      - .github/workflows/database.yml
+  push:
+    branches: [main]
+    paths:
+      - packages/db/**
+      - .github/workflows/database.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: openpacksduel_ci
+          POSTGRES_PASSWORD: openpacksduel
+          POSTGRES_USER: openpacksduel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openpacksduel -d openpacksduel_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://openpacksduel:openpacksduel@localhost:5432/openpacksduel_ci?schema=public
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - run: bun install --frozen-lockfile
+      - name: Apply committed migrations
+        run: bun --filter @openpacksduel/db db:deploy
+      - name: Validate Prisma schema
+        run: bun --filter @openpacksduel/db db:validate
+      - name: Prove schema-only drift is rejected
+        working-directory: packages/db
+        run: |
+          drift_schema="$RUNNER_TEMP/schema-drift.prisma"
+          cp prisma/schema.prisma "$drift_schema"
+          printf '\nmodel MigrationDriftSentinel {\n  id Int @id\n}\n' >> "$drift_schema"
+
+          set +e
+          bunx --bun prisma migrate diff \
+            --from-config-datasource \
+            --to-schema "$drift_schema" \
+            --exit-code
+          drift_status=$?
+          set -e
+
+          test "$drift_status" -eq 2
+      - name: Reject migration and schema drift
+        run: bun --filter @openpacksduel/db db:drift-check

@@ -211,5 +211,7 @@ ordered migration and deploy procedure in `docs/devnet-runbook.md`.
 
 Set `OPENPACKSDUEL_APP_URL` to the canonical HTTPS app origin and
 `OPENPACKSDUEL_AUTH_DOMAIN` to its matching host. Only localhost may use HTTP.
+The localhost URL fallback is available only when `NODE_ENV=development`; deployed
+environments fail with `503 Service Unavailable` when the canonical app URL is missing or invalid.
 Every signed message is hard-bound to `solana:devnet`; there is no mainnet
 configuration switch.

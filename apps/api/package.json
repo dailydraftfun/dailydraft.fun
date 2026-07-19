@@ -8,7 +8,7 @@
   "scripts": {
     "build": "bun build src/main.ts api/index.ts --target=bun --packages=external --outdir=dist",
     "clean": "rm -rf dist",
-    "dev": "bun --watch src/main.ts",
+    "dev": "NODE_ENV=development bun --watch src/main.ts",
     "start": "bun run src/main.ts",
     "lint": "biome check api/ src/",
     "typecheck": "tsc --noEmit",

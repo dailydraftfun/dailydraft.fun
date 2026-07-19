@@ -28,3 +28,10 @@ migrations have not been deployed.
 
 The current schema supports Solana devnet only. Adding mainnet requires a new
 network enum migration, audited settlement integration, and an explicit release.
+
+## Migration CI
+
+Pull requests that change this package run every committed migration against an
+empty workflow-local PostgreSQL database, validate `schema.prisma`, and reject
+drift between the migrated database and the schema. The check uses no repository
+secrets and also proves that a temporary schema-only change is detected.

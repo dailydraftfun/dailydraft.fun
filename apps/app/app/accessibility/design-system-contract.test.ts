@@ -79,6 +79,10 @@ describe('cross-surface design system contract', () => {
       'utf8',
     );
     const duelArena = readFileSync(resolve(repositoryRoot, 'apps/app/app/duel-arena.tsx'), 'utf8');
+    const duelLobbyOptions = readFileSync(
+      resolve(repositoryRoot, 'apps/app/app/duel-lobby-options.tsx'),
+      'utf8',
+    );
     const appCss = readSurface('apps/app/app/globals.css');
     const webCss = readSurface('apps/web/app/globals.css');
 
@@ -90,7 +94,7 @@ describe('cross-surface design system contract', () => {
     }
 
     expect(duelArena).toContain('getRovingTabIndex');
-    expect(duelArena).toContain('aria-controls="mode-panel-direct"');
+    expect(duelLobbyOptions).toContain('aria-controls={`mode-panel-' + '$' + '{mode}`}');
     expect(duelArena).toContain('role="tabpanel"');
     expect(appCss).toMatch(/\.duel-proof span\s*\{\s*display:\s*inline;/);
     expect(appCss).toMatch(/\.pull-meta small\s*\{\s*display:\s*block;/);
