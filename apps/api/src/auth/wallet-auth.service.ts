@@ -2,6 +2,8 @@ import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -10,13 +12,23 @@ import bs58 from 'bs58';
 import { resolvePublicAppUrl } from '../common/public-app-url.js';
 import type { CreateWalletSessionRequest } from './auth.dto.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract repository as a runtime injection token.
-import { WalletAuthRepository } from './auth.repository.js';
+import {
+  type WalletAuthMaintenancePolicy,
+  WalletAuthRepository,
+  WalletChallengeRateLimitExceededError,
+} from './auth.repository.js';
 
 const AUTH_CHAIN = 'solana:devnet';
 const CHALLENGE_TTL_MS = 5 * 60 * 1_000;
 const SESSION_TTL_MS = 15 * 60 * 1_000;
 const SESSION_TOKEN_PREFIX = 'opd_devnet_session_';
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
+const DEFAULT_CHALLENGE_LIMIT = 5;
+const DEFAULT_CHALLENGE_WINDOW_SECONDS = 10 * 60;
+const DEFAULT_CLEANUP_BATCH_SIZE = 100;
+const MAX_CHALLENGE_LIMIT = 100;
+const MAX_CHALLENGE_WINDOW_SECONDS = 24 * 60 * 60;
+const MAX_CLEANUP_BATCH_SIZE = 500;
 
 export interface WalletAuthentication {
   kind: 'wallet-session';
@@ -53,17 +65,27 @@ export class WalletAuthService {
       wallet,
     });
 
-    await this.repository.createChallenge({
-      chain: AUTH_CHAIN,
-      consumedAt: null,
-      domain,
-      expiresAt,
-      id: challengeId,
-      message,
-      nonceHash: hashSecret(nonce),
-      uri,
-      wallet,
-    });
+    try {
+      await this.repository.createChallenge(
+        {
+          chain: AUTH_CHAIN,
+          consumedAt: null,
+          domain,
+          expiresAt,
+          id: challengeId,
+          message,
+          nonceHash: hashSecret(nonce),
+          uri,
+          wallet,
+        },
+        createRepositoryPolicy(now),
+      );
+    } catch (error) {
+      if (error instanceof WalletChallengeRateLimitExceededError) {
+        throw new HttpException(error.message, HttpStatus.TOO_MANY_REQUESTS);
+      }
+      throw error;
+    }
 
     return {
       chain: AUTH_CHAIN,
@@ -105,7 +127,7 @@ export class WalletAuthService {
         tokenHash: hashSecret(token),
         wallet: challenge.wallet,
       },
-      now,
+      createRepositoryPolicy(now),
     );
 
     return {
@@ -193,6 +215,61 @@ function decodeWalletPublicKey(wallet: string): Uint8Array | null {
 
 export function hashSecret(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+export interface WalletAuthPolicy {
+  challengeLimit: number;
+  challengeWindowMs: number;
+  cleanupBatchSize: number;
+}
+
+export function resolveWalletAuthPolicy(
+  environment: NodeJS.ProcessEnv = process.env,
+): WalletAuthPolicy {
+  return {
+    challengeLimit: readBoundedPositiveInteger(
+      environment.OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT,
+      DEFAULT_CHALLENGE_LIMIT,
+      MAX_CHALLENGE_LIMIT,
+    ),
+    challengeWindowMs:
+      readBoundedPositiveInteger(
+        environment.OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS,
+        DEFAULT_CHALLENGE_WINDOW_SECONDS,
+        MAX_CHALLENGE_WINDOW_SECONDS,
+      ) * 1_000,
+    cleanupBatchSize: readBoundedPositiveInteger(
+      environment.OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE,
+      DEFAULT_CLEANUP_BATCH_SIZE,
+      MAX_CLEANUP_BATCH_SIZE,
+    ),
+  };
+}
+
+function createRepositoryPolicy(now: Date): WalletAuthMaintenancePolicy & {
+  challengeLimit: number;
+  challengeWindowStartedAt: Date;
+} {
+  const policy = resolveWalletAuthPolicy();
+  const challengeWindowStartedAt = new Date(now.getTime() - policy.challengeWindowMs);
+  return {
+    challengeCreatedBefore: challengeWindowStartedAt,
+    challengeLimit: policy.challengeLimit,
+    challengeWindowStartedAt,
+    cleanupBatchSize: policy.cleanupBatchSize,
+    now,
+  };
+}
+
+function readBoundedPositiveInteger(
+  value: string | undefined,
+  fallback: number,
+  maximum: number,
+): number {
+  const normalized = value?.trim();
+  if (!normalized || !/^[0-9]+$/.test(normalized)) return fallback;
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= maximum ? parsed : fallback;
 }
 
 function resolveAudience(): { domain: string; uri: string } {
