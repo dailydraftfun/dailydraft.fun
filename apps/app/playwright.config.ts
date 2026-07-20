@@ -1,11 +1,10 @@
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { defineConfig, devices } from '@playwright/test';
 
 import { journeyApiOrigin, journeyRpcUrl } from './e2e/fixtures/journey-fixture';
 
-const appDirectory = fileURLToPath(new URL('.', import.meta.url));
+const appDirectory = __dirname;
 
 export default defineConfig({
   expect: { timeout: 5_000 },
