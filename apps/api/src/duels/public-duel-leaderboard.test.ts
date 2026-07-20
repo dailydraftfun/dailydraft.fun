@@ -43,7 +43,7 @@ describe('public duel leaderboard', () => {
     expect(leaderboard.entries.map((entry) => entry.display)).toEqual([
       '9xQe…9gJ1',
       'DeWQ…12Eu',
-      'Gk8Z…BMQy',
+      'Gk8Z…MQyW',
     ]);
     expect(leaderboard.entries[0]).toEqual(
       expect.objectContaining({
