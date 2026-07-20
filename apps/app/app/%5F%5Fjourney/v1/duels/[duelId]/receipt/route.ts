@@ -1,4 +1,4 @@
-import { createPublicSurfaceReceipt } from '../../../../public-duel-receipt';
+import { createPublicSurfaceReceipt } from '../../../../../__journey/public-duel-receipt';
 
 export const dynamic = 'force-dynamic';
 

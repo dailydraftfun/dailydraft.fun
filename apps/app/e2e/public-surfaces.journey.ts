@@ -17,8 +17,11 @@ type AxeResults = Awaited<ReturnType<AxeBuilder['analyze']>>;
 test.use({ journeySeed: 'public-surfaces' });
 
 test('reports no serious or critical violations across the deterministic duel journey', async ({
+  journey,
   page,
 }) => {
+  test.setTimeout(90_000);
+  expect(journey.seed).toBe('public-surfaces');
   await Promise.all([
     page.waitForResponse(`${journeyApiOrigin}/health/capabilities`),
     page.waitForResponse(journeyRpcUrl),
@@ -84,31 +87,35 @@ for (const surface of [
 }
 
 for (const status of publicSurfaceStatuses) {
-  test(`publishes canonical, private, status-specific metadata for ${status}`, async ({ page }) => {
-    const duelId = `duel_public_${status}`;
-    const response = await page.goto(`${appOrigin}/duel/${duelId}`);
-    expect(response?.ok()).toBe(true);
+  test(
+    `publishes canonical, private, status-specific metadata for ${status}`,
+    async ({ journey, page }) => {
+      expect(journey.seed).toBe('public-surfaces');
+      const duelId = `duel_public_${status}`;
+      const response = await page.goto(`${appOrigin}/duel/${duelId}`);
+      expect(response?.ok()).toBe(true);
 
-    const canonicalUrl = `${canonicalAppOrigin}/duel/${duelId}`;
-    const socialImageUrl = `${canonicalUrl}/social/${status}`;
-    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', canonicalUrl);
-    await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
-      'content',
-      canonicalUrl,
-    );
-    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
-      'content',
-      socialImageUrl,
-    );
-    await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute(
-      'content',
-      socialImageUrl,
-    );
+      const canonicalUrl = `${canonicalAppOrigin}/duel/${duelId}`;
+      const socialImageUrl = `${canonicalUrl}/social/${status}`;
+      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', canonicalUrl);
+      await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
+        'content',
+        canonicalUrl,
+      );
+      await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+        'content',
+        socialImageUrl,
+      );
+      await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute(
+        'content',
+        socialImageUrl,
+      );
 
-    const metadata = await page.locator('head').innerHTML();
-    expect(metadata).not.toContain(privateFixtureWallet);
-    expect(metadata).not.toContain(privateFixtureSignature);
-  });
+      const metadata = await page.locator('head').innerHTML();
+      expect(metadata).not.toContain(privateFixtureWallet);
+      expect(metadata).not.toContain(privateFixtureSignature);
+    },
+  );
 }
 
 async function expectNoSeriousOrCriticalViolations(page: Page, surface: string): Promise<void> {
