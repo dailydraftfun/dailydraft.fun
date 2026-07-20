@@ -14,16 +14,19 @@ const targets = new Set(
 plugin({
   name: 'changed-code-coverage',
   setup(builder) {
-    builder.onLoad({ filter: /\.[cm]?[jt]sx?$/, namespace: 'file' }, async ({ path }) => {
-      const absolutePath = resolve(path);
-      if (!targets.has(absolutePath)) return undefined;
-
-      const source = await Bun.file(absolutePath).text();
-      return {
-        contents: instrument(source, absolutePath),
-        loader: loaderFor(absolutePath),
-      };
-    });
+    for (const target of targets) {
+      builder.onLoad(
+        { filter: new RegExp(`^${escapeRegularExpression(target)}$`), namespace: 'file' },
+        async ({ path }) => {
+          const absolutePath = resolve(path);
+          const source = await Bun.file(absolutePath).text();
+          return {
+            contents: instrument(source, absolutePath),
+            loader: loaderFor(absolutePath),
+          };
+        },
+      );
+    }
   },
 });
 
@@ -56,6 +59,10 @@ function loaderFor(path: string): Loader {
   if (extension === '.jsx') return 'jsx';
   if (extension === '.ts' || extension === '.mts' || extension === '.cts') return 'ts';
   return 'js';
+}
+
+function escapeRegularExpression(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function requiredEnvironment(name: string): string {
