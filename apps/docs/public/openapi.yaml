@@ -1174,6 +1174,26 @@ paths:
       x-openpacksduel-availability: internal-devnet
       security:
         - cronSecret: []
+        - integrationKey: []
+      responses:
+        '200':
+          description: Bounded treasury reconciliation summary
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+    post:
+      operationId: reconcileHouseTreasuryManually
+      tags: [Operations]
+      summary: Manually reconcile finalized treasury, custody, and reservation state
+      description: Accepts the cron secret or an integration API key.
+      x-openpacksduel-availability: internal-devnet
+      security:
+        - cronSecret: []
+        - integrationKey: []
       responses:
         '200':
           description: Bounded treasury reconciliation summary

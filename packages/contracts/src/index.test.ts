@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  compareRouteInventories,
   CONTRACT_FIXTURE_VERSION,
+  compareRouteInventories,
   contractFixtureFingerprint,
   contractOperations,
   operationKey,
