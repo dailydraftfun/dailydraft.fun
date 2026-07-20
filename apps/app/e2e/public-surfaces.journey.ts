@@ -7,7 +7,11 @@ import {
   publicSurfaceStatuses,
 } from '../app/__journey/public-duel-receipt';
 import { journeyTestIds } from '../app/e2e/journey-test-ids';
-import { journeyApiOrigin, journeyRpcUrl } from './fixtures/journey-fixture';
+import {
+  journeyApiOrigin,
+  journeyOpponentWallet,
+  journeyRpcUrl,
+} from './fixtures/journey-fixture';
 import { expect, test } from './fixtures/playwright';
 
 const appOrigin = 'http://127.0.0.1:3001';
@@ -29,6 +33,8 @@ test('reports no serious or critical violations across the deterministic duel jo
   ]);
   await expect(page.getByTestId(journeyTestIds.lobby)).toBeVisible();
   await expectNoSeriousOrCriticalViolations(page, 'lobby');
+  await page.getByTestId(journeyTestIds.mode.direct).click();
+  await page.getByTestId(journeyTestIds.opponentWallet).fill(journeyOpponentWallet);
 
   await page.getByTestId(journeyTestIds.walletMenu).click();
   await page.getByTestId(journeyTestIds.walletOption).click();

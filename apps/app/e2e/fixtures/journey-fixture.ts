@@ -30,7 +30,7 @@ export type JourneyFixtureSnapshot = {
 };
 
 const CREATOR_WALLET = '11111111111111111111111111111111';
-const OPPONENT_WALLET = 'So11111111111111111111111111111111111111112';
+export const journeyOpponentWallet = 'So11111111111111111111111111111111111111112';
 const DEVNET_GENESIS_HASH = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 
 export class DuelJourneyFixture {
@@ -213,7 +213,7 @@ export class DuelJourneyFixture {
       return ok(this.#duel);
     }
     if (method === 'POST' && path === '/matchmaking/search') {
-      this.#duel = this.#matchedDuel(OPPONENT_WALLET, 'open');
+      this.#duel = this.#matchedDuel(journeyOpponentWallet, 'open');
       return ok(this.#matchmakingSession());
     }
     if (method === 'POST' && path === '/matchmaking/continue') {
@@ -273,7 +273,7 @@ export class DuelJourneyFixture {
       houseOpponent: opponent === 'house',
       id: this.#duelId,
       matchmakingMode: opponent === 'house' ? 'house' : mode,
-      opponentWallet: opponent === 'house' ? OPPONENT_WALLET : opponent,
+      opponentWallet: opponent === 'house' ? journeyOpponentWallet : opponent,
       pack: {
         id: 'pokemon_50',
         imageUrl: 'https://images.pokemontcg.io/base1/4_hires.png',
@@ -339,7 +339,7 @@ export class DuelJourneyFixture {
       expiresAt: '2099-01-01T00:10:00.000Z',
       feeAmountLamports: '10000000',
       feeAmountSol: '0.01',
-      feeRecipient: OPPONENT_WALLET,
+      feeRecipient: journeyOpponentWallet,
       fundingSide: 'creator',
       id: `intent_${stableHex(this.seed, 'intent', 20)}`,
       lastValidBlockHeight: '987654321',
@@ -378,7 +378,7 @@ export class DuelJourneyFixture {
       commitmentExpiresAt: '2099-01-01T00:15:00.000Z',
       duelId: this.#duelId,
       houseOpponent: false,
-      opponentWallet: OPPONENT_WALLET,
+      opponentWallet: journeyOpponentWallet,
       queue: {
         packId: 'pokemon_50',
         providerMode: 'openpacksduel-devnet',
