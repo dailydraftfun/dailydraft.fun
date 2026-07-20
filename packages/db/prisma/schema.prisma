@@ -208,6 +208,7 @@ model Duel {
   @@index([mode, status, packId, createdAt])
   @@index([creatorWallet, createdAt])
   @@index([opponentWallet, createdAt])
+  @@index([status, settledAt, id])
   @@index([winnerWallet, createdAt])
 }
 

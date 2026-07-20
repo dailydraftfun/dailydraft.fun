@@ -7,6 +7,7 @@ import type { DuelOpeningService } from './duel-opening.service.js';
 import {
   assertDuelParticipant,
   assertWalletActor,
+  DuelLeaderboardController,
   DuelsController,
   resolvePrivateRematchOpponent,
 } from './duels.controller.js';
@@ -168,5 +169,59 @@ describe('private rematch opponent resolution', () => {
       'cache-control': 'private, no-store',
       'x-robots-tag': 'noindex, nofollow, noarchive',
     });
+  });
+});
+
+describe('public leaderboard', () => {
+  test('returns the durable standings with bounded public caching and no indexing', async () => {
+    const snapshot = {
+      entries: [],
+      methodology: {
+        entryLimit: 50,
+        excludesMockResults: true,
+        hasMoreSettledDuels: false,
+        ranking: 'wins-total-value-completed-recency',
+        sampleLimit: 5_000,
+        sampledSettledDuels: 0,
+      },
+      privacy: { indexable: false, reason: 'Pseudonymous test fixture.' },
+      schemaVersion: 'openpacksduel.leaderboard.v1',
+    } as const;
+    const service = {
+      getPublicLeaderboard: async () => snapshot,
+    } as unknown as DuelsService;
+    const controller = new DuelLeaderboardController(service);
+    const headers = new Map<string, string>();
+    const response = {
+      header: (name: string, value: string) => {
+        headers.set(name, value);
+        return response;
+      },
+    } as unknown as FastifyReply;
+
+    await expect(controller.getLeaderboard(response)).resolves.toEqual(snapshot);
+    expect(Object.fromEntries(headers)).toEqual({
+      'cache-control': 'public, max-age=30, stale-while-revalidate=120',
+      'x-robots-tag': 'noindex, nofollow, noarchive',
+    });
+  });
+
+  test('never marks a failed leaderboard response as publicly cacheable', async () => {
+    const service = {
+      getPublicLeaderboard: async () => {
+        throw new Error('database unavailable');
+      },
+    } as unknown as DuelsService;
+    const controller = new DuelLeaderboardController(service);
+    const headers = new Map<string, string>();
+    const response = {
+      header: (name: string, value: string) => {
+        headers.set(name, value);
+        return response;
+      },
+    } as unknown as FastifyReply;
+
+    await expect(controller.getLeaderboard(response)).rejects.toThrow('database unavailable');
+    expect(Object.fromEntries(headers)).toEqual({});
   });
 });

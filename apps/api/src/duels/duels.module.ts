@@ -9,12 +9,16 @@ import { ProvidersModule } from '../providers/providers.module.js';
 import { TransactionsModule } from '../transactions/transactions.module.js';
 import { DuelRepository } from './duel.repository.js';
 import { DuelOpeningService } from './duel-opening.service.js';
-import { DuelProfilesController, DuelsController } from './duels.controller.js';
+import {
+  DuelLeaderboardController,
+  DuelProfilesController,
+  DuelsController,
+} from './duels.controller.js';
 import { DuelsService } from './duels.service.js';
 import { PrismaDuelRepository } from './prisma-duel.repository.js';
 
 @Module({
-  controllers: [DuelsController, DuelProfilesController],
+  controllers: [DuelsController, DuelProfilesController, DuelLeaderboardController],
   imports: [
     AdminModule,
     AnalyticsModule,

@@ -45,6 +45,11 @@ export interface ResolveOpenedPacksRecord {
   requestHash: string;
 }
 
+export interface LeaderboardDuelPage {
+  data: Duel[];
+  hasMore: boolean;
+}
+
 export abstract class DuelRepository {
   abstract cancel(
     duelId: string,
@@ -72,6 +77,7 @@ export abstract class DuelRepository {
     now: Date,
   ): Promise<Duel>;
   abstract listEvents(duelId: string): Promise<DuelEvent[]>;
+  abstract listSettledForLeaderboard(limit: number): Promise<LeaderboardDuelPage>;
   abstract listTransactions(duelId: string): Promise<DuelTransactionRecord[]>;
   abstract resolveOpenedPacks(input: ResolveOpenedPacksRecord): Promise<Duel>;
   abstract transition(input: TransitionDuelRecord): Promise<Duel>;
