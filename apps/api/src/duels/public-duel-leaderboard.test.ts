@@ -209,6 +209,7 @@ function duel({
     matchmakingMode: houseOpponent ? 'house' : 'direct',
     opponentWallet: opponent,
     pack: {
+      active: true,
       id: 'pokemon_50',
       name: 'Pokémon $50 Pack',
       price: { amount: '50000000', currency: 'USDC', decimals: 6 },
@@ -218,9 +219,11 @@ function duel({
     },
     providerMode: 'openpacksduel-devnet',
     result: {
+      comparisonMetric: 'insured-value',
       outcomes: [outcome('creator', firstValue), outcome('opponent', secondValue)],
       resultHash: 'result_hash',
       settlementReady: true,
+      tieRule: 'return-original-assets-and-refund-platform-fees',
       valuationPolicyHash: 'policy_hash',
       winnerSide: winner === null ? null : winner === creator ? 'creator' : 'opponent',
     },
@@ -230,22 +233,22 @@ function duel({
     updatedAt,
     version: 1,
     winnerWallet: winner,
-  } as Duel;
+  };
 }
 
 function outcome(side: 'creator' | 'opponent', amount: string) {
   return {
     assetReference: `${side}_asset`,
     displayName: `${side} pull`,
-    imageUrl: null,
     insuredValue: { amount, currency: 'USDC' as const, decimals: 6 as const },
     isMock: false,
     openedAt: '2026-07-20T00:00:00.000Z',
+    provider: 'openpacksduel',
+    providerReference: `${side}_provider`,
     poolVersion: 'pool-v1',
     resultHash: `${side}_hash`,
     side,
     sourceTimestamp: '2026-07-20T00:00:00.000Z',
-    valuationPolicyHash: 'policy_hash',
     valuationSourceReference: `${side}_source`,
   };
 }

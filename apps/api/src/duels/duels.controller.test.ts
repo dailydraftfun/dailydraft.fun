@@ -12,6 +12,7 @@ import {
   resolvePrivateRematchOpponent,
 } from './duels.controller.js';
 import type { DuelsService } from './duels.service.js';
+import type { PublicDuelLeaderboard } from './public-duel-leaderboard.js';
 
 const WALLET = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
 const OTHER_WALLET = 'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW';
@@ -174,7 +175,7 @@ describe('private rematch opponent resolution', () => {
 
 describe('public leaderboard', () => {
   test('returns the durable standings with bounded public caching and no indexing', async () => {
-    const snapshot = {
+    const snapshot: PublicDuelLeaderboard = {
       entries: [],
       methodology: {
         entryLimit: 50,
@@ -186,7 +187,7 @@ describe('public leaderboard', () => {
       },
       privacy: { indexable: false, reason: 'Pseudonymous test fixture.' },
       schemaVersion: 'openpacksduel.leaderboard.v1',
-    } as const;
+    };
     const service = {
       getPublicLeaderboard: async () => snapshot,
     } as unknown as DuelsService;
