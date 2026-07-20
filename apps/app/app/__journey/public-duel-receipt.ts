@@ -1,7 +1,4 @@
-import type {
-  PublicDuelReceipt,
-  PublicDuelStatus,
-} from '../duel/public-proof-client';
+import type { PublicDuelReceipt, PublicDuelStatus } from '../duel/public-proof-client';
 
 export const publicSurfaceStatuses = [
   'waiting',
