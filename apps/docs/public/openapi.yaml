@@ -180,6 +180,8 @@ paths:
                 $ref: '#/components/schemas/WalletChallenge'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /auth/sessions:
     post:
       operationId: createWalletSession
@@ -199,6 +201,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WalletSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
@@ -305,8 +309,12 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /matchmaking/search:
@@ -444,6 +452,9 @@ paths:
       tags: [Duels]
       summary: Get canonical duel state
       x-openpacksduel-availability: devnet
+      security:
+        - walletSession: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
       responses:
@@ -453,6 +464,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Duel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /duels/{duelId}/rematch-opponent:
+    get:
+      operationId: getPrivateRematchOpponent
+      tags: [Duels]
+      summary: Resolve the authenticated participant's private rematch opponent
+      description: |
+        Returns only the opposite participant after a settled direct duel.
+        Spectators, house duels, unsettled duels, and non-participants fail closed.
+      x-openpacksduel-availability: devnet
+      security:
+        - walletSession: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+      responses:
+        '200':
+          description: Private rematch opponent
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [side, wallet]
+                properties:
+                  side:
+                    type: string
+                    enum: [creator, opponent]
+                  wallet:
+                    $ref: '#/components/schemas/SolanaAddress'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
   /duels/{duelId}/receipt:
@@ -638,6 +687,10 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '503':
@@ -1395,6 +1448,12 @@ components:
             $ref: '#/components/schemas/Problem'
     Unauthorized:
       description: Missing, invalid, or expired bearer credential
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: The authenticated caller is not allowed to access this resource
       content:
         application/problem+json:
           schema:
