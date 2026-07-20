@@ -54,9 +54,7 @@ describe('API compatibility gate', () => {
     adapter.getInstance().addHook('onRoute', (route: RouteOptions) => {
       for (const method of Array.isArray(route.method) ? route.method : [route.method]) {
         if (method === 'HEAD' || method === 'OPTIONS') continue;
-        implementationRoutes.add(
-          operationKey(method, normalizeImplementationPath(route.url)),
-        );
+        implementationRoutes.add(operationKey(method, normalizeImplementationPath(route.url)));
       }
     });
 

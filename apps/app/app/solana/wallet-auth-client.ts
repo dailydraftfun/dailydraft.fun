@@ -78,11 +78,7 @@ export async function revokeWalletSession(token: string): Promise<void> {
   }).catch(() => undefined);
 }
 
-async function requestJson<T>(
-  fetcher: typeof fetch,
-  url: string,
-  init: RequestInit,
-): Promise<T> {
+async function requestJson<T>(fetcher: typeof fetch, url: string, init: RequestInit): Promise<T> {
   const response = await fetcher(url, init);
   if (!response.ok) {
     const problem = await response.json().catch(() => null);

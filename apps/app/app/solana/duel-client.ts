@@ -266,14 +266,7 @@ export async function requestCreateDuel(
   idempotencyKey: string,
   fetcher: typeof fetch = fetch,
 ): Promise<DurableDuel> {
-  return requestDuelMutation(
-    baseUrl,
-    '/duels',
-    sessionToken,
-    input,
-    idempotencyKey,
-    fetcher,
-  );
+  return requestDuelMutation(baseUrl, '/duels', sessionToken, input, idempotencyKey, fetcher);
 }
 
 export async function requestPreparedDuelIntent(

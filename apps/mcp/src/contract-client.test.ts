@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { contractFixtures, contractValues, OPENAPI_CONTRACT_VERSION } from '@openpacksduel/contracts';
+import {
+  contractFixtures,
+  contractValues,
+  OPENAPI_CONTRACT_VERSION,
+} from '@openpacksduel/contracts';
 
 import { OpenPacksApiClient, OpenPacksApiError } from './api-client.js';
 
@@ -23,9 +27,7 @@ describe('MCP contract client', () => {
     expect(duel.version).toBe(contractFixtures.duelStatus.response.version);
     expect(request?.method).toBe('GET');
     expect(request?.url).toBe(`${baseUrl}/duels/${contractValues.duelId}`);
-    expect(request?.headers.get('authorization')).toBe(
-      `Bearer ${contractValues.sessionToken}`,
-    );
+    expect(request?.headers.get('authorization')).toBe(`Bearer ${contractValues.sessionToken}`);
     expect(contractFixtures.health.response.version).toBe(OPENAPI_CONTRACT_VERSION);
   });
 

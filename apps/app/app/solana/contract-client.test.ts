@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { contractFixtures, contractValues, OPENAPI_CONTRACT_VERSION } from '@openpacksduel/contracts';
+import {
+  contractFixtures,
+  contractValues,
+  OPENAPI_CONTRACT_VERSION,
+} from '@openpacksduel/contracts';
 
 import {
   DuelApiRequestError,
@@ -44,9 +48,7 @@ describe('app contract client', () => {
     expect(await requests[0]?.json()).toEqual(
       contractFixtures.walletAuthentication.challengeRequest,
     );
-    expect(await requests[1]?.json()).toEqual(
-      contractFixtures.walletAuthentication.sessionRequest,
-    );
+    expect(await requests[1]?.json()).toEqual(contractFixtures.walletAuthentication.sessionRequest);
   });
 
   test('keeps create, status, and transaction preparation auth and idempotency aligned', async () => {
@@ -91,8 +93,12 @@ describe('app contract client', () => {
       ['GET', `${baseUrl}/duels/${contractValues.duelId}`],
       ['POST', `${baseUrl}/duels/${contractValues.duelId}/transactions`],
     ]);
-    expect(requests.every((request) => request.headers.get('authorization') ===
-      `Bearer ${contractValues.sessionToken}`)).toBe(true);
+    expect(
+      requests.every(
+        (request) =>
+          request.headers.get('authorization') === `Bearer ${contractValues.sessionToken}`,
+      ),
+    ).toBe(true);
     expect(requests[0]?.headers.get('idempotency-key')).toBe(contractValues.idempotencyKey);
     expect(requests[1]?.headers.get('idempotency-key')).toBeNull();
     expect(requests[2]?.headers.get('idempotency-key')).toBe(contractValues.idempotencyKey);
@@ -120,8 +126,6 @@ describe('app contract client', () => {
       status: contractFixtures.problem.response.status,
     });
     expect(contractFixtures.health.response.version).toBe(OPENAPI_CONTRACT_VERSION);
-    expect(contractFixtures.publicProof.response.schemaVersion).toBe(
-      'openpacksduel.receipt.v1',
-    );
+    expect(contractFixtures.publicProof.response.schemaVersion).toBe('openpacksduel.receipt.v1');
   });
 });
