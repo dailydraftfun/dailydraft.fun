@@ -87,7 +87,10 @@ describe('app contract client', () => {
 
     expect(created.version).toBe(contractFixtures.duelStatus.response.version);
     expect(current).toEqual(contractFixtures.duelStatus.response);
-    expect(prepared).toEqual(contractFixtures.transactionPreparation.response);
+    expect(prepared).toEqual({
+      ...contractFixtures.transactionPreparation.response,
+      warnings: [...contractFixtures.transactionPreparation.response.warnings],
+    });
     expect(requests.map((request) => [request.method, request.url])).toEqual([
       ['POST', `${baseUrl}/duels`],
       ['GET', `${baseUrl}/duels/${contractValues.duelId}`],

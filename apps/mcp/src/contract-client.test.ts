@@ -48,7 +48,10 @@ describe('MCP contract client', () => {
       idempotencyKey: contractValues.idempotencyKey,
     });
 
-    expect(prepared).toEqual(contractFixtures.transactionPreparation.response);
+    expect(prepared).toEqual({
+      ...contractFixtures.transactionPreparation.response,
+      warnings: [...contractFixtures.transactionPreparation.response.warnings],
+    });
     expect(request?.method).toBe('POST');
     expect(request?.headers.get('idempotency-key')).toBe(contractValues.idempotencyKey);
     expect(await request?.json()).toEqual(contractFixtures.transactionPreparation.request);
