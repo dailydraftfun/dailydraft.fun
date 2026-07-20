@@ -33,10 +33,12 @@ describe('house treasury reservation transactions', () => {
   test('evaluates concurrent duels against one locked exposure snapshot', async () => {
     const database = new ReservationDatabase();
     const input = { ...reservationInput('duel_concurrent_a'), amount: '60000000' };
+    const environment = configuredEnvironment();
+    environment.OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO = '200000000';
 
     const results = await Promise.allSettled([
-      database.reserve(input),
-      database.reserve({ ...input, duelId: 'duel_concurrent_b' }),
+      database.reserve(input, environment),
+      database.reserve({ ...input, duelId: 'duel_concurrent_b' }, environment),
     ]);
 
     expect(results.map(({ status }) => status).sort()).toEqual(['fulfilled', 'rejected']);
