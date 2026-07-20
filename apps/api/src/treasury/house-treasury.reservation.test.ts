@@ -41,9 +41,7 @@ describe('house treasury reservation transactions', () => {
     ]);
 
     expect(results.map(({ status }) => status).sort()).toEqual(['fulfilled', 'rejected']);
-    expect(
-      results.find(({ status }) => status === 'rejected'),
-    ).toMatchObject({
+    expect(results.find(({ status }) => status === 'rejected')).toMatchObject({
       reason: expect.objectContaining({
         message: expect.stringContaining('total exposure limit'),
       }),
@@ -191,11 +189,7 @@ class ReservationDatabase {
               (where.playerWallet === undefined || row.playerWallet === where.playerWallet) &&
               (where.tier === undefined || row.tier === where.tier),
           ).length,
-        create: async ({
-          data,
-        }: {
-          data: Omit<ReservationRow, 'status'>;
-        }) => {
+        create: async ({ data }: { data: Omit<ReservationRow, 'status'> }) => {
           const row = { ...data, status: HouseTreasuryReservationStatus.RESERVED };
           this.reservations.push(row);
           return row;
