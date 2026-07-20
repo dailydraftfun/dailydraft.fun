@@ -1,3 +1,4 @@
+import { afterAll } from 'bun:test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, resolve } from 'node:path';
 import { type Loader, plugin } from 'bun';
@@ -30,7 +31,7 @@ plugin({
   },
 });
 
-process.on('exit', () => {
+afterAll(() => {
   const coverage = (globalThis as typeof globalThis & { __coverage__?: IstanbulCoverage })
     .__coverage__;
   mkdirSync(dirname(outputPath), { recursive: true });
