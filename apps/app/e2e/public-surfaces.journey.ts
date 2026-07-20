@@ -41,7 +41,10 @@ test('reports no serious or critical violations across the deterministic duel jo
   await expect(page.getByTestId(journeyTestIds.walletDialog)).toContainText(
     'Authenticated to play',
   );
-  await page.getByRole('button', { name: 'Close wallet dialog' }).click();
+  await page
+    .getByTestId(journeyTestIds.walletDialog)
+    .getByRole('button', { name: 'Close wallet dialog' })
+    .click();
 
   await page.getByTestId(journeyTestIds.primaryAction).click();
   await expect(page.getByTestId('duel-entry-stepper')).toHaveAttribute('data-stage', 'review');
