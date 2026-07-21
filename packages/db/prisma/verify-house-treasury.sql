@@ -42,6 +42,10 @@ BEGIN
     RAISE EXCEPTION 'active exposure indexes are missing';
   END IF;
 
+  IF to_regclass('"HouseInventoryAsset_assetReference_key"') IS NULL THEN
+    RAISE EXCEPTION 'canonical house inventory asset uniqueness is missing';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
@@ -109,6 +113,143 @@ INSERT INTO "HouseTreasuryReservation" (
   6,
   CURRENT_TIMESTAMP
 );
+
+INSERT INTO "DuelPackOutcome" (
+  "id",
+  "duelId",
+  "side",
+  "provider",
+  "providerReference",
+  "assetReference",
+  "displayName",
+  "insuredValueAmount",
+  "insuredValueCurrency",
+  "insuredValueDecimals",
+  "valuationPolicyHash",
+  "resultHash",
+  "isMock",
+  "openedAt"
+) VALUES
+(
+  'outcome_treasury_inventory_primary',
+  'duel_treasury_migration_contract',
+  'CREATOR',
+  'migration-contract',
+  'provider-reference-primary',
+  'asset-reference-canonical',
+  'Canonical inventory card',
+  '42000000',
+  'USDC',
+  6,
+  'valuation-policy-contract',
+  'result-hash-primary',
+  false,
+  CURRENT_TIMESTAMP
+),
+(
+  'outcome_treasury_inventory_duplicate',
+  'duel_treasury_migration_contract',
+  'OPPONENT',
+  'migration-contract',
+  'provider-reference-duplicate',
+  'asset-reference-canonical',
+  'Duplicate inventory card',
+  '43000000',
+  'USDC',
+  6,
+  'valuation-policy-contract',
+  'result-hash-duplicate',
+  false,
+  CURRENT_TIMESTAMP
+);
+
+INSERT INTO "HouseInventoryAsset" (
+  "id",
+  "duelId",
+  "outcomeId",
+  "assetReference",
+  "displayName",
+  "acquisitionValueAmount",
+  "acquisitionValueCurrency",
+  "acquisitionValueDecimals",
+  "insuredValueAmount",
+  "insuredValueCurrency",
+  "insuredValueDecimals",
+  "custodyWallet",
+  "updatedAt"
+) VALUES (
+  'hinv_valid_contract',
+  'duel_treasury_migration_contract',
+  'outcome_treasury_inventory_primary',
+  'asset-reference-canonical',
+  'Canonical inventory card',
+  '42000000',
+  'USDC',
+  6,
+  '42000000',
+  'USDC',
+  6,
+  'wallet_house_contract',
+  CURRENT_TIMESTAMP
+);
+
+DO $verification$
+BEGIN
+  BEGIN
+    INSERT INTO "HouseInventoryAsset" (
+      "id",
+      "duelId",
+      "outcomeId",
+      "assetReference",
+      "displayName",
+      "acquisitionValueAmount",
+      "insuredValueAmount",
+      "custodyWallet",
+      "updatedAt"
+    ) VALUES (
+      'hinv_duplicate_asset',
+      'duel_treasury_migration_contract',
+      'outcome_treasury_inventory_duplicate',
+      'asset-reference-canonical',
+      'Duplicate inventory card',
+      '43000000',
+      '43000000',
+      'wallet_house_contract',
+      CURRENT_TIMESTAMP
+    );
+    RAISE EXCEPTION 'duplicate canonical inventory asset bypassed uniqueness';
+  EXCEPTION
+    WHEN unique_violation THEN NULL;
+  END;
+
+  BEGIN
+    UPDATE "HouseInventoryAsset"
+    SET "listingValueAmount" = '44000000'
+    WHERE "id" = 'hinv_valid_contract';
+    RAISE EXCEPTION 'partial listing valuation bypassed the migration constraint';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    UPDATE "HouseInventoryAsset"
+    SET "buybackExpiresAt" = CURRENT_TIMESTAMP
+    WHERE "id" = 'hinv_valid_contract';
+    RAISE EXCEPTION 'ineligible buyback metadata bypassed the migration constraint';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    UPDATE "HouseInventoryAsset"
+    SET "insuredValueCurrency" = 'SOL'
+    WHERE "id" = 'hinv_valid_contract';
+    RAISE EXCEPTION 'invalid insured valuation bypassed the migration constraint';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+END
+$verification$;
 
 DELETE FROM "HouseTreasuryReservation"
 WHERE "id" = 'hres_valid_contract';

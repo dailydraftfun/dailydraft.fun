@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   DuelSide,
   DuelStatus,
+  HouseInventoryListingState,
+  HouseInventoryStatus,
   HouseTreasuryLedgerType,
   HouseTreasuryReservationStatus,
 } from '@openpacksduel/db';
@@ -70,6 +72,32 @@ describe('HouseTreasuryService', () => {
     );
   });
 
+  test('restores verified custody and quarantines mismatched inventory without rewriting history', async () => {
+    const harness = inventoryReconciliationDatabase();
+    const service = new HouseTreasuryService(
+      harness.database as never,
+      new InventoryReconciliationRpc(),
+    );
+
+    const result = await withHouseEnvironment(() => service.reconcileOnChain());
+
+    expect(result).toMatchObject({
+      inventoryChecked: 2,
+      inventoryMismatched: 1,
+      inventoryVerified: 1,
+    });
+    expect(harness.inventory.map(({ reconciliationError, status }) => ({
+      reconciliationError,
+      status,
+    }))).toEqual([
+      { reconciliationError: null, status: HouseInventoryStatus.HELD },
+      { reconciliationError: 'custody_mismatch', status: HouseInventoryStatus.RECONCILIATION_REQUIRED },
+    ]);
+    expect(harness.ledger).toEqual([
+      expect.objectContaining({ type: HouseTreasuryLedgerType.RECONCILIATION_ALERT }),
+    ]);
+  });
+
   test('rotates unchanged lifecycle rows so a later release cannot starve beyond one batch', async () => {
     const reservations = Array.from({ length: 100 }, (_, index) =>
       reservation(`hres_${String(index).padStart(3, '0')}`, DuelStatus.MATCHED),
@@ -100,6 +128,20 @@ describe('HouseTreasuryService', () => {
 
     expect(first).toMatchObject({ inventoryCreated: 1, transitioned: 1 });
     expect(harness.inventory.map((row) => row.outcomeId)).toEqual(['outcome_opponent']);
+    expect(harness.inventory[0]).toMatchObject({
+      acquisitionValueAmount: '50000000',
+      assetReference: 'outcome_opponent_mint',
+      buybackEligible: false,
+      buybackExpiresAt: null,
+      buybackValueAmount: null,
+      custodyWallet: HOT_WALLET,
+      displayedValueAmount: null,
+      disposition: 'MANUAL_REVIEW',
+      insuredValueAmount: '50000000',
+      listingState: 'UNLISTED',
+      listingValueAmount: null,
+      status: 'HELD',
+    });
     expect(harness.ledger.map((row) => row.type)).toEqual([
       HouseTreasuryLedgerType.HOUSE_PACK_COST,
       HouseTreasuryLedgerType.HOUSE_WIN_INVENTORY,
@@ -107,6 +149,15 @@ describe('HouseTreasuryService', () => {
     expect(replay.checked).toBe(0);
     expect(harness.inventory).toHaveLength(1);
     expect(harness.ledger).toHaveLength(2);
+
+    const inventory = await service.listInventory({ limit: 20 });
+    expect(inventory.data[0]).toMatchObject({
+      acquisitionValue: { amount: '50000000', currency: 'USDC', decimals: 6 },
+      buybackValue: null,
+      displayedValue: null,
+      insuredValue: { amount: '50000000', currency: 'USDC', decimals: 6 },
+      listingValue: null,
+    });
   });
 
   test('persists returned house custody and pack cost after a post-open refund', async () => {
@@ -126,6 +177,58 @@ describe('HouseTreasuryService', () => {
       HouseTreasuryLedgerType.HOUSE_WIN_INVENTORY,
     ]);
     expect(harness.ledger[0]?.metadata).toEqual({ reason: 'post_open_refund' });
+  });
+
+  test('reports acquisition, insured, listing, buyback, and displayed values separately', async () => {
+    const service = new HouseTreasuryService(
+      {
+        houseInventoryAsset: {
+          findMany: () =>
+            Promise.resolve([
+              {
+                acquisitionValueAmount: '41000000',
+                acquisitionValueCurrency: 'USDC',
+                acquisitionValueDecimals: 6,
+                assetReference: 'asset_valuations',
+                buybackEligible: true,
+                buybackExpiresAt: new Date('2026-08-01T00:00:00.000Z'),
+                buybackValueAmount: '43000000',
+                buybackValueCurrency: 'USDC',
+                buybackValueDecimals: 6,
+                custodyWallet: HOT_WALLET,
+                displayedValueAmount: '44000000',
+                displayedValueCurrency: 'USDC',
+                displayedValueDecimals: 6,
+                displayName: 'Distinct valuations',
+                disposition: 'MANUAL_REVIEW',
+                duelId: 'duel_valuations',
+                id: 'hinv_valuations',
+                insuredValueAmount: '42000000',
+                insuredValueCurrency: 'USDC',
+                insuredValueDecimals: 6,
+                lastReconciledAt: null,
+                listingState: 'LISTED',
+                listingValueAmount: '45000000',
+                listingValueCurrency: 'USDC',
+                listingValueDecimals: 6,
+                reconciliationError: null,
+                status: 'LISTED',
+              },
+            ]),
+        },
+      } as never,
+      {} as never,
+    );
+
+    const result = await service.listInventory({ limit: 20 });
+
+    expect(result.data[0]).toMatchObject({
+      acquisitionValue: { amount: '41000000' },
+      buybackValue: { amount: '43000000' },
+      displayedValue: { amount: '44000000' },
+      insuredValue: { amount: '42000000' },
+      listingValue: { amount: '45000000' },
+    });
   });
 
   test('holds incomplete terminal outcome evidence in recovery instead of releasing exposure', async () => {
@@ -219,6 +322,20 @@ interface SnapshotWrite {
   wallet: string;
 }
 
+interface ReconciliationInventoryRow {
+  acquisitionValueAmount: string;
+  acquisitionValueCurrency: string;
+  acquisitionValueDecimals: number;
+  assetReference: string;
+  custodyWallet: string;
+  duelId: string;
+  id: string;
+  listingState: HouseInventoryListingState;
+  reconciliationError: string | null;
+  status: HouseInventoryStatus;
+  version: number;
+}
+
 class TreasuryRpc extends SolanaRpcGateway {
   constructor(private readonly account: LegacyTokenAccountFixture) {
     super();
@@ -248,6 +365,53 @@ class TreasuryRpc extends SolanaRpcGateway {
   }
 }
 
+class InventoryReconciliationRpc extends SolanaRpcGateway {
+  #inventoryAccountRead = 0;
+  #mintRead = 0;
+
+  async assertDevnet(): Promise<void> {}
+  async getBlockHeight(): Promise<bigint> {
+    return 1n;
+  }
+  async getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: bigint }> {
+    return { blockhash: HOT_WALLET, lastValidBlockHeight: 2n };
+  }
+  async getLegacyMint(): Promise<{ decimals: number; supply: bigint }> {
+    this.#mintRead += 1;
+    return this.#mintRead === 1
+      ? { decimals: 6, supply: 1_000_000_000n }
+      : { decimals: 0, supply: 1n };
+  }
+  async getLegacyTokenAccount(address: string): Promise<LegacyTokenAccountFixture> {
+    if (address === TOKEN_ACCOUNT) {
+      return {
+        amount: 150_000_000n,
+        delegate: HOT_WALLET,
+        delegatedAmount: 100_000_000n,
+        mint: USDC_MINT,
+        owner: COLD_OWNER,
+      };
+    }
+    this.#inventoryAccountRead += 1;
+    return {
+      amount: 1n,
+      delegate: null,
+      delegatedAmount: 0n,
+      mint: this.#inventoryAccountRead === 1 ? TOKEN_ACCOUNT : HOT_WALLET,
+      owner: this.#inventoryAccountRead === 1 ? HOT_WALLET : COLD_OWNER,
+    };
+  }
+  async getFinalizedSignaturesForAddress(): Promise<[]> {
+    return [];
+  }
+  async getSignatureStatuses(): Promise<[]> {
+    return [];
+  }
+  async getTransaction(): Promise<null> {
+    return null;
+  }
+}
+
 function treasuryDatabase(snapshots: SnapshotWrite[]) {
   return {
     houseInventoryAsset: { findMany: () => Promise.resolve([]) },
@@ -257,6 +421,82 @@ function treasuryDatabase(snapshots: SnapshotWrite[]) {
         return Promise.resolve(create);
       },
     },
+  };
+}
+
+function inventoryReconciliationDatabase() {
+  const inventory: ReconciliationInventoryRow[] = [
+    {
+      acquisitionValueAmount: '41000000',
+      acquisitionValueCurrency: 'USDC',
+      acquisitionValueDecimals: 6,
+      assetReference: TOKEN_ACCOUNT,
+      custodyWallet: HOT_WALLET,
+      duelId: 'duel_verified_custody',
+      id: 'hinv_verified_custody',
+      listingState: HouseInventoryListingState.UNLISTED,
+      reconciliationError: 'previous_mismatch',
+      status: HouseInventoryStatus.RECONCILIATION_REQUIRED,
+      version: 1,
+    },
+    {
+      acquisitionValueAmount: '42000000',
+      acquisitionValueCurrency: 'USDC',
+      acquisitionValueDecimals: 6,
+      assetReference: HOT_WALLET,
+      custodyWallet: HOT_WALLET,
+      duelId: 'duel_mismatched_custody',
+      id: 'hinv_mismatched_custody',
+      listingState: HouseInventoryListingState.UNLISTED,
+      reconciliationError: null,
+      status: HouseInventoryStatus.HELD,
+      version: 1,
+    },
+  ];
+  const ledger: LedgerWrite[] = [];
+  const transaction = {
+    houseInventoryAsset: {
+      updateMany: ({
+        data,
+        where,
+      }: {
+        data: {
+          reconciliationError: string | null;
+          status: HouseInventoryStatus;
+          version: { increment: number };
+        };
+        where: { id: string; version: number };
+      }) => {
+        const row = inventory.find(
+          (candidate) => candidate.id === where.id && candidate.version === where.version,
+        );
+        if (!row) return Promise.resolve({ count: 0 });
+        row.reconciliationError = data.reconciliationError;
+        row.status = data.status;
+        row.version += data.version.increment;
+        return Promise.resolve({ count: 1 });
+      },
+    },
+    houseTreasuryLedgerEntry: {
+      create: ({ data }: { data: LedgerWrite }) => {
+        ledger.push(data);
+        return Promise.resolve(data);
+      },
+      findUnique: ({ where }: { where: { idempotencyKey: string } }) =>
+        Promise.resolve(
+          ledger.find((entry) => entry.idempotencyKey === where.idempotencyKey) ?? null,
+        ),
+    },
+  };
+  return {
+    database: {
+      $transaction: (operation: (client: typeof transaction) => Promise<boolean>) =>
+        operation(transaction),
+      houseInventoryAsset: { findMany: () => Promise.resolve(inventory) },
+      houseTreasurySnapshot: { upsert: () => Promise.resolve({}) },
+    },
+    inventory,
+    ledger,
   };
 }
 
@@ -371,7 +611,32 @@ function outcome(id: string, side: DuelSide): OutcomeFixture {
 }
 
 interface InventoryWrite {
+  acquisitionValueAmount: string;
+  acquisitionValueCurrency: string;
+  acquisitionValueDecimals: number;
+  assetReference: string;
+  buybackEligible: boolean;
+  buybackExpiresAt: Date | null;
+  buybackValueAmount: string | null;
+  buybackValueCurrency: string | null;
+  buybackValueDecimals: number | null;
+  custodyWallet: string;
+  displayedValueAmount: string | null;
+  displayedValueCurrency: string | null;
+  displayedValueDecimals: number | null;
+  displayName: string;
+  disposition: string;
+  duelId: string;
+  id: string;
+  insuredValueAmount: string;
+  insuredValueCurrency: string;
+  insuredValueDecimals: number;
+  listingState: string;
+  listingValueAmount: string | null;
+  listingValueCurrency: string | null;
+  listingValueDecimals: number | null;
   outcomeId: string;
+  status: string;
 }
 
 interface LedgerWrite {
@@ -385,6 +650,7 @@ function lifecycleDatabase(reservations: ReservationFixture[]) {
   const inventory: InventoryWrite[] = [];
   const ledger: LedgerWrite[] = [];
   const transaction = {
+    $queryRaw: () => Promise.resolve([{ pg_advisory_xact_lock: '' }]),
     houseInventoryAsset: {
       create: ({ data }: { data: InventoryWrite }) => {
         inventory.push(data);
@@ -392,6 +658,10 @@ function lifecycleDatabase(reservations: ReservationFixture[]) {
       },
       findUnique: ({ where }: { where: { outcomeId: string } }) =>
         Promise.resolve(inventory.find((row) => row.outcomeId === where.outcomeId) ?? null),
+      findFirst: ({ where }: { where: { assetReference: string } }) =>
+        Promise.resolve(
+          inventory.find((row) => row.assetReference === where.assetReference) ?? null,
+        ),
     },
     houseTreasuryLedgerEntry: {
       create: ({ data }: { data: LedgerWrite }) => {
@@ -438,6 +708,7 @@ function lifecycleDatabase(reservations: ReservationFixture[]) {
         transitioned: boolean;
       }>,
     ) => operation(transaction),
+    houseInventoryAsset: { findMany: () => Promise.resolve(inventory) },
     houseTreasuryReservation: {
       findMany: ({ take }: { take: number }) =>
         Promise.resolve(
