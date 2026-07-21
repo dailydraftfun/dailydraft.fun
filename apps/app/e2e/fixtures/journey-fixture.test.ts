@@ -129,6 +129,166 @@ describe('deterministic duel journey fixture', () => {
     expect(fixture.snapshot().duel?.status).toBe('settled');
   });
 
+  test('fails RPC confirmation transiently without duplicating a submitted payment', () => {
+    const fixture = new DuelJourneyFixture('rpc-ambiguity');
+    const authorization = authenticate(fixture);
+    const duel = createDirectDuel(fixture, authorization);
+    submitFunding(fixture, duel.id, authorization);
+    fixture.failNextReconciliations();
+
+    const unavailable = fixture.handleApi({
+      authorization,
+      body: {},
+      method: 'POST',
+      path: `/duels/${duel.id}/transactions/reconciliation`,
+    });
+    expect(unavailable).toEqual(
+      expect.objectContaining({
+        body: expect.objectContaining({ status: 503 }),
+        status: 503,
+      }),
+    );
+    expect(fixture.snapshot().duel?.status).toBe('committing');
+
+    const recovered = fixture.handleApi({
+      authorization,
+      body: {},
+      method: 'POST',
+      path: `/duels/${duel.id}/transactions/reconciliation`,
+    });
+    expect(recovered.body).toEqual(
+      expect.objectContaining({
+        duelStatus: 'funded',
+        reconciliation: expect.objectContaining({ finalized: 1 }),
+      }),
+    );
+    expect(
+      fixture
+        .snapshot()
+        .requests.filter((request) => request.endsWith('/submissions')),
+    ).toHaveLength(1);
+  });
+
+  test('abandons a rejected intent before preparing a distinct replacement', () => {
+    const fixture = new DuelJourneyFixture('wallet-rejection');
+    const authorization = authenticate(fixture);
+    const duel = createDirectDuel(fixture, authorization);
+    const firstIntent = fixture.handleApi({
+      authorization,
+      body: { action: 'fund', wallet: fixture.bootstrap().wallet.address },
+      method: 'POST',
+      path: `/duels/${duel.id}/transactions`,
+    }).body as { id: string };
+
+    expect(
+      fixture.handleApi({
+        authorization,
+        body: {},
+        method: 'POST',
+        path: `/duels/${duel.id}/transactions/${firstIntent.id}/rejections`,
+      }).status,
+    ).toBe(200);
+    fixture.handleApi({
+      authorization,
+      body: {},
+      method: 'POST',
+      path: `/duels/${duel.id}/transactions/reconciliation`,
+    });
+    const replacement = fixture.handleApi({
+      authorization,
+      body: { action: 'fund', wallet: fixture.bootstrap().wallet.address },
+      method: 'POST',
+      path: `/duels/${duel.id}/transactions`,
+    }).body as { id: string };
+
+    expect(replacement.id).not.toBe(firstIntent.id);
+    expect(fixture.snapshot().duel?.status).toBe('matched');
+    expect(requestsEndingWith(fixture.snapshot().requests, '/submissions')).toHaveLength(0);
+  });
+
+  test('holds and completes one public matchmaking search without creating payment', () => {
+    const fixture = new DuelJourneyFixture('matching-reload');
+    const authorization = authenticate(fixture);
+    fixture.holdMatchmaking();
+
+    const searching = fixture.handleApi({
+      authorization,
+      body: { packId: 'pokemon_50', wallet: fixture.bootstrap().wallet.address },
+      method: 'POST',
+      path: '/matchmaking/search',
+    });
+    const duelId = (searching.body as { duelId: string }).duelId;
+    expect(searching.body).toEqual(
+      expect.objectContaining({ opponentWallet: null, state: 'searching' }),
+    );
+    expect(fixture.snapshot().duel).toEqual(
+      expect.objectContaining({ id: duelId, opponentWallet: null, status: 'waiting' }),
+    );
+
+    const restored = fixture.handleApi({
+      authorization,
+      body: { wallet: fixture.bootstrap().wallet.address },
+      method: 'POST',
+      path: '/matchmaking/status',
+    });
+    expect(restored.body).toEqual(expect.objectContaining({ duelId, state: 'searching' }));
+
+    fixture.completeMatchmaking();
+    const matched = fixture.handleApi({
+      authorization,
+      body: { packId: 'pokemon_50', wallet: fixture.bootstrap().wallet.address },
+      method: 'POST',
+      path: '/matchmaking/continue',
+    });
+    expect(matched.body).toEqual(expect.objectContaining({ duelId, state: 'matched' }));
+    expect(fixture.snapshot().duel).toEqual(
+      expect.objectContaining({ id: duelId, status: 'matched' }),
+    );
+    expect(requestsEndingWith(fixture.snapshot().requests, '/matchmaking/search')).toHaveLength(1);
+    expect(requestsEndingWith(fixture.snapshot().requests, '/submissions')).toHaveLength(0);
+  });
+
+  test('holds lifecycle reload checkpoints without duplicating or mutating outcomes', () => {
+    for (const checkpoint of ['opening', 'settling'] as const) {
+      const fixture = new DuelJourneyFixture(`reload-${checkpoint}`);
+      const authorization = authenticate(fixture);
+      const duel = createDirectDuel(fixture, authorization);
+      submitFunding(fixture, duel.id, authorization);
+      fixture.handleApi({
+        authorization,
+        body: {},
+        method: 'POST',
+        path: `/duels/${duel.id}/transactions/reconciliation`,
+      });
+      fixture.holdLifecycleAt(checkpoint);
+
+      const staged = settle(fixture, duel.id, authorization);
+      const committedHash = staged.result?.resultHash;
+      expect(staged.status).toBe(checkpoint);
+      if (checkpoint === 'opening') {
+        expect(staged.result).toBeNull();
+      } else {
+        expect(committedHash).toBeTruthy();
+      }
+
+      fixture.releaseLifecycle();
+      const settledHash = fixture.snapshot().duel?.result?.resultHash;
+      expect(settledHash).toBeTruthy();
+      if (committedHash) expect(settledHash).toBe(committedHash);
+      expect(fixture.snapshot().duel).toEqual(
+        expect.objectContaining({
+          result: expect.objectContaining({ resultHash: settledHash }),
+          status: 'settled',
+        }),
+      );
+      expect(
+        fixture
+          .snapshot()
+          .requests.filter((request) => request.endsWith('/open-packs')),
+      ).toHaveLength(1);
+    }
+  });
+
   test('fails incomplete and unsupported setup with targeted errors', () => {
     expect(() => new DuelJourneyFixture('INVALID SEED')).toThrow(
       'Journey fixture seed must use 1-32 lowercase letters, numbers, or hyphens.',
@@ -241,4 +401,28 @@ function settle(fixture: DuelJourneyFixture, duelId: string, authorization: stri
   });
   expect(response.status).toBe(200);
   return response.body as NonNullable<ReturnType<DuelJourneyFixture['snapshot']>['duel']>;
+}
+
+function submitFunding(
+  fixture: DuelJourneyFixture,
+  duelId: string,
+  authorization: string,
+): void {
+  const intent = fixture.handleApi({
+    authorization,
+    body: { action: 'fund', wallet: fixture.bootstrap().wallet.address },
+    method: 'POST',
+    path: `/duels/${duelId}/transactions`,
+  }).body as { id: string };
+  const submission = fixture.handleApi({
+    authorization,
+    body: { signature: 'fixture-signature' },
+    method: 'POST',
+    path: `/duels/${duelId}/transactions/${intent.id}/submissions`,
+  });
+  expect(submission.status).toBe(200);
+}
+
+function requestsEndingWith(requests: string[], suffix: string): string[] {
+  return requests.filter((request) => request.endsWith(suffix));
 }

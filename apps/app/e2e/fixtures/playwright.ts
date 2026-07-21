@@ -10,12 +10,16 @@ import {
 type JourneyFixtures = {
   journey: DuelJourneyFixture;
   journeySeed: string;
+  journeyWalletRejections: number;
 };
 
 export const test = base.extend<JourneyFixtures>({
   journeySeed: ['smoke', { option: true }],
-  journey: async ({ journeySeed, page }, use) => {
-    const journey = new DuelJourneyFixture(journeySeed);
+  journeyWalletRejections: [0, { option: true }],
+  journey: async ({ journeySeed, journeyWalletRejections, page }, use) => {
+    const journey = new DuelJourneyFixture(journeySeed, {
+      walletTransactionRejections: journeyWalletRejections,
+    });
     await page.addInitScript((bootstrap) => {
       window.__OPENPACKSDUEL_JOURNEY__ = bootstrap;
     }, journey.bootstrap());

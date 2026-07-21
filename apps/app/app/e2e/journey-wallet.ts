@@ -5,6 +5,9 @@ import { StandardConnect, StandardDisconnect, StandardEvents } from '@wallet-sta
 import { SOLANA_CHAIN } from '../solana/config';
 
 export type JourneyFixtureBootstrap = {
+  failures: {
+    walletTransactionRejections: number;
+  };
   seed: string;
   transactionSignature: number[];
   version: 1;
@@ -13,6 +16,11 @@ export type JourneyFixtureBootstrap = {
     messageSignature: number[];
     publicKey: number[];
   };
+};
+
+type JourneyWalletTelemetry = {
+  transactionRequests: number;
+  transactionSignatures: number;
 };
 
 declare global {
@@ -34,6 +42,7 @@ export function readJourneyFixtureBootstrap(): JourneyFixtureBootstrap | null {
 
 export function createJourneyFixtureWallet(bootstrap: JourneyFixtureBootstrap): Wallet {
   assertBootstrap(bootstrap);
+  let transactionAttempts = 0;
   const account: WalletAccount = {
     address: bootstrap.wallet.address,
     chains: [SOLANA_CHAIN],
@@ -48,10 +57,17 @@ export function createJourneyFixtureWallet(bootstrap: JourneyFixtureBootstrap): 
     chains: [SOLANA_CHAIN],
     features: {
       [SolanaSignAndSendTransaction]: {
-        signAndSendTransaction: async (...inputs: unknown[]) =>
-          inputs.map(() => ({
+        signAndSendTransaction: async (...inputs: unknown[]) => {
+          transactionAttempts += 1;
+          recordTransactionTelemetry(bootstrap.seed, false);
+          if (transactionAttempts <= bootstrap.failures.walletTransactionRejections) {
+            throw Object.assign(new Error('Wallet rejected the transaction.'), { code: 4001 });
+          }
+          recordTransactionTelemetry(bootstrap.seed, true);
+          return inputs.map(() => ({
             signature: Uint8Array.from(bootstrap.transactionSignature),
-          })),
+          }));
+        },
         supportedTransactionVersions: ['legacy', 0],
         version: '1.0.0',
       },
@@ -82,6 +98,39 @@ export function createJourneyFixtureWallet(bootstrap: JourneyFixtureBootstrap): 
   } as unknown as Wallet;
 }
 
+export function journeyWalletTelemetryKey(seed: string): string {
+  return `openpacksduel:journey-wallet:${seed}`;
+}
+
+function recordTransactionTelemetry(seed: string, signed: boolean): void {
+  const key = journeyWalletTelemetryKey(seed);
+  const stored = window.sessionStorage.getItem(key);
+  let telemetry: JourneyWalletTelemetry = { transactionRequests: 0, transactionSignatures: 0 };
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored) as Partial<JourneyWalletTelemetry>;
+      if (
+        Number.isInteger(parsed.transactionRequests) &&
+        Number.isInteger(parsed.transactionSignatures)
+      ) {
+        telemetry = {
+          transactionRequests: parsed.transactionRequests as number,
+          transactionSignatures: parsed.transactionSignatures as number,
+        };
+      }
+    } catch {
+      // Ignore malformed fixture-only telemetry and replace it with a clean counter.
+    }
+  }
+  window.sessionStorage.setItem(
+    key,
+    JSON.stringify({
+      transactionRequests: telemetry.transactionRequests + (signed ? 0 : 1),
+      transactionSignatures: telemetry.transactionSignatures + (signed ? 1 : 0),
+    } satisfies JourneyWalletTelemetry),
+  );
+}
+
 function assertBootstrap(value: JourneyFixtureBootstrap): void {
   if (value.version !== 1) throw new Error('Journey fixture setup has an unsupported version.');
   if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(value.seed)) {
@@ -93,6 +142,13 @@ function assertBootstrap(value: JourneyFixtureBootstrap): void {
   assertBytes(value.wallet.publicKey, 32, 'wallet public key');
   assertBytes(value.wallet.messageSignature, 64, 'message signature');
   assertBytes(value.transactionSignature, 64, 'transaction signature');
+  if (
+    !Number.isInteger(value.failures.walletTransactionRejections) ||
+    value.failures.walletTransactionRejections < 0 ||
+    value.failures.walletTransactionRejections > 20
+  ) {
+    throw new Error('Journey fixture setup has an invalid wallet rejection count.');
+  }
 }
 
 function assertBytes(value: number[], length: number, label: string): void {

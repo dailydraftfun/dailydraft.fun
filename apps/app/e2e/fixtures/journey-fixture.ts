@@ -29,6 +29,12 @@ export type JourneyFixtureSnapshot = {
   seed: string;
 };
 
+type JourneyFixtureOptions = {
+  walletTransactionRejections?: number;
+};
+
+type ReloadCheckpoint = 'opening' | 'settling';
+
 const CREATOR_WALLET = '11111111111111111111111111111111';
 const OPPONENT_WALLET = 'So11111111111111111111111111111111111111112';
 const DEVNET_GENESIS_HASH = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
@@ -40,12 +46,18 @@ export class DuelJourneyFixture {
   readonly #resultHash: string;
   readonly #sessionToken: string;
   readonly #transactionSignature: string;
+  readonly #walletTransactionRejections: number;
   #authenticated = false;
   #duel: DurableDuel | null = null;
   #fundingState: 'none' | 'submitted' | 'finalized' = 'none';
+  #intentSequence = 0;
+  #lifecycleHold: ReloadCheckpoint | null = null;
+  #matchmakingState: MatchmakingSession['state'] = 'matched';
+  #reconciliationFailures = 0;
   #requests: string[] = [];
+  #submittedIntentIds = new Set<string>();
 
-  constructor(seed: string) {
+  constructor(seed: string, options: JourneyFixtureOptions = {}) {
     if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(seed)) {
       throw new Error('Journey fixture seed must use 1-32 lowercase letters, numbers, or hyphens.');
     }
@@ -55,10 +67,15 @@ export class DuelJourneyFixture {
     this.#resultHash = stableHex(seed, 'result', 64);
     this.#sessionToken = `fixture_session_${stableHex(seed, 'session', 24)}`;
     this.#transactionSignature = stableHex(seed, 'transaction', 64);
+    this.#walletTransactionRejections = options.walletTransactionRejections ?? 0;
+    assertCount(this.#walletTransactionRejections, 'wallet transaction rejection');
   }
 
   bootstrap(): JourneyFixtureBootstrap {
     return {
+      failures: {
+        walletTransactionRejections: this.#walletTransactionRejections,
+      },
       seed: this.seed,
       transactionSignature: stableBytes(this.seed, 'transaction-signature', 64),
       version: 1,
@@ -74,7 +91,54 @@ export class DuelJourneyFixture {
     this.#authenticated = false;
     this.#duel = null;
     this.#fundingState = 'none';
+    this.#intentSequence = 0;
+    this.#lifecycleHold = null;
+    this.#matchmakingState = 'matched';
+    this.#reconciliationFailures = 0;
     this.#requests = [];
+    this.#submittedIntentIds.clear();
+  }
+
+  failNextReconciliations(count = 1): void {
+    assertCount(count, 'reconciliation failure');
+    this.#reconciliationFailures = count;
+  }
+
+  holdLifecycleAt(checkpoint: ReloadCheckpoint): void {
+    this.#lifecycleHold = checkpoint;
+  }
+
+  holdMatchmaking(): void {
+    this.#matchmakingState = 'searching';
+  }
+
+  completeMatchmaking(): void {
+    if (!this.#duel || this.#duel.matchmakingMode !== 'open') {
+      throw new Error('Journey fixture matchmaking can only complete an active public search.');
+    }
+    this.#matchmakingState = 'matched';
+    this.#duel = {
+      ...this.#duel,
+      opponentWallet: OPPONENT_WALLET,
+      status: 'matched',
+      version: this.#duel.version + 1,
+    };
+  }
+
+  releaseLifecycle(): void {
+    if (!this.#duel || !['opening', 'settling'].includes(this.#duel.status)) {
+      throw new Error('Journey fixture lifecycle can only be released from opening or settling.');
+    }
+    this.#duel =
+      this.#duel.status === 'opening'
+        ? this.#settledDuel(this.#duel)
+        : {
+            ...this.#duel,
+            status: 'settled',
+            version: this.#duel.version + 1,
+            winnerWallet: CREATOR_WALLET,
+          };
+    this.#lifecycleHold = null;
   }
 
   snapshot(): JourneyFixtureSnapshot {
@@ -218,6 +282,13 @@ export class DuelJourneyFixture {
     if (method === 'POST' && path === '/matchmaking/search') {
       this.#fundingState = 'none';
       this.#duel = this.#matchedDuel(OPPONENT_WALLET, 'open');
+      if (this.#matchmakingState === 'searching') {
+        this.#duel = {
+          ...this.#duel,
+          opponentWallet: null,
+          status: 'waiting',
+        };
+      }
       return ok(this.#matchmakingSession());
     }
     if (method === 'POST' && path === '/matchmaking/continue') {
@@ -240,11 +311,23 @@ export class DuelJourneyFixture {
         return ok(this.#transactionIntent());
       }
       if (method === 'POST' && suffix?.match(/^\/transactions\/[^/]+\/submissions$/)) {
+        const intentId = suffix.split('/')[2];
+        if (!intentId) return problem(422, 'Fixture funding submission intent is missing.');
+        if (this.#submittedIntentIds.has(intentId)) return ok({ accepted: true, duplicate: true });
+        this.#submittedIntentIds.add(intentId);
         this.#fundingState = 'submitted';
         this.#duel = { ...this.#duel, status: 'committing', version: this.#duel.version + 1 };
         return ok({ accepted: true });
       }
+      if (method === 'POST' && suffix?.match(/^\/transactions\/[^/]+\/rejections$/)) {
+        this.#fundingState = 'none';
+        return ok({ accepted: true });
+      }
       if (method === 'POST' && suffix === '/transactions/reconciliation') {
+        if (this.#reconciliationFailures > 0) {
+          this.#reconciliationFailures -= 1;
+          return problem(503, 'Fixture RPC confirmation is temporarily unavailable.');
+        }
         if (this.#fundingState === 'submitted') {
           this.#duel = { ...this.#duel, status: 'funded', version: this.#duel.version + 1 };
           this.#fundingState = 'finalized';
@@ -252,7 +335,13 @@ export class DuelJourneyFixture {
         return ok(this.#reconciliation());
       }
       if (method === 'POST' && suffix === '/open-packs') {
-        this.#duel = this.#settledDuel(this.#duel);
+        if (['opening', 'settling', 'settled'].includes(this.#duel.status)) return ok(this.#duel);
+        this.#duel =
+          this.#lifecycleHold === 'opening'
+            ? this.#openingDuel(this.#duel)
+            : this.#lifecycleHold === 'settling'
+              ? this.#settlingDuel(this.#duel)
+              : this.#settledDuel(this.#duel);
         return ok(this.#duel);
       }
       if (method === 'POST' && suffix === '/cancel') {
@@ -337,7 +426,27 @@ export class DuelJourneyFixture {
     };
   }
 
+  #openingDuel(duel: DurableDuel): DurableDuel {
+    return {
+      ...duel,
+      result: null,
+      status: 'opening',
+      transactionSignature: this.#transactionSignature,
+      version: duel.version + 1,
+      winnerWallet: null,
+    };
+  }
+
+  #settlingDuel(duel: DurableDuel): DurableDuel {
+    return {
+      ...this.#settledDuel(duel),
+      status: 'settling',
+      winnerWallet: null,
+    };
+  }
+
   #transactionIntent(): DuelTransactionIntent {
+    this.#intentSequence += 1;
     return {
       action: 'fund',
       chain: 'solana:devnet',
@@ -349,7 +458,7 @@ export class DuelJourneyFixture {
       feeAmountSol: '0.01',
       feeRecipient: OPPONENT_WALLET,
       fundingSide: 'creator',
-      id: `intent_${stableHex(this.seed, 'intent', 20)}`,
+      id: `intent_${stableHex(this.seed, `intent-${this.#intentSequence}`, 20)}`,
       lastValidBlockHeight: '987654321',
       paymentMint: 'So11111111111111111111111111111111111111112',
       programId: '11111111111111111111111111111111',
@@ -382,12 +491,18 @@ export class DuelJourneyFixture {
 
   #matchmakingSession(): MatchmakingSession {
     return {
-      availableActions: [{ action: 'cancel_search', available: true }],
+      availableActions:
+        this.#matchmakingState === 'searching'
+          ? [
+              { action: 'continue_search', available: true },
+              { action: 'cancel_search', available: true },
+            ]
+          : [{ action: 'cancel_search', available: true }],
       cancellationRule: 'Fixture searches can be reset without value movement.',
       commitmentExpiresAt: '2099-01-01T00:15:00.000Z',
       duelId: this.#duelId,
       houseOpponent: false,
-      opponentWallet: OPPONENT_WALLET,
+      opponentWallet: this.#matchmakingState === 'searching' ? null : OPPONENT_WALLET,
       queue: {
         packId: 'pokemon_50',
         providerMode: 'openpacksduel-devnet',
@@ -399,7 +514,7 @@ export class DuelJourneyFixture {
       },
       role: 'creator',
       searchExpiresAt: '2099-01-01T00:15:00.000Z',
-      state: 'matched',
+      state: this.#matchmakingState,
       wallet: CREATOR_WALLET,
     };
   }
@@ -476,6 +591,12 @@ function requireString(value: unknown, label: string): string {
     throw new Error(`Journey fixture ${label} is missing.`);
   }
   return value;
+}
+
+function assertCount(value: number, label: string): void {
+  if (!Number.isInteger(value) || value < 0 || value > 20) {
+    throw new Error(`Journey fixture ${label} count must be an integer between 0 and 20.`);
+  }
 }
 
 function stableHex(seed: string, label: string, length: number): string {
