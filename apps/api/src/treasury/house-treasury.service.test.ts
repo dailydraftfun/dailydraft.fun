@@ -86,12 +86,17 @@ describe('HouseTreasuryService', () => {
       inventoryMismatched: 1,
       inventoryVerified: 1,
     });
-    expect(harness.inventory.map(({ reconciliationError, status }) => ({
-      reconciliationError,
-      status,
-    }))).toEqual([
+    expect(
+      harness.inventory.map(({ reconciliationError, status }) => ({
+        reconciliationError,
+        status,
+      })),
+    ).toEqual([
       { reconciliationError: null, status: HouseInventoryStatus.HELD },
-      { reconciliationError: 'custody_mismatch', status: HouseInventoryStatus.RECONCILIATION_REQUIRED },
+      {
+        reconciliationError: 'custody_mismatch',
+        status: HouseInventoryStatus.RECONCILIATION_REQUIRED,
+      },
     ]);
     expect(harness.ledger).toEqual([
       expect.objectContaining({ type: HouseTreasuryLedgerType.RECONCILIATION_ALERT }),
