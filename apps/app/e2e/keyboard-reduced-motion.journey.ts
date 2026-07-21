@@ -112,7 +112,8 @@ test('completes tabs, dialogs, cancellation, disclosure, share, and rematch with
   await expect(primaryAction).toHaveText(/Review \$50 rematch/);
 });
 
-test('exposes the same committed result without cinematic motion', async ({ page }) => {
+test('exposes the same committed result without cinematic motion', async ({ journey, page }) => {
+  expect(journey.seed).toBe('keyboard-reduced-motion');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.clock.install({ time: new Date('2099-01-01T00:00:00.000Z') });
   await openLobby(page);
