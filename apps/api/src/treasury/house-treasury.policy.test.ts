@@ -248,9 +248,7 @@ function limitConfig() {
   };
 }
 
-function limitSnapshot(
-  overrides: Partial<Parameters<typeof evaluateHouseExposureLimits>[1]> = {},
-) {
+function limitSnapshot(overrides: Partial<Parameters<typeof evaluateHouseExposureLimits>[1]> = {}) {
   return {
     activePerTier: 0,
     activePerWallet: 0,
