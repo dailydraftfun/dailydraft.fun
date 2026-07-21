@@ -46,6 +46,12 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Apply committed migrations
         run: bun --filter @openpacksduel/db db:deploy
+      - name: Verify house treasury migration contract
+        run: |
+          database_url="${DATABASE_URL%%\?*}"
+          psql "$database_url" \
+            --set ON_ERROR_STOP=1 \
+            --file packages/db/prisma/verify-house-treasury.sql
       - name: Validate Prisma schema
         run: bun --filter @openpacksduel/db db:validate
       - name: Prove schema-only drift is rejected
