@@ -53,7 +53,10 @@ ADD CONSTRAINT "HouseInventoryAsset_insured_value_check" CHECK (
 ADD CONSTRAINT "HouseInventoryAsset_listing_value_check" CHECK (
   ("listingValueAmount" IS NULL AND "listingValueCurrency" IS NULL AND "listingValueDecimals" IS NULL)
   OR (
-    "listingValueAmount" ~ '^[0-9]+$'
+    "listingValueAmount" IS NOT NULL
+    AND "listingValueCurrency" IS NOT NULL
+    AND "listingValueDecimals" IS NOT NULL
+    AND "listingValueAmount" ~ '^[0-9]+$'
     AND "listingValueCurrency" = 'USDC'
     AND "listingValueDecimals" = 6
   )
@@ -61,7 +64,10 @@ ADD CONSTRAINT "HouseInventoryAsset_listing_value_check" CHECK (
 ADD CONSTRAINT "HouseInventoryAsset_buyback_value_check" CHECK (
   ("buybackValueAmount" IS NULL AND "buybackValueCurrency" IS NULL AND "buybackValueDecimals" IS NULL)
   OR (
-    "buybackValueAmount" ~ '^[0-9]+$'
+    "buybackValueAmount" IS NOT NULL
+    AND "buybackValueCurrency" IS NOT NULL
+    AND "buybackValueDecimals" IS NOT NULL
+    AND "buybackValueAmount" ~ '^[0-9]+$'
     AND "buybackValueCurrency" = 'USDC'
     AND "buybackValueDecimals" = 6
   )
@@ -69,7 +75,10 @@ ADD CONSTRAINT "HouseInventoryAsset_buyback_value_check" CHECK (
 ADD CONSTRAINT "HouseInventoryAsset_displayed_value_check" CHECK (
   ("displayedValueAmount" IS NULL AND "displayedValueCurrency" IS NULL AND "displayedValueDecimals" IS NULL)
   OR (
-    "displayedValueAmount" ~ '^[0-9]+$'
+    "displayedValueAmount" IS NOT NULL
+    AND "displayedValueCurrency" IS NOT NULL
+    AND "displayedValueDecimals" IS NOT NULL
+    AND "displayedValueAmount" ~ '^[0-9]+$'
     AND "displayedValueCurrency" = 'USDC'
     AND "displayedValueDecimals" = 6
   )
