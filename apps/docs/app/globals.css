@@ -198,7 +198,7 @@ pre {
 }
 
 .docs-card span {
-  color: var(--opd-accent);
+  color: #3f7000;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.09em;
@@ -213,7 +213,7 @@ pre {
 
 .docs-card p {
   margin: 0;
-  color: color-mix(in srgb, currentColor 68%, transparent);
+  color: #53606f;
   font-size: 0.9rem;
   line-height: 1.55;
 }
@@ -238,6 +238,15 @@ pre {
 
 .docs-status-row span {
   margin-top: 0.25rem;
-  color: color-mix(in srgb, currentColor 64%, transparent);
+  color: #53606f;
   font-size: 0.82rem;
+}
+
+.dark .docs-card span {
+  color: var(--opd-accent);
+}
+
+.dark .docs-card p,
+.dark .docs-status-row span {
+  color: var(--opd-text-secondary);
 }

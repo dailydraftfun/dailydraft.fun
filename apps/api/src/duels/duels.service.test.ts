@@ -7,6 +7,7 @@ import type { ListDuelsQuery } from './duel.dto.js';
 import {
   type CreateDuelRecord,
   DuelRepository,
+  type LeaderboardDuelPage,
   type ResolveOpenedPacksRecord,
   type TransitionDuelRecord,
 } from './duel.repository.js';
@@ -229,6 +230,13 @@ class FakeDuelRepository extends DuelRepository {
 
   async listEvents(_duelId: string): Promise<DuelEvent[]> {
     return [];
+  }
+
+  async listSettledForLeaderboard(_limit: number): Promise<LeaderboardDuelPage> {
+    return {
+      data: [...this.#duels.values()].filter((duel) => duel.status === 'settled'),
+      hasMore: false,
+    };
   }
 
   async listTransactions(_duelId: string): Promise<DuelTransactionRecord[]> {

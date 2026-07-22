@@ -29,5 +29,52 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run lint --affected
       - run: bun run typecheck --affected
-      - run: bun run test --affected
+      - name: Verify changed-code coverage fixtures
+        id: coverage-fixtures
+        continue-on-error: true
+        run: bun run test:coverage-gate
+      - name: Test affected workspaces
+        id: affected-tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p .artifacts/tests
+          set +e
+          set -o pipefail
+          bun run test --affected 2>&1 | tee .artifacts/tests/affected.full.log
+          test_status=${PIPESTATUS[0]}
+          set -e
+          tail -c 1048576 .artifacts/tests/affected.full.log > .artifacts/tests/affected.log
+          rm .artifacts/tests/affected.full.log
+          exit "$test_status"
+      - name: Enforce changed-code coverage
+        id: changed-coverage
+        if: always() && !cancelled()
+        continue-on-error: true
+        run: bun run coverage:changed
+      - name: Upload failed test and coverage evidence
+        if: >-
+          !cancelled() && (
+            steps.coverage-fixtures.outcome == 'failure' ||
+            steps.affected-tests.outcome == 'failure' ||
+            steps.changed-coverage.outcome == 'failure'
+          )
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 9
+          include-hidden-files: true
+      - name: Enforce test and coverage results
+        if: always() && !cancelled()
+        env:
+          AFFECTED_TESTS: ${{ steps.affected-tests.outcome }}
+          CHANGED_COVERAGE: ${{ steps.changed-coverage.outcome }}
+          COVERAGE_FIXTURES: ${{ steps.coverage-fixtures.outcome }}
+        run: |
+          test "$COVERAGE_FIXTURES" = success
+          test "$AFFECTED_TESTS" = success
+          test "$CHANGED_COVERAGE" = success
       - run: bun run build --affected

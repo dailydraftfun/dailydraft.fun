@@ -20,3 +20,9 @@ page load. It covers roving mode tabs, both modal focus traps, cancellation,
 transaction disclosure, receipt access, result sharing, and rematch. The paired
 reduced-motion journey asserts the same committed pulls and result while the
 browser reports zero reveal animation and transition durations.
+
+The same Playwright gate audits the public marketing, product, receipt, docs,
+and MCP onboarding surfaces for serious or critical axe violations. Test-only
+receipt routes are available only while `NEXT_PUBLIC_E2E_FIXTURES=1`; they let
+the browser crawl canonical, status-specific metadata without contacting a live
+API or exposing wallet and transaction identifiers.

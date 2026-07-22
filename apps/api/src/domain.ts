@@ -49,6 +49,7 @@ export interface Duel {
   pack: Pack;
   providerMode: PackProviderMode;
   result?: DuelResult | null;
+  settledAt?: string | null;
   stake: Money;
   status: DuelStatus;
   transactionSignature?: string | null;

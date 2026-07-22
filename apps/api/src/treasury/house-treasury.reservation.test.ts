@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { HttpException } from '@nestjs/common';
 import {
   HouseTreasuryLedgerType,
   HouseTreasuryReservationStatus,
@@ -52,6 +53,57 @@ describe('house treasury reservation transactions', () => {
     expect(database.ledger).toHaveLength(1);
   });
 
+  test('serializes concurrent per-player and per-tier admission limits', async () => {
+    const cases = [
+      {
+        configure(environment: NodeJS.ProcessEnv) {
+          environment.OPENPACKSDUEL_HOUSE_MAX_ACTIVE_PER_WALLET = '1';
+        },
+        expected: 'player exposure limit',
+        second: { playerWallet: WITHDRAWAL, tier: 100 },
+      },
+      {
+        configure(environment: NodeJS.ProcessEnv) {
+          environment.OPENPACKSDUEL_HOUSE_MAX_CONCURRENT_PER_TIER = '1';
+        },
+        expected: 'tier concurrency limit',
+        second: { playerWallet: `${WITHDRAWAL}_other`, tier: 50 },
+      },
+    ];
+
+    for (const [index, limit] of cases.entries()) {
+      const database = new ReservationDatabase();
+      const environment = configuredEnvironment();
+      limit.configure(environment);
+      const first = {
+        ...reservationInput(`duel_count_limit_${index}_a`),
+        amount: '10000000',
+      };
+      const second = {
+        ...first,
+        ...limit.second,
+        duelId: `duel_count_limit_${index}_b`,
+      };
+
+      const results = await Promise.allSettled([
+        database.reserve(first, environment),
+        database.reserve(second, environment),
+      ]);
+      const rejected = results.find(({ status }) => status === 'rejected');
+
+      expect(results.map(({ status }) => status).sort()).toEqual(['fulfilled', 'rejected']);
+      expect(rejected?.status).toBe('rejected');
+      if (rejected?.status === 'rejected') {
+        expect(rejected.reason).toBeInstanceOf(HttpException);
+        expect((rejected.reason as HttpException).getStatus()).toBe(429);
+        expect((rejected.reason as Error).message).toContain(limit.expected);
+      }
+      expect(database.lockAcquisitions).toBe(2);
+      expect(database.reservations).toHaveLength(1);
+      expect(database.ledger).toHaveLength(1);
+    }
+  });
+
   test('counts every active exposure state once when enforcing the total limit', async () => {
     const database = new ReservationDatabase();
     for (const status of [
@@ -86,6 +138,31 @@ describe('house treasury reservation transactions', () => {
 
     expect(database.reservations).toHaveLength(3);
     expect(database.reservations.at(-1)?.status).toBe(HouseTreasuryReservationStatus.RESERVED);
+  });
+
+  test('evaluates realized loss inside the current UTC day only', async () => {
+    const database = new ReservationDatabase();
+
+    await database.reserve(reservationInput('duel_utc_loss_window'));
+
+    expect(database.dailyLossWindow).toEqual({
+      gte: new Date('2026-07-20T00:00:00.000Z'),
+      lt: new Date('2026-07-21T00:00:00.000Z'),
+    });
+  });
+
+  test('replays only the exact original exposure for an existing duel', async () => {
+    const database = new ReservationDatabase();
+    const input = reservationInput('duel_exact_replay');
+
+    await database.reserve(input);
+    await database.reserve(input);
+    await expect(database.reserve({ ...input, amount: '40000000' })).rejects.toThrow(
+      'House reservation replay does not match original exposure',
+    );
+
+    expect(database.reservations).toHaveLength(1);
+    expect(database.ledger).toHaveLength(1);
   });
 
   test('rejects missing reviewed policy before acquiring a database lock', async () => {
@@ -135,6 +212,7 @@ interface LedgerRow {
 class ReservationDatabase {
   readonly reservations: ReservationRow[] = [];
   readonly ledger: LedgerRow[] = [];
+  dailyLossWindow: { gte: Date; lt: Date } | null = null;
   lockAcquisitions = 0;
   #lockTail = Promise.resolve();
   #seed = 0;
@@ -173,7 +251,14 @@ class ReservationDatabase {
           this.ledger.push(data);
           return data;
         },
-        findMany: async () => [],
+        findMany: async ({
+          where,
+        }: {
+          where: { createdAt: { gte: Date; lt: Date }; type: HouseTreasuryLedgerType };
+        }) => {
+          this.dailyLossWindow = where.createdAt;
+          return [];
+        },
       },
       houseTreasuryReservation: {
         count: async ({

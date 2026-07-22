@@ -1,5 +1,9 @@
 import 'server-only';
 
+import type { PublicMoneyValue } from './public-money';
+
+export { formatPublicMoney } from './public-money';
+
 export type PublicDuelStatus =
   | 'awaiting_assets'
   | 'cancelled'
@@ -16,7 +20,7 @@ export type PublicDuelStatus =
   | 'settling'
   | 'waiting';
 
-export type PublicMoney = { amount: string; currency: 'USDC'; decimals: 6 };
+export type PublicMoney = PublicMoneyValue;
 export type PublicProviderMode = 'collector-crypt-sandbox' | 'mock' | 'openpacksduel-devnet';
 
 export type PublicParticipant = {
@@ -216,6 +220,32 @@ export type PublicWalletProfile = {
   wallet: { address: string; display: string };
 };
 
+export type PublicDuelLeaderboard = {
+  entries: Array<{
+    display: string;
+    lastPlayedAt: string;
+    profileHref: string;
+    rank: number;
+    record: {
+      completed: number;
+      losses: number;
+      ties: number;
+      wins: number;
+    };
+    totalWonValue: PublicMoney;
+  }>;
+  methodology: {
+    entryLimit: number;
+    excludesMockResults: true;
+    hasMoreSettledDuels: boolean;
+    ranking: 'wins-total-value-completed-recency';
+    sampleLimit: number;
+    sampledSettledDuels: number;
+  };
+  privacy: { indexable: false; reason: string };
+  schemaVersion: 'openpacksduel.leaderboard.v1';
+};
+
 const apiBaseUrl = (process.env.NEXT_PUBLIC_DUEL_API_URL ?? 'http://localhost:3003/v1').replace(
   /\/$/,
   '',
@@ -235,6 +265,10 @@ export async function fetchPublicWalletProfile(
   );
 }
 
+export async function fetchPublicDuelLeaderboard(): Promise<PublicDuelLeaderboard | null> {
+  return fetchPublicJson<PublicDuelLeaderboard>(`${apiBaseUrl}/leaderboard`);
+}
+
 async function fetchPublicJson<T>(url: string): Promise<T | null> {
   try {
     const response = await fetch(url, {
@@ -246,12 +280,4 @@ async function fetchPublicJson<T>(url: string): Promise<T | null> {
   } catch {
     return null;
   }
-}
-
-export function formatPublicMoney(money: PublicMoney): string {
-  const value = BigInt(money.amount);
-  const divisor = 10n ** BigInt(money.decimals);
-  const whole = value / divisor;
-  const fraction = (value % divisor).toString().padStart(money.decimals, '0').replace(/0+$/, '');
-  return `${money.currency} ${whole.toLocaleString()}${fraction ? `.${fraction}` : ''}`;
 }
