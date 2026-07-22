@@ -30,6 +30,8 @@ describe('changed-code coverage gate', () => {
       isExecutableSource('apps/app/app/%5F%5Fjourney/v1/duels/[duelId]/receipt/route.ts'),
     ).toBe(false);
     expect(isExecutableSource('apps/app/app/duel/public-duel-receipt.ts')).toBe(true);
+    expect(isExecutableSource('apps/api/src/e2e/production-handler.ts')).toBe(true);
+    expect(isExecutableSource('packages/ui/src/__journey/production-component.tsx')).toBe(true);
   });
 
   test('accepts a fixture with covered changed lines and both branch outcomes', () => {
