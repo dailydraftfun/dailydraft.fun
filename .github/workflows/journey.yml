@@ -27,3 +27,12 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx playwright install --with-deps chromium
       - run: bun --filter @openpacksduel/app test:e2e
+      - name: Upload browser failure evidence
+        if: failure() && !cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: journey-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/app/test-results
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 9

@@ -63,6 +63,12 @@ bun run deps:update
 - `skills` - selected repo workflow skills for PRDs, planning, execution, review, and verification
 - `DESIGN.md` - machine-readable design system spec ([google-labs-code/design.md](https://github.com/google-labs-code/design.md)); validate with `bun run lint:design`
 
+## Continuous integration
+
+Pull requests run affected-workspace checks plus an 80% changed-line and
+changed-branch coverage gate. Failed tests, coverage, and browser journeys
+publish bounded seven-day artifacts. See [`docs/ci.md`](docs/ci.md).
+
 ## Scope
 
 Solana Pokémon pack duel workspace with a frontend MVP, devnet API, integration docs, and agent tooling.
