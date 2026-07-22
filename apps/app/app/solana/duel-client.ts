@@ -150,27 +150,40 @@ export async function prepareDuelIntent(
   wallet: string,
   sessionToken: string,
 ): Promise<DuelTransactionIntent> {
-  return authenticatedMutation<DuelTransactionIntent>(
-    `/duels/${encodeURIComponent(duelId)}/transactions`,
+  if (!apiBaseUrl) throw new Error('The duel API is not configured.');
+  return requestPreparedDuelIntent(
+    apiBaseUrl,
+    duelId,
+    wallet,
     sessionToken,
-    { action: 'fund', wallet },
+    `opd-web-${crypto.randomUUID()}`,
   );
 }
 
+export type CreateDuelInput = {
+  analyticsSessionId?: string;
+  creatorWallet: string;
+  expiresAt: string;
+  matchmakingMode: 'direct' | 'house';
+  opponentWallet?: string;
+  packId: string;
+};
+
 export async function createDuel(
-  input: {
-    creatorWallet: string;
-    matchmakingMode: 'direct' | 'house';
-    opponentWallet?: string;
-    packId: string;
-  },
+  input: Omit<CreateDuelInput, 'analyticsSessionId' | 'expiresAt'>,
   sessionToken: string,
 ): Promise<DurableDuel> {
-  return authenticatedMutation<DurableDuel>('/duels', sessionToken, {
-    ...input,
-    analyticsSessionId: getAnalyticsSessionId(),
-    expiresAt: new Date(Date.now() + 15 * 60 * 1_000).toISOString(),
-  });
+  if (!apiBaseUrl) throw new Error('The duel API is not configured.');
+  return requestCreateDuel(
+    apiBaseUrl,
+    {
+      ...input,
+      analyticsSessionId: getAnalyticsSessionId(),
+      expiresAt: new Date(Date.now() + 15 * 60 * 1_000).toISOString(),
+    },
+    sessionToken,
+    `opd-web-${crypto.randomUUID()}`,
+  );
 }
 
 export function searchOpenMatchmaking(
@@ -244,6 +257,34 @@ export async function requestAuthenticatedDuel(
     headers: { authorization: `Bearer ${sessionToken}` },
   });
   return parseMutationResponse(response);
+}
+
+export async function requestCreateDuel(
+  baseUrl: string,
+  input: CreateDuelInput,
+  sessionToken: string,
+  idempotencyKey: string,
+  fetcher: typeof fetch = fetch,
+): Promise<DurableDuel> {
+  return requestDuelMutation(baseUrl, '/duels', sessionToken, input, idempotencyKey, fetcher);
+}
+
+export async function requestPreparedDuelIntent(
+  baseUrl: string,
+  duelId: string,
+  wallet: string,
+  sessionToken: string,
+  idempotencyKey: string,
+  fetcher: typeof fetch = fetch,
+): Promise<DuelTransactionIntent> {
+  return requestDuelMutation(
+    baseUrl,
+    `/duels/${encodeURIComponent(duelId)}/transactions`,
+    sessionToken,
+    { action: 'fund', wallet },
+    idempotencyKey,
+    fetcher,
+  );
 }
 
 export async function getPrivateRematchOpponent(
@@ -457,7 +498,18 @@ async function authenticatedMutation<T>(
   idempotencyKey = `opd-web-${crypto.randomUUID()}`,
 ): Promise<T> {
   if (!apiBaseUrl) throw new Error('The duel API is not configured.');
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  return requestDuelMutation(apiBaseUrl, path, sessionToken, body, idempotencyKey);
+}
+
+async function requestDuelMutation<T>(
+  baseUrl: string,
+  path: string,
+  sessionToken: string,
+  body: Record<string, unknown>,
+  idempotencyKey: string,
+  fetcher: typeof fetch = fetch,
+): Promise<T> {
+  const response = await fetcher(`${baseUrl}${path}`, {
     body: JSON.stringify(body),
     headers: {
       authorization: `Bearer ${sessionToken}`,

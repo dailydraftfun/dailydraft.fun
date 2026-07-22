@@ -42,6 +42,7 @@ export class DuelJourneyFixture {
   readonly #transactionSignature: string;
   #authenticated = false;
   #duel: DurableDuel | null = null;
+  #fundingState: 'none' | 'submitted' | 'finalized' = 'none';
   #requests: string[] = [];
 
   constructor(seed: string) {
@@ -72,6 +73,7 @@ export class DuelJourneyFixture {
   reset(): void {
     this.#authenticated = false;
     this.#duel = null;
+    this.#fundingState = 'none';
     this.#requests = [];
   }
 
@@ -205,6 +207,7 @@ export class DuelJourneyFixture {
       if (creatorWallet !== CREATOR_WALLET) {
         return problem(422, 'Fixture duel creator does not match the connected wallet.');
       }
+      this.#fundingState = 'none';
       this.#duel = this.#matchedDuel(
         body.matchmakingMode === 'house'
           ? 'house'
@@ -213,6 +216,7 @@ export class DuelJourneyFixture {
       return ok(this.#duel);
     }
     if (method === 'POST' && path === '/matchmaking/search') {
+      this.#fundingState = 'none';
       this.#duel = this.#matchedDuel(journeyOpponentWallet, 'open');
       return ok(this.#matchmakingSession());
     }
@@ -236,11 +240,15 @@ export class DuelJourneyFixture {
         return ok(this.#transactionIntent());
       }
       if (method === 'POST' && suffix?.match(/^\/transactions\/[^/]+\/submissions$/)) {
+        this.#fundingState = 'submitted';
         this.#duel = { ...this.#duel, status: 'committing', version: this.#duel.version + 1 };
         return ok({ accepted: true });
       }
       if (method === 'POST' && suffix === '/transactions/reconciliation') {
-        this.#duel = { ...this.#duel, status: 'funded', version: this.#duel.version + 1 };
+        if (this.#fundingState === 'submitted') {
+          this.#duel = { ...this.#duel, status: 'funded', version: this.#duel.version + 1 };
+          this.#fundingState = 'finalized';
+        }
         return ok(this.#reconciliation());
       }
       if (method === 'POST' && suffix === '/open-packs') {
@@ -354,16 +362,17 @@ export class DuelJourneyFixture {
   }
 
   #reconciliation(): DuelReconciliationResult {
+    const finalized = this.#fundingState === 'finalized';
     return {
       activeTransactionCount: 0,
       duelId: this.#duelId,
-      duelStatus: 'funded',
+      duelStatus: this.#duel?.status ?? 'matched',
       reconciliation: {
-        checked: 1,
+        checked: finalized ? 1 : 0,
         confirmed: 0,
         expired: 0,
         failed: 0,
-        finalized: 1,
+        finalized: finalized ? 1 : 0,
         pending: 0,
         stuck: 0,
       },

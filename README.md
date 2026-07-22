@@ -16,6 +16,7 @@ bun run dev:app
 - `apps/api` - contract-first NestJS HTTP API
 - `apps/docs` - static developer reference and OpenAPI contract
 - `apps/mcp` - read-only-first MCP server for agent integrations
+- `packages/contracts` - versioned API/app/MCP compatibility fixtures
 - [`openpacksduel/escrow`](https://github.com/openpacksduel/escrow) - public Solana escrow program
 - [`openpacksduel/skills`](https://github.com/openpacksduel/skills) - public agent skills
 
@@ -26,6 +27,7 @@ bun run dev:app
 - `bun run dev:docs` - starts the developer reference at http://localhost:3002
 - `bun run dev:api` - starts the NestJS API at http://localhost:3003/v1
 - `bun run dev:mcp` - starts the MCP server over stdio
+- `bun --filter @openpacksduel/contracts test` - validates the versioned contract fixture inventory
 
 ## Vercel
 

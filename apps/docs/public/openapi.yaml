@@ -180,6 +180,8 @@ paths:
                 $ref: '#/components/schemas/WalletChallenge'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /auth/sessions:
     post:
       operationId: createWalletSession
@@ -199,6 +201,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WalletSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
@@ -305,8 +309,12 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /matchmaking/search:
@@ -444,6 +452,9 @@ paths:
       tags: [Duels]
       summary: Get canonical duel state
       x-openpacksduel-availability: devnet
+      security:
+        - walletSession: []
+        - integrationKey: []
       parameters:
         - $ref: '#/components/parameters/DuelId'
       responses:
@@ -453,6 +464,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Duel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /duels/{duelId}/rematch-opponent:
+    get:
+      operationId: getPrivateRematchOpponent
+      tags: [Duels]
+      summary: Resolve the authenticated participant's private rematch opponent
+      description: |
+        Returns only the opposite participant after a settled direct duel.
+        Spectators, house duels, unsettled duels, and non-participants fail closed.
+      x-openpacksduel-availability: devnet
+      security:
+        - walletSession: []
+      parameters:
+        - $ref: '#/components/parameters/DuelId'
+      responses:
+        '200':
+          description: Private rematch opponent
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [side, wallet]
+                properties:
+                  side:
+                    type: string
+                    enum: [creator, opponent]
+                  wallet:
+                    $ref: '#/components/schemas/SolanaAddress'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
   /duels/{duelId}/receipt:
@@ -638,6 +687,10 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
         '503':
@@ -857,6 +910,36 @@ paths:
           $ref: '#/components/responses/Conflict'
         '502':
           $ref: '#/components/responses/Unavailable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /leaderboard:
+    get:
+      operationId: getPublicDuelLeaderboard
+      tags: [Duels]
+      summary: Get bounded pseudonymous devnet standings
+      description: |
+        Ranks wallets from the latest 5,000 settled, non-mock duel results.
+        Ordering is wins, total value won, completed duels, then recency.
+        Mock previews and incomplete result proofs never enter the standings.
+      x-openpacksduel-availability: devnet
+      responses:
+        '200':
+          description: Pseudonymous recent leaderboard
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: public, max-age=30, stale-while-revalidate=120
+            X-Robots-Tag:
+              schema:
+                type: string
+                const: noindex, nofollow, noarchive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicDuelLeaderboard'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
   /profiles/{wallet}:
@@ -1121,6 +1204,26 @@ paths:
       x-openpacksduel-availability: internal-devnet
       security:
         - cronSecret: []
+        - integrationKey: []
+      responses:
+        '200':
+          description: Bounded treasury reconciliation summary
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+    post:
+      operationId: reconcileHouseTreasuryManually
+      tags: [Operations]
+      summary: Manually reconcile finalized treasury, custody, and reservation state
+      description: Accepts the cron secret or an integration API key.
+      x-openpacksduel-availability: internal-devnet
+      security:
+        - cronSecret: []
+        - integrationKey: []
       responses:
         '200':
           description: Bounded treasury reconciliation summary
@@ -1395,6 +1498,12 @@ components:
             $ref: '#/components/schemas/Problem'
     Unauthorized:
       description: Missing, invalid, or expired bearer credential
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: The authenticated caller is not allowed to access this resource
       content:
         application/problem+json:
           schema:
@@ -2501,6 +2610,48 @@ components:
       properties:
         indexable: { type: boolean, const: false }
         reason: { type: string }
+    PublicDuelLeaderboard:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, entries, methodology, privacy]
+      properties:
+        schemaVersion: { type: string, const: openpacksduel.leaderboard.v1 }
+        entries:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [rank, display, profileHref, record, totalWonValue, lastPlayedAt]
+            properties:
+              rank: { type: integer, minimum: 1, maximum: 50 }
+              display: { type: string }
+              profileHref: { type: string }
+              record:
+                type: object
+                additionalProperties: false
+                required: [completed, wins, losses, ties]
+                properties:
+                  completed: { type: integer, minimum: 0 }
+                  wins: { type: integer, minimum: 0 }
+                  losses: { type: integer, minimum: 0 }
+                  ties: { type: integer, minimum: 0 }
+              totalWonValue: { $ref: '#/components/schemas/Money' }
+              lastPlayedAt: { type: string, format: date-time }
+        methodology:
+          type: object
+          additionalProperties: false
+          required: [entryLimit, sampleLimit, sampledSettledDuels, hasMoreSettledDuels, excludesMockResults, ranking]
+          properties:
+            entryLimit: { type: integer, const: 50 }
+            sampleLimit: { type: integer, const: 5000 }
+            sampledSettledDuels: { type: integer, minimum: 0, maximum: 5000 }
+            hasMoreSettledDuels: { type: boolean }
+            excludesMockResults: { type: boolean, const: true }
+            ranking:
+              type: string
+              const: wins-total-value-completed-recency
+        privacy: { $ref: '#/components/schemas/PublicPrivacy' }
     PublicWalletProfile:
       type: object
       additionalProperties: false

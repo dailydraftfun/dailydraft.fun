@@ -177,6 +177,31 @@ describe('HouseTreasuryService', () => {
       ledgerTypes.filter((type) => type === HouseTreasuryLedgerType.RESERVATION_RELEASED),
     ).toHaveLength(1);
   });
+
+  test('reports active lifecycle buckets once and excludes released or settled exposure', async () => {
+    const service = new HouseTreasuryService(
+      summaryDatabase() as never,
+      new TreasuryRpc({
+        amount: 150_000_000n,
+        delegate: HOT_WALLET,
+        delegatedAmount: 100_000_000n,
+        mint: USDC_MINT,
+        owner: COLD_OWNER,
+      }),
+    );
+
+    const summary = await withHouseEnvironment(() => service.getSummary());
+
+    expect(summary.pendingGames).toBe(4);
+    expect(summary.pendingGamesByStatus).toEqual({
+      funded: 1,
+      recovery_required: 1,
+      reserved: 1,
+      settlement_pending: 1,
+    });
+    expect(summary.risk.totalExposureAmount).toBe('100000000');
+    expect(summary.liquidity.availableAmount).toBe('0');
+  });
 });
 
 interface LegacyTokenAccountFixture {
@@ -231,6 +256,44 @@ function treasuryDatabase(snapshots: SnapshotWrite[]) {
         snapshots.push(create);
         return Promise.resolve(create);
       },
+    },
+  };
+}
+
+function summaryDatabase() {
+  const reservations = [
+    { amount: '10000000', status: HouseTreasuryReservationStatus.RESERVED, tier: 10 },
+    { amount: '20000000', status: HouseTreasuryReservationStatus.FUNDED, tier: 20 },
+    {
+      amount: '30000000',
+      status: HouseTreasuryReservationStatus.SETTLEMENT_PENDING,
+      tier: 30,
+    },
+    {
+      amount: '40000000',
+      status: HouseTreasuryReservationStatus.RECOVERY_REQUIRED,
+      tier: 40,
+    },
+    { amount: '500000000', status: HouseTreasuryReservationStatus.RELEASED, tier: 50 },
+    { amount: '500000000', status: HouseTreasuryReservationStatus.SETTLED, tier: 50 },
+  ];
+  return {
+    houseInventoryAsset: { findMany: () => Promise.resolve([]) },
+    houseTreasuryLedgerEntry: { findMany: () => Promise.resolve([]) },
+    houseTreasuryReservation: { findMany: () => Promise.resolve(reservations) },
+    houseTreasurySnapshot: {
+      findUnique: () =>
+        Promise.resolve({
+          balanceAmount: '150000000',
+          balanceDecimals: 6,
+          delegate: HOT_WALLET,
+          delegatedAmount: '100000000',
+          mint: USDC_MINT,
+          network: 'DEVNET',
+          tokenAccount: TOKEN_ACCOUNT,
+          verifiedAt: new Date(),
+          wallet: COLD_OWNER,
+        }),
     },
   };
 }

@@ -14,6 +14,7 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun run src/index.ts",
     "lint": "biome check api/ public/ src/",
+    "test:contract": "bun test src/contract-client.test.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
@@ -22,6 +23,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@openpacksduel/contracts": "workspace:*",
     "@types/bun": "1.3.8",
     "typescript": "6.0.3"
   }
