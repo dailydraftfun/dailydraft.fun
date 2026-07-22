@@ -1,0 +1,90 @@
+name: API production contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/api-production-contract.yml"
+      - "apps/api/**"
+      - "apps/docs/public/openapi.yaml"
+      - "packages/db/**"
+      - "scripts/api-production-conformance.ts"
+      - "scripts/assemble-api-production-artifact.ts"
+      - "bun.lock"
+      - "package.json"
+      - "turbo.json"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/api-production-contract.yml"
+      - "apps/api/**"
+      - "apps/docs/public/openapi.yaml"
+      - "packages/db/**"
+      - "scripts/api-production-conformance.ts"
+      - "scripts/assemble-api-production-artifact.ts"
+      - "bun.lock"
+      - "package.json"
+      - "turbo.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-production-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: openpacksduel_contract
+          POSTGRES_PASSWORD: openpacksduel
+          POSTGRES_USER: openpacksduel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openpacksduel -d openpacksduel_contract"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://openpacksduel:openpacksduel@localhost:5432/openpacksduel_contract?schema=public
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - run: bun install --frozen-lockfile
+      - name: Generate and migrate the workflow-local database
+        run: |
+          bun --filter @openpacksduel/db db:generate
+          bun --filter @openpacksduel/db db:deploy
+      - name: Assemble the Bun production artifact
+        id: build
+        continue-on-error: true
+        run: bun --filter @openpacksduel/api build
+      - name: Compare routes, probe the compiled entrypoint, and emit conformance evidence
+        id: conformance
+        if: always() && !cancelled()
+        continue-on-error: true
+        run: bun run conformance:api-production
+      - name: Retain the machine-readable production contract
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-production-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/api-production-conformance.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9
+      - name: Enforce production conformance results
+        if: always() && !cancelled()
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          CONFORMANCE: ${{ steps.conformance.outcome }}
+        run: |
+          test "$BUILD" = success
+          test "$CONFORMANCE" = success

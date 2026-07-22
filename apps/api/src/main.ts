@@ -6,12 +6,14 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 
 import { AppModule } from './app.module.js';
 import { ProblemDetailsFilter } from './common/problem-details.filter.js';
+import { validateDeploymentEnvironment } from './config/deployment-environment.js';
 
 export interface CreateAppOptions {
   enableShutdownHooks?: boolean;
 }
 
 export async function createApp(options: CreateAppOptions = {}): Promise<NestFastifyApplication> {
+  validateDeploymentEnvironment();
   const adapter = new FastifyAdapter({ trustProxy: true });
   adapter.getInstance().addHook('onRequest', (request, response, done) => {
     response.header('x-request-id', request.id);
