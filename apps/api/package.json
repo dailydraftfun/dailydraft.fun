@@ -9,7 +9,7 @@
     "build": "bun build src/main.ts api/index.ts --target=bun --packages=external --outdir=dist && bun ../../scripts/assemble-api-production-artifact.ts",
     "clean": "rm -rf dist",
     "dev": "NODE_ENV=development bun --watch src/main.ts",
-    "start": "NODE_ENV=production bun run dist/main.js",
+    "start": "NODE_ENV=production bun run dist/src/main.js",
     "lint": "biome check api/ src/",
     "test:contract": "bun test src/contracts/contract-compatibility.test.ts",
     "typecheck": "tsc --noEmit",

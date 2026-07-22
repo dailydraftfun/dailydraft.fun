@@ -4,11 +4,11 @@ import {
 } from '../config/deployment-environment.js';
 
 export const PRODUCTION_ARTIFACT_SCHEMA_VERSION = 1;
-const PRODUCTION_ENTRYPOINTS = ['index.js', 'main.js'] as const;
+const PRODUCTION_ENTRYPOINTS = ['api/index.js', 'src/main.js'] as const;
 
 export interface ProductionArtifactManifest {
   artifact: {
-    entrypoints: readonly ['index.js', 'main.js'];
+    entrypoints: readonly ['api/index.js', 'src/main.js'];
     healthRoute: '/v1/health';
     openapi: 'openapi.yaml';
     runtime: 'bun@1.3.13';
@@ -98,7 +98,7 @@ export function evaluateStaticArtifact(input: StaticArtifactInput): ConformanceC
   addCheck(
     checks,
     'start-entrypoint',
-    input.startScript === 'NODE_ENV=production bun run dist/main.js',
+    input.startScript === 'NODE_ENV=production bun run dist/src/main.js',
     `start=${input.startScript ?? 'missing'}`,
   );
   for (const entrypoint of PRODUCTION_ENTRYPOINTS) {

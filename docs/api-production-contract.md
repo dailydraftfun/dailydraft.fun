@@ -3,9 +3,9 @@
 The API production build is a deterministic Bun artifact. `bun --filter
 @openpacksduel/api build` emits both execution paths under `apps/api/dist`:
 
-- `main.js` is the long-running Bun entrypoint used by `bun --filter
+- `src/main.js` is the long-running Bun entrypoint used by `bun --filter
   @openpacksduel/api start`; that command sets `NODE_ENV=production` explicitly.
-- `index.js` is the Vercel serverless handler.
+- `api/index.js` is the Vercel serverless handler.
 - `openapi.yaml` is a byte-for-byte copy of the canonical contract in
   `apps/docs/public/openapi.yaml`.
 - `production-manifest.json` binds the runtime, entrypoints, health route,
@@ -42,7 +42,7 @@ perform production operations.
 The `API production contract` workflow uses a disposable PostgreSQL service,
 applies committed migrations, and assembles the artifact. Its conformance
 reporter compares the running route inventory with OpenAPI before starting
-`dist/main.js` and probing `/v1/health`, so a compatibility failure is part of
+`dist/src/main.js` and probing `/v1/health`, so a compatibility failure is part of
 the retained machine verdict. The probe requires the service, version, database
 dependency, and request ID metadata already declared by the public health
 contract.

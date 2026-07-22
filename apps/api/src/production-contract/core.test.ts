@@ -26,11 +26,11 @@ components:
 describe('API production artifact contract', () => {
   test('accepts the documented Bun entrypoints, bound OpenAPI, and persistence profiles', () => {
     const checks = evaluateStaticArtifact({
-      files: new Set(['index.js', 'main.js', 'openapi.yaml', 'production-manifest.json']),
+      files: new Set(['api/index.js', 'src/main.js', 'openapi.yaml', 'production-manifest.json']),
       manifest: createProductionArtifactManifest(OPENAPI),
       openapiText: OPENAPI,
       packageManager: 'bun@1.3.13',
-      startScript: 'NODE_ENV=production bun run dist/main.js',
+      startScript: 'NODE_ENV=production bun run dist/src/main.js',
     });
     expect(
       checks.every((check) => check.passed),
@@ -54,8 +54,8 @@ describe('API production artifact contract', () => {
       expect.arrayContaining([
         'runtime',
         'start-entrypoint',
-        'entrypoint-index.js',
-        'entrypoint-main.js',
+        'entrypoint-api/index.js',
+        'entrypoint-src/main.js',
         'openapi-artifact',
         'server-state',
       ]),
@@ -68,11 +68,11 @@ describe('API production artifact contract', () => {
       'required: [status]',
     );
     const checks = evaluateStaticArtifact({
-      files: new Set(['index.js', 'main.js', 'openapi.yaml']),
+      files: new Set(['api/index.js', 'src/main.js', 'openapi.yaml']),
       manifest: createProductionArtifactManifest(incomplete),
       openapiText: incomplete,
       packageManager: 'bun@1.3.13',
-      startScript: 'NODE_ENV=production bun run dist/main.js',
+      startScript: 'NODE_ENV=production bun run dist/src/main.js',
     });
     expect(checks.find((check) => check.name === 'health-contract')?.passed).toBe(false);
     expect(checks.find((check) => check.name === 'health-metadata')?.passed).toBe(false);
@@ -99,11 +99,11 @@ describe('API production artifact contract', () => {
       environmentContract: 'other.v1',
     } as unknown as typeof manifest;
     const checks = evaluateStaticArtifact({
-      files: new Set(['index.js', 'main.js', 'openapi.yaml']),
+      files: new Set(['api/index.js', 'src/main.js', 'openapi.yaml']),
       manifest: drifted,
       openapiText: OPENAPI,
       packageManager: 'bun@1.3.13',
-      startScript: 'NODE_ENV=production bun run dist/main.js',
+      startScript: 'NODE_ENV=production bun run dist/src/main.js',
     });
     expect(checks.find((check) => check.name === 'manifest-schema')?.passed).toBe(false);
   });

@@ -28,7 +28,7 @@ try {
     readFile(resolve(artifactRoot, 'production-manifest.json'), 'utf8'),
     readFile(resolve(artifactRoot, 'openapi.yaml'), 'utf8'),
     readFile(resolve(repositoryRoot, 'apps/api/package.json'), 'utf8'),
-    readdir(artifactRoot),
+    listArtifactFiles(artifactRoot),
   ]);
   manifest = JSON.parse(manifestText) as ProductionArtifactManifest;
   const packageJson = JSON.parse(packageText) as {
@@ -89,7 +89,7 @@ async function probeBuiltHealthEndpoint(artifactDirectory: string): Promise<Conf
     DATABASE_URL: databaseUrl,
     PORT: '33159',
   });
-  const child = Bun.spawn(['bun', resolve(artifactDirectory, 'main.js')], {
+  const child = Bun.spawn(['bun', resolve(artifactDirectory, 'src/main.js')], {
     cwd: repositoryRoot,
     env: { ...process.env, ...environment },
     stderr: 'pipe',
@@ -125,6 +125,16 @@ async function probeBuiltHealthEndpoint(artifactDirectory: string): Promise<Conf
     child.kill();
     await child.exited;
   }
+}
+
+async function listArtifactFiles(root: string, prefix = ''): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(resolve(root, prefix), { withFileTypes: true })) {
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) files.push(...(await listArtifactFiles(root, relativePath)));
+    else if (entry.isFile()) files.push(relativePath);
+  }
+  return files;
 }
 
 async function runRouteCompatibilityGate(): Promise<ConformanceCheck> {
