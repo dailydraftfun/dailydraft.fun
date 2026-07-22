@@ -26,3 +26,11 @@ and MCP onboarding surfaces for serious or critical axe violations. Test-only
 receipt routes are available only while `NEXT_PUBLIC_E2E_FIXTURES=1`; they let
 the browser crawl canonical, status-specific metadata without contacting a live
 API or exposing wallet and transaction identifiers.
+
+The visual-state journey runs the same deterministic flow at 1440px and 390px.
+It asserts the mobile action and result contract, then compares locator-bounded
+screenshots for the lobby, funding review, opening, winner, runner-up, and
+verified receipt. Snapshot masks cover identifiers, monospaced proof material,
+and externally rendered images so diffs represent reviewable layout and copy
+changes. Baselines live beside `visual-states.journey.ts`; CI failure artifacts
+include both the baselines and Playwright's actual/diff evidence for review.
