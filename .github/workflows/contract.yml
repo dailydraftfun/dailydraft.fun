@@ -1,0 +1,58 @@
+name: Contract compatibility
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/contract.yml"
+      - "apps/api/**"
+      - "apps/app/app/duel/public-proof-client.ts"
+      - "apps/app/app/solana/**"
+      - "apps/app/package.json"
+      - "apps/docs/public/openapi.yaml"
+      - "apps/mcp/**"
+      - "packages/contracts/**"
+      - "bun.lock"
+      - "package.json"
+      - "turbo.json"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/contract.yml"
+      - "apps/api/**"
+      - "apps/app/app/duel/public-proof-client.ts"
+      - "apps/app/app/solana/**"
+      - "apps/app/package.json"
+      - "apps/docs/public/openapi.yaml"
+      - "apps/mcp/**"
+      - "packages/contracts/**"
+      - "bun.lock"
+      - "package.json"
+      - "turbo.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - run: bun install --frozen-lockfile
+      - name: Generate the database client used by the running API module
+        run: bun --filter @openpacksduel/db db:generate
+      - name: Validate versioned fixture inventory
+        run: bun --filter @openpacksduel/contracts test
+      - name: Compare running API routes, DTOs, and OpenAPI
+        run: bun --filter @openpacksduel/api test:contract
+      - name: Validate app client contract behavior
+        run: bun --filter @openpacksduel/app test:contract
+      - name: Validate MCP client contract behavior
+        run: bun --filter @openpacksduel/mcp test:contract

@@ -146,6 +146,10 @@ the API does not call undocumented buyback or marketplace endpoints. The treasur
 reconciler verifies the finalized devnet USDC token account and canonical legacy-SPL
 inventory custody, while lifecycle reconciliation keeps already-funded sessions on
 their refund or settlement path even during an emergency pause.
+House-won inventory is single-writer by canonical asset reference and retains its
+immutable source duel and outcome. Acquisition basis and insured, listing, buyback,
+and displayed valuations are separate fields; unavailable quotes remain `null` and
+are never substituted from another valuation source.
 The OpenPacks devnet provider creates actual zero-decimal, single-supply legacy
 SPL mints, revokes both authorities, and atomically deposits each demo card into
 the canonical Duel v4 vault. A signed, replay-safe reference binds the duel,

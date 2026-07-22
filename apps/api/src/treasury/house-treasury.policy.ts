@@ -1,4 +1,9 @@
-import { HttpException, HttpStatus, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import {
   HouseTreasuryLedgerType,
   HouseTreasuryReservationStatus,
@@ -43,6 +48,64 @@ export interface HouseTreasurySnapshotEvidence {
   wallet: string;
 }
 
+export const HOUSE_EXPOSURE_LIMIT_MESSAGES = {
+  daily_loss: 'House tier is disabled: daily loss limit',
+  delegated_allowance: 'House tier is disabled: delegated allowance',
+  minimum_liquidity: 'House tier is disabled: minimum liquidity',
+  player_exposure: 'House tier is disabled: player exposure limit',
+  tier_concurrency: 'House tier is disabled: tier concurrency limit',
+  total_exposure: 'House tier is disabled: total exposure limit',
+} as const;
+
+export type HouseExposureLimitReason = keyof typeof HOUSE_EXPOSURE_LIMIT_MESSAGES;
+
+export interface HouseExposureLimitSnapshot {
+  activePerTier: number;
+  activePerWallet: number;
+  dailyLoss: bigint;
+  delegatedAmount: bigint;
+  requested: bigint;
+  totalExposure: bigint;
+  verifiedBalance: bigint;
+}
+
+export type HouseExposureLimitDecision =
+  | { allowed: true }
+  | { allowed: false; reason: HouseExposureLimitReason };
+
+export function evaluateHouseExposureLimits(
+  config: Pick<
+    HouseTreasuryConfig,
+    | 'dailyLossLimit'
+    | 'maxActivePerWallet'
+    | 'maxConcurrentPerTier'
+    | 'maxTotalExposure'
+    | 'minimumLiquidity'
+  >,
+  snapshot: HouseExposureLimitSnapshot,
+): HouseExposureLimitDecision {
+  if (snapshot.activePerWallet >= config.maxActivePerWallet) {
+    return { allowed: false, reason: 'player_exposure' };
+  }
+  if (snapshot.activePerTier >= config.maxConcurrentPerTier) {
+    return { allowed: false, reason: 'tier_concurrency' };
+  }
+  const requestedExposure = snapshot.totalExposure + snapshot.requested;
+  if (snapshot.dailyLoss + requestedExposure > config.dailyLossLimit) {
+    return { allowed: false, reason: 'daily_loss' };
+  }
+  if (requestedExposure > config.maxTotalExposure) {
+    return { allowed: false, reason: 'total_exposure' };
+  }
+  if (snapshot.verifiedBalance < requestedExposure + config.minimumLiquidity) {
+    return { allowed: false, reason: 'minimum_liquidity' };
+  }
+  if (snapshot.delegatedAmount < requestedExposure) {
+    return { allowed: false, reason: 'delegated_allowance' };
+  }
+  return { allowed: true };
+}
+
 export async function reserveHouseExposure(
   transaction: Prisma.TransactionClient,
   input: {
@@ -61,14 +124,34 @@ export async function reserveHouseExposure(
   if (errors.length > 0) {
     throw new ServiceUnavailableException(`House treasury is unavailable: ${errors.join(', ')}`);
   }
-  if (input.currency !== 'USDC' || input.decimals !== 6 || !/^\d+$/.test(input.amount)) {
-    throw new ServiceUnavailableException('House exposure requires integer six-decimal USDC');
+  if (
+    input.currency !== 'USDC' ||
+    input.decimals !== 6 ||
+    !/^\d+$/.test(input.amount) ||
+    BigInt(input.amount) <= 0n ||
+    !Number.isInteger(input.tier) ||
+    input.tier <= 0
+  ) {
+    throw new ServiceUnavailableException(
+      'House exposure requires positive integer six-decimal USDC and a positive integer tier',
+    );
   }
   await transaction.$queryRaw`SELECT pg_advisory_xact_lock(770392114)`;
   const existing = await transaction.houseTreasuryReservation.findUnique({
     where: { duelId: input.duelId },
   });
-  if (existing) return;
+  if (existing) {
+    if (
+      existing.amount !== input.amount ||
+      existing.currency !== input.currency ||
+      existing.decimals !== input.decimals ||
+      existing.playerWallet !== input.playerWallet ||
+      existing.tier !== input.tier
+    ) {
+      throw new ConflictException('House reservation replay does not match original exposure');
+    }
+    return;
+  }
 
   const snapshot = await transaction.houseTreasurySnapshot.findUnique({
     where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
@@ -92,7 +175,7 @@ export async function reserveHouseExposure(
     transaction.houseTreasuryLedgerEntry.findMany({
       select: { amount: true },
       where: {
-        createdAt: { gte: startOfUtcDay(now) },
+        createdAt: { gte: startOfUtcDay(now), lt: startOfNextUtcDay(now) },
         type: HouseTreasuryLedgerType.PLAYER_WIN_LOSS,
       },
     }),
@@ -103,30 +186,17 @@ export async function reserveHouseExposure(
   const verifiedBalance = parseStoredAmount(snapshot.balanceAmount);
   const delegatedAmount = parseStoredAmount(snapshot.delegatedAmount);
 
-  if (walletActive >= config.maxActivePerWallet) {
-    throw new HttpException(
-      'House tier is disabled: player exposure limit',
-      HttpStatus.TOO_MANY_REQUESTS,
-    );
-  }
-  if (tierActive >= config.maxConcurrentPerTier) {
-    throw new HttpException(
-      'House tier is disabled: tier concurrency limit',
-      HttpStatus.TOO_MANY_REQUESTS,
-    );
-  }
-  if (dailyLoss + totalExposure + requested > config.dailyLossLimit) {
-    throw new ServiceUnavailableException('House tier is disabled: daily loss limit');
-  }
-  if (totalExposure + requested > config.maxTotalExposure) {
-    throw new ServiceUnavailableException('House tier is disabled: total exposure limit');
-  }
-  if (verifiedBalance < totalExposure + requested + config.minimumLiquidity) {
-    throw new ServiceUnavailableException('House tier is disabled: minimum liquidity');
-  }
-  if (delegatedAmount < totalExposure + requested) {
-    throw new ServiceUnavailableException('House tier is disabled: delegated allowance');
-  }
+  assertHouseExposureAllowed(
+    evaluateHouseExposureLimits(config, {
+      activePerTier: tierActive,
+      activePerWallet: walletActive,
+      dailyLoss,
+      delegatedAmount,
+      requested,
+      totalExposure,
+      verifiedBalance,
+    }),
+  );
 
   const reservationId = createId('hres');
   await transaction.houseTreasuryReservation.create({
@@ -255,6 +325,15 @@ function readDispositions(value?: string): HouseTreasuryConfig['allowedDispositi
   return [...new Set(values)] as HouseTreasuryConfig['allowedDispositions'];
 }
 
+function assertHouseExposureAllowed(decision: HouseExposureLimitDecision): void {
+  if (decision.allowed) return;
+  const message = HOUSE_EXPOSURE_LIMIT_MESSAGES[decision.reason];
+  if (decision.reason === 'player_exposure' || decision.reason === 'tier_concurrency') {
+    throw new HttpException(message, HttpStatus.TOO_MANY_REQUESTS);
+  }
+  throw new ServiceUnavailableException(message);
+}
+
 function readUnsignedAmount(value?: string): bigint {
   return value && /^\d+$/.test(value) ? BigInt(value) : 0n;
 }
@@ -274,6 +353,10 @@ function startOfUtcDay(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
+function startOfNextUtcDay(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+}
+
 function boundedInteger(
   value: string | undefined,
   fallback: number,
@@ -281,8 +364,10 @@ function boundedInteger(
   maximum: number,
 ): number {
   if (!value) return fallback;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isInteger(parsed) ? Math.max(minimum, Math.min(parsed, maximum)) : fallback;
+  const normalized = value.trim();
+  if (!/^\d+$/.test(normalized)) return fallback;
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) ? Math.max(minimum, Math.min(parsed, maximum)) : fallback;
 }
 
 function trimmed(value?: string): string | null {

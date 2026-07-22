@@ -39,6 +39,7 @@ import type { ListDuelsQuery } from './duel.dto.js';
 import {
   type CreateDuelRecord,
   DuelRepository,
+  type LeaderboardDuelPage,
   type ResolveOpenedPacksRecord,
   type TransactionClient,
   type TransitionDuelRecord,
@@ -112,6 +113,23 @@ export class PrismaDuelRepository extends DuelRepository {
       where: { id: duelId },
     });
     return row ? toDuel(row) : null;
+  }
+
+  async listSettledForLeaderboard(limit: number): Promise<LeaderboardDuelPage> {
+    const rows = await this.database.duel.findMany({
+      include: { packOutcomes: { orderBy: { side: 'asc' } } },
+      orderBy: [{ settledAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      where: {
+        settledAt: { not: null },
+        status: DatabaseDuelStatus.SETTLED,
+      },
+    });
+    const hasMore = rows.length > limit;
+    return {
+      data: (hasMore ? rows.slice(0, limit) : rows).map(toDuel),
+      hasMore,
+    };
   }
 
   async create(
@@ -793,6 +811,7 @@ function toDuel(row: {
   providerPackId: string | null;
   resultHash: string | null;
   resultReadyAt: Date | null;
+  settledAt: Date | null;
   stakeAmount: string;
   stakeCurrency: string;
   stakeDecimals: number;
@@ -826,6 +845,7 @@ function toDuel(row: {
     },
     providerMode: toApiProviderMode(row.providerMode),
     result: toDuelResult(row),
+    settledAt: row.settledAt?.toISOString() ?? null,
     stake,
     status: toApiStatus(row.status),
     updatedAt: row.updatedAt.toISOString(),

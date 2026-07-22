@@ -16,6 +16,7 @@ bun run dev:app
 - `apps/api` - contract-first NestJS HTTP API
 - `apps/docs` - static developer reference and OpenAPI contract
 - `apps/mcp` - read-only-first MCP server for agent integrations
+- `packages/contracts` - versioned API/app/MCP compatibility fixtures
 - [`openpacksduel/escrow`](https://github.com/openpacksduel/escrow) - public Solana escrow program
 - [`openpacksduel/skills`](https://github.com/openpacksduel/skills) - public agent skills
 
@@ -26,6 +27,7 @@ bun run dev:app
 - `bun run dev:docs` - starts the developer reference at http://localhost:3002
 - `bun run dev:api` - starts the NestJS API at http://localhost:3003/v1
 - `bun run dev:mcp` - starts the MCP server over stdio
+- `bun --filter @openpacksduel/contracts test` - validates the versioned contract fixture inventory
 
 ## Vercel
 
@@ -60,6 +62,12 @@ bun run deps:update
 - `.codex/skills` and `.codex/memory` - relative symlinks into `.agents`
 - `skills` - selected repo workflow skills for PRDs, planning, execution, review, and verification
 - `DESIGN.md` - machine-readable design system spec ([google-labs-code/design.md](https://github.com/google-labs-code/design.md)); validate with `bun run lint:design`
+
+## Continuous integration
+
+Pull requests run affected-workspace checks plus an 80% changed-line and
+changed-branch coverage gate. Failed tests, coverage, and browser journeys
+publish bounded seven-day artifacts. See [`docs/ci.md`](docs/ci.md).
 
 ## Scope
 
