@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { DuelStatus, HouseTreasuryReservationStatus, type Prisma } from '@openpacksduel/db';
 
 import {
+  evaluateHouseExposureLimits,
   houseTreasuryConfigurationErrors,
   readHouseTreasuryConfig,
   reserveHouseExposure,
@@ -14,6 +15,55 @@ const TOKEN_ACCOUNT = '8t9zGQDVsTZhz4kB8DD5qGx7PyHhNzxpmBo3ZNnQ2Uhg';
 const USDC_MINT = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
 
 describe('house treasury policy', () => {
+  test('evaluates every configured exposure limit with stable reasons', () => {
+    const cases = [
+      { expected: 'player_exposure', snapshot: { activePerWallet: 2 } },
+      { expected: 'tier_concurrency', snapshot: { activePerTier: 3 } },
+      { expected: 'daily_loss', snapshot: { dailyLoss: 161n } },
+      { expected: 'total_exposure', snapshot: { requested: 71n } },
+      { expected: 'minimum_liquidity', snapshot: { verifiedBalance: 59n } },
+      { expected: 'delegated_allowance', snapshot: { delegatedAmount: 39n } },
+    ] as const;
+
+    for (const { expected, snapshot } of cases) {
+      expect(evaluateHouseExposureLimits(limitConfig(), limitSnapshot(snapshot))).toEqual({
+        allowed: false,
+        reason: expected,
+      });
+    }
+  });
+
+  test('allows exact boundaries and rejects only values beyond them', () => {
+    const boundaries = [
+      limitSnapshot({ activePerWallet: 1 }),
+      limitSnapshot({ activePerTier: 2 }),
+      limitSnapshot({ dailyLoss: 160n }),
+      limitSnapshot({ requested: 70n }),
+      limitSnapshot({ verifiedBalance: 60n }),
+      limitSnapshot({ delegatedAmount: 40n }),
+    ];
+
+    for (const snapshot of boundaries) {
+      expect(evaluateHouseExposureLimits(limitConfig(), snapshot)).toEqual({ allowed: true });
+    }
+  });
+
+  test('uses a deterministic fail-closed precedence when several limits are exceeded', () => {
+    expect(
+      evaluateHouseExposureLimits(
+        limitConfig(),
+        limitSnapshot({
+          activePerTier: 3,
+          activePerWallet: 2,
+          dailyLoss: 200n,
+          delegatedAmount: 0n,
+          requested: 100n,
+          verifiedBalance: 0n,
+        }),
+      ),
+    ).toEqual({ allowed: false, reason: 'player_exposure' });
+  });
+
   test('fails closed by default', () => {
     const config = readHouseTreasuryConfig({});
     expect(config.enabled).toBe(false);
@@ -28,6 +78,69 @@ describe('house treasury policy', () => {
     expect(houseTreasuryConfigurationErrors(readHouseTreasuryConfig(environment))).toContain(
       'withdrawal_authority_not_separated',
     );
+  });
+
+  test('bounds invalid concurrency configuration and disables missing amount limits', () => {
+    const config = readHouseTreasuryConfig({
+      ...configuredEnvironment(),
+      OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: 'invalid',
+      OPENPACKSDUEL_HOUSE_MAX_ACTIVE_PER_WALLET: '2junk',
+      OPENPACKSDUEL_HOUSE_MAX_CONCURRENT_PER_TIER: '0',
+      OPENPACKSDUEL_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO: '-1',
+      OPENPACKSDUEL_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '',
+    });
+
+    expect(config.maxActivePerWallet).toBe(1);
+    expect(config.maxConcurrentPerTier).toBe(1);
+    expect(houseTreasuryConfigurationErrors(config)).toEqual(
+      expect.arrayContaining([
+        'total_exposure_limit_missing',
+        'daily_loss_limit_missing',
+        'minimum_liquidity_missing',
+      ]),
+    );
+  });
+
+  test('rejects malformed or zero exposure before acquiring the treasury lock', async () => {
+    const invalidInputs = [
+      { amount: '0' },
+      { amount: '-1' },
+      { amount: '1.5' },
+      { amount: '1000000micro' },
+      { currency: 'USD' },
+      { decimals: 9 },
+      { tier: 0 },
+      { tier: 1.5 },
+    ];
+
+    for (const invalid of invalidInputs) {
+      let lockAcquired = false;
+      const transaction = {
+        $queryRaw: () => {
+          lockAcquired = true;
+          return Promise.resolve([]);
+        },
+      } as unknown as Prisma.TransactionClient;
+
+      await expect(
+        reserveHouseExposure(
+          transaction,
+          {
+            amount: '50000000',
+            currency: 'USDC',
+            decimals: 6,
+            duelId: 'duel_invalid_exposure',
+            playerWallet: WITHDRAWAL,
+            tier: 50,
+            ...invalid,
+          },
+          configuredEnvironment(),
+        ),
+      ).rejects.toThrow(
+        'House exposure requires positive integer six-decimal USDC and a positive integer tier',
+      );
+      expect(lockAcquired).toBe(false);
+    }
   });
 
   test('reserves against a fresh finalized snapshot and records an append-only entry', async () => {
@@ -122,6 +235,29 @@ function configuredEnvironment(): NodeJS.ProcessEnv {
     OPENPACKSDUEL_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO: '100000000',
     OPENPACKSDUEL_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '20000000',
     OPENPACKSDUEL_NETWORK: 'solana-devnet',
+  };
+}
+
+function limitConfig() {
+  return {
+    dailyLossLimit: 200n,
+    maxActivePerWallet: 2,
+    maxConcurrentPerTier: 3,
+    maxTotalExposure: 100n,
+    minimumLiquidity: 20n,
+  };
+}
+
+function limitSnapshot(overrides: Partial<Parameters<typeof evaluateHouseExposureLimits>[1]> = {}) {
+  return {
+    activePerTier: 0,
+    activePerWallet: 0,
+    dailyLoss: 20n,
+    delegatedAmount: 100n,
+    requested: 10n,
+    totalExposure: 30n,
+    verifiedBalance: 150n,
+    ...overrides,
   };
 }
 

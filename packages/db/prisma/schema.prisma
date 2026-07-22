@@ -501,11 +501,23 @@ model HouseInventoryAsset {
   id                       String                     @id
   duelId                   String
   outcomeId                String                     @unique
-  assetReference           String
+  assetReference           String                     @unique
   displayName              String
   acquisitionValueAmount   String
   acquisitionValueCurrency String                     @default("USDC")
   acquisitionValueDecimals Int                        @default(6)
+  insuredValueAmount       String
+  insuredValueCurrency     String                     @default("USDC")
+  insuredValueDecimals     Int                        @default(6)
+  listingValueAmount       String?
+  listingValueCurrency     String?
+  listingValueDecimals     Int?
+  buybackValueAmount       String?
+  buybackValueCurrency     String?
+  buybackValueDecimals     Int?
+  displayedValueAmount     String?
+  displayedValueCurrency   String?
+  displayedValueDecimals   Int?
   buybackEligible          Boolean                    @default(false)
   buybackExpiresAt         DateTime?
   listingState             HouseInventoryListingState @default(UNLISTED)
@@ -527,7 +539,6 @@ model HouseInventoryAsset {
 
   @@index([status, disposition, createdAt])
   @@index([duelId, createdAt])
-  @@index([assetReference])
   @@index([custodyWallet, status])
 }
 
