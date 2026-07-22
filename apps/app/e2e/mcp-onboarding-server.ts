@@ -8,27 +8,33 @@ const publicFiles = new Map<string, readonly [string, string]>([
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
 ]);
 
-Bun.serve({
-  fetch(request) {
-    const pathname = new URL(request.url).pathname;
-    if (pathname === '/health') {
-      return Response.json({
-        authenticationConfigured: true,
-        status: 'ready',
-        upstreamApiConfigured: true,
-      });
-    }
-
-    const asset = publicFiles.get(pathname);
-    if (!asset) return new Response('Not found', { status: 404 });
-    return new Response(Bun.file(resolve(publicDirectory, asset[0])), {
-      headers: {
-        'Cache-Control': 'no-store',
-        'Content-Type': asset[1],
-        'X-Content-Type-Options': 'nosniff',
-      },
+export function mcpOnboardingFetch(request: Request): Response {
+  const pathname = new URL(request.url).pathname;
+  if (pathname === '/health') {
+    return Response.json({
+      authenticationConfigured: true,
+      status: 'ready',
+      upstreamApiConfigured: true,
     });
-  },
-  hostname: '127.0.0.1',
-  port: 3004,
-});
+  }
+
+  const asset = publicFiles.get(pathname);
+  if (!asset) return new Response('Not found', { status: 404 });
+  return new Response(Bun.file(resolve(publicDirectory, asset[0])), {
+    headers: {
+      'Cache-Control': 'no-store',
+      'Content-Type': asset[1],
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+}
+
+export function startMcpOnboardingServer(port = 3004): ReturnType<typeof Bun.serve> {
+  return Bun.serve({
+    fetch: mcpOnboardingFetch,
+    hostname: '127.0.0.1',
+    port,
+  });
+}
+
+if (import.meta.main) startMcpOnboardingServer();
