@@ -185,6 +185,19 @@ export class DuelProfilesController {
   }
 }
 
+@Controller('leaderboard')
+export class DuelLeaderboardController {
+  constructor(private readonly duels: DuelsService) {}
+
+  @Get()
+  async getLeaderboard(@Res({ passthrough: true }) response: FastifyReply) {
+    const snapshot = await this.duels.getPublicLeaderboard();
+    response.header('cache-control', 'public, max-age=30, stale-while-revalidate=120');
+    response.header('x-robots-tag', 'noindex, nofollow, noarchive');
+    return snapshot;
+  }
+}
+
 export function assertWalletActor(authentication: DuelAuthentication, claimedWallet: string): void {
   if (authentication.kind === 'wallet-session' && authentication.wallet !== claimedWallet) {
     throw new ForbiddenException('Wallet session cannot act for another wallet');
