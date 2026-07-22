@@ -921,6 +921,9 @@ paths:
         Ranks wallets from the latest 5,000 settled, non-mock duel results.
         Ordering is wins, total value won, completed duels, then recency.
         Mock previews and incomplete result proofs never enter the standings.
+        The API coalesces and caches the bounded database snapshot for 30 seconds,
+        so cache-busting query strings cannot amplify database reads. Public edge
+        rate limiting may reject abusive request bursts.
       x-openpacksduel-availability: devnet
       responses:
         '200':

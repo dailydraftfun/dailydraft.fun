@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'bun:test';
+import {
+  type DatabaseClient,
+  DuelStatus as DatabaseDuelStatus,
+  ProviderMode,
+} from '@openpacksduel/db';
 
 import type { Duel } from '../domain.js';
-import { buildPublicDuelLeaderboard } from './public-duel-leaderboard.js';
+import { PrismaDuelRepository } from './prisma-duel.repository.js';
+import {
+  buildPublicDuelLeaderboard,
+  PublicDuelLeaderboardCache,
+} from './public-duel-leaderboard.js';
 
 const ALPHA = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
 const BRAVO = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
@@ -9,6 +18,63 @@ const CHARLIE = 'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW';
 const HOUSE = '7YWHMfk9JZe0LMdzHpYvCWHrGkpmQXJVhqBYoZ9UwNKq';
 
 describe('public duel leaderboard', () => {
+  test('filters mock providers before applying the bounded database window', async () => {
+    let query: Record<string, unknown> | null = null;
+    const database = {
+      duel: {
+        findMany: (input: Record<string, unknown>) => {
+          query = input;
+          return [];
+        },
+      },
+    } as unknown as DatabaseClient;
+
+    await new PrismaDuelRepository(database).listSettledForLeaderboard(5_000);
+
+    expect(query).toEqual(
+      expect.objectContaining({
+        take: 5_001,
+        where: {
+          packOutcomes: { none: { isMock: true } },
+          providerMode: { not: ProviderMode.MOCK },
+          settledAt: { not: null },
+          status: DatabaseDuelStatus.SETTLED,
+        },
+      }),
+    );
+  });
+
+  test('coalesces and caches public snapshots without retaining failures', async () => {
+    let now = 1_000;
+    let loads = 0;
+    const cache = new PublicDuelLeaderboardCache(() => now, 30_000);
+    const load = async () => {
+      loads += 1;
+      return buildPublicDuelLeaderboard([], false, 5_000, 50, HOUSE);
+    };
+
+    const first = cache.get(load);
+    expect(cache.get(load)).toBe(first);
+    await expect(first).resolves.toEqual(expect.objectContaining({ entries: [] }));
+    expect(cache.get(load)).toBe(first);
+    expect(loads).toBe(1);
+
+    now += 30_000;
+    await expect(cache.get(load)).resolves.toEqual(expect.objectContaining({ entries: [] }));
+    expect(loads).toBe(2);
+
+    const rejectingCache = new PublicDuelLeaderboardCache(() => now, 30_000);
+    await expect(
+      rejectingCache.get(async () => {
+        throw new Error('database unavailable');
+      }),
+    ).rejects.toThrow('database unavailable');
+    await expect(rejectingCache.get(load)).resolves.toEqual(
+      expect.objectContaining({ entries: [] }),
+    );
+    expect(loads).toBe(3);
+  });
+
   test('ranks real settled players by wins, value, completed duels, and recency', () => {
     const leaderboard = buildPublicDuelLeaderboard(
       [

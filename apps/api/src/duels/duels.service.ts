@@ -27,6 +27,7 @@ import { hashDuelRequest } from './prisma-duel.repository.js';
 import {
   buildPublicDuelLeaderboard,
   type PublicDuelLeaderboard,
+  PublicDuelLeaderboardCache,
 } from './public-duel-leaderboard.js';
 import {
   buildPublicDuelReceipt,
@@ -42,6 +43,8 @@ const MAX_DUEL_LIFETIME_MS = 24 * 60 * 60 * 1_000;
 
 @Injectable()
 export class DuelsService {
+  readonly #publicLeaderboardCache = new PublicDuelLeaderboardCache();
+
   constructor(
     private readonly repository: DuelRepository,
     private readonly packs: PacksService,
@@ -184,14 +187,18 @@ export class DuelsService {
   }
 
   async getPublicLeaderboard(): Promise<PublicDuelLeaderboard> {
-    const page = await this.repository.listSettledForLeaderboard(LEADERBOARD_SETTLED_SAMPLE_LIMIT);
-    return buildPublicDuelLeaderboard(
-      page.data,
-      page.hasMore,
-      LEADERBOARD_SETTLED_SAMPLE_LIMIT,
-      LEADERBOARD_ENTRY_LIMIT,
-      resolveHouseWallet(),
-    );
+    return this.#publicLeaderboardCache.get(async () => {
+      const page = await this.repository.listSettledForLeaderboard(
+        LEADERBOARD_SETTLED_SAMPLE_LIMIT,
+      );
+      return buildPublicDuelLeaderboard(
+        page.data,
+        page.hasMore,
+        LEADERBOARD_SETTLED_SAMPLE_LIMIT,
+        LEADERBOARD_ENTRY_LIMIT,
+        resolveHouseWallet(),
+      );
+    });
   }
 
   async getSocialCard(duelId: string): Promise<{

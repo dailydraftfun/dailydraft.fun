@@ -121,6 +121,8 @@ export class PrismaDuelRepository extends DuelRepository {
       orderBy: [{ settledAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       where: {
+        packOutcomes: { none: { isMock: true } },
+        providerMode: { not: ProviderMode.MOCK },
         settledAt: { not: null },
         status: DatabaseDuelStatus.SETTLED,
       },
