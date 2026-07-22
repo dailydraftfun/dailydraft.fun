@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 
 import { journeyTestIds } from '../app/e2e/journey-test-ids';
@@ -18,6 +19,7 @@ const viewports = {
   desktop: { height: 900, width: 1440 },
   mobile: { height: 844, width: 390 },
 } as const;
+const visualSnapshotStyle = resolve(__dirname, 'fixtures/visual-regression.css');
 
 test.describe('critical duel visual states', () => {
   test.use({ journeySeed: 'critical-visual-states' });
@@ -121,7 +123,7 @@ async function completeVisualJourney(
   await expect(receipt).toContainText('Committed duel result');
   await expect(receipt).toContainText('Charizard fixture pull');
   await expect(receipt).toContainText('Blastoise fixture pull');
-  await expect(receipt).toContainText('$113.5');
+  await expect(receipt).toContainText('USDC 113.5');
   await expectNoHorizontalOverflow(page);
   await expectVisualState(page, receipt, `verified-receipt-${viewport}.png`);
 }
@@ -150,6 +152,7 @@ async function expectVisualState(page: Page, target: Locator, snapshotName: stri
     maskColor: '#161a20',
     maxDiffPixelRatio: 0.001,
     scale: 'css',
+    stylePath: visualSnapshotStyle,
   });
 }
 

@@ -1,0 +1,4 @@
+/* Keep sticky workspace chrome outside locator-bounded state captures. */
+header.sticky {
+  position: static;
+}
