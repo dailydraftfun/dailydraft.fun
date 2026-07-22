@@ -11,6 +11,7 @@
     "dev": "NODE_ENV=development bun --watch src/main.ts",
     "start": "bun run src/main.ts",
     "lint": "biome check api/ src/",
+    "test:contract": "bun test src/contracts/contract-compatibility.test.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
@@ -29,6 +30,7 @@
     "rxjs": "7.8.2"
   },
   "devDependencies": {
+    "@openpacksduel/contracts": "workspace:*",
     "@types/bun": "1.3.8",
     "typescript": "6.0.3"
   }

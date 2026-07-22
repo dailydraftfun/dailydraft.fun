@@ -31,6 +31,7 @@
         "rxjs": "7.8.2",
       },
       "devDependencies": {
+        "@openpacksduel/contracts": "workspace:*",
         "@types/bun": "1.3.8",
         "typescript": "6.0.3",
       },
@@ -53,6 +54,7 @@
         "react-dom": "19.2.5",
       },
       "devDependencies": {
+        "@openpacksduel/contracts": "workspace:*",
         "@playwright/test": "1.61.1",
         "@tailwindcss/postcss": "4.2.4",
         "@types/bun": "1.3.8",
@@ -94,6 +96,7 @@
         "zod": "4.4.3",
       },
       "devDependencies": {
+        "@openpacksduel/contracts": "workspace:*",
         "@types/bun": "1.3.8",
         "typescript": "6.0.3",
       },
@@ -115,6 +118,14 @@
         "@types/react": "19.2.14",
         "@types/react-dom": "19.2.3",
         "tailwindcss": "4.2.4",
+        "typescript": "6.0.3",
+      },
+    },
+    "packages/contracts": {
+      "name": "@openpacksduel/contracts",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "1.3.8",
         "typescript": "6.0.3",
       },
     },
@@ -367,6 +378,8 @@
     "@openpacksduel/api": ["@openpacksduel/api@workspace:apps/api"],
 
     "@openpacksduel/app": ["@openpacksduel/app@workspace:apps/app"],
+
+    "@openpacksduel/contracts": ["@openpacksduel/contracts@workspace:packages/contracts"],
 
     "@openpacksduel/db": ["@openpacksduel/db@workspace:packages/db"],
 
