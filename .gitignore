@@ -10,3 +10,4 @@ generated
 .vercel
 playwright-report
 test-results
+artifacts
