@@ -11,6 +11,8 @@ export const publicSurfaceStatuses = [
 
 export const privateFixtureWallet = 'wallet_private_fixture_must_not_enter_metadata';
 export const privateFixtureSignature = 'signature_private_fixture_must_not_enter_metadata';
+export const privateFixtureOpponentWallet = 'opponent_private_fixture_must_not_enter_metadata';
+export const privateFixtureEscrowAddress = 'fixture_public_escrow';
 
 const statusPattern = new RegExp(`^duel_public_(${publicSurfaceStatuses.join('|')})$`);
 
@@ -51,7 +53,7 @@ function receipt(
       },
       platformFee: {
         asset: 'WSOL',
-        escrowAddress: settled ? 'fixture_public_escrow' : null,
+        escrowAddress: settled ? privateFixtureEscrowAddress : null,
         status: settled ? 'settled' : 'pending',
       },
     },
@@ -88,7 +90,7 @@ function receipt(
       opponent: waiting
         ? null
         : {
-            address: 'opponent_private_fixture_must_not_enter_metadata',
+            address: privateFixtureOpponentWallet,
             display: 'Opponent',
             role: 'opponent',
           },
@@ -171,9 +173,9 @@ function receipt(
             context: {
               creatorWallet: privateFixtureWallet,
               duelId,
-              escrowAddress: 'fixture_public_escrow',
+              escrowAddress: privateFixtureEscrowAddress,
               network: 'solana-devnet',
-              opponentWallet: 'opponent_private_fixture_must_not_enter_metadata',
+              opponentWallet: privateFixtureOpponentWallet,
               providerMode: 'openpacksduel-devnet',
             },
             creatorResultHash: 'fixture-creator-result-hash',

@@ -2,16 +2,14 @@ import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 
 import {
+  privateFixtureEscrowAddress,
+  privateFixtureOpponentWallet,
   privateFixtureSignature,
   privateFixtureWallet,
   publicSurfaceStatuses,
 } from '../app/__journey/public-duel-receipt';
 import { journeyTestIds } from '../app/e2e/journey-test-ids';
-import {
-  journeyApiOrigin,
-  journeyOpponentWallet,
-  journeyRpcUrl,
-} from './fixtures/journey-fixture';
+import { journeyApiOrigin, journeyOpponentWallet, journeyRpcUrl } from './fixtures/journey-fixture';
 import { expect, test } from './fixtures/playwright';
 
 const appOrigin = 'http://127.0.0.1:3001';
@@ -94,35 +92,34 @@ for (const surface of [
 }
 
 for (const status of publicSurfaceStatuses) {
-  test(
-    `publishes canonical, private, status-specific metadata for ${status}`,
-    async ({ journey, page }) => {
-      expect(journey.seed).toBe('public-surfaces');
-      const duelId = `duel_public_${status}`;
-      const response = await page.goto(`${appOrigin}/duel/${duelId}`);
-      expect(response?.ok()).toBe(true);
+  test(`publishes canonical, private, status-specific metadata for ${status}`, async ({
+    journey,
+    page,
+  }) => {
+    expect(journey.seed).toBe('public-surfaces');
+    const duelId = `duel_public_${status}`;
+    const response = await page.goto(`${appOrigin}/duel/${duelId}`);
+    expect(response?.ok()).toBe(true);
 
-      const canonicalUrl = `${canonicalAppOrigin}/duel/${duelId}`;
-      const socialImageUrl = `${canonicalUrl}/social/${status}`;
-      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', canonicalUrl);
-      await expect(page.locator('meta[property="og:url"]')).toHaveAttribute(
-        'content',
-        canonicalUrl,
-      );
-      await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
-        'content',
-        socialImageUrl,
-      );
-      await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute(
-        'content',
-        socialImageUrl,
-      );
+    const canonicalUrl = `${canonicalAppOrigin}/duel/${duelId}`;
+    const socialImageUrl = `${canonicalUrl}/social/${status}`;
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', canonicalUrl);
+    await expect(page.locator('meta[property="og:url"]')).toHaveAttribute('content', canonicalUrl);
+    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute(
+      'content',
+      socialImageUrl,
+    );
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute(
+      'content',
+      socialImageUrl,
+    );
 
-      const metadata = await page.locator('head').innerHTML();
-      expect(metadata).not.toContain(privateFixtureWallet);
-      expect(metadata).not.toContain(privateFixtureSignature);
-    },
-  );
+    const metadata = await page.locator('head').innerHTML();
+    expect(metadata).not.toContain(privateFixtureEscrowAddress);
+    expect(metadata).not.toContain(privateFixtureOpponentWallet);
+    expect(metadata).not.toContain(privateFixtureWallet);
+    expect(metadata).not.toContain(privateFixtureSignature);
+  });
 }
 
 async function expectNoSeriousOrCriticalViolations(page: Page, surface: string): Promise<void> {
@@ -133,10 +130,7 @@ async function expectNoSeriousOrCriticalViolations(page: Page, surface: string):
   expect(violations, formatViolations(surface, violations)).toEqual([]);
 }
 
-function formatViolations(
-  surface: string,
-  violations: AxeResults['violations'],
-): string {
+function formatViolations(surface: string, violations: AxeResults['violations']): string {
   if (violations.length === 0) return `${surface}: no serious or critical axe violations`;
   return [
     `${surface}: serious or critical axe violations`,
