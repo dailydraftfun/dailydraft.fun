@@ -10,7 +10,7 @@ import {
 } from './public-duel-receipt';
 
 describe('public surface journey receipt', () => {
-  test.each(publicSurfaceStatuses)('builds the canonical %s fixture state', (status) => {
+  test.each([...publicSurfaceStatuses])('builds the canonical %s fixture state', (status) => {
     const duelId = `duel_public_${status}`;
     const receipt = createPublicSurfaceReceipt(duelId);
 
