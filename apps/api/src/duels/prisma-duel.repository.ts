@@ -32,6 +32,8 @@ import type {
 } from '../domain.js';
 import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
 import {
+  HouseTierAdmissionError,
+  persistHouseTierAdmissionFailure,
   reserveHouseExposure,
   shouldRetryTreasuryTransaction,
 } from '../treasury/house-treasury.policy.js';
@@ -212,6 +214,11 @@ export class PrismaDuelRepository extends DuelRepository {
         );
         return toDuel(row);
       } catch (error) {
+        if (error instanceof HouseTierAdmissionError) {
+          await this.database.$transaction((transaction) =>
+            persistHouseTierAdmissionFailure(transaction, error),
+          );
+        }
         const concurrentReplay = await this.replay(scope, idempotencyKey, requestHash);
         if (concurrentReplay) return concurrentReplay;
         if (shouldRetryTreasuryTransaction(error, attempt)) continue;

@@ -117,8 +117,9 @@ All `/v1/admin/*` routes require an integration key and return `no-store`
 responses. Operators can paginate stuck/failed duels, inspect complete duel,
 transaction, provider, valuation, and custody timelines, view risk/configuration
 readiness, and pause or resume new exposure. The pause blocks create, join,
-funding preparation, pack opening, and house entry while reads, cancellation,
-refund/settlement recovery, and reconciliation remain available.
+funding preparation, direct-duel pack opening, and house entry while reads,
+cancellation, refund/settlement recovery, reconciliation, and already-funded
+house progression remain available.
 
 Pause changes append an immutable database audit record containing only the
 fixed `integration-key` actor class and a bounded reason code; raw API keys are
@@ -139,6 +140,13 @@ account must be owned by the separate cold withdrawal authority and delegate onl
 bounded amount to the hot funding signer. The delegate allowance may not exceed the
 configured total-exposure ceiling. House entry remains off unless
 `OPENPACKSDUEL_HOUSE_ENABLED` is explicitly `true`.
+
+Shared treasury and tier-limit failures persist the affected tier's stable reason and
+deterministic re-enable boundary. A later successful reservation clears that state;
+wallet-specific exposure failures never disable an otherwise healthy tier. Emergency
+pause is rechecked under the reservation lock, so no new house match can race past an
+operator pause. Already-funded house duels may still open, settle, refund, and reconcile;
+the pause continues to block new matches and funding preparation.
 
 `GET /v1/admin/treasury` exposes secret-free liquidity, exposure, loss, inventory,
 and concentration summaries. Inventory disposition is an operator-recorded workflow;

@@ -59,6 +59,44 @@ export const HOUSE_EXPOSURE_LIMIT_MESSAGES = {
 
 export type HouseExposureLimitReason = keyof typeof HOUSE_EXPOSURE_LIMIT_MESSAGES;
 
+export type HouseTierDisableReason =
+  | Exclude<HouseExposureLimitReason, 'player_exposure'>
+  | 'treasury_configuration'
+  | 'treasury_snapshot_stale';
+
+export type HouseTierReenableBoundary =
+  | 'configuration_change'
+  | 'fresh_treasury_snapshot'
+  | 'fresh_treasury_snapshot_or_reservation_release'
+  | 'next_utc_day_or_reservation_release'
+  | 'reservation_release'
+  | 'tier_reservation_release';
+
+const HOUSE_TIER_REENABLE_BOUNDARIES: Record<HouseTierDisableReason, HouseTierReenableBoundary> = {
+  daily_loss: 'next_utc_day_or_reservation_release',
+  delegated_allowance: 'fresh_treasury_snapshot_or_reservation_release',
+  minimum_liquidity: 'fresh_treasury_snapshot_or_reservation_release',
+  tier_concurrency: 'tier_reservation_release',
+  total_exposure: 'reservation_release',
+  treasury_configuration: 'configuration_change',
+  treasury_snapshot_stale: 'fresh_treasury_snapshot',
+};
+
+const GLOBAL_EXPOSURE_CONTROL = 'global_exposure';
+
+export class HouseTierAdmissionError extends HttpException {
+  constructor(
+    message: string,
+    status: HttpStatus,
+    readonly tier: number,
+    readonly reason: HouseTierDisableReason,
+    readonly reenableBoundary: HouseTierReenableBoundary,
+    readonly evaluatedAt: Date,
+  ) {
+    super(message, status);
+  }
+}
+
 export interface HouseExposureLimitSnapshot {
   activePerTier: number;
   activePerWallet: number;
@@ -117,13 +155,8 @@ export async function reserveHouseExposure(
     tier: number;
   },
   environment: NodeJS.ProcessEnv = process.env,
-  now = new Date(),
+  now?: Date,
 ): Promise<void> {
-  const config = readHouseTreasuryConfig(environment);
-  const errors = houseTreasuryConfigurationErrors(config);
-  if (errors.length > 0) {
-    throw new ServiceUnavailableException(`House treasury is unavailable: ${errors.join(', ')}`);
-  }
   if (
     input.currency !== 'USDC' ||
     input.decimals !== 6 ||
@@ -136,28 +169,51 @@ export async function reserveHouseExposure(
       'House exposure requires positive integer six-decimal USDC and a positive integer tier',
     );
   }
-  await transaction.$queryRaw`SELECT pg_advisory_xact_lock(770392114)`;
-  const existing = await transaction.houseTreasuryReservation.findUnique({
+  const replay = await transaction.houseTreasuryReservation.findUnique({
     where: { duelId: input.duelId },
   });
-  if (existing) {
-    if (
-      existing.amount !== input.amount ||
-      existing.currency !== input.currency ||
-      existing.decimals !== input.decimals ||
-      existing.playerWallet !== input.playerWallet ||
-      existing.tier !== input.tier
-    ) {
-      throw new ConflictException('House reservation replay does not match original exposure');
-    }
-    return;
+  if (assertExactReservationReplay(replay, input)) return;
+
+  const config = readHouseTreasuryConfig(environment);
+  const errors = houseTreasuryConfigurationErrors(config);
+  if (errors.length > 0) {
+    throw disableHouseTier({
+      evaluatedAt: now ?? new Date(),
+      message: `House treasury is unavailable: ${errors.join(', ')}`,
+      reason: 'treasury_configuration',
+      status: HttpStatus.SERVICE_UNAVAILABLE,
+      tier: input.tier,
+    });
   }
+
+  await transaction.$queryRaw`SELECT pg_advisory_xact_lock(770392114)`;
+  const serializedReplay = await transaction.houseTreasuryReservation.findUnique({
+    where: { duelId: input.duelId },
+  });
+  if (assertExactReservationReplay(serializedReplay, input)) return;
+
+  const pause = await transaction.$queryRaw<Array<{ paused: boolean }>>`
+    SELECT "paused"
+    FROM "RuntimeControl"
+    WHERE "key" = ${GLOBAL_EXPOSURE_CONTROL}
+    FOR SHARE
+  `;
+  if (pause[0]?.paused) {
+    throw new ServiceUnavailableException('New duel exposure is paused by an operator');
+  }
+  const evaluatedAt = now ?? new Date();
 
   const snapshot = await transaction.houseTreasurySnapshot.findUnique({
     where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
   });
-  if (!snapshot || !houseTreasurySnapshotIsUsable(snapshot, config, now, input.decimals)) {
-    throw new ServiceUnavailableException('House tier is disabled: treasury snapshot is stale');
+  if (!snapshot || !houseTreasurySnapshotIsUsable(snapshot, config, evaluatedAt, input.decimals)) {
+    throw disableHouseTier({
+      evaluatedAt,
+      message: 'House tier is disabled: treasury snapshot is stale',
+      reason: 'treasury_snapshot_stale',
+      status: HttpStatus.SERVICE_UNAVAILABLE,
+      tier: input.tier,
+    });
   }
 
   const activeStatuses = [...ACTIVE_HOUSE_RESERVATION_STATUSES];
@@ -175,7 +231,7 @@ export async function reserveHouseExposure(
     transaction.houseTreasuryLedgerEntry.findMany({
       select: { amount: true },
       where: {
-        createdAt: { gte: startOfUtcDay(now), lt: startOfNextUtcDay(now) },
+        createdAt: { gte: startOfUtcDay(evaluatedAt), lt: startOfNextUtcDay(evaluatedAt) },
         type: HouseTreasuryLedgerType.PLAYER_WIN_LOSS,
       },
     }),
@@ -186,17 +242,39 @@ export async function reserveHouseExposure(
   const verifiedBalance = parseStoredAmount(snapshot.balanceAmount);
   const delegatedAmount = parseStoredAmount(snapshot.delegatedAmount);
 
-  assertHouseExposureAllowed(
-    evaluateHouseExposureLimits(config, {
-      activePerTier: tierActive,
-      activePerWallet: walletActive,
-      dailyLoss,
-      delegatedAmount,
-      requested,
-      totalExposure,
-      verifiedBalance,
-    }),
-  );
+  const decision = evaluateHouseExposureLimits(config, {
+    activePerTier: tierActive,
+    activePerWallet: walletActive,
+    dailyLoss,
+    delegatedAmount,
+    requested,
+    totalExposure,
+    verifiedBalance,
+  });
+  if (!decision.allowed) {
+    const status =
+      decision.reason === 'player_exposure' || decision.reason === 'tier_concurrency'
+        ? HttpStatus.TOO_MANY_REQUESTS
+        : HttpStatus.SERVICE_UNAVAILABLE;
+    if (decision.reason === 'player_exposure') {
+      throw new HttpException(HOUSE_EXPOSURE_LIMIT_MESSAGES[decision.reason], status);
+    }
+    throw disableHouseTier({
+      evaluatedAt,
+      message: HOUSE_EXPOSURE_LIMIT_MESSAGES[decision.reason],
+      reason: decision.reason,
+      status,
+      tier: input.tier,
+    });
+  }
+
+  await recordHouseTierAdmissionState(transaction, {
+    disabled: false,
+    evaluatedAt,
+    reason: null,
+    reenableBoundary: null,
+    tier: input.tier,
+  });
 
   const reservationId = createId('hres');
   await transaction.houseTreasuryReservation.create({
@@ -225,6 +303,21 @@ export async function reserveHouseExposure(
   });
 }
 
+export async function persistHouseTierAdmissionFailure(
+  transaction: Prisma.TransactionClient,
+  error: unknown,
+): Promise<boolean> {
+  if (!(error instanceof HouseTierAdmissionError)) return false;
+  await recordHouseTierAdmissionState(transaction, {
+    disabled: true,
+    evaluatedAt: error.evaluatedAt,
+    reason: error.reason,
+    reenableBoundary: error.reenableBoundary,
+    tier: error.tier,
+  });
+  return true;
+}
+
 export function houseTreasurySnapshotIsUsable(
   snapshot: HouseTreasurySnapshotEvidence,
   config: HouseTreasuryConfig,
@@ -250,6 +343,35 @@ export function houseTreasurySnapshotIsUsable(
   } catch {
     return false;
   }
+}
+
+function assertExactReservationReplay(
+  existing: {
+    amount: string;
+    currency: string;
+    decimals: number;
+    playerWallet: string;
+    tier: number;
+  } | null,
+  input: {
+    amount: string;
+    currency: string;
+    decimals: number;
+    playerWallet: string;
+    tier: number;
+  },
+): boolean {
+  if (!existing) return false;
+  if (
+    existing.amount !== input.amount ||
+    existing.currency !== input.currency ||
+    existing.decimals !== input.decimals ||
+    existing.playerWallet !== input.playerWallet ||
+    existing.tier !== input.tier
+  ) {
+    throw new ConflictException('House reservation replay does not match original exposure');
+  }
+  return true;
 }
 
 export function shouldRetryTreasuryTransaction(error: unknown, attempt: number): boolean {
@@ -325,13 +447,59 @@ function readDispositions(value?: string): HouseTreasuryConfig['allowedDispositi
   return [...new Set(values)] as HouseTreasuryConfig['allowedDispositions'];
 }
 
-function assertHouseExposureAllowed(decision: HouseExposureLimitDecision): void {
-  if (decision.allowed) return;
-  const message = HOUSE_EXPOSURE_LIMIT_MESSAGES[decision.reason];
-  if (decision.reason === 'player_exposure' || decision.reason === 'tier_concurrency') {
-    throw new HttpException(message, HttpStatus.TOO_MANY_REQUESTS);
-  }
-  throw new ServiceUnavailableException(message);
+function disableHouseTier(input: {
+  evaluatedAt: Date;
+  message: string;
+  reason: HouseTierDisableReason;
+  status: HttpStatus;
+  tier: number;
+}): HouseTierAdmissionError {
+  const reenableBoundary = HOUSE_TIER_REENABLE_BOUNDARIES[input.reason];
+  return new HouseTierAdmissionError(
+    input.message,
+    input.status,
+    input.tier,
+    input.reason,
+    reenableBoundary,
+    input.evaluatedAt,
+  );
+}
+
+async function recordHouseTierAdmissionState(
+  transaction: Prisma.TransactionClient,
+  input: {
+    disabled: boolean;
+    evaluatedAt: Date;
+    reason: HouseTierDisableReason | null;
+    reenableBoundary: HouseTierReenableBoundary | null;
+    tier: number;
+  },
+): Promise<void> {
+  await transaction.$executeRaw`
+    INSERT INTO "HouseTierAdmissionState" (
+      "tier",
+      "disabled",
+      "reason",
+      "reenableBoundary",
+      "evaluatedAt",
+      "updatedAt"
+    ) VALUES (
+      ${input.tier},
+      ${input.disabled},
+      ${input.reason},
+      ${input.reenableBoundary},
+      ${input.evaluatedAt},
+      CURRENT_TIMESTAMP
+    )
+    ON CONFLICT ("tier") DO UPDATE SET
+      "disabled" = EXCLUDED."disabled",
+      "reason" = EXCLUDED."reason",
+      "reenableBoundary" = EXCLUDED."reenableBoundary",
+      "evaluatedAt" = EXCLUDED."evaluatedAt",
+      "version" = "HouseTierAdmissionState"."version" + 1,
+      "updatedAt" = CURRENT_TIMESTAMP
+    WHERE "HouseTierAdmissionState"."evaluatedAt" <= EXCLUDED."evaluatedAt"
+  `;
 }
 
 function readUnsignedAmount(value?: string): bigint {

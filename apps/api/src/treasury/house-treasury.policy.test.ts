@@ -4,6 +4,7 @@ import { DuelStatus, HouseTreasuryReservationStatus, type Prisma } from '@openpa
 import {
   evaluateHouseExposureLimits,
   houseTreasuryConfigurationErrors,
+  persistHouseTierAdmissionFailure,
   readHouseTreasuryConfig,
   reserveHouseExposure,
 } from './house-treasury.policy.js';
@@ -163,12 +164,15 @@ describe('house treasury policy', () => {
   });
 
   test('disables a tier before payment when verified liquidity would cross the floor', async () => {
+    const admissionStates: TierAdmissionState[] = [];
     const transaction = fakeTransaction({
+      admissionStates,
       created: [],
       existingExposure: [{ amount: '40000000' }],
     });
-    await expect(
-      reserveHouseExposure(
+    let rejection: unknown;
+    try {
+      await reserveHouseExposure(
         transaction,
         {
           amount: '50000000',
@@ -180,8 +184,149 @@ describe('house treasury policy', () => {
         },
         configuredEnvironment(),
         new Date('2026-07-15T12:00:00.000Z'),
+      );
+    } catch (error) {
+      rejection = error;
+    }
+    expect(rejection).toMatchObject({
+      message: expect.stringContaining('minimum liquidity'),
+      reason: 'minimum_liquidity',
+      reenableBoundary: 'fresh_treasury_snapshot_or_reservation_release',
+      tier: 50,
+    });
+    expect(admissionStates).toEqual([]);
+  });
+
+  test('does not disable a healthy tier for a wallet-scoped exposure rejection', async () => {
+    const admissionStates: TierAdmissionState[] = [];
+    const transaction = fakeTransaction({
+      admissionStates,
+      created: [],
+      existingExposure: [],
+      walletActive: 2,
+    });
+
+    await expect(
+      reserveHouseExposure(
+        transaction,
+        {
+          amount: '10000000',
+          currency: 'USDC',
+          decimals: 6,
+          duelId: 'duel_wallet_scoped_limit',
+          playerWallet: WITHDRAWAL,
+          tier: 50,
+        },
+        configuredEnvironment(),
+        new Date('2026-07-15T12:00:00.000Z'),
       ),
-    ).rejects.toThrow('minimum liquidity');
+    ).rejects.toThrow('player exposure limit');
+    expect(admissionStates).toEqual([]);
+  });
+
+  test('re-enables a tier when a later locked reservation satisfies every limit', async () => {
+    const admissionStates: TierAdmissionState[] = [
+      {
+        disabled: true,
+        evaluatedAt: new Date('2026-07-15T11:00:00.000Z'),
+        reason: 'minimum_liquidity',
+        reenableBoundary: 'fresh_treasury_snapshot_or_reservation_release',
+        tier: 50,
+        version: 1,
+      },
+    ];
+    const transaction = fakeTransaction({ admissionStates, created: [], existingExposure: [] });
+
+    await reserveHouseExposure(
+      transaction,
+      {
+        amount: '10000000',
+        currency: 'USDC',
+        decimals: 6,
+        duelId: 'duel_tier_reenabled',
+        playerWallet: WITHDRAWAL,
+        tier: 50,
+      },
+      configuredEnvironment(),
+      new Date('2026-07-15T12:00:00.000Z'),
+    );
+
+    expect(admissionStates).toEqual([
+      expect.objectContaining({
+        disabled: false,
+        reason: null,
+        reenableBoundary: null,
+        tier: 50,
+        version: 2,
+      }),
+    ]);
+  });
+
+  test('persists a rolled-back tier denial in the caller recovery transaction', async () => {
+    const admissionStates: TierAdmissionState[] = [];
+    const transaction = fakeTransaction({
+      admissionStates,
+      created: [],
+      existingExposure: [{ amount: '40000000' }],
+    });
+    let rejection: unknown;
+    try {
+      await reserveHouseExposure(
+        transaction,
+        {
+          amount: '50000000',
+          currency: 'USDC',
+          decimals: 6,
+          duelId: 'duel_persisted_denial',
+          playerWallet: WITHDRAWAL,
+          tier: 50,
+        },
+        configuredEnvironment(),
+        new Date('2026-07-15T12:00:00.000Z'),
+      );
+    } catch (error) {
+      rejection = error;
+    }
+    admissionStates.length = 0;
+
+    expect(await persistHouseTierAdmissionFailure(transaction, rejection)).toBe(true);
+    expect(admissionStates[0]).toMatchObject({
+      disabled: true,
+      reason: 'minimum_liquidity',
+      tier: 50,
+    });
+  });
+
+  test('allows an exact reservation replay while emergency pause blocks new admission', async () => {
+    const existingReservation = {
+      amount: '50000000',
+      currency: 'USDC',
+      decimals: 6,
+      playerWallet: WITHDRAWAL,
+      tier: 50,
+    };
+    const replay = fakeTransaction({
+      created: [],
+      existingExposure: [],
+      existingReservation,
+      paused: true,
+    });
+    const fresh = fakeTransaction({ created: [], existingExposure: [], paused: true });
+
+    await expect(
+      reserveHouseExposure(
+        replay,
+        { ...existingReservation, duelId: 'duel_paused_replay' },
+        configuredEnvironment(),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      reserveHouseExposure(
+        fresh,
+        { ...existingReservation, duelId: 'duel_paused_new' },
+        configuredEnvironment(),
+      ),
+    ).rejects.toThrow('paused by an operator');
   });
 
   test('includes unresolved reservations in atomic daily-loss headroom', async () => {
@@ -261,12 +406,64 @@ function limitSnapshot(overrides: Partial<Parameters<typeof evaluateHouseExposur
   };
 }
 
+interface TierAdmissionState {
+  disabled: boolean;
+  evaluatedAt: Date;
+  reason: string | null;
+  reenableBoundary: string | null;
+  tier: number;
+  version: number;
+}
+
 function fakeTransaction(input: {
+  admissionStates?: TierAdmissionState[];
   created: unknown[];
   existingExposure: Array<{ amount: string }>;
+  existingReservation?: {
+    amount: string;
+    currency: string;
+    decimals: number;
+    playerWallet: string;
+    tier: number;
+  };
+  paused?: boolean;
+  tierActive?: number;
+  walletActive?: number;
 }): Prisma.TransactionClient {
+  const admissionStates = input.admissionStates ?? [];
+  let rawCalls = 0;
   return {
-    $queryRaw: () => Promise.resolve([{ pg_advisory_xact_lock: '' }]),
+    $executeRaw: (
+      _query: TemplateStringsArray,
+      tier: number,
+      disabled: boolean,
+      reason: string | null,
+      reenableBoundary: string | null,
+      evaluatedAt: Date,
+    ) => {
+      const row = admissionStates.find((candidate) => candidate.tier === tier);
+      if (!row) {
+        admissionStates.push({
+          disabled,
+          evaluatedAt,
+          reason,
+          reenableBoundary,
+          tier,
+          version: 1,
+        });
+        return Promise.resolve(1);
+      }
+      if (row.evaluatedAt.getTime() > evaluatedAt.getTime()) return Promise.resolve(0);
+      Object.assign(row, { disabled, evaluatedAt, reason, reenableBoundary });
+      row.version += 1;
+      return Promise.resolve(1);
+    },
+    $queryRaw: () => {
+      rawCalls += 1;
+      return Promise.resolve(
+        rawCalls === 1 ? [{ pg_advisory_xact_lock: '' }] : [{ paused: input.paused ?? false }],
+      );
+    },
     houseTreasuryLedgerEntry: {
       create: ({ data }: { data: unknown }) => {
         input.created.push(data);
@@ -275,13 +472,20 @@ function fakeTransaction(input: {
       findMany: () => Promise.resolve([]),
     },
     houseTreasuryReservation: {
-      count: () => Promise.resolve(0),
+      count: ({ where }: { where: { playerWallet?: string; tier?: number } }) =>
+        Promise.resolve(
+          where.playerWallet !== undefined
+            ? (input.walletActive ?? 0)
+            : where.tier !== undefined
+              ? (input.tierActive ?? 0)
+              : 0,
+        ),
       create: ({ data }: { data: unknown }) => {
         input.created.push(data);
         return Promise.resolve(data);
       },
       findMany: () => Promise.resolve(input.existingExposure),
-      findUnique: () => Promise.resolve(null),
+      findUnique: () => Promise.resolve(input.existingReservation ?? null),
     },
     houseTreasurySnapshot: {
       findUnique: () =>
