@@ -25,6 +25,10 @@ import type {
 import { DuelRepository } from './duel.repository.js';
 import { hashDuelRequest } from './prisma-duel.repository.js';
 import {
+  buildPublicDuelLeaderboard,
+  type PublicDuelLeaderboard,
+} from './public-duel-leaderboard.js';
+import {
   buildPublicDuelReceipt,
   buildPublicWalletProfile,
   type PublicDuelReceipt,
@@ -32,6 +36,8 @@ import {
 } from './public-duel-proof.js';
 
 const DEFAULT_HOUSE_DEVNET_WALLET = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
+const LEADERBOARD_ENTRY_LIMIT = 50;
+const LEADERBOARD_SETTLED_SAMPLE_LIMIT = 5_000;
 const MAX_DUEL_LIFETIME_MS = 24 * 60 * 60 * 1_000;
 
 @Injectable()
@@ -175,6 +181,17 @@ export class DuelsService {
     const sampleLimit = 100;
     const page = await this.findAll({ limit: sampleLimit, wallet });
     return buildPublicWalletProfile(wallet, page.data, page.hasMore, sampleLimit);
+  }
+
+  async getPublicLeaderboard(): Promise<PublicDuelLeaderboard> {
+    const page = await this.repository.listSettledForLeaderboard(LEADERBOARD_SETTLED_SAMPLE_LIMIT);
+    return buildPublicDuelLeaderboard(
+      page.data,
+      page.hasMore,
+      LEADERBOARD_SETTLED_SAMPLE_LIMIT,
+      LEADERBOARD_ENTRY_LIMIT,
+      resolveHouseWallet(),
+    );
   }
 
   async getSocialCard(duelId: string): Promise<{

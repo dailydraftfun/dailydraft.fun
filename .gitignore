@@ -11,3 +11,4 @@ generated
 playwright-report
 test-results
 artifacts
+.artifacts
