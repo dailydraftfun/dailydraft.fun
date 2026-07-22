@@ -31,7 +31,8 @@ The visual-state journey runs the same deterministic flow at 1440px and 390px.
 It asserts the mobile action and result contract, then compares locator-bounded
 screenshots for the lobby, funding review, opening, winner, runner-up, and
 verified receipt. Snapshot masks cover identifiers, monospaced proof material,
-and externally rendered images, while sticky workspace chrome is normalized
-outside the locator capture, so diffs represent reviewable layout and copy
-changes. Baselines live beside `visual-states.journey.ts`; CI failure artifacts
+and externally rendered images, while sticky workspace chrome and framework
+development tooling are normalized outside the locator capture, so diffs
+represent reviewable layout and copy changes. Baselines live beside
+`visual-states.journey.ts`; CI failure artifacts
 include both the baselines and Playwright's actual/diff evidence for review.

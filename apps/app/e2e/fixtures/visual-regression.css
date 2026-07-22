@@ -2,3 +2,8 @@
 header.sticky {
   position: static;
 }
+
+/* Keep framework development tooling out of product-state snapshots. */
+nextjs-portal {
+  display: none;
+}
