@@ -121,6 +121,8 @@ export class PrismaDuelRepository extends DuelRepository {
       orderBy: [{ settledAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       where: {
+        packOutcomes: { none: { isMock: true } },
+        providerMode: { not: ProviderMode.MOCK },
         settledAt: { not: null },
         status: DatabaseDuelStatus.SETTLED,
       },
@@ -153,7 +155,10 @@ export class PrismaDuelRepository extends DuelRepository {
                 id: input.id,
                 mode: toDatabaseMode(input.matchmakingMode),
                 ...(input.opponentJoinedAt
-                  ? { matchedAt: input.opponentJoinedAt, opponentJoinedAt: input.opponentJoinedAt }
+                  ? {
+                      matchedAt: input.opponentJoinedAt,
+                      opponentJoinedAt: input.opponentJoinedAt,
+                    }
                   : {}),
                 ...(input.opponentWallet ? { opponentWallet: input.opponentWallet } : {}),
                 packId: input.pack.id,
@@ -232,7 +237,9 @@ export class PrismaDuelRepository extends DuelRepository {
 
     try {
       const row = await this.database.$transaction(async (transaction) => {
-        const duel = await transaction.duel.findUnique({ where: { id: duelId } });
+        const duel = await transaction.duel.findUnique({
+          where: { id: duelId },
+        });
         if (!duel) throw new NotFoundException(`Duel ${duelId} was not found`);
         if (duel.expiresAt <= now) throw new ConflictException('Duel has expired');
         if (duel.mode === DuelMode.HOUSE)
@@ -261,7 +268,11 @@ export class PrismaDuelRepository extends DuelRepository {
             status: DatabaseDuelStatus.MATCHED,
             version: { increment: 1 },
           },
-          where: { id: duel.id, status: DatabaseDuelStatus.WAITING, version: duel.version },
+          where: {
+            id: duel.id,
+            status: DatabaseDuelStatus.WAITING,
+            version: duel.version,
+          },
         });
         if (updated.count !== 1) throw new ConflictException('Duel was joined by another wallet');
         await transaction.duelEvent.create({
@@ -300,7 +311,9 @@ export class PrismaDuelRepository extends DuelRepository {
 
     try {
       const row = await this.database.$transaction(async (transaction) => {
-        const duel = await transaction.duel.findUnique({ where: { id: duelId } });
+        const duel = await transaction.duel.findUnique({
+          where: { id: duelId },
+        });
         if (!duel) throw new NotFoundException(`Duel ${duelId} was not found`);
         if (duel.creatorWallet !== wallet && duel.opponentWallet !== wallet) {
           throw new ConflictException('Only a duel participant can cancel');
@@ -479,7 +492,9 @@ export class PrismaDuelRepository extends DuelRepository {
 
     try {
       const row = await this.database.$transaction(async (transaction) => {
-        const duel = await transaction.duel.findUnique({ where: { id: input.duelId } });
+        const duel = await transaction.duel.findUnique({
+          where: { id: input.duelId },
+        });
         if (!duel) throw new NotFoundException(`Duel ${input.duelId} was not found`);
         const current = toApiStatus(duel.status);
         if (!canTransition(current, input.toStatus)) {
@@ -539,7 +554,9 @@ export class PrismaDuelRepository extends DuelRepository {
 
     try {
       const row = await this.database.$transaction(async (transaction) => {
-        const duel = await transaction.duel.findUnique({ where: { id: input.duelId } });
+        const duel = await transaction.duel.findUnique({
+          where: { id: input.duelId },
+        });
         if (!duel) throw new NotFoundException(`Duel ${input.duelId} was not found`);
         if (duel.resultHash === input.comparison.resultHash && duel.resultReadyAt) {
           return transaction.duel.findUniqueOrThrow({

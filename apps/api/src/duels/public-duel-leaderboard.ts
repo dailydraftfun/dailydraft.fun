@@ -42,11 +42,47 @@ type MutableLeaderboardEntry = {
   wins: number;
 };
 
+type LeaderboardCacheEntry = {
+  expiresAt: number | null;
+  snapshot: Promise<PublicDuelLeaderboard>;
+};
+
 const ZERO_VALUE = {
   amount: '0',
   currency: 'USDC',
   decimals: 6,
 } as const satisfies Money;
+
+const LEADERBOARD_SNAPSHOT_TTL_MS = 30_000;
+
+export class PublicDuelLeaderboardCache {
+  #entry: LeaderboardCacheEntry | null = null;
+
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly ttlMs = LEADERBOARD_SNAPSHOT_TTL_MS,
+  ) {}
+
+  get(loader: () => Promise<PublicDuelLeaderboard>): Promise<PublicDuelLeaderboard> {
+    const now = this.now();
+    if (this.#entry && (this.#entry.expiresAt === null || this.#entry.expiresAt > now)) {
+      return this.#entry.snapshot;
+    }
+
+    const snapshot = Promise.resolve().then(loader);
+    const entry: LeaderboardCacheEntry = { expiresAt: null, snapshot };
+    this.#entry = entry;
+    void snapshot.then(
+      () => {
+        if (this.#entry === entry) entry.expiresAt = this.now() + this.ttlMs;
+      },
+      () => {
+        if (this.#entry === entry) this.#entry = null;
+      },
+    );
+    return snapshot;
+  }
+}
 
 export function buildPublicDuelLeaderboard(
   duels: Duel[],
