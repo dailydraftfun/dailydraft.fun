@@ -5,6 +5,9 @@ on:
     paths:
       - ".github/workflows/journey.yml"
       - "apps/app/**"
+      - "apps/docs/**"
+      - "apps/mcp/public/**"
+      - "apps/web/**"
       - "bun.lock"
       - "package.json"
 

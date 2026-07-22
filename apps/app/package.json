@@ -28,6 +28,7 @@
     "react-dom": "19.2.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
     "@openpacksduel/contracts": "workspace:*",
     "@playwright/test": "1.61.1",
     "@tailwindcss/postcss": "4.2.4",
