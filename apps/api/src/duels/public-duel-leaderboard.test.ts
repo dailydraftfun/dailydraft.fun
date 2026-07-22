@@ -165,11 +165,7 @@ describe('public duel leaderboard', () => {
     const leaderboard = buildPublicDuelLeaderboard(
       [
         { ...mock, providerMode: 'mock' },
-        {
-          ...mock,
-          id: 'duel_mock_outcome',
-          result: { ...mock.result, outcomes: [] },
-        },
+        { ...mock, id: 'duel_mock_outcome', result: { ...mock.result, outcomes: [] } },
         { ...mock, id: 'duel_incomplete', result: null },
       ],
       true,
@@ -205,18 +201,8 @@ describe('public duel leaderboard', () => {
 
   test('applies every deterministic ranking tiebreak in order', () => {
     const valueOrder = rankedDisplays([
-      duel({
-        creator: ALPHA,
-        opponent: HOUSE,
-        totalValue: '100000000',
-        winner: ALPHA,
-      }),
-      duel({
-        creator: BRAVO,
-        opponent: HOUSE,
-        totalValue: '200000000',
-        winner: BRAVO,
-      }),
+      duel({ creator: ALPHA, opponent: HOUSE, totalValue: '100000000', winner: ALPHA }),
+      duel({ creator: BRAVO, opponent: HOUSE, totalValue: '200000000', winner: BRAVO }),
     ]);
     expect(valueOrder).toEqual(['DeWQ…12Eu', '9xQe…9gJ1']);
 

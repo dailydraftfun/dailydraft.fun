@@ -87,12 +87,7 @@ export class DuelsService {
         houseOpponent: isHouse,
         id: createDuelId(),
         matchmakingMode: input.matchmakingMode,
-        ...(isHouse
-          ? {
-              opponentJoinedAt: new Date(),
-              opponentWallet: resolveHouseWallet(),
-            }
-          : {}),
+        ...(isHouse ? { opponentJoinedAt: new Date(), opponentWallet: resolveHouseWallet() } : {}),
         ...(input.opponentWallet ? { opponentWallet: input.opponentWallet } : {}),
         pack,
         providerMode,
