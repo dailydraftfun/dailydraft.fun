@@ -4,6 +4,7 @@ const SOURCE_EXTENSION = /\.[cm]?[jt]sx?$/;
 const NON_EXECUTABLE_SOURCE = [
   /\.d\.[cm]?ts$/,
   /\.(?:test|spec|journey)\.[cm]?[jt]sx?$/,
+  /(?:^|\/)(?:e2e|__journey|%5f%5fjourney)(?:\/|$)/i,
   /(?:^|\/)(?:generated|dist|build|out|coverage)(?:\/|$)/,
   /(?:^|\/)[^/]+\.config\.[cm]?[jt]s$/,
 ];

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
-import { parseChangedLines } from './changed-lines';
+import { isExecutableSource, parseChangedLines } from './changed-lines';
 import { evaluateChangedCoverage, type IstanbulFileCoverage } from './evaluate';
 
 const syntheticRepositoryRoot = '/repo';
@@ -21,6 +21,15 @@ describe('changed-code coverage gate', () => {
 `);
 
     expect([...changed]).toEqual([[sourcePath, new Set([1, 2, 3])]]);
+  });
+
+  test('leaves browser harnesses to the dedicated journey coverage gate', () => {
+    expect(isExecutableSource('apps/app/e2e/mcp-onboarding-server.ts')).toBe(false);
+    expect(isExecutableSource('apps/app/app/__journey/public-duel-receipt.ts')).toBe(false);
+    expect(
+      isExecutableSource('apps/app/app/%5F%5Fjourney/v1/duels/[duelId]/receipt/route.ts'),
+    ).toBe(false);
+    expect(isExecutableSource('apps/app/app/duel/public-duel-receipt.ts')).toBe(true);
   });
 
   test('accepts a fixture with covered changed lines and both branch outcomes', () => {

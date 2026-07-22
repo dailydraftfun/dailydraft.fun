@@ -14,6 +14,9 @@ reviewable:
 - Test, spec, Journey, declaration, generated, build-output, and configuration
   files do not count as changed executable code. A pull request without
   executable workspace changes skips coverage work.
+- Browser E2E and `__journey` harness paths are owned by the required Journey
+  smoke workflow and do not count as Bun-unit executable code. Production
+  source remains fail-closed under the changed-code gate.
 - A workspace with changed executable code but no `test` script fails with an
   explicit setup error.
 - Editing inside an existing conditional measures every outcome attached to
