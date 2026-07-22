@@ -36,6 +36,7 @@ import {
 } from './house-treasury.policy.js';
 
 const LIFECYCLE_BATCH_LIMIT = 100;
+const HOUSE_INVENTORY_LOCK_NAMESPACE = 1_324_771_909;
 
 @Injectable()
 export class HouseTreasuryService {
@@ -156,7 +157,9 @@ export class HouseTreasuryService {
         }
         if (
           resolution.ledgerType !== HouseTreasuryLedgerType.HOUSE_PACK_COST ||
-          !resolution.custodyWallet
+          !resolution.custodyWallet ||
+          !resolution.reason ||
+          resolution.reason === 'player_win'
         ) {
           throw new ServiceUnavailableException('House terminal accounting is incomplete');
         }
@@ -174,37 +177,14 @@ export class HouseTreasuryService {
         for (const outcome of current.duel.packOutcomes.filter((candidate) =>
           resolution.inventorySides.includes(candidate.side),
         )) {
-          const existing = await transaction.houseInventoryAsset.findUnique({
-            where: { outcomeId: outcome.id },
-          });
-          if (existing) continue;
-          const inventoryId = createId('hinv');
-          await transaction.houseInventoryAsset.create({
-            data: {
-              acquisitionValueAmount: outcome.insuredValueAmount,
-              acquisitionValueCurrency: outcome.insuredValueCurrency,
-              acquisitionValueDecimals: outcome.insuredValueDecimals,
-              assetReference: outcome.assetReference,
-              custodyWallet: resolution.custodyWallet,
-              displayName: outcome.displayName,
-              disposition: HouseInventoryDisposition.MANUAL_REVIEW,
-              duelId: current.duelId,
-              id: inventoryId,
-              outcomeId: outcome.id,
-            },
-          });
-          await appendLedger(transaction, {
-            amount: outcome.insuredValueAmount,
-            currency: outcome.insuredValueCurrency,
-            decimals: outcome.insuredValueDecimals,
+          const acquired = await acquireHouseInventoryAsset(transaction, {
+            custodyWallet: resolution.custodyWallet,
             duelId: current.duelId,
-            idempotencyKey: `house-win-inventory:${outcome.id}`,
-            inventoryId,
-            metadata: { reason: resolution.reason, side: outcome.side.toLowerCase() },
+            outcome,
+            reason: resolution.reason,
             reservationId: current.id,
-            type: HouseTreasuryLedgerType.HOUSE_WIN_INVENTORY,
           });
-          inventoryCreated += 1;
+          if (acquired.created) inventoryCreated += 1;
         }
         return { inventoryCreated, released: false, transitioned: true };
       });
@@ -470,12 +450,32 @@ export class HouseTreasuryService {
         assetReference: row.assetReference,
         buybackEligible: row.buybackEligible,
         buybackExpiresAt: row.buybackExpiresAt?.toISOString() ?? null,
+        buybackValue: optionalStoredMoney(
+          row.buybackValueAmount,
+          row.buybackValueCurrency,
+          row.buybackValueDecimals,
+        ),
         custodyWallet: row.custodyWallet,
         disposition: row.disposition.toLowerCase(),
         displayName: row.displayName,
+        displayedValue: optionalStoredMoney(
+          row.displayedValueAmount,
+          row.displayedValueCurrency,
+          row.displayedValueDecimals,
+        ),
         duelId: row.duelId,
         id: row.id,
+        insuredValue: {
+          amount: row.insuredValueAmount,
+          currency: row.insuredValueCurrency,
+          decimals: row.insuredValueDecimals,
+        },
         lastReconciledAt: row.lastReconciledAt?.toISOString() ?? null,
+        listingValue: optionalStoredMoney(
+          row.listingValueAmount,
+          row.listingValueCurrency,
+          row.listingValueDecimals,
+        ),
         listingState: row.listingState.toLowerCase(),
         reconciliationError: row.reconciliationError,
         status: row.status.toLowerCase(),
@@ -694,6 +694,124 @@ function hasCanonicalOutcomeSides(outcomes: Array<{ side: DuelSide }>): boolean 
   );
 }
 
+interface HouseInventoryAcquisitionInput {
+  custodyWallet: string;
+  duelId: string;
+  outcome: {
+    assetReference: string;
+    displayName: string;
+    id: string;
+    insuredValueAmount: string;
+    insuredValueCurrency: string;
+    insuredValueDecimals: number;
+    side: DuelSide;
+  };
+  reason: 'house_win' | 'post_open_refund' | 'tie';
+  reservationId: string;
+}
+
+export async function acquireHouseInventoryAsset(
+  transaction: Prisma.TransactionClient,
+  input: HouseInventoryAcquisitionInput,
+): Promise<{ created: boolean; inventoryId: string }> {
+  await transaction.$queryRaw`
+    SELECT pg_advisory_xact_lock(
+      hashtextextended(${input.outcome.assetReference}, ${HOUSE_INVENTORY_LOCK_NAMESPACE})
+    )
+  `;
+  const [byOutcome, byAsset] = await Promise.all([
+    transaction.houseInventoryAsset.findUnique({ where: { outcomeId: input.outcome.id } }),
+    transaction.houseInventoryAsset.findFirst({
+      where: { assetReference: input.outcome.assetReference },
+    }),
+  ]);
+  if (byOutcome && byAsset && byOutcome.id !== byAsset.id) {
+    throw new ConflictException('House inventory source conflicts with a canonical asset record');
+  }
+  const existing = byOutcome ?? byAsset;
+  if (existing) {
+    if (!inventoryAcquisitionMatches(existing, input)) {
+      throw new ConflictException('House inventory asset is already ledgered from another source');
+    }
+    return { created: false, inventoryId: existing.id };
+  }
+
+  const inventoryId = createId('hinv');
+  await transaction.houseInventoryAsset.create({
+    data: {
+      acquisitionValueAmount: input.outcome.insuredValueAmount,
+      acquisitionValueCurrency: input.outcome.insuredValueCurrency,
+      acquisitionValueDecimals: input.outcome.insuredValueDecimals,
+      assetReference: input.outcome.assetReference,
+      buybackEligible: false,
+      buybackExpiresAt: null,
+      buybackValueAmount: null,
+      buybackValueCurrency: null,
+      buybackValueDecimals: null,
+      custodyWallet: input.custodyWallet,
+      displayedValueAmount: null,
+      displayedValueCurrency: null,
+      displayedValueDecimals: null,
+      displayName: input.outcome.displayName,
+      disposition: HouseInventoryDisposition.MANUAL_REVIEW,
+      duelId: input.duelId,
+      id: inventoryId,
+      insuredValueAmount: input.outcome.insuredValueAmount,
+      insuredValueCurrency: input.outcome.insuredValueCurrency,
+      insuredValueDecimals: input.outcome.insuredValueDecimals,
+      listingState: HouseInventoryListingState.UNLISTED,
+      listingValueAmount: null,
+      listingValueCurrency: null,
+      listingValueDecimals: null,
+      outcomeId: input.outcome.id,
+      status: HouseInventoryStatus.HELD,
+    },
+  });
+  await appendLedger(transaction, {
+    amount: input.outcome.insuredValueAmount,
+    currency: input.outcome.insuredValueCurrency,
+    decimals: input.outcome.insuredValueDecimals,
+    duelId: input.duelId,
+    idempotencyKey: `house-win-inventory:${input.outcome.id}`,
+    inventoryId,
+    metadata: { reason: input.reason, side: input.outcome.side.toLowerCase() },
+    reservationId: input.reservationId,
+    type: HouseTreasuryLedgerType.HOUSE_WIN_INVENTORY,
+  });
+  return { created: true, inventoryId };
+}
+
+function inventoryAcquisitionMatches(
+  existing: {
+    acquisitionValueAmount: string;
+    acquisitionValueCurrency: string;
+    acquisitionValueDecimals: number;
+    assetReference: string;
+    custodyWallet: string;
+    displayName: string;
+    duelId: string;
+    insuredValueAmount: string;
+    insuredValueCurrency: string;
+    insuredValueDecimals: number;
+    outcomeId: string;
+  },
+  input: HouseInventoryAcquisitionInput,
+): boolean {
+  return (
+    existing.duelId === input.duelId &&
+    existing.outcomeId === input.outcome.id &&
+    existing.assetReference === input.outcome.assetReference &&
+    existing.displayName === input.outcome.displayName &&
+    existing.custodyWallet === input.custodyWallet &&
+    existing.acquisitionValueAmount === input.outcome.insuredValueAmount &&
+    existing.acquisitionValueCurrency === input.outcome.insuredValueCurrency &&
+    existing.acquisitionValueDecimals === input.outcome.insuredValueDecimals &&
+    existing.insuredValueAmount === input.outcome.insuredValueAmount &&
+    existing.insuredValueCurrency === input.outcome.insuredValueCurrency &&
+    existing.insuredValueDecimals === input.outcome.insuredValueDecimals
+  );
+}
+
 async function appendLedger(
   transaction: Prisma.TransactionClient,
   input: {
@@ -735,6 +853,18 @@ function toDisposition(value: HouseDispositionRequest['disposition']): HouseInve
 function storedAmount(value: string): bigint {
   if (!/^\d+$/.test(value)) throw new ServiceUnavailableException('Invalid treasury amount');
   return BigInt(value);
+}
+
+function optionalStoredMoney(
+  amount: string | null,
+  currency: string | null,
+  decimals: number | null,
+): { amount: string; currency: string; decimals: number } | null {
+  if (amount === null && currency === null && decimals === null) return null;
+  if (amount === null || currency === null || decimals === null) {
+    throw new ServiceUnavailableException('Inventory valuation record is incomplete');
+  }
+  return { amount, currency, decimals };
 }
 
 function sum(values: string[]): bigint {
