@@ -121,12 +121,8 @@ describe('provider response evidence', () => {
     });
 
     expect(comparison.winnerSide).toBe(fixture.winnerHistory.winnerSide);
-    expect(fixture.winnerHistory.creatorProviderReference).toBe(
-      creatorFixture.providerReference,
-    );
-    expect(fixture.winnerHistory.opponentProviderReference).toBe(
-      opponentFixture.providerReference,
-    );
+    expect(fixture.winnerHistory.creatorProviderReference).toBe(creatorFixture.providerReference);
+    expect(fixture.winnerHistory.opponentProviderReference).toBe(opponentFixture.providerReference);
     expect(fixture.winnerHistory.settlementAllowedAfterBothResults).toBe(true);
     expect(fixture.outage).toEqual({
       ambiguousSide: 'opponent',
