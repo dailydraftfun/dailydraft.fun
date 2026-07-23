@@ -1,7 +1,7 @@
 'use client';
 
-import { ChartBarIcon, LightningIcon } from '@phosphor-icons/react';
 import { usePathname } from 'next/navigation';
+import { PrimaryNavigation } from './primary-navigation';
 import { WalletControl } from './solana/wallet-control';
 
 function BrandMark() {
@@ -15,6 +15,7 @@ function BrandMark() {
 
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const gamesNavigationActive = pathname === '/games';
   const duelNavigationActive = pathname === '/overview' || pathname.startsWith('/duel/');
   const leaderboardNavigationActive = pathname === '/leaderboard';
 
@@ -39,6 +40,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <PrimaryNavigation
             className="ml-4 hidden items-center gap-1 lg:flex"
             duelActive={duelNavigationActive}
+            gamesActive={gamesNavigationActive}
             leaderboardActive={leaderboardNavigationActive}
           />
 
@@ -47,8 +49,9 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <PrimaryNavigation
-          className="grid grid-cols-2 border-t border-border px-4 py-1 lg:hidden"
+          className="grid grid-cols-3 border-t border-border px-4 py-1 lg:hidden"
           duelActive={duelNavigationActive}
+          gamesActive={gamesNavigationActive}
           leaderboardActive={leaderboardNavigationActive}
           mobile
         />
@@ -65,42 +68,5 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       </header>
       {children}
     </div>
-  );
-}
-
-function PrimaryNavigation({
-  className,
-  duelActive,
-  leaderboardActive,
-  mobile = false,
-}: {
-  className: string;
-  duelActive: boolean;
-  leaderboardActive: boolean;
-  mobile?: boolean;
-}) {
-  const linkClassName = mobile ? 'nav-link justify-center' : 'nav-link';
-  return (
-    <nav
-      className={className}
-      aria-label={mobile ? 'Mobile primary navigation' : 'Primary navigation'}
-    >
-      <a
-        aria-current={duelActive ? 'page' : undefined}
-        className={`${linkClassName}${duelActive ? ' nav-link-active' : ''}`}
-        href="/overview"
-      >
-        <LightningIcon size={15} weight="fill" />
-        Duels
-      </a>
-      <a
-        aria-current={leaderboardActive ? 'page' : undefined}
-        className={`${linkClassName}${leaderboardActive ? ' nav-link-active' : ''}`}
-        href="/leaderboard"
-      >
-        <ChartBarIcon size={15} />
-        Leaderboard
-      </a>
-    </nav>
   );
 }
