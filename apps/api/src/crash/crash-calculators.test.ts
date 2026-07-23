@@ -413,7 +413,7 @@ describe('Crash calculator rule and input contract', () => {
     expectContractError(
       () =>
         calculateCrashPot(FIXTURE_RULES, {
-          currentPot: { amount: '0', currency: 'USDC', decimals: 5 } as Money,
+          currentPot: { amount: '0', currency: 'USDC', decimals: 5 } as unknown as Money,
           stage: 1,
           stageValue: usdc('1'),
         }),

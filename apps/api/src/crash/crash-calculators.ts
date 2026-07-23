@@ -297,7 +297,7 @@ export function calculateCrashBust(
     busted: input.rollPpm < stageRule.bustThresholdPpm,
     calculatorVersion: CRASH_CALCULATOR_VERSION,
     comparison: 'roll-lt-threshold' as const,
-    probabilityScalePpm: PPM_SCALE,
+    probabilityScalePpm: PPM_SCALE as typeof PPM_SCALE,
     rollPpm: input.rollPpm,
     rulesHash: rules.rulesHash,
     rulesVersion: rules.rulesVersion,
