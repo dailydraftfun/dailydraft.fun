@@ -54,7 +54,7 @@ describe('RealValuePolicyGuard', () => {
 
   test('marks every exposure-creating HTTP boundary and leaves recovery routes unmarked', () => {
     const reflector = new Reflector();
-    const cases: Array<[object, string]> = [
+    const cases = [
       [DuelsController.prototype.create, 'duel.create'],
       [DuelsController.prototype.join, 'duel.join'],
       [DuelsController.prototype.prepareTransaction, 'duel.funding.prepare'],
@@ -63,7 +63,7 @@ describe('RealValuePolicyGuard', () => {
       [MatchmakingController.prototype.continueSearch, 'matchmaking.search'],
       [MatchmakingController.prototype.houseFallback, 'matchmaking.house-fallback'],
       [ProviderSettlementController.prototype.prepare, 'provider.escrow.prepare'],
-    ];
+    ] as const;
     for (const [handler, boundary] of cases) {
       expect(reflector.get(REAL_VALUE_ADMISSION_BOUNDARY, handler)).toBe(boundary);
     }

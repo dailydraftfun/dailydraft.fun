@@ -297,11 +297,12 @@ function parseRealValuePolicy(rawPolicy: string): ParsedPolicy {
   if (!isReference(value.policyVersion)) {
     return { ok: false, reason: 'policy_version_missing' };
   }
-  if (!isRecord(value.approvals)) {
+  const approvals = value.approvals;
+  if (!isRecord(approvals)) {
     return { ok: false, reason: 'legal_approval_missing' };
   }
   for (const key of APPROVAL_KEYS) {
-    if (!isReference(value.approvals[key])) {
+    if (!isReference(approvals[key])) {
       return { ok: false, reason: approvalDenialReason(key) };
     }
   }
@@ -320,7 +321,7 @@ function parseRealValuePolicy(rawPolicy: string): ParsedPolicy {
   const capabilities = [...new Set(value.capabilities as RealValueCapability[])].sort();
   const document: RealValuePolicyDocument = {
     approvals: Object.fromEntries(
-      APPROVAL_KEYS.map((key) => [key, value.approvals[key] as string]),
+      APPROVAL_KEYS.map((key) => [key, approvals[key] as string]),
     ) as RealValueApprovalEvidence,
     capabilities,
     policyVersion: value.policyVersion,
