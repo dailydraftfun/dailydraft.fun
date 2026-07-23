@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
 import { GameModePreview } from '../game-mode-preview';
 import type { PreviewMode } from '../game-preview-data';
 
@@ -26,7 +25,10 @@ export async function generateMetadata({ params }: GamePreviewPageProps): Promis
 
 export default async function GamePreviewPage({ params }: GamePreviewPageProps) {
   const { mode } = await params;
-  if (!isPreviewMode(mode)) notFound();
+  if (!isPreviewMode(mode)) {
+    const { notFound } = await import('next/navigation');
+    notFound();
+  }
   return <GameModePreview mode={mode} />;
 }
 

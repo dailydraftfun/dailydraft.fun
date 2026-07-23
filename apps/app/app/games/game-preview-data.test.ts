@@ -8,7 +8,7 @@ describe('game preview data', () => {
     expect(receipts).toHaveLength(3);
     expect(receipts.every((item) => item.proof === 'receipt')).toBe(true);
     expect(activityForProof('fixture')).toHaveLength(2);
-    expect(activityForProof('all')).toEqual(activityItems);
+    expect(activityForProof('all')).toEqual([...activityItems]);
   });
 
   test('uses real card assets with fixture values', () => {

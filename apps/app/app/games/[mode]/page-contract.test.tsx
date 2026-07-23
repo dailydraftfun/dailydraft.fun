@@ -1,11 +1,5 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-
-mock.module('next/navigation', () => ({
-  notFound: () => {
-    throw new Error('NEXT_NOT_FOUND');
-  },
-}));
 
 const { default: GamePreviewPage, generateMetadata, generateStaticParams } = await import('./page');
 
