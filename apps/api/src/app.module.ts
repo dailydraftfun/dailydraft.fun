@@ -5,6 +5,7 @@ import { AnalyticsModule } from './analytics/analytics.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { DuelsModule } from './duels/duels.module.js';
+import { FlipInventoryModule } from './flip/flip-inventory.module.js';
 import { HealthModule } from './health/health.module.js';
 import { MatchmakingModule } from './matchmaking/matchmaking.module.js';
 import { PacksModule } from './packs/packs.module.js';
@@ -22,6 +23,7 @@ import { HouseTreasuryModule } from './treasury/house-treasury.module.js';
     MatchmakingModule,
     PacksModule,
     ProvidersModule,
+    FlipInventoryModule,
     DuelsModule,
     TransactionsModule,
     HouseTreasuryModule,
