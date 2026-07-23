@@ -6,6 +6,7 @@ import { DuelPrimaryAction } from '../duel-primary-action';
 import { DuelUnavailableProof } from '../duel-unavailable-proof';
 
 mock.module('server-only', () => ({}));
+mock.module('../duel-proof-refresh', () => ({ DuelProofRefresh: () => null }));
 
 const { default: DuelPage } = await import('./page');
 
