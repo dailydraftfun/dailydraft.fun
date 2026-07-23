@@ -44,6 +44,7 @@ describe('post-duel card actions', () => {
 
   test.each([
     undefined,
+    '',
     'javascript:alert(1)',
     '//example.com/cards/creator/list',
     '/\\evil.example/cards/creator/list',
@@ -62,6 +63,23 @@ describe('post-duel card actions', () => {
     expect(markup).not.toContain('href="javascript:');
     expect(markup).not.toContain('href="//example.com');
     expect(markup).not.toContain('href="/\\evil.example');
+  });
+
+  test('a non-string custodial target fails closed without crashing the render', () => {
+    // The public proof fetch casts JSON with a bare `as T`, so a malformed upstream
+    // payload can deliver a non-string href at runtime despite the TypeScript type.
+    // The action must fail closed (render disabled) rather than throw on String methods.
+    const unsafe = { href: 42 } as unknown as Partial<PostDuelCardActionCapability>;
+    const markup = renderToStaticMarkup(
+      <CardActionState
+        state={cardState({
+          actions: [action('keep', 'available'), action('list', 'available', unsafe)],
+        })}
+      />,
+    );
+
+    expect(markup).toContain('List card unavailable for Charizard');
+    expect(markup).toContain('disabled=""');
   });
 
   test.each([

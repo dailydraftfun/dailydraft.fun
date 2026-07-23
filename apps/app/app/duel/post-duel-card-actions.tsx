@@ -158,7 +158,14 @@ function ValueField({
 }
 
 function actionTarget(action: PostDuelCardActionCapability): string | null {
-  if (action.action === 'keep' || action.availability !== 'available' || !action.href) return null;
+  if (
+    action.action === 'keep' ||
+    action.availability !== 'available' ||
+    typeof action.href !== 'string' ||
+    action.href.length === 0
+  ) {
+    return null;
+  }
   if (
     !action.href.startsWith('/') ||
     action.href.startsWith('//') ||
