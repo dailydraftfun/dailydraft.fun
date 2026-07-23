@@ -65,7 +65,9 @@ describe('RealValuePolicyGuard', () => {
       [ProviderSettlementController.prototype.prepare, 'provider.escrow.prepare'],
     ] as const;
     for (const [handler, boundary] of cases) {
-      expect(reflector.get(REAL_VALUE_ADMISSION_BOUNDARY, handler)).toBe(boundary);
+      expect(
+        reflector.get<RealValueAdmissionBoundary>(REAL_VALUE_ADMISSION_BOUNDARY, handler),
+      ).toBe(boundary);
     }
     expect(
       reflector.get(REAL_VALUE_ADMISSION_BOUNDARY, DuelsController.prototype.cancel),
