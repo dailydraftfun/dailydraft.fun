@@ -194,6 +194,22 @@ pending settlement, and winner/ownership mismatches return no card actions.
 Collector Crypt authentication, marketplace builders, live buyback eligibility,
 shipping fees, USDC payment, NFT burn, and shipment tracking remain open gates in
 [issue #24](https://github.com/openpacksduel/app/issues/24).
+
+Flip inventory preparation is a separate, immutable market-evidence path; it
+does not write to the house inventory ledger or acquire assets. Each snapshot
+stores every provider candidate in canonical listing order, including excluded
+candidates and typed reasons, while keeping listing, insured, buyback, and
+displayed values independent. Price-band and exposure eligibility use only the
+explicit listing value and never substitute another value type. Exact replays
+reuse the content-addressed revision; corrected provider evidence creates a new
+sealed, append-only revision.
+
+The snapshot service accepts provider fixtures only and has no HTTP controller
+or live marketplace client. It also requires
+`OPENPACKSDUEL_FLIP_FIXTURE_MODE=true` in tests, local development, or an
+explicit Vercel preview. Production remains fail-closed until the separate
+reviewed rules, acquisition, legal, and promotion gates are complete.
+
 `SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every
 worker validates the official devnet genesis hash before reading transaction
 state. Funding preparation additionally requires `ESCROW_PROGRAM_ID`,

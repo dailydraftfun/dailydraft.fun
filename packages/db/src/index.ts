@@ -9,6 +9,7 @@ export {
   DuelStatus,
   DuelTransactionAction,
   DuelTransactionStatus,
+  FlipInventoryExclusionReason,
   HouseInventoryDisposition,
   HouseInventoryListingState,
   HouseInventoryStatus,
