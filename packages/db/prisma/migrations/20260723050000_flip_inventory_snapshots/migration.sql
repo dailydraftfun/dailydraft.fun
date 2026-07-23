@@ -97,10 +97,10 @@ ON "FlipInventorySnapshot"("poolKey", "createdAt");
 CREATE UNIQUE INDEX "FlipInventorySnapshotEntry_snapshotId_ordinal_key"
 ON "FlipInventorySnapshotEntry"("snapshotId", "ordinal");
 
-CREATE UNIQUE INDEX "FlipInventorySnapshotEntry_snapshotId_providerAssetReference_key"
+CREATE UNIQUE INDEX "FlipInventorySnapshotEntry_snapshotId_providerAssetReferenc_key"
 ON "FlipInventorySnapshotEntry"("snapshotId", "providerAssetReference");
 
-CREATE UNIQUE INDEX "FlipInventorySnapshotEntry_snapshotId_providerListingReference_key"
+CREATE UNIQUE INDEX "FlipInventorySnapshotEntry_snapshotId_providerListingRefere_key"
 ON "FlipInventorySnapshotEntry"("snapshotId", "providerListingReference");
 
 CREATE INDEX "FlipInventorySnapshotEntry_snapshotId_eligible_ordinal_idx"

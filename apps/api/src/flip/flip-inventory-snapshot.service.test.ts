@@ -361,7 +361,7 @@ describe('Flip inventory migration contract', () => {
 
     expect(migration).toContain('CREATE TYPE "FlipInventoryExclusionReason"');
     expect(migration).toContain(
-      '"FlipInventorySnapshotEntry_snapshotId_providerListingReference_key"',
+      '"FlipInventorySnapshotEntry_snapshotId_providerListingRefere_key"',
     );
     expect(migration).toContain('"FlipInventorySnapshotEntry_listing_value_check"');
     expect(migration).toContain('"FlipInventorySnapshotEntry_buyback_value_check"');
