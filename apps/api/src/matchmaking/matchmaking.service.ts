@@ -29,6 +29,7 @@ import type { Pack } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { PacksService } from '../packs/packs.service.js';
 import {
+  persistHouseTierAdmissionFailureSafely,
   reserveHouseExposure,
   shouldRetryTreasuryTransaction,
 } from '../treasury/house-treasury.policy.js';
@@ -235,6 +236,7 @@ export class MatchmakingService {
         );
         return toSession(updated);
       } catch (error) {
+        await persistHouseTierAdmissionFailureSafely(this.database, error);
         if (shouldRetryTreasuryTransaction(error, attempt)) continue;
         throw error;
       }

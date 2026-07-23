@@ -308,6 +308,16 @@ describe('HouseTreasuryService', () => {
       settlement_pending: 1,
     });
     expect(summary.risk.totalExposureAmount).toBe('100000000');
+    expect(summary.risk.tierAdmissionStates).toEqual([
+      {
+        disabled: true,
+        evaluatedAt: '2026-07-22T16:00:00.000Z',
+        reason: 'minimum_liquidity',
+        reenableBoundary: 'fresh_treasury_snapshot_or_reservation_release',
+        tier: 50,
+        version: 2,
+      },
+    ]);
     expect(summary.liquidity.availableAmount).toBe('0');
   });
 });
@@ -524,6 +534,19 @@ function summaryDatabase() {
   ];
   return {
     houseInventoryAsset: { findMany: () => Promise.resolve([]) },
+    houseTierAdmissionState: {
+      findMany: () =>
+        Promise.resolve([
+          {
+            disabled: true,
+            evaluatedAt: new Date('2026-07-22T16:00:00.000Z'),
+            reason: 'minimum_liquidity',
+            reenableBoundary: 'fresh_treasury_snapshot_or_reservation_release',
+            tier: 50,
+            version: 2,
+          },
+        ]),
+    },
     houseTreasuryLedgerEntry: { findMany: () => Promise.resolve([]) },
     houseTreasuryReservation: { findMany: () => Promise.resolve(reservations) },
     houseTreasurySnapshot: {

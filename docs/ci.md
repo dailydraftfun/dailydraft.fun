@@ -37,3 +37,10 @@ manifest, raw Istanbul counters, and JSON/Markdown coverage summaries.
 Failed Journey browser checks publish `journey-failure-*` for seven days.
 Playwright's existing failure-only screenshots and retained traces are uploaded
 from `apps/app/test-results`. Successful runs do not retain either artifact.
+
+The API production contract publishes `api-production-contract-*` for seven
+days on both success and failure. Its JSON report binds the Bun entrypoints,
+bundled OpenAPI digest, fail-closed environment fixtures, preview/production
+persistence classification, and the workflow-local compiled health probe. See
+[`api-production-contract.md`](api-production-contract.md) for the artifact and
+deployment contract.

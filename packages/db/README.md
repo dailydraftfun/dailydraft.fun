@@ -39,4 +39,5 @@ job executes `prisma/verify-house-treasury.sql` and
 `prisma/verify-flip-inventory.sql` inside rolled-back transactions to verify
 reservation states, exposure indexes, distinct value tuples, unique provider
 listings, and sealed append-only treasury and Flip evidence against the migrated
-PostgreSQL schema.
+PostgreSQL schema. The same contract verifies that disabled house-tier admission
+state always records a reason and deterministic re-enable boundary.

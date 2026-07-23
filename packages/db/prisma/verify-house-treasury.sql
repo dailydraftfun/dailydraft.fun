@@ -42,6 +42,10 @@ BEGIN
     RAISE EXCEPTION 'active exposure indexes are missing';
   END IF;
 
+  IF to_regclass('"HouseTierAdmissionState"') IS NULL THEN
+    RAISE EXCEPTION 'house tier admission state is missing';
+  END IF;
+
   IF to_regclass('"HouseInventoryAsset_assetReference_key"') IS NULL THEN
     RAISE EXCEPTION 'canonical house inventory asset uniqueness is missing';
   END IF;
@@ -63,6 +67,64 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'append-only treasury ledger trigger is missing or disabled';
   END IF;
+END
+$verification$;
+
+INSERT INTO "HouseTierAdmissionState" (
+  "tier",
+  "disabled",
+  "reason",
+  "reenableBoundary",
+  "evaluatedAt",
+  "updatedAt"
+) VALUES (
+  50,
+  true,
+  'minimum_liquidity',
+  'fresh_treasury_snapshot_or_reservation_release',
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+);
+
+DO $verification$
+BEGIN
+  BEGIN
+    INSERT INTO "HouseTierAdmissionState" (
+      "tier",
+      "disabled",
+      "evaluatedAt",
+      "updatedAt"
+    ) VALUES (
+      100,
+      true,
+      CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP
+    );
+    RAISE EXCEPTION 'disabled house tier omitted its reason and re-enable boundary';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "HouseTierAdmissionState" (
+      "tier",
+      "disabled",
+      "reason",
+      "reenableBoundary",
+      "evaluatedAt",
+      "updatedAt"
+    ) VALUES (
+      101,
+      true,
+      'minimum_liquidity',
+      'reservation_release',
+      CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP
+    );
+    RAISE EXCEPTION 'house tier accepted a mismatched reason and re-enable boundary';
+  EXCEPTION
+    WHEN check_violation THEN NULL;
+  END;
 END
 $verification$;
 

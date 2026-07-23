@@ -35,7 +35,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: journey-failure-${{ github.run_id }}-${{ github.run_attempt }}
-          path: apps/app/test-results
+          path: |
+            apps/app/test-results
+            apps/app/e2e/visual-states.journey.ts-snapshots
           if-no-files-found: warn
           retention-days: 7
           compression-level: 9

@@ -30,8 +30,10 @@ export class DuelOpeningService {
   ) {}
 
   async open(duelId: string, idempotencyKey: string): Promise<Duel> {
-    await this.admin?.assertNotPaused();
     let duel = await this.duels.findOne(duelId);
+    if (!houseLifecycleMayContinueDuringPause(duel)) {
+      await this.admin?.assertNotPaused();
+    }
     if (
       duel.result?.resultHash &&
       ['awaiting_assets', 'settling', 'refunding'].includes(duel.status)
@@ -171,6 +173,13 @@ export class DuelOpeningService {
     }
     return this.devnetSettlement;
   }
+}
+
+function houseLifecycleMayContinueDuringPause(duel: Duel): boolean {
+  return (
+    duel.houseOpponent &&
+    ['funded', 'opening', 'awaiting_assets', 'settling', 'refunding'].includes(duel.status)
+  );
 }
 
 function requireOpenedSnapshot(

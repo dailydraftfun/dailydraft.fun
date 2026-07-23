@@ -209,9 +209,19 @@ interface LedgerRow {
   type: HouseTreasuryLedgerType;
 }
 
+interface TierAdmissionState {
+  disabled: boolean;
+  evaluatedAt: Date;
+  reason: string | null;
+  reenableBoundary: string | null;
+  tier: number;
+  version: number;
+}
+
 class ReservationDatabase {
   readonly reservations: ReservationRow[] = [];
   readonly ledger: LedgerRow[] = [];
+  readonly tierAdmissionStates: TierAdmissionState[] = [];
   dailyLossWindow: { gte: Date; lt: Date } | null = null;
   lockAcquisitions = 0;
   #lockTail = Promise.resolve();
@@ -240,8 +250,36 @@ class ReservationDatabase {
 
   async $transaction<T>(operation: (transaction: Prisma.TransactionClient) => Promise<T>) {
     let releaseLock: (() => void) | undefined;
+    let rawCalls = 0;
     const transaction = {
+      $executeRaw: async (
+        _query: TemplateStringsArray,
+        tier: number,
+        disabled: boolean,
+        reason: string | null,
+        reenableBoundary: string | null,
+        evaluatedAt: Date,
+      ) => {
+        const row = this.tierAdmissionStates.find((candidate) => candidate.tier === tier);
+        if (!row) {
+          this.tierAdmissionStates.push({
+            disabled,
+            evaluatedAt,
+            reason,
+            reenableBoundary,
+            tier,
+            version: 1,
+          });
+          return 1;
+        }
+        if (row.evaluatedAt.getTime() > evaluatedAt.getTime()) return 0;
+        Object.assign(row, { disabled, evaluatedAt, reason, reenableBoundary });
+        row.version += 1;
+        return 1;
+      },
       $queryRaw: async () => {
+        rawCalls += 1;
+        if (rawCalls > 1) return [{ paused: false }];
         releaseLock = await this.acquireLock();
         this.lockAcquisitions += 1;
         return [{ pg_advisory_xact_lock: '' }];
