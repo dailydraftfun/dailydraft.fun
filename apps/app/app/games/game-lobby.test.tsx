@@ -27,7 +27,7 @@ describe('game lobby', () => {
     const markup = renderToStaticMarkup(<GameLobby />);
 
     expect(markup).toContain('Devnet · test assets only');
-    expect(markup).toContain('committed rules');
+    expect(markup).toContain('commits its rules before play');
     expect(markup).toContain('durable receipt');
     expect(markup).toContain('role="status"');
   });
