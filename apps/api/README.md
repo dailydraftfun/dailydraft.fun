@@ -47,6 +47,21 @@ normalizes USDC insured values, compares integer amounts, and records a public,
 sanitized result ready for the settlement service. House and wallet opponents
 use the same path.
 
+Before any provider request, the opening orchestrator commits one immutable
+operation per duel side with the exact provider pack, escrow recipient, and
+stable generate/open idempotency keys. An ambiguous request enters
+`RECOVERY_REQUIRED`; retries poll the committed provider reference first and
+reuse the same keys rather than issuing a second logical open. Reveal readiness
+is emitted only after both card identifiers, normalized result hashes, bounded
+raw response payloads, and provider-verified signatures are durable.
+
+The deterministic mock response signature is fixture-only and remains restricted
+to devnet tests and previews. The OpenPacks devnet provider signs the same
+evidence envelope with its server-only provider key. Collector Crypt operations
+remain fail-closed until the partner contract, credentials, alternate-recipient
+behavior, and response-signature verification are approved; this evidence
+contract does not promote or enable that integration.
+
 ## Local development
 
 ```bash

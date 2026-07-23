@@ -3,6 +3,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import type {
   GeneratedPack,
   GeneratePackInput,
+  OpenedProviderPackSnapshot,
   OpenPackInput,
   ProviderPackSnapshot,
 } from './pack-provider.js';
@@ -29,6 +30,10 @@ export class CollectorCryptPackProvider extends PackProvider {
 
   async getPack(_providerReference: string): Promise<ProviderPackSnapshot> {
     return unavailable();
+  }
+
+  verifyOpenedSnapshot(_snapshot: OpenedProviderPackSnapshot): void {
+    unavailable();
   }
 }
 
