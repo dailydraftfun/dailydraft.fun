@@ -105,6 +105,11 @@ describe('provider response evidence', () => {
     const creator = outcomes.find((outcome) => outcome.side === 'creator');
     const opponent = outcomes.find((outcome) => outcome.side === 'opponent');
     if (!creator || !opponent) throw new Error('Fixture results require both sides');
+    const creatorFixture = fixture.results.find(({ side }) => side === 'creator');
+    const opponentFixture = fixture.results.find(({ side }) => side === 'opponent');
+    if (!creatorFixture || !opponentFixture) {
+      throw new Error('Contract fixture requires both provider references');
+    }
     const comparison = compareInsuredValues(creator, opponent, {
       creatorWallet: 'fixture-creator-wallet',
       duelId: fixture.duelId,
@@ -117,10 +122,10 @@ describe('provider response evidence', () => {
 
     expect(comparison.winnerSide).toBe(fixture.winnerHistory.winnerSide);
     expect(fixture.winnerHistory.creatorProviderReference).toBe(
-      fixture.results.find(({ side }) => side === 'creator')?.providerReference,
+      creatorFixture.providerReference,
     );
     expect(fixture.winnerHistory.opponentProviderReference).toBe(
-      fixture.results.find(({ side }) => side === 'opponent')?.providerReference,
+      opponentFixture.providerReference,
     );
     expect(fixture.winnerHistory.settlementAllowedAfterBothResults).toBe(true);
     expect(fixture.outage).toEqual({
@@ -139,7 +144,11 @@ function openedSnapshot(): OpenedProviderPackSnapshot {
     result: {
       assetReference: 'fixture-asset',
       displayName: 'Fixture card',
-      insuredValue: { amount: '50000000', currency: 'USDC' as const, decimals: 6 },
+      insuredValue: {
+        amount: '50000000',
+        currency: 'USDC' as const,
+        decimals: 6 as const,
+      },
       poolVersion: 'fixture-pool-v1',
       sourceTimestamp: '2026-07-23T20:00:00.000Z',
       valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
@@ -210,7 +219,7 @@ function fixtureSnapshot(
       insuredValue: {
         amount: result.insuredValueAmount,
         currency: 'USDC' as const,
-        decimals: 6,
+        decimals: 6 as const,
       },
       poolVersion: 'fixture-pool-v1',
       sourceTimestamp: '2026-07-23T19:59:30.000Z',

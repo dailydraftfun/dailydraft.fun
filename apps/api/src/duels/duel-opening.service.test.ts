@@ -139,7 +139,7 @@ describe('DuelOpeningService', () => {
     const service = new DuelOpeningService(
       duels,
       repository,
-      { forDuel: () => provider } as PackProviderService,
+      { forDuel: () => provider } as unknown as PackProviderService,
       operations as never,
       undefined,
       {
@@ -377,7 +377,7 @@ function fixtureOpenedSnapshot(
       insuredValue: {
         amount: side === 'creator' ? '50000001' : '50000000',
         currency: 'USDC' as const,
-        decimals: 6,
+        decimals: 6 as const,
       },
       poolVersion: 'fixture-provider-pool-v1',
       sourceTimestamp: openedAt,
