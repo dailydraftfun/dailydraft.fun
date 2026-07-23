@@ -27,7 +27,7 @@ export default async function GamePreviewPage({ params }: GamePreviewPageProps) 
   const { mode } = await params;
   if (!isPreviewMode(mode)) {
     const { notFound } = await import('next/navigation');
-    notFound();
+    return notFound();
   }
   return <GameModePreview mode={mode} />;
 }
