@@ -209,6 +209,24 @@ mint addresses, integer USDC insured values, one valuation policy, and
 also prove a zero-decimal/single-supply legacy mint and the exact card in each
 escrow PDA vault before result or settlement preparation.
 
+## Crash fixture calculators
+
+Crash pot and bust calculations are pure, versioned contracts under
+`src/crash/crash-calculators.ts`. They accept no default economics: callers must
+supply a hash-committed `fixture-only` rule set with contiguous stages,
+nondecreasing pot/risk limits, integer micro-USDC values, and an integer PPM bust
+roll. Pot growth uses explicit floor rounding and returns the exact remainder;
+both calculators return SHA-256 proof hashes over every result input.
+This is deliberately a generic fixture interpreter rather than an allowlist of
+approved economics. Any downstream fixture session must bind and persist both
+`rulesVersion` and `rulesHash`; a version alone is not an approval boundary.
+
+The contract rejects missing, malformed, live-activation, version-incompatible,
+non-monotonic, hash-mismatched, out-of-range, and over-limit inputs. It has no
+persistence, provider, wallet, entropy, clock, transaction, or production
+activation path. Live Crash economics and custody remain disabled until their
+separate HITL approval and promotion gate is complete.
+
 ## Vercel
 
 The Vercel project uses `apps/api` as its Root Directory, but CLI deploys must be
