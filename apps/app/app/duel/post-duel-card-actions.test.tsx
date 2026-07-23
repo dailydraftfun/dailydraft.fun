@@ -4,17 +4,13 @@ import type {
   PostDuelCardActionCapability,
   PostDuelCardCapabilityState,
 } from './post-duel-card-actions';
-import {
-  PostDuelCardActionGate,
-  PostDuelCardActionState,
-  toPostDuelCardCapabilityState,
-} from './post-duel-card-actions';
+import { CardActionGate, CardActionState, toCardActionState } from './post-duel-card-actions';
 import type { PublicPostDuelCardActionState } from './public-proof-client';
 
 describe('post-duel card actions', () => {
   test('renders capability-specific controls and keeps value meanings separate', () => {
     const markup = renderToStaticMarkup(
-      <PostDuelCardActionState
+      <CardActionState
         state={cardState({
           actions: [
             action('keep', 'available'),
@@ -54,7 +50,7 @@ describe('post-duel card actions', () => {
     '/cards/creator/list\nmalformed',
   ])('%s fails closed as an unsafe or missing custodial target', (href) => {
     const markup = renderToStaticMarkup(
-      <PostDuelCardActionState
+      <CardActionState
         state={cardState({
           actions: [action('keep', 'available'), action('list', 'available', { href })],
         })}
@@ -75,7 +71,7 @@ describe('post-duel card actions', () => {
     ['mock-assets', 'status', 'mock results do not transfer real cards'],
     [null, 'status', 'Card actions are unavailable'],
   ] as const)('announces the %s ownership gate before exposing actions', (reason, role, copy) => {
-    const markup = renderToStaticMarkup(<PostDuelCardActionGate reason={reason} />);
+    const markup = renderToStaticMarkup(<CardActionGate reason={reason} />);
 
     expect(markup).toContain(`role="${role}"`);
     expect(markup).toContain(copy);
@@ -84,7 +80,7 @@ describe('post-duel card actions', () => {
 
   test('renders expired buyback evidence with a stable disabled reason and alternative', () => {
     const markup = renderToStaticMarkup(
-      <PostDuelCardActionState
+      <CardActionState
         state={cardState({
           actions: [
             action('keep', 'available'),
@@ -106,7 +102,7 @@ describe('post-duel card actions', () => {
 
   test('keeps pending ownership capabilities disabled and handles malformed expiry evidence', () => {
     const markup = renderToStaticMarkup(
-      <PostDuelCardActionState
+      <CardActionState
         state={cardState({
           actions: [
             action('list', 'pending', { reason: 'ownership-pending' }),
@@ -127,8 +123,8 @@ describe('post-duel card actions', () => {
   test('preserves independent action groups for every won card', () => {
     const markup = renderToStaticMarkup(
       <>
-        <PostDuelCardActionState state={cardState()} />
-        <PostDuelCardActionState
+        <CardActionState state={cardState()} />
+        <CardActionState
           state={cardState({
             actionStateId: 'card-action:duel:opponent',
             assetReference: 'asset-opponent',
@@ -175,7 +171,7 @@ describe('post-duel card actions', () => {
       side: fixture.side,
     };
 
-    const adapted = toPostDuelCardCapabilityState(canonical);
+    const adapted = toCardActionState(canonical);
 
     expect(adapted.actions).toEqual(canonical.actions);
     expect(adapted).not.toHaveProperty('displayedValue');

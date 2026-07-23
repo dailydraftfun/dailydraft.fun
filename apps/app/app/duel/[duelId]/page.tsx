@@ -9,11 +9,7 @@ import {
   getDuelReceiptPresentation,
 } from '../duel-receipt-presentation';
 import { DuelUnavailableProof } from '../duel-unavailable-proof';
-import {
-  PostDuelCardActionGate,
-  PostDuelCardActionState,
-  toPostDuelCardCapabilityState,
-} from '../post-duel-card-actions';
+import { CardActionGate, CardActionState, toCardActionState } from '../post-duel-card-actions';
 import {
   fetchPublicDuelReceipt,
   formatPublicMoney,
@@ -240,16 +236,14 @@ function ResultArtifact({
                 </div>
               )}
               <h2>{outcome.displayName}</h2>
-              {actionState ? (
-                <PostDuelCardActionState state={toPostDuelCardCapabilityState(actionState)} />
-              ) : null}
+              {actionState ? <CardActionState state={toCardActionState(actionState)} /> : null}
             </article>
           );
         })}
       </div>
 
       {receipt.cardActions.availability === 'hidden' ? (
-        <PostDuelCardActionGate reason={receipt.cardActions.reason} />
+        <CardActionGate reason={receipt.cardActions.reason} />
       ) : null}
     </section>
   );

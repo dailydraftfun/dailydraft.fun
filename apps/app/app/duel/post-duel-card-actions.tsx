@@ -27,7 +27,7 @@ export type PostDuelCardCapabilityState = Omit<PublicPostDuelCardActionState, 'a
   displayedValue?: PublicMoney | null;
 };
 
-export function toPostDuelCardCapabilityState(
+export function toCardActionState(
   state: PublicPostDuelCardActionState,
 ): PostDuelCardCapabilityState {
   return {
@@ -36,7 +36,7 @@ export function toPostDuelCardCapabilityState(
   };
 }
 
-export function PostDuelCardActionState({ state }: { state: PostDuelCardCapabilityState }) {
+export function CardActionState({ state }: { state: PostDuelCardCapabilityState }) {
   const list = state.actions.find((action) => action.action === 'list');
   const sellBack = state.actions.find((action) => action.action === 'sell-back');
   const idPrefix = domId(state.actionStateId);
@@ -73,11 +73,7 @@ export function PostDuelCardActionState({ state }: { state: PostDuelCardCapabili
   );
 }
 
-export function PostDuelCardActionGate({
-  reason,
-}: {
-  reason: PublicDuelReceipt['cardActions']['reason'];
-}) {
+export function CardActionGate({ reason }: { reason: PublicDuelReceipt['cardActions']['reason'] }) {
   return (
     <p className="receipt-action-gate" role={reason === 'ownership-mismatch' ? 'alert' : 'status'}>
       {cardActionGateMessage(reason)}
