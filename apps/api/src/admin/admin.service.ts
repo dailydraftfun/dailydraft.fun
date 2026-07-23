@@ -25,6 +25,7 @@ import type { MatchmakingMode } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
 import {
+  GLOBAL_EXPOSURE_CONTROL,
   HOUSE_TREASURY_SNAPSHOT_ID,
   type HouseTreasurySnapshotEvidence,
   houseTreasuryConfigurationErrors,
@@ -38,7 +39,6 @@ import type {
   OperatorReasonCode,
 } from './admin.dto.js';
 
-const GLOBAL_EXPOSURE_CONTROL = 'global_exposure';
 const INTEGRATION_ACTOR_LABEL = 'integration-key';
 const ACTIVE_DUEL_STATUSES: DuelStatus[] = [
   DuelStatus.WAITING,

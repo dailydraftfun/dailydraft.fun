@@ -46,6 +46,36 @@ describe('DuelOpeningService', () => {
     expect(repository.resolvedModes).toEqual(['direct', 'house']);
   });
 
+  test('lets an already-funded house duel continue while emergency pause blocks direct opening', async () => {
+    const repository = new OpeningRepository([
+      fundedDuel('duel_paused_house', true),
+      fundedDuel('duel_paused_direct', false),
+    ]);
+    const duels = new DuelsService(repository, new PacksService());
+    const providers = new PackProviderService(
+      new MockPackProvider(),
+      new CollectorCryptPackProvider(),
+    );
+    const admin = {
+      assertNotPaused: () => Promise.reject(new Error('New duel exposure is paused')),
+    };
+    const service = new DuelOpeningService(
+      duels,
+      repository,
+      providers,
+      undefined,
+      undefined,
+      admin as never,
+    );
+
+    const houseResult = await service.open('duel_paused_house', 'open-paused-house-0001');
+
+    expect(houseResult.status).toBe('awaiting_assets');
+    await expect(service.open('duel_paused_direct', 'open-paused-direct-0001')).rejects.toThrow(
+      'New duel exposure is paused',
+    );
+  });
+
   test('reconciles a devnet settlement misclassified as refunding before returning the receipt', async () => {
     const repository = new OpeningRepository([refundingDevnetDuel()]);
     const duels = new DuelsService(repository, new PacksService());
@@ -54,12 +84,19 @@ describe('DuelOpeningService', () => {
       new CollectorCryptPackProvider(),
     );
     const finalized: string[] = [];
-    const service = new DuelOpeningService(duels, repository, providers, {
-      finalizeDuel: async (duelId: string) => {
-        finalized.push(duelId);
-        repository.setStatus(duelId, 'settled');
-      },
-    } as never);
+    const service = new DuelOpeningService(
+      duels,
+      repository,
+      providers,
+      {
+        finalizeDuel: async (duelId: string) => {
+          finalized.push(duelId);
+          repository.setStatus(duelId, 'settled');
+        },
+      } as never,
+      undefined,
+      { assertNotPaused: () => Promise.reject(new Error('paused')) } as never,
+    );
 
     const result = await service.open('duel_refunding', 'resume-refunding-0001');
 
@@ -205,7 +242,7 @@ function fundedDuel(id: string, houseOpponent: boolean): Duel {
 }
 
 function refundingDevnetDuel(): Duel {
-  const duel = fundedDuel('duel_refunding', false);
+  const duel = fundedDuel('duel_refunding', true);
   return {
     ...duel,
     providerMode: 'openpacksduel-devnet',

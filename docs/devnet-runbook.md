@@ -142,10 +142,12 @@ curl --fail-with-body -X PUT "$API_URL/admin/emergency-pause" \
 ```
 
 Confirm the returned `paused` state, then inspect `/admin/audit`, `/admin/risk`,
-`/admin/readiness`, and `/admin/duels?attention=all`. Pausing blocks new risk but
-deliberately leaves reconciliation, cancel recovery, refunds, and settlement
-available. Resume with the same endpoint and `paused:false` after the incident
-owner confirms recovery.
+`/admin/readiness`, `/admin/treasury`, and `/admin/duels?attention=all`. Pausing
+blocks new matches and funding preparation but deliberately lets already-funded
+house sessions continue through opening, reconciliation, refunds, and settlement.
+The treasury summary reports each affected tier's stable disable reason and
+re-enable boundary. Resume with the same endpoint and `paused:false` after the
+incident owner confirms recovery.
 
 ## Release order
 

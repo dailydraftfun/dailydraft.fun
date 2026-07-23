@@ -312,7 +312,7 @@ export class HouseTreasuryService {
 
   async getSummary() {
     const config = readHouseTreasuryConfig();
-    const [snapshot, reservations, inventory, ledger] = await Promise.all([
+    const [snapshot, reservations, inventory, ledger, tierAdmissionStates] = await Promise.all([
       this.database.houseTreasurySnapshot.findUnique({
         where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
       }),
@@ -332,6 +332,7 @@ export class HouseTreasuryService {
       this.database.houseTreasuryLedgerEntry.findMany({
         select: { amount: true, createdAt: true, type: true },
       }),
+      this.database.houseTierAdmissionState.findMany({ orderBy: { tier: 'asc' } }),
     ]);
     const active = reservations.filter((row) =>
       ACTIVE_HOUSE_RESERVATION_STATUSES.includes(row.status),
@@ -422,6 +423,14 @@ export class HouseTreasuryService {
           ...(available <= config.minimumLiquidity ? ['minimum_liquidity'] : []),
         ],
         maxTotalExposureAmount: config.maxTotalExposure.toString(),
+        tierAdmissionStates: tierAdmissionStates.map((state) => ({
+          disabled: state.disabled,
+          evaluatedAt: state.evaluatedAt.toISOString(),
+          reason: state.reason,
+          reenableBoundary: state.reenableBoundary,
+          tier: state.tier,
+          version: state.version,
+        })),
         totalExposureAmount: totalExposure.toString(),
         tiers: [...tierCounts.entries()].map(([tier, pendingGames]) => ({ pendingGames, tier })),
       },

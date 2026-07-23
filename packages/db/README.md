@@ -37,4 +37,6 @@ drift between the migrated database and the schema. The check uses no repository
 secrets and also proves that a temporary schema-only change is detected. The same
 job executes `prisma/verify-house-treasury.sql` inside a rolled-back transaction
 to verify reservation states, exposure indexes and constraints, and the
-append-only ledger trigger against the migrated PostgreSQL schema.
+append-only ledger trigger against the migrated PostgreSQL schema. The same
+contract verifies that disabled house-tier admission state always records a
+reason and deterministic re-enable boundary.

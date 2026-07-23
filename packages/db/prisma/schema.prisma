@@ -472,6 +472,20 @@ model HouseTreasurySnapshot {
   @@unique([network, wallet, mint, tokenAccount])
 }
 
+/// Current admission state for each configured house tier. The reservation engine remains the
+/// enforcement point; this row makes its latest fail-closed decision and recovery boundary
+/// observable without affecting already-funded lifecycle processing.
+model HouseTierAdmissionState {
+  tier             Int      @id
+  disabled         Boolean  @default(false)
+  reason           String?
+  reenableBoundary String?
+  evaluatedAt      DateTime
+  version          Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
 model HouseTreasuryReservation {
   id               String                         @id
   duelId           String                         @unique
