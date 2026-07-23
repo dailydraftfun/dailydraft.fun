@@ -179,6 +179,7 @@ export function evaluateRealValuePolicy(
         approvalEvidence: null,
         configuredCapabilities: [],
         configurationValid: parsedPolicy?.ok ?? !rawPolicy,
+        productionEnabled: false,
       },
       policyHash: NON_PRODUCTION_POLICY_HASH,
       policyVersion: NON_PRODUCTION_POLICY_VERSION,
@@ -199,14 +200,6 @@ export function evaluateRealValuePolicy(
       policyHash: sha256('missing'),
       runtimeMode,
     });
-  }
-  if (!environment.OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED?.trim()) {
-    return deniedProductionDecision(
-      capability,
-      'production_approval_missing',
-      parsedPolicy,
-      baseEvidence,
-    );
   }
   if (environment.OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED !== 'true') {
     return deniedProductionDecision(
@@ -273,7 +266,9 @@ export function canonicalJson(value: unknown): string {
     return encoded;
   }
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
+  const entries = Object.entries(value).sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
   return `{${entries
     .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
     .join(',')}}`;

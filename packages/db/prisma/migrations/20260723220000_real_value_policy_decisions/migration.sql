@@ -45,3 +45,7 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER "RealValuePolicyDecision_append_only"
 BEFORE UPDATE OR DELETE ON "RealValuePolicyDecision"
 FOR EACH ROW EXECUTE FUNCTION "reject_real_value_policy_decision_mutation"();
+
+CREATE TRIGGER "RealValuePolicyDecision_append_only_truncate"
+BEFORE TRUNCATE ON "RealValuePolicyDecision"
+FOR EACH STATEMENT EXECUTE FUNCTION "reject_real_value_policy_decision_mutation"();

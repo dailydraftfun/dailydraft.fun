@@ -47,6 +47,7 @@ describe('real-value policy contract', () => {
         NODE_ENV: 'production',
         OPENPACKSDUEL_NETWORK: 'solana-devnet',
         OPENPACKSDUEL_PROVIDER_MODE: 'openpacksduel-devnet',
+        OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED: 'true',
       }),
     ).toMatchObject({
       allowed: true,
