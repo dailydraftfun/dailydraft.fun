@@ -1,6 +1,13 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import GamePreviewPage, { generateMetadata, generateStaticParams } from './page';
+
+mock.module('next/navigation', () => ({
+  notFound: () => {
+    throw new Error('NEXT_NOT_FOUND');
+  },
+}));
+
+const { default: GamePreviewPage, generateMetadata, generateStaticParams } = await import('./page');
 
 describe('game preview page contract', () => {
   test('prebuilds the established fixture preview modes', () => {
