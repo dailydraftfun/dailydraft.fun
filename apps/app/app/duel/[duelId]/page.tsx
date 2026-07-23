@@ -10,11 +10,15 @@ import {
 } from '../duel-receipt-presentation';
 import { DuelUnavailableProof } from '../duel-unavailable-proof';
 import {
+  PostDuelCardActionGate,
+  PostDuelCardActionState,
+  toPostDuelCardCapabilityState,
+} from '../post-duel-card-actions';
+import {
   fetchPublicDuelReceipt,
   formatPublicMoney,
   type PublicDuelReceipt,
   type PublicDuelStatus,
-  type PublicPostDuelCardActionState,
 } from '../public-proof-client';
 import { getDuelSocialSnapshot, getPrimaryAction, getSocialDescription } from '../social-card-data';
 
@@ -236,14 +240,16 @@ function ResultArtifact({
                 </div>
               )}
               <h2>{outcome.displayName}</h2>
-              {actionState ? <CardActionState state={actionState} /> : null}
+              {actionState ? (
+                <PostDuelCardActionState state={toPostDuelCardCapabilityState(actionState)} />
+              ) : null}
             </article>
           );
         })}
       </div>
 
       {receipt.cardActions.availability === 'hidden' ? (
-        <p className="receipt-action-gate">{cardActionGateMessage(receipt.cardActions.reason)}</p>
+        <PostDuelCardActionGate reason={receipt.cardActions.reason} />
       ) : null}
     </section>
   );
@@ -513,54 +519,6 @@ function ParticipantRow({
       </dd>
     </div>
   );
-}
-
-function CardActionState({ state }: { state: PublicPostDuelCardActionState }) {
-  return (
-    <section className="receipt-card-actions" aria-label={`${state.displayName} actions`}>
-      <div>
-        <p className="receipt-kicker">Final owner</p>
-        <strong>{state.owner.display}</strong>
-      </div>
-      <ul>
-        {state.actions.map((action) => (
-          <li key={action.action}>
-            <div>
-              <span>{action.label}</span>
-              <small
-                className={
-                  action.availability === 'available' ? 'receipt-action-available' : undefined
-                }
-              >
-                {action.availability}
-              </small>
-            </div>
-            <p>{action.detail}</p>
-            {action.alternative ? (
-              <p className="receipt-card-action-alternative">
-                Available alternative: {action.alternative.label}
-              </p>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-      <p className="receipt-card-settlement">
-        Settlement reference: {state.ownership.settlementSignature}
-      </p>
-    </section>
-  );
-}
-
-function cardActionGateMessage(reason: PublicDuelReceipt['cardActions']['reason']): string {
-  const messages: Record<Exclude<typeof reason, null>, string> = {
-    'duel-not-settled': 'Card actions stay hidden until the duel reaches settled state.',
-    'mock-assets': 'Card actions stay hidden because mock results do not transfer real cards.',
-    'ownership-mismatch':
-      'Card actions are hidden because recorded ownership disagrees with the canonical result.',
-    'ownership-pending':
-      'Card actions stay hidden until an exact finalized settlement reference reconciles ownership.',
-  };
-  return reason ? messages[reason] : 'Card actions are unavailable.';
 }
 
 function ProofStat({ label, value }: { label: string; value: string }) {
