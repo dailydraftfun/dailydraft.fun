@@ -1,10 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { DuelStatus, HouseTreasuryReservationStatus, type Prisma } from '@openpacksduel/db';
+import { HttpStatus } from '@nestjs/common';
+import {
+  type DatabaseClient,
+  DuelStatus,
+  HouseTreasuryReservationStatus,
+  type Prisma,
+} from '@openpacksduel/db';
 
 import {
   evaluateHouseExposureLimits,
+  HouseTierAdmissionError,
   houseTreasuryConfigurationErrors,
   persistHouseTierAdmissionFailure,
+  persistHouseTierAdmissionFailureSafely,
   readHouseTreasuryConfig,
   reserveHouseExposure,
 } from './house-treasury.policy.js';
@@ -297,6 +305,53 @@ describe('house treasury policy', () => {
     });
   });
 
+  test('records the tier denial inside its own transaction when persisting safely', async () => {
+    const admissionStates: TierAdmissionState[] = [];
+    const transaction = fakeTransaction({ admissionStates, created: [], existingExposure: [] });
+    let transactionCalls = 0;
+    const database = {
+      $transaction: (run: (client: Prisma.TransactionClient) => Promise<unknown>) => {
+        transactionCalls += 1;
+        return run(transaction);
+      },
+    } as unknown as DatabaseClient;
+
+    await persistHouseTierAdmissionFailureSafely(database, tierAdmissionError());
+
+    expect(transactionCalls).toBe(1);
+    expect(admissionStates[0]).toMatchObject({
+      disabled: true,
+      reason: 'minimum_liquidity',
+      tier: 50,
+    });
+  });
+
+  test('swallows a failed bookkeeping write so the original reservation error survives', async () => {
+    const database = {
+      $transaction: () => Promise.reject(new Error('unapplied migration')),
+    } as unknown as DatabaseClient;
+
+    // Must resolve — the caller's HouseTierAdmissionError contract and replay path
+    // cannot be replaced by a transient failure in observability-only bookkeeping.
+    await expect(
+      persistHouseTierAdmissionFailureSafely(database, tierAdmissionError()),
+    ).resolves.toBeUndefined();
+  });
+
+  test('never opens a transaction for a non-tier-admission error', async () => {
+    let transactionCalls = 0;
+    const database = {
+      $transaction: () => {
+        transactionCalls += 1;
+        return Promise.resolve();
+      },
+    } as unknown as DatabaseClient;
+
+    await persistHouseTierAdmissionFailureSafely(database, new Error('unrelated failure'));
+
+    expect(transactionCalls).toBe(0);
+  });
+
   test('allows an exact reservation replay while emergency pause blocks new admission', async () => {
     const existingReservation = {
       amount: '50000000',
@@ -404,6 +459,17 @@ function limitSnapshot(overrides: Partial<Parameters<typeof evaluateHouseExposur
     verifiedBalance: 150n,
     ...overrides,
   };
+}
+
+function tierAdmissionError(): HouseTierAdmissionError {
+  return new HouseTierAdmissionError(
+    'House tier temporarily unavailable',
+    HttpStatus.SERVICE_UNAVAILABLE,
+    50,
+    'minimum_liquidity',
+    'fresh_treasury_snapshot_or_reservation_release',
+    new Date('2026-07-15T12:00:00.000Z'),
+  );
 }
 
 interface TierAdmissionState {

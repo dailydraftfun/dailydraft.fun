@@ -5,6 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+  type DatabaseClient,
   HouseTreasuryLedgerType,
   HouseTreasuryReservationStatus,
   type Prisma,
@@ -82,7 +83,7 @@ const HOUSE_TIER_REENABLE_BOUNDARIES: Record<HouseTierDisableReason, HouseTierRe
   treasury_snapshot_stale: 'fresh_treasury_snapshot',
 };
 
-const GLOBAL_EXPOSURE_CONTROL = 'global_exposure';
+export const GLOBAL_EXPOSURE_CONTROL = 'global_exposure';
 
 export class HouseTierAdmissionError extends HttpException {
   constructor(
@@ -316,6 +317,27 @@ export async function persistHouseTierAdmissionFailure(
     tier: error.tier,
   });
   return true;
+}
+
+/**
+ * Record a tier-admission failure without ever letting the bookkeeping write
+ * affect the caller's reservation error contract. Recording the state is
+ * observability-only: if its own transaction throws (transient DB error,
+ * unapplied migration, constraint violation), that must not replace the
+ * original HouseTierAdmissionError or bypass the caller's replay/retry path.
+ */
+export async function persistHouseTierAdmissionFailureSafely(
+  database: DatabaseClient,
+  error: unknown,
+): Promise<void> {
+  if (!(error instanceof HouseTierAdmissionError)) return;
+  try {
+    await database.$transaction((transaction) =>
+      persistHouseTierAdmissionFailure(transaction, error),
+    );
+  } catch {
+    // Intentionally swallowed — see the contract described above.
+  }
 }
 
 export function houseTreasurySnapshotIsUsable(
