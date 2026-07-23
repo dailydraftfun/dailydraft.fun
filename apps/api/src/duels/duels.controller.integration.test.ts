@@ -9,6 +9,8 @@ import { DuelMutationGuard } from '../auth/duel-mutation.guard.js';
 import type { WalletAuthentication } from '../auth/wallet-auth.service.js';
 import { WalletAuthService } from '../auth/wallet-auth.service.js';
 import type { Duel } from '../domain.js';
+import { RealValuePolicyGuard } from '../policy/real-value-policy.guard.js';
+import { RealValuePolicyService } from '../policy/real-value-policy.service.js';
 import { DuelFundingService } from '../transactions/duel-funding.service.js';
 import { DuelOpeningService } from './duel-opening.service.js';
 import { DuelsController } from './duels.controller.js';
@@ -56,7 +58,12 @@ const duelsService = {
   controllers: [DuelsController],
   providers: [
     DuelMutationGuard,
+    RealValuePolicyGuard,
     { provide: WalletAuthService, useValue: authService },
+    {
+      provide: RealValuePolicyService,
+      useValue: { assertAllowed: () => Promise.resolve({ allowed: true }) },
+    },
     { provide: DuelsService, useValue: duelsService },
     { provide: DuelOpeningService, useValue: {} },
     { provide: DuelFundingService, useValue: {} },
