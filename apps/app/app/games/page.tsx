@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import { GameLobby } from './game-lobby';
 
 export const metadata: Metadata = {
-  title: 'Card games — Pack Duel Devnet',
+  title: 'Card games — Grail Devnet',
   description:
-    'Explore Pack Duel, Flip Gacha, and Crash as capability-gated card games on Solana devnet.',
+    'Explore Card Duels, Sports Pack Gacha, Fantasy Tournaments, and Card Streak as capability-gated sports card games on Solana devnet.',
   robots: { follow: false, index: false, nocache: true },
 };
 

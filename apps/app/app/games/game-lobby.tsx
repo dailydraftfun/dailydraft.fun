@@ -13,6 +13,7 @@ import {
   ShieldCheckIcon,
   SparkleIcon,
   SwordIcon,
+  TrophyIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -22,6 +23,7 @@ const gameIcons: Record<GameMode['id'], ReactNode> = {
   crash: <ChartLineUpIcon size={27} weight="bold" />,
   duels: <SwordIcon size={27} weight="fill" />,
   flip: <CardsThreeIcon size={27} weight="fill" />,
+  tournaments: <TrophyIcon size={27} weight="fill" />,
 };
 
 export function GameLobby() {
@@ -31,15 +33,16 @@ export function GameLobby() {
         <div className="max-w-4xl">
           <p className="proof-label flex items-center gap-2">
             <span className="inline-block size-2 rounded-full bg-lime" aria-hidden="true" />
-            Verified card games
+            Verified sports card games
           </p>
           <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-0.055em] text-primary sm:text-6xl">
-            Three card loops.
+            Four sports loops.
             <span className="block text-lime">One honest arena.</span>
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-secondary">
-            Duel other collectors, chase a single Flip reveal, or build a Crash run. Every mode
-            commits its rules before play and keeps a durable receipt after it.
+            Duel other collectors, rip a real Collector Crypt sports pack, field a fantasy squad, or
+            build a streak. Every mode commits its rules before play and keeps a durable receipt
+            after it.
           </p>
         </div>
 
@@ -74,7 +77,7 @@ export function GameLobby() {
           </p>
         </div>
 
-        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {gameModes.map((game) => (
             <GameModeCard game={game} key={game.id} />
           ))}
@@ -117,18 +120,23 @@ export function GameLobby() {
           <ol className="mt-6 grid gap-3">
             <RoadmapItem
               icon={<CheckCircleIcon size={20} weight="fill" />}
-              label="Duels"
+              label="Card Duels"
               status="Playable devnet foundation"
               tone="live"
             />
             <RoadmapItem
               icon={<CubeIcon size={20} weight="fill" />}
-              label="Flip Gacha"
-              status="Finish deterministic inventory and acquisition"
+              label="Sports Pack Gacha"
+              status="Wire Collector Crypt inventory and on-chain acquisition"
+            />
+            <RoadmapItem
+              icon={<TrophyIcon size={20} weight="fill" />}
+              label="Fantasy Tournaments"
+              status="Build the match-data oracle, kickoff snapshot, and payout math"
             />
             <RoadmapItem
               icon={<CrosshairIcon size={20} weight="fill" />}
-              label="Crash"
+              label="Card Streak"
               status="Lock the card-stage rules and custody contract"
             />
           </ol>
@@ -143,7 +151,7 @@ export function GameLobby() {
             </p>
           </div>
           <Link className="proof-primary-action mt-6 w-full gap-2" href="/overview">
-            Play Duels
+            Play Card Duels
             <ArrowRightIcon size={16} weight="bold" />
           </Link>
         </aside>
