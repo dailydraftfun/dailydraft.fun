@@ -264,8 +264,7 @@ export function calculateFantasyPayouts(
     if (
       typeof placement.place !== 'number' ||
       !Number.isInteger(placement.place) ||
-      placement.place < 1 ||
-      placement.place > positionRule.placeBasisPoints.length
+      placement.place < 1
     ) {
       throw contractError('PLACE_NOT_CONFIGURED', 'Fantasy payout place is not configured');
     }
@@ -282,7 +281,11 @@ export function calculateFantasyPayouts(
     }
     seenPlacements.add(placementKey);
 
-    const placeBasisPoints = BigInt(positionRule.placeBasisPoints[placement.place - 1]);
+    const placeBasisPointsEntry = positionRule.placeBasisPoints[placement.place - 1];
+    if (placeBasisPointsEntry === undefined) {
+      throw contractError('PLACE_NOT_CONFIGURED', 'Fantasy payout place is not configured');
+    }
+    const placeBasisPoints = BigInt(placeBasisPointsEntry);
     const placeAllocationAmount =
       (prizePoolAmount * placeBasisPoints) / FANTASY_PAYOUT_BASIS_POINTS_TOTAL;
 

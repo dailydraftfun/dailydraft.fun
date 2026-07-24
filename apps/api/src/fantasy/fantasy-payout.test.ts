@@ -103,7 +103,7 @@ describe('versioned position-weighted fantasy payout calculator', () => {
   test('splits each place allocation by holder share with floor rounding', () => {
     const result = calculateFantasyPayouts(FIXTURE_RULES, FIXTURE_INPUT);
 
-    const defender = result.allocations[0];
+    const defender = result.allocations[0]!;
     expect(defender.placeAllocation).toEqual(USDC('120000'));
     expect(defender.holderResidual).toEqual(USDC('0'));
     expect(defender.holderRewards.map((holder) => holder.reward.amount)).toEqual([
@@ -111,7 +111,7 @@ describe('versioned position-weighted fantasy payout calculator', () => {
       '40000',
     ]);
 
-    const forward = result.allocations[1];
+    const forward = result.allocations[1]!;
     expect(forward.placeAllocation).toEqual(USDC('120000'));
     // 120000 over shares 3/2/2 -> 51428 + 34285 + 34285 = 119998, 2 minor units held back.
     expect(forward.holderRewards.map((holder) => holder.reward.amount)).toEqual([
@@ -138,7 +138,7 @@ describe('versioned position-weighted fantasy payout calculator', () => {
     expect(result.distributed).toEqual(USDC('0'));
     expect(result.residual).toEqual(USDC('0'));
     expect(result.undistributed).toEqual(USDC('1000000'));
-    expect(result.allocations[0].placeAllocation).toEqual(USDC('0'));
+    expect(result.allocations[0]!.placeAllocation).toEqual(USDC('0'));
   });
 
   test('rejects a rule set whose basis points do not sum to 10000', () => {
@@ -200,6 +200,26 @@ describe('versioned position-weighted fantasy payout calculator', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(FantasyPayoutContractError);
       expect((error as FantasyPayoutContractError).code).toBe('INVALID_INPUT');
+    }
+  });
+
+  test('rejects a place below the first configured rank', () => {
+    try {
+      calculateFantasyPayouts(FIXTURE_RULES, {
+        placements: [
+          {
+            holders: [{ eligibleShares: '1', walletAddress: WALLET.def1 }],
+            place: 0,
+            playerId: 'gk_player_1',
+            position: 'GOALKEEPER',
+          },
+        ],
+        prizePool: USDC('1000000'),
+      });
+      throw new Error('expected calculation to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(FantasyPayoutContractError);
+      expect((error as FantasyPayoutContractError).code).toBe('PLACE_NOT_CONFIGURED');
     }
   });
 
