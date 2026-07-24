@@ -25,6 +25,8 @@ tags:
     description: Replay-safe Solana devnet wallet ownership sessions.
   - name: Packs
     description: Duel-eligible pack definitions and current inventory metadata.
+  - name: Gacha
+    description: Inspectable Sports Pack Gacha capabilities, inventory, odds, and fixture-only rips.
   - name: Valuation
     description: Immutable winner-comparison policies committed before either player funds.
   - name: Duels
@@ -78,6 +80,117 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProductCapabilities'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /gacha/capability:
+    get:
+      operationId: getGachaCapability
+      tags: [Gacha]
+      summary: Inspect the fail-closed Sports Pack Gacha capability gates
+      description: |
+        Reports whether provider, odds, acquisition, and settlement are ready.
+        Preview availability never implies that real Collector Crypt rips are enabled.
+      x-openpacksduel-availability: devnet-preview
+      responses:
+        '200':
+          description: Current Sports Pack Gacha capability
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GachaCapability'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /gacha/machines/{machineKey}/inventory:
+    get:
+      operationId: getGachaMachineInventory
+      tags: [Gacha]
+      summary: Get the latest sealed inventory snapshot for a Gacha machine
+      x-openpacksduel-availability: devnet-preview
+      parameters:
+        - $ref: '#/components/parameters/GachaMachineKey'
+      responses:
+        '200':
+          description: Latest sealed inventory snapshot and its canonical entries
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GachaInventorySnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /gacha/machines/{machineKey}/odds:
+    get:
+      operationId: getGachaMachineOdds
+      tags: [Gacha]
+      summary: Get the latest sealed odds commitment for a Gacha machine
+      x-openpacksduel-availability: devnet-preview
+      parameters:
+        - $ref: '#/components/parameters/GachaMachineKey'
+      responses:
+        '200':
+          description: Latest sealed probability commitment
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GachaPullOddsCommitment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /gacha/rips:
+    post:
+      operationId: createFixtureGachaRip
+      tags: [Gacha]
+      summary: Execute one explicitly enabled fixture-mode Gacha rip
+      description: |
+        Selects against sealed inventory and odds evidence, then records reveal,
+        acquisition, and settlement as separate lifecycle transitions. This route
+        fails closed unless fixture or preview mode is explicitly enabled.
+      x-openpacksduel-availability: devnet-preview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFixtureGachaRipRequest'
+      responses:
+        '201':
+          description: Settled fixture rip and the exact odds commitment used
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GachaRipResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -1448,6 +1561,12 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/PackId'
+    GachaMachineKey:
+      name: machineKey
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/GachaMachineKey'
     DuelId:
       name: duelId
       in: path
@@ -1809,6 +1928,472 @@ components:
               type: string
             ready:
               type: boolean
+    GachaMachineKey:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9._:-]{0,127}$'
+    GachaCapabilityGates:
+      type: object
+      additionalProperties: false
+      required: [acquisition, odds, provider, settlement]
+      properties:
+        acquisition:
+          type: boolean
+        odds:
+          type: boolean
+        provider:
+          type: boolean
+        settlement:
+          type: boolean
+    GachaCapability:
+      type: object
+      additionalProperties: false
+      required: [availability, gates, providerMode, reason]
+      properties:
+        availability:
+          type: string
+          enum: [playable, preview]
+        gates:
+          $ref: '#/components/schemas/GachaCapabilityGates'
+        providerMode:
+          type: string
+          enum: [collector-crypt, fixture]
+        reason:
+          type: string
+    GachaMachine:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - machineKey
+        - sport
+        - tierPriceMinor
+        - tierPriceCurrency
+        - tierPriceDecimals
+        - displayName
+        - committedPoolSize
+        - active
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        machineKey:
+          $ref: '#/components/schemas/GachaMachineKey'
+        sport:
+          type: string
+          enum: [FOOTBALL, SOCCER, BASEBALL, BASKETBALL]
+        tierPriceMinor:
+          type: string
+          pattern: '^[0-9]+$'
+        tierPriceCurrency:
+          type: string
+          const: USDC
+        tierPriceDecimals:
+          type: integer
+          const: 6
+        displayName:
+          type: string
+        committedPoolSize:
+          type: integer
+          minimum: 0
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    GachaInventorySnapshotEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - snapshotId
+        - ordinal
+        - eligible
+        - exclusionReasons
+        - providerCardReference
+        - assetReference
+        - displayName
+        - sport
+        - graded
+        - graderReference
+        - vaulted
+        - poolOpen
+        - tierEnabled
+        - insuredValueMinor
+        - insuredValueCurrency
+        - insuredValueDecimals
+        - insuredValueProviderReference
+        - valuationSourceReference
+        - valuationTimestamp
+        - inventorySourceTimestamp
+      properties:
+        id:
+          type: string
+        snapshotId:
+          type: string
+        ordinal:
+          type: integer
+          minimum: 0
+        eligible:
+          type: boolean
+        exclusionReasons:
+          type: array
+          items:
+            type: string
+            enum:
+              - MISSING_INSURED_VALUE
+              - MISSING_ASSET_REFERENCE
+              - MISSING_VALUATION_SOURCE
+              - STALE_VALUATION
+              - FUTURE_VALUATION
+              - POOL_CLOSED
+              - TIER_DISABLED
+              - NOT_VAULTED
+              - UNGRADED
+              - SPORT_MISMATCH
+              - DUPLICATE_ASSET
+              - MAXIMUM_ITEM_COUNT
+        providerCardReference:
+          type: string
+        assetReference:
+          type: [string, 'null']
+        displayName:
+          type: string
+        sport:
+          type: string
+          enum: [FOOTBALL, SOCCER, BASEBALL, BASKETBALL]
+        graded:
+          type: boolean
+        graderReference:
+          type: [string, 'null']
+        vaulted:
+          type: boolean
+        poolOpen:
+          type: boolean
+        tierEnabled:
+          type: boolean
+        insuredValueMinor:
+          type: [string, 'null']
+          pattern: '^[0-9]+$'
+        insuredValueCurrency:
+          type: [string, 'null']
+        insuredValueDecimals:
+          type: [integer, 'null']
+        insuredValueProviderReference:
+          type: [string, 'null']
+        valuationSourceReference:
+          type: [string, 'null']
+        valuationTimestamp:
+          type: [string, 'null']
+          format: date-time
+        inventorySourceTimestamp:
+          type: string
+          format: date-time
+    GachaInventorySnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - poolKey
+        - machineKey
+        - revision
+        - schemaVersion
+        - policyVersion
+        - provider
+        - policyHash
+        - contentHash
+        - policy
+        - committedPoolSize
+        - maximumEligibleItems
+        - maximumSourceAgeMs
+        - maximumFutureSkewMs
+        - eligibleCount
+        - excludedCount
+        - eligibleValueMinor
+        - evaluatedAt
+        - sealedAt
+        - createdAt
+        - machine
+        - entries
+      properties:
+        id:
+          type: string
+        poolKey:
+          type: string
+        machineKey:
+          $ref: '#/components/schemas/GachaMachineKey'
+        revision:
+          type: integer
+          minimum: 1
+        schemaVersion:
+          type: string
+        policyVersion:
+          type: string
+        provider:
+          type: string
+        policyHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        contentHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        policy:
+          type: object
+          additionalProperties: true
+        committedPoolSize:
+          type: integer
+          minimum: 0
+        maximumEligibleItems:
+          type: integer
+          minimum: 1
+        maximumSourceAgeMs:
+          type: integer
+          minimum: 0
+        maximumFutureSkewMs:
+          type: integer
+          minimum: 0
+        eligibleCount:
+          type: integer
+          minimum: 0
+        excludedCount:
+          type: integer
+          minimum: 0
+        eligibleValueMinor:
+          type: string
+          pattern: '^[0-9]+$'
+        evaluatedAt:
+          type: string
+          format: date-time
+        sealedAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        machine:
+          $ref: '#/components/schemas/GachaMachine'
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/GachaInventorySnapshotEntry'
+    GachaPullOddsCommitment:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - machineKey
+        - oddsKey
+        - version
+        - schemaVersion
+        - calculatorVersion
+        - rulesHash
+        - snapshotContentHash
+        - probabilityScalePpm
+        - baseProbabilityPpm
+        - plusProbabilityPpm
+        - premiumProbabilityPpm
+        - chaseProbabilityPpm
+        - bandMinimums
+        - committedAt
+        - sealedAt
+        - createdAt
+      properties:
+        id:
+          type: string
+        machineKey:
+          $ref: '#/components/schemas/GachaMachineKey'
+        oddsKey:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        schemaVersion:
+          type: string
+        calculatorVersion:
+          type: string
+        rulesHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        snapshotContentHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        probabilityScalePpm:
+          type: integer
+          const: 1000000
+        baseProbabilityPpm:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+        plusProbabilityPpm:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+        premiumProbabilityPpm:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+        chaseProbabilityPpm:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+        bandMinimums:
+          type: object
+          additionalProperties:
+            type: string
+            pattern: '^[0-9]+$'
+        committedAt:
+          type: string
+          format: date-time
+        sealedAt:
+          type: [string, 'null']
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    CreateFixtureGachaRipRequest:
+      type: object
+      additionalProperties: false
+      required: [machineKey, recipientWallet, seed]
+      properties:
+        machineKey:
+          $ref: '#/components/schemas/GachaMachineKey'
+        recipientWallet:
+          type: string
+          minLength: 1
+          maxLength: 240
+        seed:
+          type: string
+          minLength: 16
+          maxLength: 240
+        oddsVersion:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+          default: 1
+    GachaRip:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - machineKey
+        - oddsCommitmentId
+        - status
+        - snapshotContentHash
+        - oddsRulesHash
+        - seedCommitmentHash
+        - selectedAssetReference
+        - acquisitionReference
+        - settlementReference
+        - insuredValueMinor
+        - insuredValueCurrency
+        - insuredValueDecimals
+        - selectedAt
+        - revealedAt
+        - acquiredAt
+        - settledAt
+        - failedAt
+        - failureReason
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        machineKey:
+          $ref: '#/components/schemas/GachaMachineKey'
+        oddsCommitmentId:
+          type: string
+        status:
+          type: string
+          enum: [SELECTED, REVEALED, ACQUIRED, SETTLED, FAILED]
+        snapshotContentHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        oddsRulesHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        seedCommitmentHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        selectedAssetReference:
+          type: string
+        acquisitionReference:
+          type: [string, 'null']
+        settlementReference:
+          type: [string, 'null']
+        insuredValueMinor:
+          type: string
+          pattern: '^[0-9]+$'
+        insuredValueCurrency:
+          type: string
+          const: USDC
+        insuredValueDecimals:
+          type: integer
+          const: 6
+        selectedAt:
+          type: string
+          format: date-time
+        revealedAt:
+          type: [string, 'null']
+          format: date-time
+        acquiredAt:
+          type: [string, 'null']
+          format: date-time
+        settledAt:
+          type: [string, 'null']
+          format: date-time
+        failedAt:
+          type: [string, 'null']
+          format: date-time
+        failureReason:
+          type: [string, 'null']
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    GachaRipOddsCommitment:
+      type: object
+      additionalProperties: false
+      required:
+        - calculatorVersion
+        - committedAt
+        - oddsKey
+        - rulesHash
+        - schemaVersion
+        - snapshotContentHash
+        - version
+      properties:
+        calculatorVersion:
+          type: string
+        committedAt:
+          type: string
+          format: date-time
+        oddsKey:
+          type: string
+        rulesHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        schemaVersion:
+          type: string
+        snapshotContentHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        version:
+          type: integer
+          minimum: 1
+    GachaRipResult:
+      type: object
+      additionalProperties: false
+      required: [oddsCommitment, rip]
+      properties:
+        oddsCommitment:
+          $ref: '#/components/schemas/GachaRipOddsCommitment'
+        rip:
+          $ref: '#/components/schemas/GachaRip'
     SolanaAddress:
       type: string
       pattern: '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
