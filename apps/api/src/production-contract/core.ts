@@ -3,12 +3,12 @@ import {
   validateDeploymentEnvironment,
 } from '../config/deployment-environment.js';
 
-export const PRODUCTION_ARTIFACT_SCHEMA_VERSION = 1;
-const PRODUCTION_ENTRYPOINTS = ['api/index.js', 'src/main.js'] as const;
+export const PRODUCTION_ARTIFACT_SCHEMA_VERSION = 2;
+const PRODUCTION_ENTRYPOINTS = ['src/main.js'] as const;
 
 export interface ProductionArtifactManifest {
   artifact: {
-    entrypoints: readonly ['api/index.js', 'src/main.js'];
+    entrypoints: readonly ['src/main.js'];
     healthRoute: '/v1/health';
     openapi: 'openapi.yaml';
     runtime: 'bun@1.3.13';
@@ -19,7 +19,7 @@ export interface ProductionArtifactManifest {
   };
   environmentContract: 'deployment-environment.v1';
   openapiSha256: string;
-  schemaVersion: 1;
+  schemaVersion: 2;
 }
 
 export interface ConformanceCheck {
@@ -201,7 +201,6 @@ export function productionEnvironmentFixture(overrides: NodeJS.ProcessEnv = {}):
     OPENPACKSDUEL_NETWORK: 'solana-devnet',
     OPENPACKSDUEL_PROVIDER_MODE: 'openpacksduel-devnet',
     PORT: '33159',
-    VERCEL_ENV: 'production',
     ...overrides,
   };
 }

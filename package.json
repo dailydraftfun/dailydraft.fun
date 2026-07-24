@@ -15,7 +15,6 @@
     "dev:docs": "turbo run dev --filter=@openpacksduel/docs",
     "dev:mcp": "turbo run dev --filter=@openpacksduel/mcp",
     "deploy:api:migrate": "bun --filter @openpacksduel/db db:deploy",
-    "deploy:api:prod": "bun run deploy:api:migrate && VERCEL_ORG_ID=team_KHSVltukbViA3Mbyd0KBdW22 VERCEL_PROJECT_ID=prj_rX5EyAaDo5slW8ea0mUDjwVhb1Xq vercel deploy --prod --scope vincentshipsit",
     "smoke:devnet": "bun run scripts/devnet-smoke.ts",
     "conformance:api-production": "bun scripts/api-production-conformance.ts --artifact apps/api/dist --report artifacts/api-production-conformance.json",
     "typecheck": "turbo run typecheck",
