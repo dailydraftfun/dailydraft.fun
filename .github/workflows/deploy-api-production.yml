@@ -14,6 +14,13 @@ on:
       - ".github/workflows/deploy-api-production.yml"
   workflow_dispatch:
 
+# Two overlapping runs would race on docker load, prisma migrate deploy, and the
+# rm/rename swap, which can leave the host with no container named openpacksduel.
+# Never cancel in flight: a half-applied deploy is worse than a queued one.
+concurrency:
+  group: deploy-api-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     environment: Production
