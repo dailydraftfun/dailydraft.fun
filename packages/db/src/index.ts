@@ -5,10 +5,15 @@ import { PrismaClient } from '../generated/client.js';
 export type { Prisma } from '../generated/client.js';
 export {
   DuelMode,
+  DuelProviderOperationStatus,
   DuelSide,
   DuelStatus,
   DuelTransactionAction,
   DuelTransactionStatus,
+  FlipInventoryExclusionReason,
+  GachaInventoryExclusionReason,
+  GachaRipStatus,
+  GachaSport,
   HouseInventoryDisposition,
   HouseInventoryListingState,
   HouseInventoryStatus,

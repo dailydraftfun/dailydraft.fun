@@ -52,6 +52,12 @@ jobs:
           psql "$database_url" \
             --set ON_ERROR_STOP=1 \
             --file packages/db/prisma/verify-house-treasury.sql
+      - name: Verify Flip inventory migration contract
+        run: |
+          database_url="${DATABASE_URL%%\?*}"
+          psql "$database_url" \
+            --set ON_ERROR_STOP=1 \
+            --file packages/db/prisma/verify-flip-inventory.sql
       - name: Validate Prisma schema
         run: bun --filter @openpacksduel/db db:validate
       - name: Prove schema-only drift is rejected

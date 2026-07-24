@@ -35,6 +35,9 @@ Pull requests that change this package run every committed migration against an
 empty workflow-local PostgreSQL database, validate `schema.prisma`, and reject
 drift between the migrated database and the schema. The check uses no repository
 secrets and also proves that a temporary schema-only change is detected. The same
-job executes `prisma/verify-house-treasury.sql` inside a rolled-back transaction
-to verify reservation states, exposure indexes and constraints, and the
-append-only ledger trigger against the migrated PostgreSQL schema.
+job executes `prisma/verify-house-treasury.sql` and
+`prisma/verify-flip-inventory.sql` inside rolled-back transactions to verify
+reservation states, exposure indexes, distinct value tuples, unique provider
+listings, and sealed append-only treasury and Flip evidence against the migrated
+PostgreSQL schema. The same contract verifies that disabled house-tier admission
+state always records a reason and deterministic re-enable boundary.

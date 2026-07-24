@@ -44,6 +44,14 @@ enum DuelSide {
   OPPONENT
 }
 
+enum DuelProviderOperationStatus {
+  REQUESTED
+  GENERATED
+  OPENING
+  OPENED
+  RECOVERY_REQUIRED
+}
+
 enum DuelTransactionAction {
   FUND
   CANCEL
@@ -164,6 +172,52 @@ enum HouseInventoryListingState {
   DELISTED
 }
 
+enum FlipInventoryExclusionReason {
+  EXPLICIT_EXCLUSION
+  COLLECTION_NOT_ALLOWED
+  GRADER_NOT_ALLOWED
+  INVENTORY_STALE
+  INVENTORY_FROM_FUTURE
+  LIQUIDITY_BELOW_MINIMUM
+  VALUE_UNAVAILABLE
+  VALUE_STALE
+  VALUE_FROM_FUTURE
+  VALUE_BELOW_MINIMUM
+  VALUE_ABOVE_MAXIMUM
+  MAXIMUM_ITEM_COUNT
+  MAXIMUM_EXPOSURE
+}
+
+enum GachaSport {
+  FOOTBALL
+  SOCCER
+  BASEBALL
+  BASKETBALL
+}
+
+enum GachaRipStatus {
+  SELECTED
+  REVEALED
+  ACQUIRED
+  SETTLED
+  FAILED
+}
+
+enum GachaInventoryExclusionReason {
+  MISSING_INSURED_VALUE
+  MISSING_ASSET_REFERENCE
+  MISSING_VALUATION_SOURCE
+  STALE_VALUATION
+  FUTURE_VALUATION
+  POOL_CLOSED
+  TIER_DISABLED
+  NOT_VAULTED
+  UNGRADED
+  SPORT_MISMATCH
+  DUPLICATE_ASSET
+  MAXIMUM_ITEM_COUNT
+}
+
 model Duel {
   id                  String                     @id
   mode                DuelMode
@@ -203,6 +257,7 @@ model Duel {
   houseInventory      HouseInventoryAsset[]
   houseLedgerEntries  HouseTreasuryLedgerEntry[]
   devnetPackSnapshots DevnetPackSnapshot[]
+  providerOperations  DuelProviderOperation[]
 
   @@index([status, expiresAt])
   @@index([mode, status, packId, createdAt])
@@ -210,6 +265,35 @@ model Duel {
   @@index([opponentWallet, createdAt])
   @@index([status, settledAt, id])
   @@index([winnerWallet, createdAt])
+}
+
+model DuelProviderOperation {
+  id                     String                      @id
+  duelId                 String
+  side                   DuelSide
+  provider               String
+  providerPackId         String
+  recipientWallet        String
+  generateIdempotencyKey String
+  openIdempotencyKey     String
+  status                 DuelProviderOperationStatus @default(REQUESTED)
+  providerReference      String?
+  rawPayload             String?
+  payloadHash            String?
+  signature              String?
+  signatureAlgorithm     String?
+  signingKeyReference    String?
+  assetReference         String?
+  resultHash             String?
+  normalizedOutcome      Json?
+  errorCode              String?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  duel                   Duel                        @relation(fields: [duelId], references: [id], onDelete: Cascade)
+
+  @@unique([duelId, side])
+  @@unique([provider, providerReference])
+  @@index([duelId, status])
 }
 
 model DevnetPackSnapshot {
@@ -429,6 +513,25 @@ model ProductEvent {
   @@index([duelId, createdAt])
 }
 
+/// Immutable decision evidence recorded before an exposure-creating API operation.
+model RealValuePolicyDecision {
+  id            String   @id
+  capability    String
+  runtimeMode   String
+  schemaVersion String
+  policyVersion String
+  policyHash    String
+  allowed       Boolean
+  denialReason  String?
+  evidence      Json
+  evaluatedAt   DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([capability, evaluatedAt])
+  @@index([allowed, evaluatedAt])
+  @@index([policyVersion, evaluatedAt])
+}
+
 model RuntimeControl {
   key        String              @id
   paused     Boolean             @default(false)
@@ -470,6 +573,20 @@ model HouseTreasurySnapshot {
   updatedAt       DateTime      @updatedAt
 
   @@unique([network, wallet, mint, tokenAccount])
+}
+
+/// Current admission state for each configured house tier. The reservation engine remains the
+/// enforcement point; this row makes its latest fail-closed decision and recovery boundary
+/// observable without affecting already-funded lifecycle processing.
+model HouseTierAdmissionState {
+  tier             Int      @id
+  disabled         Boolean  @default(false)
+  reason           String?
+  reenableBoundary String?
+  evaluatedAt      DateTime
+  version          Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model HouseTreasuryReservation {
@@ -561,4 +678,233 @@ model HouseTreasuryLedgerEntry {
   @@index([createdAt, type])
   @@index([duelId, createdAt])
   @@index([inventoryId, createdAt])
+}
+
+/// Immutable, fixture-backed eligibility evidence for one reviewed Flip pool.
+/// A new content hash creates a new revision; existing revisions are append-only.
+model FlipInventorySnapshot {
+  id                          String                       @id
+  poolKey                     String
+  revision                    Int
+  schemaVersion               String
+  policyVersion               String
+  provider                    String
+  policyHash                  String
+  contentHash                 String
+  policy                      Json
+  stakeAmount                 String
+  stakeCurrency               String                       @default("USDC")
+  stakeDecimals               Int                          @default(6)
+  minimumValueAmount          String
+  maximumValueAmount          String
+  minimumLiquidityBasisPoints Int
+  minimumEligibleItems        Int
+  maximumEligibleItems        Int
+  maximumExposureAmount       String
+  maximumSourceAgeMs          Int
+  maximumFutureSkewMs         Int
+  eligibleCount               Int
+  excludedCount               Int
+  eligibleValueAmount         String
+  evaluatedAt                 DateTime
+  sealedAt                    DateTime?
+  createdAt                   DateTime                     @default(now())
+  entries                     FlipInventorySnapshotEntry[]
+
+  @@unique([poolKey, revision])
+  @@unique([poolKey, contentHash])
+  @@index([poolKey, createdAt])
+}
+
+/// One canonical provider candidate and the exact inclusion or exclusion decision.
+/// Provider evidence and each value type remain distinct from the normalized pool value.
+model FlipInventorySnapshotEntry {
+  id                                     String                         @id
+  snapshotId                             String
+  ordinal                                Int
+  eligible                               Boolean
+  exclusionReasons                       FlipInventoryExclusionReason[]
+  providerAssetReference                 String
+  providerListingReference               String
+  providerCollectionReference            String
+  providerGraderReference                String
+  normalizedCollection                   String
+  normalizedGrader                       String
+  liquidityBasisPoints                   Int
+  inventorySourceTimestamp               DateTime
+  listingValueAmount                     String?
+  listingValueCurrency                   String?
+  listingValueDecimals                   Int?
+  listingValueProviderReference          String?
+  listingValueSourceTimestamp            DateTime?
+  insuredValueAmount                     String?
+  insuredValueCurrency                   String?
+  insuredValueDecimals                   Int?
+  insuredValueProviderReference          String?
+  insuredValueSourceTimestamp            DateTime?
+  buybackValueAmount                     String?
+  buybackValueCurrency                   String?
+  buybackValueDecimals                   Int?
+  buybackValueProviderReference          String?
+  buybackValueSourceTimestamp            DateTime?
+  displayedValueAmount                   String?
+  displayedValueCurrency                 String?
+  displayedValueDecimals                 Int?
+  displayedValueProviderReference        String?
+  displayedValueSourceTimestamp          DateTime?
+  eligibilityListingValueAmount          String?
+  eligibilityListingValueCurrency        String?
+  eligibilityListingValueDecimals        Int?
+  eligibilityListingValueSourceTimestamp DateTime?
+  snapshot                               FlipInventorySnapshot          @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  @@unique([snapshotId, ordinal])
+  @@unique([snapshotId, providerAssetReference])
+  @@unique([snapshotId, providerListingReference])
+  @@index([snapshotId, eligible, ordinal])
+}
+
+/// One configured Collector Crypt sports pack machine.
+/// Production machines remain inactive until every capability gate passes.
+model GachaMachine {
+  id                  String                     @id
+  machineKey          String                     @unique
+  sport               GachaSport
+  tierPriceMinor      String
+  tierPriceCurrency   String                     @default("USDC")
+  tierPriceDecimals   Int                        @default(6)
+  displayName         String
+  committedPoolSize   Int
+  active              Boolean                    @default(false)
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  inventorySnapshots  GachaInventorySnapshot[]
+  oddsCommitments     GachaPullOddsCommitment[]
+  rips                GachaRip[]
+
+  @@index([sport, tierPriceMinor, active])
+}
+
+/// Immutable eligibility evidence for one Gacha machine pool revision.
+/// A new content hash creates a new revision; sealed revisions are append-only.
+model GachaInventorySnapshot {
+  id                       String                         @id
+  poolKey                  String
+  machineKey               String
+  revision                 Int
+  schemaVersion            String
+  policyVersion            String
+  provider                 String
+  policyHash               String
+  contentHash              String
+  policy                   Json
+  committedPoolSize        Int
+  maximumEligibleItems     Int
+  maximumSourceAgeMs       Int
+  maximumFutureSkewMs      Int
+  eligibleCount            Int
+  excludedCount            Int
+  eligibleValueMinor       String
+  evaluatedAt              DateTime
+  sealedAt                 DateTime?
+  createdAt                DateTime                       @default(now())
+  machine                  GachaMachine                   @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
+  entries                  GachaInventorySnapshotEntry[]
+
+  @@unique([poolKey, revision])
+  @@unique([poolKey, contentHash])
+  @@index([machineKey, createdAt])
+  @@index([contentHash])
+}
+
+/// One canonical provider card and its exact Gacha inclusion or exclusion decision.
+/// Missing or duplicate asset references remain inspectable exclusion evidence.
+model GachaInventorySnapshotEntry {
+  id                       String                          @id
+  snapshotId               String
+  ordinal                  Int
+  eligible                 Boolean
+  exclusionReasons         GachaInventoryExclusionReason[]
+  providerCardReference    String
+  assetReference           String?
+  displayName              String
+  sport                    GachaSport
+  graded                   Boolean
+  graderReference          String?
+  vaulted                  Boolean
+  poolOpen                 Boolean
+  tierEnabled              Boolean
+  insuredValueMinor             String?
+  insuredValueCurrency          String?
+  insuredValueDecimals          Int?
+  insuredValueProviderReference String?
+  valuationSourceReference      String?
+  valuationTimestamp            DateTime?
+  inventorySourceTimestamp      DateTime
+  snapshot                      GachaInventorySnapshot          @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  @@unique([snapshotId, ordinal])
+  @@unique([snapshotId, providerCardReference])
+  @@index([snapshotId, eligible, ordinal])
+  @@index([assetReference])
+}
+
+/// Versioned, hash-locked probability bands committed before a Gacha rip.
+/// The snapshot content hash binds the odds to one sealed inventory revision.
+model GachaPullOddsCommitment {
+  id                       String                 @id
+  machineKey               String
+  oddsKey                  String
+  version                  Int
+  schemaVersion            String
+  calculatorVersion        String
+  rulesHash                String
+  snapshotContentHash      String
+  probabilityScalePpm      Int                    @default(1000000)
+  baseProbabilityPpm       Int
+  plusProbabilityPpm       Int
+  premiumProbabilityPpm    Int
+  chaseProbabilityPpm      Int
+  bandMinimums             Json
+  committedAt              DateTime
+  sealedAt                 DateTime?
+  createdAt                DateTime               @default(now())
+  machine                  GachaMachine           @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
+  rips                     GachaRip[]
+
+  @@unique([oddsKey, version])
+  @@index([machineKey, committedAt])
+  @@index([snapshotContentHash])
+}
+
+/// One Gacha rip with reveal, ownership acquisition, and settlement recorded separately.
+model GachaRip {
+  id                       String                    @id
+  machineKey               String
+  oddsCommitmentId         String
+  status                   GachaRipStatus
+  snapshotContentHash      String
+  oddsRulesHash            String
+  seedCommitmentHash       String
+  selectedAssetReference   String
+  acquisitionReference     String?
+  settlementReference      String?
+  insuredValueMinor        String
+  insuredValueCurrency     String                    @default("USDC")
+  insuredValueDecimals     Int                       @default(6)
+  selectedAt               DateTime
+  revealedAt               DateTime?
+  acquiredAt               DateTime?
+  settledAt                DateTime?
+  failedAt                 DateTime?
+  failureReason            String?
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+  machine                  GachaMachine              @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
+  oddsCommitment           GachaPullOddsCommitment   @relation(fields: [oddsCommitmentId], references: [id], onDelete: Restrict)
+
+  @@index([machineKey, createdAt])
+  @@index([status, updatedAt])
+  @@index([snapshotContentHash])
+  @@index([oddsRulesHash])
 }

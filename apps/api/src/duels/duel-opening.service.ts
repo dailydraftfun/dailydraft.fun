@@ -1,11 +1,15 @@
 import { BadGatewayException, ConflictException, Injectable, Optional } from '@nestjs/common';
+import { DuelProviderOperationStatus } from '@openpacksduel/db';
 
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { AdminService } from '../admin/admin.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { AnalyticsService } from '../analytics/analytics.service.js';
 import type { Duel } from '../domain.js';
-import type { DuelSide, ProviderPackSnapshot } from '../providers/pack-provider.js';
+import type {
+  OpenedProviderPackSnapshot,
+  ProviderPackSnapshot,
+} from '../providers/pack-provider.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { PackProviderService } from '../providers/pack-provider.service.js';
 import { compareInsuredValues, normalizeProviderResult } from '../providers/provider-result.js';
@@ -17,6 +21,11 @@ import { DuelRepository } from './duel.repository.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { DuelsService } from './duels.service.js';
 import { hashDuelRequest } from './prisma-duel.repository.js';
+// biome-ignore lint/style/useImportType: Nest uses the repository class as a runtime injection token.
+import {
+  type ProviderOpeningOperation,
+  ProviderOpeningRepository,
+} from './provider-opening.repository.js';
 
 @Injectable()
 export class DuelOpeningService {
@@ -24,14 +33,17 @@ export class DuelOpeningService {
     private readonly duels: DuelsService,
     private readonly repository: DuelRepository,
     private readonly providers: PackProviderService,
+    private readonly providerOperations: ProviderOpeningRepository,
     @Optional() private readonly devnetSettlement?: DevnetDemoSettlementService,
     @Optional() private readonly analytics?: AnalyticsService,
     @Optional() private readonly admin?: AdminService,
   ) {}
 
   async open(duelId: string, idempotencyKey: string): Promise<Duel> {
-    await this.admin?.assertNotPaused();
     let duel = await this.duels.findOne(duelId);
+    if (!houseLifecycleMayContinueDuringPause(duel)) {
+      await this.admin?.assertNotPaused();
+    }
     if (
       duel.result?.resultHash &&
       ['awaiting_assets', 'settling', 'refunding'].includes(duel.status)
@@ -75,16 +87,27 @@ export class DuelOpeningService {
       throw new ConflictException(`Duel packs cannot open from ${duel.status}`);
     }
     const tier = Number(duel.stake.amount) / 10 ** duel.stake.decimals;
-    await this.analytics?.recordServer({
-      duelId,
-      mode: duel.matchmakingMode,
-      name: 'pack_reveal_started',
-      status: 'opening',
-      tier,
-    });
+    const operations = await this.providerOperations.reservePair([
+      providerOperationReservation(
+        duel.id,
+        'creator',
+        provider.mode,
+        providerPackId,
+        escrowAddress,
+      ),
+      providerOperationReservation(
+        duel.id,
+        'opponent',
+        provider.mode,
+        providerPackId,
+        escrowAddress,
+      ),
+    ]);
+    const creatorOperation = requireSideOperation(operations, 'creator');
+    const opponentOperation = requireSideOperation(operations, 'opponent');
     const [creator, opponent] = await Promise.all([
-      this.openSide(duel, 'creator', provider, providerPackId, escrowAddress, valuationPolicyHash),
-      this.openSide(duel, 'opponent', provider, providerPackId, escrowAddress, valuationPolicyHash),
+      this.openSide(provider, creatorOperation, valuationPolicyHash),
+      this.openSide(provider, opponentOperation, valuationPolicyHash),
     ]).catch(async (error: unknown) => {
       await this.analytics?.recordServer({
         duelId,
@@ -94,6 +117,13 @@ export class DuelOpeningService {
         tier,
       });
       throw error;
+    });
+    await this.analytics?.recordServer({
+      duelId,
+      mode: duel.matchmakingMode,
+      name: 'pack_reveal_started',
+      status: 'opening',
+      tier,
     });
     const comparison = compareInsuredValues(creator, opponent, {
       creatorWallet: duel.creatorWallet,
@@ -135,34 +165,85 @@ export class DuelOpeningService {
   }
 
   private async openSide(
-    duel: Duel,
-    side: DuelSide,
     provider: ReturnType<PackProviderService['forDuel']>,
-    providerPackId: string,
-    recipientWallet: string,
+    operation: ProviderOpeningOperation,
     valuationPolicyHash: string,
   ) {
-    const providerOperationKey = `${duel.id}:${side}`;
-    const generated = await provider.generatePack({
-      duelId: duel.id,
-      idempotencyKey: `${providerOperationKey}:generate`,
-      providerPackId,
-      recipientWallet,
-      side,
-    });
-    await provider.openPack({
-      idempotencyKey: `${providerOperationKey}:open`,
-      providerReference: generated.providerReference,
-    });
-    const snapshot = await provider.getPack(generated.providerReference);
-    const opened = requireOpenedSnapshot(snapshot);
-    return normalizeProviderResult(
-      side,
+    if (operation.normalizedOutcome) return operation.normalizedOutcome;
+    let current = operation;
+    try {
+      if (!current.providerReference) {
+        const generated = await provider.generatePack({
+          duelId: current.duelId,
+          idempotencyKey: current.generateIdempotencyKey,
+          providerPackId: current.providerPackId,
+          recipientWallet: current.recipientWallet,
+          side: current.side,
+        });
+        current = await this.providerOperations.recordGenerated(
+          current.id,
+          generated.providerReference,
+        );
+      }
+      const providerReference = current.providerReference;
+      if (!providerReference) {
+        throw new ConflictException('Provider operation has no committed reference');
+      }
+
+      if (
+        current.status === DuelProviderOperationStatus.OPENING ||
+        current.status === DuelProviderOperationStatus.RECOVERY_REQUIRED
+      ) {
+        const recovered = await provider.getPack(providerReference);
+        if (recovered.status === 'opened') {
+          return this.persistOpened(provider, current, recovered, valuationPolicyHash);
+        }
+        if (recovered.status === 'failed') {
+          throw new BadGatewayException('Pack provider could not recover a pack');
+        }
+      }
+
+      current = await this.providerOperations.markOpening(current.id);
+      const requested = await provider.openPack({
+        idempotencyKey: current.openIdempotencyKey,
+        providerReference,
+      });
+      const snapshot =
+        requested.status === 'opened' ? requested : await provider.getPack(providerReference);
+      const opened = requireOpenedSnapshot(snapshot);
+      return this.persistOpened(provider, current, opened, valuationPolicyHash);
+    } catch (error) {
+      await this.providerOperations
+        .markRecovery(current.id, providerRecoveryCode(error))
+        .catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async persistOpened(
+    provider: ReturnType<PackProviderService['forDuel']>,
+    operation: ProviderOpeningOperation,
+    opened: OpenedProviderPackSnapshot,
+    valuationPolicyHash: string,
+  ) {
+    provider.verifyOpenedSnapshot(opened);
+    const normalized = normalizeProviderResult(
+      operation.side,
       opened.result,
       valuationPolicyHash,
       opened.providerReference,
       new Date(opened.openedAt),
     );
+    const persisted = await this.providerOperations.recordOpened({
+      evidence: opened.evidence,
+      normalizedOutcome: normalized,
+      operationId: operation.id,
+      providerReference: opened.providerReference,
+    });
+    if (!persisted.normalizedOutcome) {
+      throw new ConflictException('Provider result evidence was not persisted');
+    }
+    return persisted.normalizedOutcome;
   }
 
   private requireDevnetSettlement(): DevnetDemoSettlementService {
@@ -171,6 +252,47 @@ export class DuelOpeningService {
     }
     return this.devnetSettlement;
   }
+}
+
+function providerOperationReservation(
+  duelId: string,
+  side: 'creator' | 'opponent',
+  provider: string,
+  providerPackId: string,
+  recipientWallet: string,
+) {
+  const operationKey = `${duelId}:${side}`;
+  return {
+    duelId,
+    generateIdempotencyKey: `${operationKey}:generate`,
+    openIdempotencyKey: `${operationKey}:open`,
+    provider,
+    providerPackId,
+    recipientWallet,
+    side,
+  };
+}
+
+function requireSideOperation(
+  operations: readonly ProviderOpeningOperation[],
+  side: 'creator' | 'opponent',
+): ProviderOpeningOperation {
+  const operation = operations.find((candidate) => candidate.side === side);
+  if (!operation) throw new ConflictException(`Provider operation for ${side} is unavailable`);
+  return operation;
+}
+
+function providerRecoveryCode(error: unknown): string {
+  if (error instanceof BadGatewayException) return 'provider_failed_or_invalid';
+  if (error instanceof ConflictException) return 'provider_pending_or_conflicted';
+  return 'provider_operation_ambiguous';
+}
+
+function houseLifecycleMayContinueDuringPause(duel: Duel): boolean {
+  return (
+    duel.houseOpponent &&
+    ['funded', 'opening', 'awaiting_assets', 'settling', 'refunding'].includes(duel.status)
+  );
 }
 
 function requireOpenedSnapshot(

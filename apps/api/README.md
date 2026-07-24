@@ -47,6 +47,21 @@ normalizes USDC insured values, compares integer amounts, and records a public,
 sanitized result ready for the settlement service. House and wallet opponents
 use the same path.
 
+Before any provider request, the opening orchestrator commits one immutable
+operation per duel side with the exact provider pack, escrow recipient, and
+stable generate/open idempotency keys. An ambiguous request enters
+`RECOVERY_REQUIRED`; retries poll the committed provider reference first and
+reuse the same keys rather than issuing a second logical open. Reveal readiness
+is emitted only after both card identifiers, normalized result hashes, bounded
+raw response payloads, and provider-verified signatures are durable.
+
+The deterministic mock response signature is fixture-only and remains restricted
+to devnet tests and previews. The OpenPacks devnet provider signs the same
+evidence envelope with its server-only provider key. Collector Crypt operations
+remain fail-closed until the partner contract, credentials, alternate-recipient
+behavior, and response-signature verification are approved; this evidence
+contract does not promote or enable that integration.
+
 ## Local development
 
 ```bash
@@ -91,6 +106,37 @@ by default through `OPENPACKSDUEL_HOUSE_ENABLED=false`. It is never an automatic
 conversion. Wallet-level limits do not prevent coordinated multi-wallet abuse, which
 still requires upstream identity/risk controls before mainnet.
 
+## Real-value policy admission
+
+Every authenticated HTTP boundary that can create exposure records an immutable
+`RealValuePolicyDecision` before the operation runs. The guarded capabilities are
+direct, open, and House duel creation; direct join; public matchmaking and House
+fallback; funding preparation; pack opening; and provider escrow preparation.
+Cancellation, wallet rejection, settlement/refund recovery, and reconciliation
+remain outside the admission gate so a policy denial cannot trap existing funds.
+
+Fixture and Solana devnet operations use the hash-pinned
+`openpacksduel.non-production-policy.v1` contract. They remain testable while every
+decision explicitly records `productionEnabled: false` and retains no production
+approval evidence. A malformed policy document still fails closed even in
+non-production, preventing a broken deployment from being mistaken for approval.
+
+Real-value mode is deny-by-default. Production admission requires all three:
+
+- `OPENPACKSDUEL_REAL_VALUE_MODE=true`
+- `OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED=true`
+- a strict `OPENPACKSDUEL_REAL_VALUE_POLICY_JSON` document using schema
+  `openpacksduel.real-value-policy.v1`
+
+The document binds one policy version, explicit capabilities, and stable evidence
+references for legal, jurisdiction, age, limits, sanctions, disclosure, and
+production approval. Missing or malformed inputs return
+`REAL_VALUE_POLICY_DENIED` with a stable machine-readable reason. The exact
+canonical document hash and evidence are retained for each attempt; the database
+rejects updates or deletes to those records. No legal decision, jurisdiction,
+threshold, vendor, credential, or production approval is committed in this
+repository.
+
 ## Privacy-safe observability
 
 `POST /v1/analytics/events` accepts only allowlisted names and bounded
@@ -117,8 +163,9 @@ All `/v1/admin/*` routes require an integration key and return `no-store`
 responses. Operators can paginate stuck/failed duels, inspect complete duel,
 transaction, provider, valuation, and custody timelines, view risk/configuration
 readiness, and pause or resume new exposure. The pause blocks create, join,
-funding preparation, pack opening, and house entry while reads, cancellation,
-refund/settlement recovery, and reconciliation remain available.
+funding preparation, direct-duel pack opening, and house entry while reads,
+cancellation, refund/settlement recovery, reconciliation, and already-funded
+house progression remain available.
 
 Pause changes append an immutable database audit record containing only the
 fixed `integration-key` actor class and a bounded reason code; raw API keys are
@@ -139,6 +186,13 @@ account must be owned by the separate cold withdrawal authority and delegate onl
 bounded amount to the hot funding signer. The delegate allowance may not exceed the
 configured total-exposure ceiling. House entry remains off unless
 `OPENPACKSDUEL_HOUSE_ENABLED` is explicitly `true`.
+
+Shared treasury and tier-limit failures persist the affected tier's stable reason and
+deterministic re-enable boundary. A later successful reservation clears that state;
+wallet-specific exposure failures never disable an otherwise healthy tier. Emergency
+pause is rechecked under the reservation lock, so no new house match can race past an
+operator pause. Already-funded house duels may still open, settle, refund, and reconcile;
+the pause continues to block new matches and funding preparation.
 
 `GET /v1/admin/treasury` exposes secret-free liquidity, exposure, loss, inventory,
 and concentration summaries. Inventory disposition is an operator-recorded workflow;
@@ -186,6 +240,22 @@ pending settlement, and winner/ownership mismatches return no card actions.
 Collector Crypt authentication, marketplace builders, live buyback eligibility,
 shipping fees, USDC payment, NFT burn, and shipment tracking remain open gates in
 [issue #24](https://github.com/openpacksduel/app/issues/24).
+
+Flip inventory preparation is a separate, immutable market-evidence path; it
+does not write to the house inventory ledger or acquire assets. Each snapshot
+stores every provider candidate in canonical listing order, including excluded
+candidates and typed reasons, while keeping listing, insured, buyback, and
+displayed values independent. Price-band and exposure eligibility use only the
+explicit listing value and never substitute another value type. Exact replays
+reuse the content-addressed revision; corrected provider evidence creates a new
+sealed, append-only revision.
+
+The snapshot service accepts provider fixtures only and has no HTTP controller
+or live marketplace client. It also requires
+`OPENPACKSDUEL_FLIP_FIXTURE_MODE=true` in tests, local development, or an
+explicit Vercel preview. Production remains fail-closed until the separate
+reviewed rules, acquisition, legal, and promotion gates are complete.
+
 `SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every
 worker validates the official devnet genesis hash before reading transaction
 state. Funding preparation additionally requires `ESCROW_PROGRAM_ID`,

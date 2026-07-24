@@ -37,6 +37,14 @@ describe('pack providers', () => {
     expect(opened.status).toBe('opened');
     expect(openedReplay).toEqual(opened);
     expect(await provider.getPack(first.providerReference)).toEqual(opened);
+    if (opened.status !== 'opened') throw new Error('Expected opened fixture evidence');
+    provider.verifyOpenedSnapshot(opened);
+    expect(() =>
+      provider.verifyOpenedSnapshot({
+        ...opened,
+        evidence: { ...opened.evidence, signature: '0'.repeat(64) },
+      }),
+    ).toThrow('signature is invalid');
   });
 
   test('rejects mock operations outside devnet', async () => {
@@ -66,5 +74,28 @@ describe('pack providers', () => {
         side: 'creator',
       }),
     ).rejects.toThrow('partner API contract is confirmed');
+    expect(() =>
+      provider.verifyOpenedSnapshot({
+        evidence: {
+          payloadHash: '0'.repeat(64),
+          rawPayload: '{}',
+          schemaVersion: 'openpacksduel.provider-response-evidence.v1',
+          signature: '0'.repeat(64),
+          signatureAlgorithm: 'fixture',
+          signingKeyReference: 'fixture',
+        },
+        openedAt: new Date(0).toISOString(),
+        providerReference: 'disabled',
+        result: {
+          assetReference: 'disabled',
+          displayName: 'Disabled',
+          insuredValue: { amount: '0', currency: 'USDC', decimals: 6 },
+          poolVersion: 'disabled',
+          sourceTimestamp: new Date(0).toISOString(),
+          valuationPolicyHash: '0'.repeat(64),
+        },
+        status: 'opened',
+      }),
+    ).toThrow('partner API contract is confirmed');
   });
 });
