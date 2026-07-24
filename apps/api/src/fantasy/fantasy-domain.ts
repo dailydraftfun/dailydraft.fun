@@ -16,7 +16,7 @@ export const FANTASY_RULES_HASH_PATTERN = /^[a-f0-9]{64}$/;
 export const FANTASY_RULES_VERSION_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,127}$/;
 export const FANTASY_UNSIGNED_INTEGER_PATTERN = /^(0|[1-9]\d*)$/;
 export const FANTASY_SIGNED_INTEGER_PATTERN = /^(0|-?[1-9]\d*)$/;
-export const FANTASY_STAT_KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+export const FANTASY_STAT_KEY_PATTERN = /^[a-z][a-zA-Z0-9_]{0,63}$/;
 export const FANTASY_SOLANA_ADDRESS_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 export function isFantasySport(value: unknown): value is FantasySport {
