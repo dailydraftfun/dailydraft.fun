@@ -104,12 +104,12 @@ export function validateGachaPullOddsRuleSet(value: unknown): GachaPullOddsRuleS
   const bands: GachaPullOddsBand[] = [];
   let previousMinimum = -1n;
   let probabilityTotal = 0;
-  for (const [index, candidate] of rules.bands.entries()) {
+  for (const [index, expectedLabel] of BAND_LABELS.entries()) {
+    const candidate = rules.bands[index];
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
       throw contractError('INVALID_RULES', 'Gacha pull odds band is invalid');
     }
     const band = candidate as Partial<GachaPullOddsBand>;
-    const expectedLabel = BAND_LABELS[index]!;
     if (band.label !== expectedLabel) {
       throw contractError('INVALID_RULES', 'Gacha pull odds bands must use canonical ordering');
     }

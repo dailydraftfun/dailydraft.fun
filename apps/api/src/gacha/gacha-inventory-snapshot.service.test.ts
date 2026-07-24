@@ -192,106 +192,108 @@ describe('prepareGachaInventorySnapshot', () => {
 
   test('rejects oversized pools and malformed policy or provider evidence', () => {
     const validCard = card('fixture-card-a', 'asset-a', '35000000');
-    const cases: Array<{ input: Parameters<typeof prepareGachaInventorySnapshot>[0]; message: string }> =
-      [
-        {
-          input: {
-            candidates: Array.from({ length: 501 }, () => validCard),
-            evaluatedAt: EVALUATED_AT,
-            policy: policy(),
-          },
-          message: 'exceeds 500 candidates',
+    const cases: Array<{
+      input: Parameters<typeof prepareGachaInventorySnapshot>[0];
+      message: string;
+    }> = [
+      {
+        input: {
+          candidates: Array.from({ length: 501 }, () => validCard),
+          evaluatedAt: EVALUATED_AT,
+          policy: policy(),
         },
-        {
-          input: {
-            candidates: [validCard],
-            evaluatedAt: new Date('invalid'),
-            policy: policy({ minimumEligibleItems: 1 }),
-          },
-          message: 'evaluatedAt is invalid',
+        message: 'exceeds 500 candidates',
+      },
+      {
+        input: {
+          candidates: [validCard],
+          evaluatedAt: new Date('invalid'),
+          policy: policy({ minimumEligibleItems: 1 }),
         },
-        {
-          input: {
-            candidates: [validCard],
-            evaluatedAt: EVALUATED_AT,
-            policy: policy({
-              machine: { ...MACHINE, sport: 'hockey' as SportsPackGachaMachine['sport'] },
-              minimumEligibleItems: 1,
-            }),
-          },
-          message: 'sport is invalid',
+        message: 'evaluatedAt is invalid',
+      },
+      {
+        input: {
+          candidates: [validCard],
+          evaluatedAt: EVALUATED_AT,
+          policy: policy({
+            machine: { ...MACHINE, sport: 'hockey' as SportsPackGachaMachine['sport'] },
+            minimumEligibleItems: 1,
+          }),
         },
-        {
-          input: {
-            candidates: [validCard],
-            evaluatedAt: EVALUATED_AT,
-            policy: policy({
-              machine: { ...MACHINE, machineKey: 123 as unknown as string },
-              minimumEligibleItems: 1,
-            }),
-          },
-          message: 'machine.machineKey is invalid',
+        message: 'sport is invalid',
+      },
+      {
+        input: {
+          candidates: [validCard],
+          evaluatedAt: EVALUATED_AT,
+          policy: policy({
+            machine: { ...MACHINE, machineKey: 123 as unknown as string },
+            minimumEligibleItems: 1,
+          }),
         },
-        {
-          input: {
-            candidates: [validCard],
-            evaluatedAt: EVALUATED_AT,
-            policy: policy({
-              machine: { ...MACHINE, machineKey: 'invalid machine key' },
-              minimumEligibleItems: 1,
-            }),
-          },
-          message: 'machine.machineKey is invalid',
+        message: 'machine.machineKey is invalid',
+      },
+      {
+        input: {
+          candidates: [validCard],
+          evaluatedAt: EVALUATED_AT,
+          policy: policy({
+            machine: { ...MACHINE, machineKey: 'invalid machine key' },
+            minimumEligibleItems: 1,
+          }),
         },
-        {
-          input: {
-            candidates: [validCard],
-            evaluatedAt: EVALUATED_AT,
-            policy: policy({ minimumEligibleItems: 0 }),
-          },
-          message: 'minimumEligibleItems is invalid',
+        message: 'machine.machineKey is invalid',
+      },
+      {
+        input: {
+          candidates: [validCard],
+          evaluatedAt: EVALUATED_AT,
+          policy: policy({ minimumEligibleItems: 0 }),
         },
-        {
-          input: {
-            candidates: [{ ...validCard, graded: 'yes' as unknown as boolean }],
-            evaluatedAt: EVALUATED_AT,
-            policy: policy({ minimumEligibleItems: 1 }),
-          },
-          message: 'graded is invalid',
+        message: 'minimumEligibleItems is invalid',
+      },
+      {
+        input: {
+          candidates: [{ ...validCard, graded: 'yes' as unknown as boolean }],
+          evaluatedAt: EVALUATED_AT,
+          policy: policy({ minimumEligibleItems: 1 }),
         },
-        {
-          input: {
-            candidates: [{ ...validCard, providerCardReference: '' }],
-            evaluatedAt: EVALUATED_AT,
-            policy: policy({ minimumEligibleItems: 1 }),
-          },
-          message: 'providerCardReference is invalid',
+        message: 'graded is invalid',
+      },
+      {
+        input: {
+          candidates: [{ ...validCard, providerCardReference: '' }],
+          evaluatedAt: EVALUATED_AT,
+          policy: policy({ minimumEligibleItems: 1 }),
         },
-        {
-          input: {
-            candidates: [{ ...validCard, displayName: 'Fixture\u0000card' }],
-            evaluatedAt: EVALUATED_AT,
-            policy: policy({ minimumEligibleItems: 1 }),
-          },
-          message: 'displayName is invalid',
+        message: 'providerCardReference is invalid',
+      },
+      {
+        input: {
+          candidates: [{ ...validCard, displayName: 'Fixture\u0000card' }],
+          evaluatedAt: EVALUATED_AT,
+          policy: policy({ minimumEligibleItems: 1 }),
         },
-        {
-          input: {
-            candidates: [
-              {
-                ...validCard,
-                insuredValue: {
-                  ...validCard.insuredValue!,
-                  currency: 'EUR' as 'USDC',
-                },
+        message: 'displayName is invalid',
+      },
+      {
+        input: {
+          candidates: [
+            {
+              ...validCard,
+              insuredValue: {
+                ...validCard.insuredValue!,
+                currency: 'EUR' as 'USDC',
               },
-            ],
-            evaluatedAt: EVALUATED_AT,
-            policy: policy({ minimumEligibleItems: 1 }),
-          },
-          message: 'insuredValue must use micro-USDC',
+            },
+          ],
+          evaluatedAt: EVALUATED_AT,
+          policy: policy({ minimumEligibleItems: 1 }),
         },
-      ];
+        message: 'insuredValue must use micro-USDC',
+      },
+    ];
 
     for (const { input, message } of cases) {
       expect(() => prepareGachaInventorySnapshot(input)).toThrow(message);
