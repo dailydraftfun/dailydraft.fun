@@ -161,16 +161,61 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /gacha/machines/{machineKey}/rip-commitments:
+    post:
+      operationId: createGachaRipSeedCommitment
+      tags: [Gacha]
+      summary: Commit to a secret server seed before a fixture-mode Gacha rip
+      description: |
+        Generates and stores a secret serverSeed and publishes only its SHA-256
+        hash, so the roll cannot be predicted or steered before the client seed
+        is known. The commitmentId returned here is consumed by exactly one
+        POST /gacha/rips call; the serverSeed itself is revealed only after
+        that rip reaches a terminal state. Fails closed unless fixture or
+        preview mode is explicitly enabled.
+      x-openpacksduel-availability: devnet-preview
+      parameters:
+        - $ref: '#/components/parameters/GachaMachineKey'
+      responses:
+        '201':
+          description: Seed commitment hash, never the raw serverSeed
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GachaRipSeedCommitment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /gacha/rips:
     post:
       operationId: createFixtureGachaRip
       tags: [Gacha]
       summary: Execute one explicitly enabled fixture-mode Gacha rip
       description: |
-        Selects against sealed inventory and odds evidence, then records reveal,
-        acquisition, and settlement as separate lifecycle transitions. This route
-        fails closed unless fixture or preview mode is explicitly enabled.
+        Selects against sealed inventory and odds evidence, consuming a
+        previously issued rip-commitments seed commitment under the same
+        advisory lock, then records reveal, acquisition, and settlement as
+        separate lifecycle transitions. This route fails closed unless
+        fixture or preview mode is explicitly enabled. An Idempotency-Key
+        header (or idempotencyKey body field) replays the original rip
+        instead of creating a second one.
       x-openpacksduel-availability: devnet-preview
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 240
       requestBody:
         required: true
         content:
@@ -2282,10 +2327,25 @@ components:
         createdAt:
           type: string
           format: date-time
+    GachaRipSeedCommitment:
+      type: object
+      additionalProperties: false
+      required: [commitmentId, serverSeedHash, expiresAt]
+      properties:
+        commitmentId:
+          type: string
+          minLength: 1
+          maxLength: 240
+        serverSeedHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        expiresAt:
+          type: string
+          format: date-time
     CreateFixtureGachaRipRequest:
       type: object
       additionalProperties: false
-      required: [machineKey, recipientWallet, seed]
+      required: [machineKey, recipientWallet, seed, commitmentId]
       properties:
         machineKey:
           $ref: '#/components/schemas/GachaMachineKey'
@@ -2296,6 +2356,14 @@ components:
         seed:
           type: string
           minLength: 16
+          maxLength: 240
+        commitmentId:
+          type: string
+          minLength: 1
+          maxLength: 240
+        idempotencyKey:
+          type: string
+          minLength: 1
           maxLength: 240
         oddsVersion:
           type: integer
@@ -2319,6 +2387,7 @@ components:
         - insuredValueMinor
         - insuredValueCurrency
         - insuredValueDecimals
+        - idempotencyKey
         - selectedAt
         - revealedAt
         - acquiredAt
@@ -2361,6 +2430,10 @@ components:
         insuredValueDecimals:
           type: integer
           const: 6
+        idempotencyKey:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 240
         selectedAt:
           type: string
           format: date-time
@@ -2417,12 +2490,27 @@ components:
     GachaRipResult:
       type: object
       additionalProperties: false
-      required: [oddsCommitment, rip]
+      required: [oddsCommitment, rip, serverSeed, serverSeedHash]
       properties:
         oddsCommitment:
           $ref: '#/components/schemas/GachaRipOddsCommitment'
         rip:
           $ref: '#/components/schemas/GachaRip'
+        serverSeed:
+          description: |
+            The secret serverSeed committed before the roll, revealed only once
+            the rip has reached a terminal (SETTLED or FAILED) state. Hashing
+            this value with SHA-256 must equal serverSeedHash, letting a player
+            independently verify the roll was not steered after the fact.
+          type: [string, 'null']
+          pattern: '^[a-f0-9]{64}$'
+        serverSeedHash:
+          description: |
+            The same hash originally published by POST
+            /gacha/machines/{machineKey}/rip-commitments, echoed back once the
+            rip is terminal.
+          type: [string, 'null']
+          pattern: '^[a-f0-9]{64}$'
     FantasyProductCapabilities:
       type: object
       additionalProperties: false

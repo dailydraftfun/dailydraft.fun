@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { type DatabaseClient, GachaRipStatus, type Prisma } from '@openpacksduel/db';
 
@@ -21,8 +21,12 @@ import { SportsPackGachaProvider } from './sports-pack-gacha.provider.js';
 
 const GACHA_ODDS_LOCK_NAMESPACE = 1_191_047_330;
 const MAX_SEED_LENGTH = 240;
+const GACHA_SEED_COMMITMENT_TTL_MS = 15 * 60 * 1000;
+const SERVER_SEED_PATTERN = /^[a-f0-9]{64}$/;
 
 export interface CreateFixtureGachaRipInput {
+  commitmentId: string;
+  idempotencyKey?: string;
   machineKey: string;
   oddsVersion?: number;
   recipientWallet: string;
@@ -34,6 +38,19 @@ interface SelectableEntry {
   eligible: boolean;
   insuredValueMinor: string | null;
 }
+
+interface GachaSeeds {
+  clientSeed: string;
+  serverSeed: string;
+}
+
+type CreateFixtureRipOutcome =
+  | {
+      kind: 'created';
+      ripId: string;
+      selected: { assetReference: string; insuredValueMinor: string };
+    }
+  | { kind: 'existing'; ripId: string };
 
 @Injectable()
 export class GachaRipService {
@@ -65,6 +82,33 @@ export class GachaRipService {
     return commitment;
   }
 
+  async createSeedCommitment(machineKeyInput: string) {
+    if (!gachaFixtureModeEnabled()) {
+      throw new ServiceUnavailableException(
+        'Sports Pack Gacha rip commitments are disabled outside explicit fixture or preview mode',
+      );
+    }
+    const machineKey = requireKey(machineKeyInput, 'machineKey');
+    const serverSeed = requireServerSeed(randomBytes(32).toString('hex'));
+    const serverSeedHash = sha256(serverSeed);
+    const committedAt = new Date();
+    const expiresAt = new Date(committedAt.getTime() + GACHA_SEED_COMMITMENT_TTL_MS);
+    const commitmentId = createId('gachaseed');
+
+    await this.database.gachaRipSeedCommitment.create({
+      data: {
+        committedAt,
+        expiresAt,
+        id: commitmentId,
+        machineKey,
+        serverSeed,
+        serverSeedHash,
+      },
+    });
+
+    return { commitmentId, expiresAt, serverSeedHash };
+  }
+
   async createFixtureRip(input: CreateFixtureGachaRipInput) {
     if (!gachaFixtureModeEnabled()) {
       throw new ServiceUnavailableException(
@@ -73,7 +117,9 @@ export class GachaRipService {
     }
     const machineKey = requireKey(input.machineKey, 'machineKey');
     const recipientWallet = requireReference(input.recipientWallet, 'recipientWallet');
-    const seed = requireSeed(input.seed);
+    const clientSeed = requireSeed(input.seed);
+    const commitmentId = requireReference(input.commitmentId, 'commitmentId');
+    const idempotencyKey = optionalReference(input.idempotencyKey, 'idempotencyKey');
     const oddsVersion = requirePositiveInteger(input.oddsVersion ?? 1, 'oddsVersion');
     const snapshot = await this.ensureFixtureSnapshot(machineKey);
     if (!snapshot.sealedAt) {
@@ -84,16 +130,37 @@ export class GachaRipService {
     );
     const ripId = createId('gacharip');
     const selectedAt = new Date();
-    const seedCommitmentHash = sha256(seed);
+    const seedCommitmentHash = sha256(clientSeed);
     const oddsKey = `${machineKey}:fixture-odds`;
 
-    const { commitment: oddsCommitment, selected } = await this.database.$transaction(
-      async (transaction) => {
+    const outcome = await this.database.$transaction(
+      async (transaction): Promise<CreateFixtureRipOutcome> => {
         await transaction.$queryRaw`
         SELECT pg_advisory_xact_lock(
           hashtextextended(${oddsKey}, ${GACHA_ODDS_LOCK_NAMESPACE})
         )
       `;
+
+        if (idempotencyKey) {
+          const existing = await transaction.gachaRip.findFirst({
+            where: { idempotencyKey, machineKey },
+          });
+          if (existing) return { kind: 'existing', ripId: existing.id };
+        }
+
+        const seedCommitment = await transaction.gachaRipSeedCommitment.findUnique({
+          where: { id: commitmentId },
+        });
+        if (!seedCommitment || seedCommitment.machineKey !== machineKey) {
+          throw new ConflictException('Gacha rip seed commitment was not found');
+        }
+        if (seedCommitment.consumedByRipId) {
+          throw new ConflictException('Gacha rip seed commitment has already been consumed');
+        }
+        if (seedCommitment.expiresAt.getTime() <= selectedAt.getTime()) {
+          throw new ConflictException('Gacha rip seed commitment has expired');
+        }
+
         const commitment = await ensureOddsCommitment(
           transaction,
           machineKey,
@@ -102,10 +169,31 @@ export class GachaRipService {
           rules,
           selectedAt,
         );
-        const selected = selectGachaOutcome(snapshot.entries, rules, seed);
+
+        const priorSelections = await transaction.gachaRip.findMany({
+          select: { selectedAssetReference: true },
+          where: {
+            snapshotContentHash: snapshot.contentHash,
+            status: { not: GachaRipStatus.FAILED },
+          },
+        });
+        const excludedAssetReferences = new Set(
+          priorSelections
+            .map((rip) => rip.selectedAssetReference)
+            .filter((reference): reference is string => typeof reference === 'string'),
+        );
+
+        const selected = selectGachaOutcome(
+          snapshot.entries,
+          rules,
+          { clientSeed, serverSeed: seedCommitment.serverSeed },
+          excludedAssetReferences,
+        );
+
         await transaction.gachaRip.create({
           data: {
             id: ripId,
+            idempotencyKey,
             insuredValueCurrency: 'USDC',
             insuredValueDecimals: 6,
             insuredValueMinor: selected.insuredValueMinor,
@@ -119,60 +207,58 @@ export class GachaRipService {
             status: GachaRipStatus.SELECTED,
           },
         });
-        return { commitment, selected };
+
+        const consumed = await transaction.gachaRipSeedCommitment.updateMany({
+          data: { consumedByRipId: ripId },
+          where: { consumedByRipId: null, expiresAt: { gt: selectedAt }, id: commitmentId },
+        });
+        if (consumed.count !== 1) {
+          throw new ConflictException('Gacha rip seed commitment could not be consumed');
+        }
+
+        return { kind: 'created', ripId, selected };
       },
     );
 
-    try {
-      await this.advanceRip(ripId, GachaRipStatus.SELECTED, {
-        revealedAt: new Date(),
-        status: GachaRipStatus.REVEALED,
-      });
-      const acquired = await this.provider.acquireCard({
-        assetReference: selected.assetReference,
-        recipientWallet,
-        ripId,
-      });
-      await this.advanceRip(ripId, GachaRipStatus.REVEALED, {
-        acquiredAt: new Date(),
-        acquisitionReference: acquired.acquisitionReference,
-        status: GachaRipStatus.ACQUIRED,
-      });
-      const settled = await this.provider.settleRip({
-        acquisitionReference: acquired.acquisitionReference,
-        ripId,
-      });
-      await this.advanceRip(ripId, GachaRipStatus.ACQUIRED, {
-        settledAt: new Date(),
-        settlementReference: settled.settlementReference,
-        status: GachaRipStatus.SETTLED,
-      });
-    } catch (error) {
-      await this.database.gachaRip.update({
-        data: {
-          failedAt: new Date(),
-          failureReason: error instanceof Error ? error.message.slice(0, 240) : 'Unknown failure',
-          status: GachaRipStatus.FAILED,
-        },
-        where: { id: ripId },
-      });
-      throw error;
+    if (outcome.kind === 'created') {
+      try {
+        await this.advanceRip(ripId, GachaRipStatus.SELECTED, {
+          revealedAt: new Date(),
+          status: GachaRipStatus.REVEALED,
+        });
+        const acquired = await this.provider.acquireCard({
+          assetReference: outcome.selected.assetReference,
+          recipientWallet,
+          ripId,
+        });
+        await this.advanceRip(ripId, GachaRipStatus.REVEALED, {
+          acquiredAt: new Date(),
+          acquisitionReference: acquired.acquisitionReference,
+          status: GachaRipStatus.ACQUIRED,
+        });
+        const settled = await this.provider.settleRip({
+          acquisitionReference: acquired.acquisitionReference,
+          ripId,
+        });
+        await this.advanceRip(ripId, GachaRipStatus.ACQUIRED, {
+          settledAt: new Date(),
+          settlementReference: settled.settlementReference,
+          status: GachaRipStatus.SETTLED,
+        });
+      } catch (error) {
+        await this.database.gachaRip.update({
+          data: {
+            failedAt: new Date(),
+            failureReason: error instanceof Error ? error.message.slice(0, 240) : 'Unknown failure',
+            status: GachaRipStatus.FAILED,
+          },
+          where: { id: ripId },
+        });
+        throw error;
+      }
     }
 
-    const rip = await this.database.gachaRip.findUnique({ where: { id: ripId } });
-    if (!rip) throw new ServiceUnavailableException('Gacha rip could not be reloaded');
-    return {
-      oddsCommitment: {
-        calculatorVersion: oddsCommitment.calculatorVersion,
-        committedAt: oddsCommitment.committedAt,
-        oddsKey: oddsCommitment.oddsKey,
-        rulesHash: oddsCommitment.rulesHash,
-        schemaVersion: oddsCommitment.schemaVersion,
-        snapshotContentHash: oddsCommitment.snapshotContentHash,
-        version: oddsCommitment.version,
-      },
-      rip,
-    };
+    return this.loadRipResult(outcome.ripId);
   }
 
   private async ensureFixtureSnapshot(machineKey: string) {
@@ -209,12 +295,53 @@ export class GachaRipService {
       throw new ConflictException('Gacha rip lifecycle transition was rejected');
     }
   }
+
+  private async loadRipResult(ripId: string) {
+    const rip = await this.database.gachaRip.findUnique({ where: { id: ripId } });
+    if (!rip) throw new ServiceUnavailableException('Gacha rip could not be reloaded');
+    const oddsCommitment = await this.database.gachaPullOddsCommitment.findUnique({
+      where: { id: rip.oddsCommitmentId },
+    });
+    if (!oddsCommitment) {
+      throw new ServiceUnavailableException('Gacha rip odds commitment could not be reloaded');
+    }
+    const revealed = await this.revealSeedCommitment(rip);
+    return {
+      oddsCommitment: {
+        calculatorVersion: oddsCommitment.calculatorVersion,
+        committedAt: oddsCommitment.committedAt,
+        oddsKey: oddsCommitment.oddsKey,
+        rulesHash: oddsCommitment.rulesHash,
+        schemaVersion: oddsCommitment.schemaVersion,
+        snapshotContentHash: oddsCommitment.snapshotContentHash,
+        version: oddsCommitment.version,
+      },
+      rip,
+      serverSeed: revealed.serverSeed,
+      serverSeedHash: revealed.serverSeedHash,
+    };
+  }
+
+  private async revealSeedCommitment(rip: {
+    id: string;
+    status: GachaRipStatus;
+  }): Promise<{ serverSeed: string | null; serverSeedHash: string | null }> {
+    if (rip.status !== GachaRipStatus.SETTLED && rip.status !== GachaRipStatus.FAILED) {
+      return { serverSeed: null, serverSeedHash: null };
+    }
+    const commitment = await this.database.gachaRipSeedCommitment.findUnique({
+      where: { consumedByRipId: rip.id },
+    });
+    if (!commitment) return { serverSeed: null, serverSeedHash: null };
+    return { serverSeed: commitment.serverSeed, serverSeedHash: commitment.serverSeedHash };
+  }
 }
 
 export function selectGachaOutcome(
   entries: readonly SelectableEntry[],
   rulesInput: unknown,
-  seed: string,
+  seeds: GachaSeeds,
+  excludedAssetReferences: ReadonlySet<string> = new Set(),
 ): { assetReference: string; insuredValueMinor: string } {
   const rules = validateGachaPullOddsRuleSet(rulesInput);
   const eligible = entries
@@ -222,7 +349,8 @@ export function selectGachaOutcome(
       (entry): entry is SelectableEntry & { assetReference: string; insuredValueMinor: string } =>
         entry.eligible &&
         typeof entry.assetReference === 'string' &&
-        typeof entry.insuredValueMinor === 'string',
+        typeof entry.insuredValueMinor === 'string' &&
+        !excludedAssetReferences.has(entry.assetReference),
     )
     .sort((left, right) => {
       if (left.assetReference === right.assetReference) return 0;
@@ -233,7 +361,9 @@ export function selectGachaOutcome(
   }
 
   const digest = createHash('sha256')
-    .update(`${rules.snapshotContentHash}:${rules.rulesHash}:${requireSeed(seed)}`)
+    .update(
+      `${rules.snapshotContentHash}:${rules.rulesHash}:${requireServerSeed(seeds.serverSeed)}:${requireSeed(seeds.clientSeed)}`,
+    )
     .digest();
   const rollPpm = digest.readUInt32BE(0) % 1_000_000;
   const band = bandForRoll(rules.bands, rollPpm);
@@ -345,6 +475,13 @@ function requireSeed(value: string): string {
   return value;
 }
 
+function requireServerSeed(value: string): string {
+  if (typeof value !== 'string' || !SERVER_SEED_PATTERN.test(value)) {
+    throw new ConflictException('serverSeed is invalid');
+  }
+  return value;
+}
+
 function requireReference(value: string, field: string): string {
   if (
     typeof value !== 'string' ||
@@ -356,6 +493,11 @@ function requireReference(value: string, field: string): string {
     throw new ConflictException(`${field} is invalid`);
   }
   return value;
+}
+
+function optionalReference(value: string | undefined, field: string): string | null {
+  if (value === undefined) return null;
+  return requireReference(value, field);
 }
 
 function hasControlCharacter(value: string): boolean {

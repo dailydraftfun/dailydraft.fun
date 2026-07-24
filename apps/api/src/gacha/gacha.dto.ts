@@ -29,6 +29,17 @@ export class CreateFixtureGachaRipRequest {
   @MaxLength(240)
   recipientWallet!: string;
 
+  @IsString()
+  @MinLength(1)
+  @MaxLength(240)
+  commitmentId!: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(240)
+  idempotencyKey?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

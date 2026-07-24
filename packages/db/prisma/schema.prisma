@@ -767,20 +767,20 @@ model FlipInventorySnapshotEntry {
 /// One configured Collector Crypt sports pack machine.
 /// Production machines remain inactive until every capability gate passes.
 model GachaMachine {
-  id                  String                     @id
-  machineKey          String                     @unique
-  sport               GachaSport
-  tierPriceMinor      String
-  tierPriceCurrency   String                     @default("USDC")
-  tierPriceDecimals   Int                        @default(6)
-  displayName         String
-  committedPoolSize   Int
-  active              Boolean                    @default(false)
-  createdAt           DateTime                   @default(now())
-  updatedAt           DateTime                   @updatedAt
-  inventorySnapshots  GachaInventorySnapshot[]
-  oddsCommitments     GachaPullOddsCommitment[]
-  rips                GachaRip[]
+  id                 String                    @id
+  machineKey         String                    @unique
+  sport              GachaSport
+  tierPriceMinor     String
+  tierPriceCurrency  String                    @default("USDC")
+  tierPriceDecimals  Int                       @default(6)
+  displayName        String
+  committedPoolSize  Int
+  active             Boolean                   @default(false)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  inventorySnapshots GachaInventorySnapshot[]
+  oddsCommitments    GachaPullOddsCommitment[]
+  rips               GachaRip[]
 
   @@index([sport, tierPriceMinor, active])
 }
@@ -788,28 +788,28 @@ model GachaMachine {
 /// Immutable eligibility evidence for one Gacha machine pool revision.
 /// A new content hash creates a new revision; sealed revisions are append-only.
 model GachaInventorySnapshot {
-  id                       String                         @id
-  poolKey                  String
-  machineKey               String
-  revision                 Int
-  schemaVersion            String
-  policyVersion            String
-  provider                 String
-  policyHash               String
-  contentHash              String
-  policy                   Json
-  committedPoolSize        Int
-  maximumEligibleItems     Int
-  maximumSourceAgeMs       Int
-  maximumFutureSkewMs      Int
-  eligibleCount            Int
-  excludedCount            Int
-  eligibleValueMinor       String
-  evaluatedAt              DateTime
-  sealedAt                 DateTime?
-  createdAt                DateTime                       @default(now())
-  machine                  GachaMachine                   @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
-  entries                  GachaInventorySnapshotEntry[]
+  id                   String                        @id
+  poolKey              String
+  machineKey           String
+  revision             Int
+  schemaVersion        String
+  policyVersion        String
+  provider             String
+  policyHash           String
+  contentHash          String
+  policy               Json
+  committedPoolSize    Int
+  maximumEligibleItems Int
+  maximumSourceAgeMs   Int
+  maximumFutureSkewMs  Int
+  eligibleCount        Int
+  excludedCount        Int
+  eligibleValueMinor   String
+  evaluatedAt          DateTime
+  sealedAt             DateTime?
+  createdAt            DateTime                      @default(now())
+  machine              GachaMachine                  @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
+  entries              GachaInventorySnapshotEntry[]
 
   @@unique([poolKey, revision])
   @@unique([poolKey, contentHash])
@@ -820,20 +820,20 @@ model GachaInventorySnapshot {
 /// One canonical provider card and its exact Gacha inclusion or exclusion decision.
 /// Missing or duplicate asset references remain inspectable exclusion evidence.
 model GachaInventorySnapshotEntry {
-  id                       String                          @id
-  snapshotId               String
-  ordinal                  Int
-  eligible                 Boolean
-  exclusionReasons         GachaInventoryExclusionReason[]
-  providerCardReference    String
-  assetReference           String?
-  displayName              String
-  sport                    GachaSport
-  graded                   Boolean
-  graderReference          String?
-  vaulted                  Boolean
-  poolOpen                 Boolean
-  tierEnabled              Boolean
+  id                            String                          @id
+  snapshotId                    String
+  ordinal                       Int
+  eligible                      Boolean
+  exclusionReasons              GachaInventoryExclusionReason[]
+  providerCardReference         String
+  assetReference                String?
+  displayName                   String
+  sport                         GachaSport
+  graded                        Boolean
+  graderReference               String?
+  vaulted                       Boolean
+  poolOpen                      Boolean
+  tierEnabled                   Boolean
   insuredValueMinor             String?
   insuredValueCurrency          String?
   insuredValueDecimals          Int?
@@ -852,57 +852,80 @@ model GachaInventorySnapshotEntry {
 /// Versioned, hash-locked probability bands committed before a Gacha rip.
 /// The snapshot content hash binds the odds to one sealed inventory revision.
 model GachaPullOddsCommitment {
-  id                       String                 @id
-  machineKey               String
-  oddsKey                  String
-  version                  Int
-  schemaVersion            String
-  calculatorVersion        String
-  rulesHash                String
-  snapshotContentHash      String
-  probabilityScalePpm      Int                    @default(1000000)
-  baseProbabilityPpm       Int
-  plusProbabilityPpm       Int
-  premiumProbabilityPpm    Int
-  chaseProbabilityPpm      Int
-  bandMinimums             Json
-  committedAt              DateTime
-  sealedAt                 DateTime?
-  createdAt                DateTime               @default(now())
-  machine                  GachaMachine           @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
-  rips                     GachaRip[]
+  id                    String       @id
+  machineKey            String
+  oddsKey               String
+  version               Int
+  schemaVersion         String
+  calculatorVersion     String
+  rulesHash             String
+  snapshotContentHash   String
+  probabilityScalePpm   Int          @default(1000000)
+  baseProbabilityPpm    Int
+  plusProbabilityPpm    Int
+  premiumProbabilityPpm Int
+  chaseProbabilityPpm   Int
+  bandMinimums          Json
+  committedAt           DateTime
+  sealedAt              DateTime?
+  createdAt             DateTime     @default(now())
+  machine               GachaMachine @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
+  rips                  GachaRip[]
 
   @@unique([oddsKey, version])
   @@index([machineKey, committedAt])
   @@index([snapshotContentHash])
 }
 
+/// A server-committed random seed reserved for exactly one Gacha rip. The raw
+/// serverSeed is secret until the rip it backs reaches a terminal state, at
+/// which point it is revealed so the roll can be independently recomputed
+/// and checked against the previously published serverSeedHash.
+model GachaRipSeedCommitment {
+  id              String    @id
+  machineKey      String
+  serverSeed      String
+  serverSeedHash  String
+  consumedByRipId String?   @unique
+  committedAt     DateTime
+  expiresAt       DateTime
+  createdAt       DateTime  @default(now())
+  consumedByRip   GachaRip? @relation(fields: [consumedByRipId], references: [id], onDelete: Restrict)
+
+  @@index([machineKey, committedAt])
+  @@index([expiresAt])
+}
+
 /// One Gacha rip with reveal, ownership acquisition, and settlement recorded separately.
 model GachaRip {
-  id                       String                    @id
-  machineKey               String
-  oddsCommitmentId         String
-  status                   GachaRipStatus
-  snapshotContentHash      String
-  oddsRulesHash            String
-  seedCommitmentHash       String
-  selectedAssetReference   String
-  acquisitionReference     String?
-  settlementReference      String?
-  insuredValueMinor        String
-  insuredValueCurrency     String                    @default("USDC")
-  insuredValueDecimals     Int                       @default(6)
-  selectedAt               DateTime
-  revealedAt               DateTime?
-  acquiredAt               DateTime?
-  settledAt                DateTime?
-  failedAt                 DateTime?
-  failureReason            String?
-  createdAt                DateTime                  @default(now())
-  updatedAt                DateTime                  @updatedAt
-  machine                  GachaMachine              @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
-  oddsCommitment           GachaPullOddsCommitment   @relation(fields: [oddsCommitmentId], references: [id], onDelete: Restrict)
+  id                     String                  @id
+  machineKey             String
+  oddsCommitmentId       String
+  status                 GachaRipStatus
+  snapshotContentHash    String
+  oddsRulesHash          String
+  seedCommitmentHash     String
+  selectedAssetReference String
+  acquisitionReference   String?
+  settlementReference    String?
+  insuredValueMinor      String
+  insuredValueCurrency   String                  @default("USDC")
+  insuredValueDecimals   Int                     @default(6)
+  selectedAt             DateTime
+  revealedAt             DateTime?
+  acquiredAt             DateTime?
+  settledAt              DateTime?
+  failedAt               DateTime?
+  failureReason          String?
+  idempotencyKey         String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  machine                GachaMachine            @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
+  oddsCommitment         GachaPullOddsCommitment @relation(fields: [oddsCommitmentId], references: [id], onDelete: Restrict)
+  seedCommitment         GachaRipSeedCommitment?
 
+  @@unique([snapshotContentHash, selectedAssetReference])
+  @@unique([machineKey, idempotencyKey])
   @@index([machineKey, createdAt])
   @@index([status, updatedAt])
   @@index([snapshotContentHash])
@@ -1034,7 +1057,7 @@ model FantasyTournamentEntry {
 // The sealed kickoff lock for a tournament: per-player eligible shares frozen at
 // match start. Immutable + revisioned, mirroring the flip inventory snapshot.
 model FantasyKickoffSnapshot {
-  id                 String                       @id
+  id                 String                        @id
   tournamentId       String
   revision           Int
   schemaVersion      String
@@ -1048,8 +1071,8 @@ model FantasyKickoffSnapshot {
   kickoffAt          DateTime
   evaluatedAt        DateTime
   sealedAt           DateTime?
-  createdAt          DateTime                     @default(now())
-  tournament         FantasyTournament            @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+  createdAt          DateTime                      @default(now())
+  tournament         FantasyTournament             @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
   entries            FantasyKickoffSnapshotEntry[]
 
   @@unique([tournamentId, revision])
