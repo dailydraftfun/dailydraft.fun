@@ -44,6 +44,14 @@ enum DuelSide {
   OPPONENT
 }
 
+enum DuelProviderOperationStatus {
+  REQUESTED
+  GENERATED
+  OPENING
+  OPENED
+  RECOVERY_REQUIRED
+}
+
 enum DuelTransactionAction {
   FUND
   CANCEL
@@ -249,6 +257,7 @@ model Duel {
   houseInventory      HouseInventoryAsset[]
   houseLedgerEntries  HouseTreasuryLedgerEntry[]
   devnetPackSnapshots DevnetPackSnapshot[]
+  providerOperations  DuelProviderOperation[]
 
   @@index([status, expiresAt])
   @@index([mode, status, packId, createdAt])
@@ -256,6 +265,35 @@ model Duel {
   @@index([opponentWallet, createdAt])
   @@index([status, settledAt, id])
   @@index([winnerWallet, createdAt])
+}
+
+model DuelProviderOperation {
+  id                     String                      @id
+  duelId                 String
+  side                   DuelSide
+  provider               String
+  providerPackId         String
+  recipientWallet        String
+  generateIdempotencyKey String
+  openIdempotencyKey     String
+  status                 DuelProviderOperationStatus @default(REQUESTED)
+  providerReference      String?
+  rawPayload             String?
+  payloadHash            String?
+  signature              String?
+  signatureAlgorithm     String?
+  signingKeyReference    String?
+  assetReference         String?
+  resultHash             String?
+  normalizedOutcome      Json?
+  errorCode              String?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  duel                   Duel                        @relation(fields: [duelId], references: [id], onDelete: Cascade)
+
+  @@unique([duelId, side])
+  @@unique([provider, providerReference])
+  @@index([duelId, status])
 }
 
 model DevnetPackSnapshot {
@@ -473,6 +511,25 @@ model ProductEvent {
   @@index([createdAt, name])
   @@index([sessionId, createdAt])
   @@index([duelId, createdAt])
+}
+
+/// Immutable decision evidence recorded before an exposure-creating API operation.
+model RealValuePolicyDecision {
+  id            String   @id
+  capability    String
+  runtimeMode   String
+  schemaVersion String
+  policyVersion String
+  policyHash    String
+  allowed       Boolean
+  denialReason  String?
+  evidence      Json
+  evaluatedAt   DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([capability, evaluatedAt])
+  @@index([allowed, evaluatedAt])
+  @@index([policyVersion, evaluatedAt])
 }
 
 model RuntimeControl {

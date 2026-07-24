@@ -3,6 +3,7 @@ import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { CurrentDuelAuthentication, type DuelAuthentication } from '../auth/authentication.js';
 import { DuelMutationGuard } from '../auth/duel-mutation.guard.js';
 import { assertWalletActor } from '../duels/duels.controller.js';
+import { RealValueAdmission, RealValuePolicyGuard } from '../policy/real-value-policy.guard.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
 import { MatchmakingRequest, MatchmakingWalletRequest } from './matchmaking.dto.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
@@ -15,6 +16,8 @@ export class MatchmakingController {
 
   @Post('search')
   @HttpCode(200)
+  @RealValueAdmission('matchmaking.search')
+  @UseGuards(RealValuePolicyGuard)
   search(
     @Body() input: MatchmakingRequest,
     @CurrentDuelAuthentication() authentication: DuelAuthentication,
@@ -25,6 +28,8 @@ export class MatchmakingController {
 
   @Post('continue')
   @HttpCode(200)
+  @RealValueAdmission('matchmaking.search')
+  @UseGuards(RealValuePolicyGuard)
   continueSearch(
     @Body() input: MatchmakingRequest,
     @CurrentDuelAuthentication() authentication: DuelAuthentication,
@@ -55,6 +60,8 @@ export class MatchmakingController {
 
   @Post('house-fallback')
   @HttpCode(200)
+  @RealValueAdmission('matchmaking.house-fallback')
+  @UseGuards(RealValuePolicyGuard)
   houseFallback(
     @Body() input: MatchmakingWalletRequest,
     @CurrentDuelAuthentication() authentication: DuelAuthentication,

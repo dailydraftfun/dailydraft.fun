@@ -1,17 +1,24 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 
 import type {
   GeneratedPack,
   GeneratePackInput,
+  OpenedProviderPackSnapshot,
   OpenPackInput,
   ProviderCardResult,
   ProviderPackSnapshot,
 } from './pack-provider.js';
 import { PackProvider } from './pack-provider.js';
+import {
+  assertProviderResponseEvidence,
+  createProviderResponseEvidence,
+  rawProviderResponsePayload,
+} from './provider-response-evidence.js';
 import { CANONICAL_VALUATION_POLICY_HASH } from './valuation-policy.js';
 
 const MOCK_POOL_VERSION = 'openpacksduel.mock-pool.devnet.v1';
+const MOCK_SIGNING_KEY = 'openpacksduel-fixture-only-provider-response-v1';
 const CARD_NAMES = [
   'Devnet Charizard Test Card',
   'Devnet Pikachu Test Card',
@@ -43,11 +50,21 @@ export class MockPackProvider extends PackProvider {
 
     const openedAt = new Date().toISOString();
     const result = createMockResult(input.providerReference, openedAt);
-    const opened: ProviderPackSnapshot = {
+    const unsigned = {
       openedAt,
       providerReference: input.providerReference,
       result,
       status: 'opened',
+    } as const;
+    const rawPayload = rawProviderResponsePayload(unsigned);
+    const opened: ProviderPackSnapshot = {
+      ...unsigned,
+      evidence: createProviderResponseEvidence({
+        rawPayload,
+        signature: fixtureSignature(rawPayload),
+        signatureAlgorithm: 'hmac-sha256-fixture',
+        signingKeyReference: 'openpacksduel-mock-fixture-v1',
+      }),
     };
     this.#packs.set(input.providerReference, opened);
     return opened;
@@ -58,6 +75,10 @@ export class MockPackProvider extends PackProvider {
     const snapshot = this.#packs.get(providerReference);
     if (!snapshot) throw new NotFoundException('Mock pack was not generated');
     return snapshot;
+  }
+
+  verifyOpenedSnapshot(snapshot: OpenedProviderPackSnapshot): void {
+    assertProviderResponseEvidence(snapshot, fixtureSignature(snapshot.evidence.rawPayload));
   }
 }
 
@@ -87,4 +108,8 @@ function assertDevnetMockEnabled(): void {
 
 function digest(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function fixtureSignature(rawPayload: string): string {
+  return createHmac('sha256', MOCK_SIGNING_KEY).update(rawPayload).digest('hex');
 }
