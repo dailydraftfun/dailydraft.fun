@@ -104,6 +104,11 @@ describe('GachaController', () => {
       snapshotContentHash: inventory.contentHash,
       version: 1,
     } satisfies NonNullable<Awaited<ReturnType<GachaRipService['findCommittedOdds']>>>;
+    const seedCommitment = {
+      commitmentId: 'gachaseed_fixture',
+      expiresAt: new Date(now.getTime() + 15 * 60 * 1000),
+      serverSeedHash: 'e'.repeat(64),
+    } satisfies Awaited<ReturnType<GachaRipService['createSeedCommitment']>>;
     const ripResult = {
       oddsCommitment: {
         calculatorVersion: odds.calculatorVersion,
@@ -118,9 +123,11 @@ describe('GachaController', () => {
         acquiredAt: now,
         acquisitionReference: 'devnet-acquisition-reference',
         createdAt: now,
+        failedAssetReference: null,
         failedAt: null,
         failureReason: null,
         id: 'gacharip_fixture',
+        idempotencyKey: 'idem-fixture-key',
         insuredValueCurrency: 'USDC',
         insuredValueDecimals: 6,
         insuredValueMinor: '35000000',
@@ -137,6 +144,8 @@ describe('GachaController', () => {
         status: GachaRipStatus.SETTLED,
         updatedAt: now,
       },
+      serverSeed: 'f'.repeat(64),
+      serverSeedHash: seedCommitment.serverSeedHash,
     } satisfies Awaited<ReturnType<GachaRipService['createFixtureRip']>>;
     const snapshots = {
       findLatestSealed: async (machineKey: string) => {
@@ -149,9 +158,13 @@ describe('GachaController', () => {
         calls.push('capability');
         return capability;
       },
-      createFixtureRip: async (input: { machineKey: string }) => {
-        calls.push(`rip:${input.machineKey}`);
+      createFixtureRip: async (input: { idempotencyKey?: string; machineKey: string }) => {
+        calls.push(`rip:${input.machineKey}:${input.idempotencyKey ?? 'none'}`);
         return ripResult;
+      },
+      createSeedCommitment: async (machineKey: string) => {
+        calls.push(`rip-commitment:${machineKey}`);
+        return seedCommitment;
       },
       findCommittedOdds: async (machineKey: string) => {
         calls.push(`odds:${machineKey}`);
@@ -161,6 +174,7 @@ describe('GachaController', () => {
     const controller = new GachaController(snapshots, rips);
     const params = { machineKey: 'fixture-machine' };
     const ripInput = {
+      commitmentId: 'gachaseed_fixture',
       machineKey: 'fixture-machine',
       oddsVersion: 1,
       recipientWallet: 'devnet-fixture-recipient',
@@ -170,12 +184,41 @@ describe('GachaController', () => {
     expect(controller.capability()).toEqual(capability);
     await expect(controller.findInventory(params)).resolves.toEqual(inventory);
     await expect(controller.findOdds(params)).resolves.toEqual(odds);
-    await expect(controller.createFixtureRip(ripInput)).resolves.toEqual(ripResult);
+    await expect(controller.createSeedCommitment(params)).resolves.toEqual(seedCommitment);
+    await expect(
+      controller.createFixtureRip({ ...ripInput, idempotencyKey: 'body-key' }, 'idem-fixture-key'),
+    ).resolves.toEqual(ripResult);
     expect(calls).toEqual([
       'capability',
       'inventory:fixture-machine',
       'odds:fixture-machine',
-      'rip:fixture-machine',
+      'rip-commitment:fixture-machine',
+      'rip:fixture-machine:idem-fixture-key',
     ]);
+  });
+
+  test('falls back to the request body idempotency key when no header is provided', async () => {
+    const calls: string[] = [];
+    const rips = {
+      createFixtureRip: async (input: { idempotencyKey?: string; machineKey: string }) => {
+        calls.push(`rip:${input.machineKey}:${input.idempotencyKey ?? 'none'}`);
+        return {} as Awaited<ReturnType<GachaRipService['createFixtureRip']>>;
+      },
+    } as unknown as GachaRipService;
+    const controller = new GachaController({} as GachaInventorySnapshotService, rips);
+
+    await controller.createFixtureRip(
+      {
+        commitmentId: 'gachaseed_fixture',
+        idempotencyKey: 'body-key',
+        machineKey: 'fixture-machine',
+        oddsVersion: 1,
+        recipientWallet: 'devnet-fixture-recipient',
+        seed: 'fixture-seed-0000000001',
+      },
+      undefined,
+    );
+
+    expect(calls).toEqual(['rip:fixture-machine:body-key']);
   });
 });

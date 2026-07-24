@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Header, Headers, HttpCode, Param, Post } from '@nestjs/common';
 
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
 import { CreateFixtureGachaRipRequest, GachaMachineParams } from './gacha.dto.js';
@@ -32,10 +32,24 @@ export class GachaController {
     return this.rips.findCommittedOdds(params.machineKey);
   }
 
+  @Post('machines/:machineKey/rip-commitments')
+  @HttpCode(201)
+  @Header('cache-control', 'no-store')
+  createSeedCommitment(@Param() params: GachaMachineParams) {
+    return this.rips.createSeedCommitment(params.machineKey);
+  }
+
   @Post('rips')
   @HttpCode(201)
   @Header('cache-control', 'no-store')
-  createFixtureRip(@Body() input: CreateFixtureGachaRipRequest) {
-    return this.rips.createFixtureRip(input);
+  createFixtureRip(
+    @Body() input: CreateFixtureGachaRipRequest,
+    @Headers('idempotency-key') idempotencyKeyHeader?: string,
+  ) {
+    const idempotencyKey = idempotencyKeyHeader ?? input.idempotencyKey;
+    return this.rips.createFixtureRip({
+      ...input,
+      ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
+    });
   }
 }

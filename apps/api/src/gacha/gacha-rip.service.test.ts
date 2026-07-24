@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { DatabaseClient } from '@openpacksduel/db';
 import { GachaRipStatus } from '@openpacksduel/db';
 import type { GachaInventorySnapshotService } from './gacha-inventory-snapshot.service.js';
-import { createFixtureGachaPullOddsRuleSet } from './gacha-pull-odds.js';
+import {
+  createFixtureGachaPullOddsRuleSet,
+  type GachaPullOddsRuleSet,
+  validateGachaPullOddsRuleSet,
+} from './gacha-pull-odds.js';
 import { GachaRipService, selectGachaOutcome } from './gacha-rip.service.js';
 import {
   type AcquiredGachaCard,
@@ -17,6 +24,9 @@ import {
 
 const SNAPSHOT_HASH = 'a'.repeat(64);
 const FIXED_SEED = 'fixture-seed-0000000001';
+const FIXED_SERVER_SEED = 'b'.repeat(64);
+const MACHINE_KEY = 'collector-crypt-football-50000000-devnet-fixture';
+const WALLET = 'devnet-fixture-recipient-wallet';
 const ORIGINAL_ENV = {
   fixture: process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE,
   node: process.env.NODE_ENV,
@@ -30,15 +40,17 @@ afterEach(() => {
 });
 
 describe('GachaRipService', () => {
-  test('persists reveal, acquisition, and settlement as distinct transitions', async () => {
+  test('persists reveal, acquisition, and settlement as distinct transitions and reveals a verifiable server seed', async () => {
     enableFixtureMode();
     const database = new RipDatabase();
     const provider = new RecordingProvider();
     const service = serviceWith(database, provider);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
 
     const result = await service.createFixtureRip({
-      machineKey: 'collector-crypt-football-50000000-devnet-fixture',
-      recipientWallet: 'devnet-fixture-recipient-wallet',
+      commitmentId: commitment.commitmentId,
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
       seed: FIXED_SEED,
     });
 
@@ -57,15 +69,380 @@ describe('GachaRipService', () => {
     expect(result.rip.acquiredAt).toBeInstanceOf(Date);
     expect(result.rip.settledAt).toBeInstanceOf(Date);
     expect(provider.operations).toEqual(['acquire', 'settle']);
+
+    // Defect 1: the revealed serverSeed must hash back to the serverSeedHash that was
+    // published (before the rip) by createSeedCommitment, so a player can independently
+    // verify the roll.
+    expect(result.serverSeed).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.serverSeedHash).toBe(commitment.serverSeedHash);
+    expect(sha256(result.serverSeed ?? '')).toBe(commitment.serverSeedHash);
   });
 
-  test('selects the same committed outcome for a fixed seed', () => {
+  test('selects the same committed outcome for a fixed (serverSeed, clientSeed) pair', () => {
     const rules = createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH);
-    const first = selectGachaOutcome(snapshot().entries, rules, FIXED_SEED);
-    const replay = selectGachaOutcome(snapshot().entries, rules, FIXED_SEED);
+    const seeds = { clientSeed: FIXED_SEED, serverSeed: FIXED_SERVER_SEED };
+    const first = selectGachaOutcome(snapshot().entries, rules, seeds);
+    const replay = selectGachaOutcome(snapshot().entries, rules, seeds);
 
     expect(replay).toEqual(first);
     expect(first.assetReference).toMatch(/^devnet:fixture:asset:/);
+  });
+
+  test('grinding the client seed alone cannot control the outcome without the secret server seed', () => {
+    const rules = createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH);
+    // The client only ever controls clientSeed. Both hashes in the digest formula
+    // (snapshotContentHash, rulesHash) are publicly readable before the rip, so if the
+    // outcome depended on clientSeed alone an attacker could grind offline for a favorable
+    // value. Holding clientSeed fixed and varying only the server-committed seed proves
+    // the outcome cannot be predicted or forced without the secret serverSeed.
+    const serverSeeds = ['1'.repeat(64), '2'.repeat(64), '3'.repeat(64), '4'.repeat(64)];
+    const outcomes = new Set(
+      serverSeeds.map(
+        (serverSeed) =>
+          selectGachaOutcome(snapshot().entries, rules, { clientSeed: FIXED_SEED, serverSeed })
+            .assetReference,
+      ),
+    );
+
+    expect(outcomes.size).toBeGreaterThan(1);
+  });
+
+  test('rejects a malformed server seed defensively', () => {
+    const rules = createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH);
+
+    expect(() =>
+      selectGachaOutcome(snapshot().entries, rules, {
+        clientSeed: FIXED_SEED,
+        serverSeed: 'not-a-valid-hex-server-seed',
+      }),
+    ).toThrow('serverSeed is invalid');
+  });
+
+  test('issues a seed commitment without ever exposing the raw serverSeed', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const service = serviceWith(database, new RecordingProvider());
+
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    expect(Object.keys(commitment).sort()).toEqual(['commitmentId', 'expiresAt', 'serverSeedHash']);
+    expect(commitment.serverSeedHash).toMatch(/^[a-f0-9]{64}$/);
+    const stored = database.seedCommitments.find(
+      (candidate) => candidate.id === commitment.commitmentId,
+    );
+    expect(stored).toBeDefined();
+    expect(stored?.serverSeedHash).toBe(commitment.serverSeedHash);
+    expect(sha256(stored?.serverSeed ?? '')).toBe(commitment.serverSeedHash);
+  });
+
+  test('rejects reusing a seed commitment for a second rip', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const service = serviceWith(database, new RecordingProvider());
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: FIXED_SEED,
+    });
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: commitment.commitmentId,
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: 'a-second-distinct-client-seed-value',
+      }),
+    ).rejects.toThrow('already been consumed');
+    expect(database.rips).toHaveLength(1);
+  });
+
+  test('rejects an expired seed commitment', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const service = serviceWith(database, new RecordingProvider());
+    const serverSeed = 'e'.repeat(64);
+    database.seedCommitments.push({
+      committedAt: new Date('2020-01-01T00:00:00.000Z'),
+      consumedByRipId: null,
+      expiresAt: new Date('2020-01-01T00:15:00.000Z'),
+      id: 'gachaseed_expired0000000000000000',
+      machineKey: MACHINE_KEY,
+      serverSeed,
+      serverSeedHash: sha256(serverSeed),
+    });
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: 'gachaseed_expired0000000000000000',
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('has expired');
+    expect(database.rips).toHaveLength(0);
+  });
+
+  test('rejects a commitmentId that does not exist', async () => {
+    enableFixtureMode();
+    const service = serviceWith(new RipDatabase(), new RecordingProvider());
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: 'gachaseed_does_not_exist00000000000',
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('was not found');
+  });
+
+  test('rejects a seed commitment issued for a different machine', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const service = serviceWith(database, new RecordingProvider());
+    const commitment = await service.createSeedCommitment(
+      'collector-crypt-baseball-50000000-devnet-fixture',
+    );
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: commitment.commitmentId,
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('was not found');
+  });
+
+  test('rejects a second rip once the only card in a band has been depleted', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const service = serviceWith(database, new RecordingProvider());
+    const rules = validateGachaPullOddsRuleSet(createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH));
+
+    const first = await service.createSeedCommitment(MACHINE_KEY);
+    const firstServerSeed = requireStoredServerSeed(database, first.commitmentId);
+    const firstClientSeed = findSeedLandingInBand(rules, firstServerSeed, 'base');
+    const firstRip = await service.createFixtureRip({
+      commitmentId: first.commitmentId,
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: firstClientSeed,
+    });
+    expect(firstRip.rip.selectedAssetReference).toBe('devnet:fixture:asset:base');
+
+    const second = await service.createSeedCommitment(MACHINE_KEY);
+    const secondServerSeed = requireStoredServerSeed(database, second.commitmentId);
+    const secondClientSeed = findSeedLandingInBand(rules, secondServerSeed, 'base');
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: second.commitmentId,
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: secondClientSeed,
+      }),
+    ).rejects.toThrow('Gacha inventory has no eligible base cards');
+  });
+
+  test('yields two distinct assets when a band holds two eligible cards across two rips', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const service = serviceWith(database, new RecordingProvider(), twoCardBaseSnapshot());
+    const rules = validateGachaPullOddsRuleSet(createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH));
+
+    const first = await service.createSeedCommitment(MACHINE_KEY);
+    const firstServerSeed = requireStoredServerSeed(database, first.commitmentId);
+    const firstClientSeed = findSeedLandingInBand(rules, firstServerSeed, 'base');
+    const firstRip = await service.createFixtureRip({
+      commitmentId: first.commitmentId,
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: firstClientSeed,
+    });
+
+    const second = await service.createSeedCommitment(MACHINE_KEY);
+    const secondServerSeed = requireStoredServerSeed(database, second.commitmentId);
+    const secondClientSeed = findSeedLandingInBand(rules, secondServerSeed, 'base');
+    const secondRip = await service.createFixtureRip({
+      commitmentId: second.commitmentId,
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: secondClientSeed,
+    });
+
+    expect(secondRip.rip.selectedAssetReference).not.toBe(firstRip.rip.selectedAssetReference);
+    expect(
+      new Set([firstRip.rip.selectedAssetReference, secondRip.rip.selectedAssetReference]).size,
+    ).toBe(2);
+  });
+
+  test('the snapshotContentHash + selectedAssetReference unique index rejects a duplicate insert', async () => {
+    const database = new RipDatabase();
+    await database.gachaRip.create({
+      data: baseRipRow({
+        id: 'gacharip_duplicate_probe_one',
+        selectedAssetReference: 'devnet:fixture:asset:base',
+        snapshotContentHash: SNAPSHOT_HASH,
+      }),
+    });
+
+    await expect(
+      database.gachaRip.create({
+        data: baseRipRow({
+          id: 'gacharip_duplicate_probe_two',
+          selectedAssetReference: 'devnet:fixture:asset:base',
+          snapshotContentHash: SNAPSHOT_HASH,
+        }),
+      }),
+    ).rejects.toThrow('GachaRip_snapshotContentHash_selectedAssetReference_key');
+  });
+
+  test('the provable-fairness migration declares the depletion and idempotency unique indexes', () => {
+    const migrationPath = fileURLToPath(
+      new URL(
+        '../../../../packages/db/prisma/migrations/20260724140000_gacha_provable_fairness/migration.sql',
+        import.meta.url,
+      ),
+    );
+    const migration = readFileSync(migrationPath, 'utf8');
+
+    expect(migration).toContain(
+      'CREATE UNIQUE INDEX "GachaRip_snapshotContentHash_selectedAssetReference_key"',
+    );
+    expect(migration).toContain('CREATE UNIQUE INDEX "GachaRip_machineKey_idempotencyKey_key"');
+  });
+
+  test('returns the existing rip when the same idempotency key is replayed', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    const service = serviceWith(database, provider);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    const first = await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      idempotencyKey: 'idem-key-replay',
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: FIXED_SEED,
+    });
+
+    const replay = await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      idempotencyKey: 'idem-key-replay',
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: 'a-completely-different-seed-value',
+    });
+
+    expect(replay.rip.id).toBe(first.rip.id);
+    expect(replay.rip.selectedAssetReference).toBe(first.rip.selectedAssetReference);
+    expect(database.rips).toHaveLength(1);
+    expect(provider.operations).toEqual(['acquire', 'settle']);
+  });
+
+  test('creates distinct rips for distinct idempotency keys', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const service = serviceWith(database, new RecordingProvider());
+    const rules = validateGachaPullOddsRuleSet(createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH));
+
+    const commitmentOne = await service.createSeedCommitment(MACHINE_KEY);
+    const serverSeedOne = requireStoredServerSeed(database, commitmentOne.commitmentId);
+    const first = await service.createFixtureRip({
+      commitmentId: commitmentOne.commitmentId,
+      idempotencyKey: 'idem-key-a',
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: findSeedLandingInBand(rules, serverSeedOne, 'base'),
+    });
+
+    const commitmentTwo = await service.createSeedCommitment(MACHINE_KEY);
+    const serverSeedTwo = requireStoredServerSeed(database, commitmentTwo.commitmentId);
+    const second = await service.createFixtureRip({
+      commitmentId: commitmentTwo.commitmentId,
+      idempotencyKey: 'idem-key-b',
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: findSeedLandingInBand(rules, serverSeedTwo, 'plus'),
+    });
+
+    expect(second.rip.id).not.toBe(first.rip.id);
+    expect(database.rips).toHaveLength(2);
+  });
+
+  test('reveals the server seed on an idempotent replay of a rip that previously failed', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    provider.failAcquisition = true;
+    const service = serviceWith(database, provider);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: commitment.commitmentId,
+        idempotencyKey: 'idem-key-failed',
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('Fixture acquisition failed');
+
+    const replay = await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      idempotencyKey: 'idem-key-failed',
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: 'irrelevant-because-replay-short-circuits',
+    });
+
+    expect(replay.rip.status).toBe(GachaRipStatus.FAILED);
+    const { serverSeed, serverSeedHash } = replay;
+    if (serverSeed === null || serverSeedHash === null) {
+      throw new Error('expected a failed rip replay to reveal the server seed');
+    }
+    expect(sha256(serverSeed)).toBe(serverSeedHash);
+    expect(database.rips).toHaveLength(1);
+  });
+
+  test('does not reveal the server seed while a replayed rip is still in flight', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const service = serviceWith(database, new RecordingProvider());
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+    await database.gachaPullOddsCommitment.create({
+      data: { id: 'gachaodds_manual', version: 1 },
+    });
+    const inFlightRip = await database.gachaRip.create({
+      data: baseRipRow({
+        id: 'gacharip_in_flight',
+        idempotencyKey: 'idem-in-flight',
+        oddsCommitmentId: 'gachaodds_manual',
+        selectedAssetReference: 'devnet:fixture:asset:in-flight',
+        status: GachaRipStatus.SELECTED,
+      }),
+    });
+    await database.gachaRipSeedCommitment.updateMany({
+      data: { consumedByRipId: inFlightRip.id },
+      where: { consumedByRipId: null, expiresAt: { gt: new Date(0) }, id: commitment.commitmentId },
+    });
+
+    const replay = await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      idempotencyKey: 'idem-in-flight',
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: FIXED_SEED,
+    });
+
+    expect(replay.rip.status).toBe(GachaRipStatus.SELECTED);
+    expect(replay.serverSeed).toBeNull();
+    expect(replay.serverSeedHash).toBeNull();
   });
 
   test('fails closed before reading snapshots when fixture mode is disabled', async () => {
@@ -87,8 +464,9 @@ describe('GachaRipService', () => {
 
     await expect(
       service.createFixtureRip({
-        machineKey: 'collector-crypt-football-50000000-devnet-fixture',
-        recipientWallet: 'devnet-fixture-recipient-wallet',
+        commitmentId: 'gachaseed_unused',
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
         seed: FIXED_SEED,
       }),
     ).rejects.toThrow('disabled outside explicit fixture or preview mode');
@@ -111,19 +489,17 @@ describe('GachaRipService', () => {
       },
       providerMode: 'fixture',
     });
-    await expect(
-      service.findCommittedOdds('collector-crypt-football-50000000-devnet-fixture'),
-    ).rejects.toThrow('No sealed Gacha odds commitment is available');
+    await expect(service.findCommittedOdds(MACHINE_KEY)).rejects.toThrow(
+      'No sealed Gacha odds commitment is available',
+    );
 
     database.oddsCommitment = {
       committedAt: new Date(),
-      machineKey: 'collector-crypt-football-50000000-devnet-fixture',
+      machineKey: MACHINE_KEY,
       sealedAt: new Date(),
       version: 1,
     };
-    await expect(
-      service.findCommittedOdds('collector-crypt-football-50000000-devnet-fixture'),
-    ).resolves.toMatchObject({ version: 1 });
+    await expect(service.findCommittedOdds(MACHINE_KEY)).resolves.toMatchObject({ version: 1 });
   });
 
   test('records a terminal failure without inventing acquisition or settlement evidence', async () => {
@@ -132,12 +508,19 @@ describe('GachaRipService', () => {
     const provider = new RecordingProvider();
     provider.failAcquisition = true;
     const service = serviceWith(database, provider);
+    const rules = validateGachaPullOddsRuleSet(createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH));
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+    // createSeedCommitment mints a fresh random serverSeed, so the landing band is only
+    // deterministic once the client seed is chosen against that specific server seed.
+    const serverSeed = requireStoredServerSeed(database, commitment.commitmentId);
+    const clientSeed = findSeedLandingInBand(rules, serverSeed, 'base');
 
     await expect(
       service.createFixtureRip({
-        machineKey: 'collector-crypt-football-50000000-devnet-fixture',
-        recipientWallet: 'devnet-fixture-recipient-wallet',
-        seed: FIXED_SEED,
+        commitmentId: commitment.commitmentId,
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: clientSeed,
       }),
     ).rejects.toThrow('Fixture acquisition failed');
     expect(database.rip).toMatchObject({ status: GachaRipStatus.FAILED });
@@ -145,6 +528,57 @@ describe('GachaRipService', () => {
     expect(database.rip?.settlementReference).toBeUndefined();
     expect(database.rip?.failedAt).toBeInstanceOf(Date);
     expect(provider.operations).toEqual(['acquire']);
+    // The asset was never delivered, so it must be released back to the eligible pool
+    // rather than permanently burned: selectedAssetReference clears to null and the
+    // audit trail moves to failedAssetReference.
+    expect(database.rip?.selectedAssetReference).toBeNull();
+    expect(database.rip?.failedAssetReference).toBe('devnet:fixture:asset:base');
+  });
+
+  test('a rip that fails acquisition releases its asset for a later rip to claim', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    provider.failAcquisition = true;
+    const service = serviceWith(database, provider);
+    const rules = validateGachaPullOddsRuleSet(createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH));
+
+    const first = await service.createSeedCommitment(MACHINE_KEY);
+    const firstServerSeed = requireStoredServerSeed(database, first.commitmentId);
+    const firstClientSeed = findSeedLandingInBand(rules, firstServerSeed, 'base');
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: first.commitmentId,
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: firstClientSeed,
+      }),
+    ).rejects.toThrow('Fixture acquisition failed');
+
+    const failedRip = database.rip;
+    if (failedRip === null) throw new Error('expected the failed rip to be persisted');
+    expect(failedRip.status).toBe(GachaRipStatus.FAILED);
+    expect(failedRip.selectedAssetReference).toBeNull();
+    expect(failedRip.failedAssetReference).toBe('devnet:fixture:asset:base');
+
+    // Without the fix, this second rip would land on the same asset the failed rip
+    // still held and crash with a P2002 on the depletion unique index instead of
+    // gracefully claiming the now-released card.
+    provider.failAcquisition = false;
+    const second = await service.createSeedCommitment(MACHINE_KEY);
+    const secondServerSeed = requireStoredServerSeed(database, second.commitmentId);
+    const secondClientSeed = findSeedLandingInBand(rules, secondServerSeed, 'base');
+    const secondRip = await service.createFixtureRip({
+      commitmentId: second.commitmentId,
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: secondClientSeed,
+    });
+
+    expect(secondRip.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(secondRip.rip.selectedAssetReference).toBe('devnet:fixture:asset:base');
+    expect(database.rips).toHaveLength(2);
   });
 
   test('rejects invalid seeds and snapshots without eligible cards', async () => {
@@ -153,8 +587,9 @@ describe('GachaRipService', () => {
 
     await expect(
       service.createFixtureRip({
-        machineKey: 'collector-crypt-football-50000000-devnet-fixture',
-        recipientWallet: 'devnet-fixture-recipient-wallet',
+        commitmentId: 'unused-commitment-id',
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
         seed: 'short',
       }),
     ).rejects.toThrow('seed is invalid');
@@ -162,15 +597,19 @@ describe('GachaRipService', () => {
       selectGachaOutcome(
         [{ assetReference: null, eligible: false, insuredValueMinor: null }],
         createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH),
-        FIXED_SEED,
+        { clientSeed: FIXED_SEED, serverSeed: FIXED_SERVER_SEED },
       ),
     ).toThrow('has no eligible cards');
   });
 });
 
-function serviceWith(database: RipDatabase, provider: RecordingProvider): GachaRipService {
+function serviceWith(
+  database: RipDatabase,
+  provider: RecordingProvider,
+  snapshotOverride: ReturnType<typeof snapshot> = snapshot(),
+): GachaRipService {
   const snapshots = {
-    findLatestSealed: async () => snapshot(),
+    findLatestSealed: async () => snapshotOverride,
   } as unknown as GachaInventorySnapshotService;
   return new GachaRipService(database as unknown as DatabaseClient, snapshots, provider);
 }
@@ -188,12 +627,63 @@ function snapshot() {
   };
 }
 
+function twoCardBaseSnapshot() {
+  return {
+    contentHash: SNAPSHOT_HASH,
+    entries: [eligibleEntry('base-1', '10000000'), eligibleEntry('base-2', '20000000')],
+    sealedAt: new Date('2026-07-24T12:00:00.000Z'),
+  };
+}
+
 function eligibleEntry(label: string, insuredValueMinor: string) {
   return {
     assetReference: `devnet:fixture:asset:${label}`,
     eligible: true,
     insuredValueMinor,
   };
+}
+
+function requireStoredServerSeed(database: RipDatabase, commitmentId: string): string {
+  const commitment = database.seedCommitments.find((candidate) => candidate.id === commitmentId);
+  if (!commitment) throw new Error(`no stored seed commitment for ${commitmentId}`);
+  return commitment.serverSeed;
+}
+
+function rollPpmFor(rules: GachaPullOddsRuleSet, serverSeed: string, clientSeed: string): number {
+  const digest = createHash('sha256')
+    .update(`${rules.snapshotContentHash}:${rules.rulesHash}:${serverSeed}:${clientSeed}`)
+    .digest();
+  return digest.readUInt32BE(0) % 1_000_000;
+}
+
+function findSeedLandingInBand(
+  rules: GachaPullOddsRuleSet,
+  serverSeed: string,
+  bandLabel: string,
+): string {
+  let lowerBound = 0;
+  let upperBound = 0;
+  let found = false;
+  for (const band of rules.bands) {
+    lowerBound = upperBound;
+    upperBound += band.probabilityPpm;
+    if (band.label === bandLabel) {
+      found = true;
+      break;
+    }
+  }
+  if (!found) throw new Error(`unknown band ${bandLabel}`);
+
+  for (let attempt = 0; attempt < 5000; attempt += 1) {
+    const candidate = `fixture-seed-band-probe-${String(attempt).padStart(6, '0')}`;
+    const rollPpm = rollPpmFor(rules, serverSeed, candidate);
+    if (rollPpm >= lowerBound && rollPpm < upperBound) return candidate;
+  }
+  throw new Error(`could not find a client seed landing in band ${bandLabel}`);
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 class RecordingProvider extends SportsPackGachaProvider {
@@ -232,18 +722,77 @@ class RecordingProvider extends SportsPackGachaProvider {
 interface StoredRip {
   acquiredAt?: Date;
   acquisitionReference?: string;
+  failedAssetReference?: string | null;
   id: string;
+  idempotencyKey: string | null;
+  insuredValueCurrency: string;
+  insuredValueDecimals: number;
+  insuredValueMinor: string;
+  machineKey: string;
+  oddsCommitmentId: string;
+  oddsRulesHash: string;
   revealedAt?: Date;
+  seedCommitmentHash: string;
+  // Nullable: a FAILED rip never delivered its asset, so it is released back to the
+  // eligible pool (see the create() duplicate check below, which mirrors Postgres's
+  // NULL-distinctness so two FAILED rips never collide on a null reference).
+  selectedAssetReference: string | null;
+  selectedAt: Date;
   settledAt?: Date;
   settlementReference?: string;
+  snapshotContentHash: string;
   status: GachaRipStatus;
   [key: string]: unknown;
 }
 
+interface StoredSeedCommitment {
+  committedAt: Date;
+  consumedByRipId: string | null;
+  expiresAt: Date;
+  id: string;
+  machineKey: string;
+  serverSeed: string;
+  serverSeedHash: string;
+}
+
+// Production's createSeedCommitment never includes consumedByRipId in its create
+// payload (it relies on the column defaulting to NULL), so the fake's create input
+// omits it too — the stored row defaults it explicitly instead.
+type SeedCommitmentCreateInput = Omit<StoredSeedCommitment, 'consumedByRipId'>;
+
+let testIdCounter = 0;
+
+function baseRipRow(overrides: Partial<StoredRip> = {}): StoredRip {
+  testIdCounter += 1;
+  return {
+    id: `gacharip_test_${testIdCounter}`,
+    idempotencyKey: null,
+    insuredValueCurrency: 'USDC',
+    insuredValueDecimals: 6,
+    insuredValueMinor: '35000000',
+    machineKey: MACHINE_KEY,
+    oddsCommitmentId: 'gachaodds_manual',
+    oddsRulesHash: 'r'.repeat(64),
+    seedCommitmentHash: sha256(FIXED_SEED),
+    selectedAssetReference: 'devnet:fixture:asset:manual',
+    selectedAt: new Date(),
+    snapshotContentHash: SNAPSHOT_HASH,
+    status: GachaRipStatus.SELECTED,
+    ...overrides,
+  };
+}
+
+class UniqueConstraintViolation extends Error {}
+
 class RipDatabase {
   oddsCommitment: Record<string, unknown> | null = null;
-  rip: StoredRip | null = null;
+  rips: StoredRip[] = [];
+  seedCommitments: StoredSeedCommitment[] = [];
   transitions: GachaRipStatus[] = [];
+
+  get rip(): StoredRip | null {
+    return this.rips.at(-1) ?? null;
+  }
 
   readonly gachaPullOddsCommitment = {
     create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -256,16 +805,52 @@ class RipDatabase {
 
   readonly gachaRip = {
     create: async ({ data }: { data: StoredRip }) => {
-      this.rip = { ...data };
+      // Mirrors Postgres unique-index semantics: a NULL selectedAssetReference (a
+      // FAILED rip whose asset was released) never collides with anything, including
+      // another NULL, so only a non-null match is a real duplicate.
+      const duplicate = this.rips.find(
+        (rip) =>
+          rip.snapshotContentHash === data.snapshotContentHash &&
+          data.selectedAssetReference !== null &&
+          rip.selectedAssetReference === data.selectedAssetReference,
+      );
+      if (duplicate) {
+        throw new UniqueConstraintViolation(
+          'Unique constraint failed on GachaRip_snapshotContentHash_selectedAssetReference_key',
+        );
+      }
+      const rip = { ...data };
+      this.rips.push(rip);
       this.transitions.push(data.status);
-      return this.rip;
+      return rip;
     },
-    findUnique: async () => this.rip,
-    update: async ({ data }: { data: Partial<StoredRip> }) => {
-      if (!this.rip) throw new Error('rip missing');
-      Object.assign(this.rip, data);
+    findFirst: async ({ where }: { where: { idempotencyKey: string; machineKey: string } }) => {
+      return (
+        this.rips.find(
+          (rip) =>
+            rip.machineKey === where.machineKey && rip.idempotencyKey === where.idempotencyKey,
+        ) ?? null
+      );
+    },
+    findMany: async ({
+      where,
+    }: {
+      where: { snapshotContentHash: string; status: { not: GachaRipStatus } };
+    }) => {
+      return this.rips.filter(
+        (rip) =>
+          rip.snapshotContentHash === where.snapshotContentHash && rip.status !== where.status.not,
+      );
+    },
+    findUnique: async ({ where }: { where: { id: string } }) => {
+      return this.rips.find((rip) => rip.id === where.id) ?? null;
+    },
+    update: async ({ data, where }: { data: Partial<StoredRip>; where: { id: string } }) => {
+      const rip = this.rips.find((candidate) => candidate.id === where.id);
+      if (!rip) throw new Error('rip missing');
+      Object.assign(rip, data);
       this.transitions.push(data.status as GachaRipStatus);
-      return this.rip;
+      return rip;
     },
     updateMany: async ({
       data,
@@ -274,11 +859,51 @@ class RipDatabase {
       data: Partial<StoredRip>;
       where: { id: string; status: GachaRipStatus };
     }) => {
-      if (!this.rip || this.rip.id !== where.id || this.rip.status !== where.status) {
+      const rip = this.rips.find((candidate) => candidate.id === where.id);
+      if (!rip || rip.status !== where.status) {
         return { count: 0 };
       }
-      Object.assign(this.rip, data);
+      Object.assign(rip, data);
       this.transitions.push(data.status as GachaRipStatus);
+      return { count: 1 };
+    },
+  };
+
+  readonly gachaRipSeedCommitment = {
+    create: async ({ data }: { data: SeedCommitmentCreateInput }) => {
+      const stored: StoredSeedCommitment = { consumedByRipId: null, ...data };
+      this.seedCommitments.push(stored);
+      return stored;
+    },
+    findUnique: async ({ where }: { where: { consumedByRipId?: string; id?: string } }) => {
+      if (where.id !== undefined) {
+        return this.seedCommitments.find((commitment) => commitment.id === where.id) ?? null;
+      }
+      if (where.consumedByRipId !== undefined) {
+        return (
+          this.seedCommitments.find(
+            (commitment) => commitment.consumedByRipId === where.consumedByRipId,
+          ) ?? null
+        );
+      }
+      return null;
+    },
+    updateMany: async ({
+      data,
+      where,
+    }: {
+      data: Partial<StoredSeedCommitment>;
+      where: { consumedByRipId: null; expiresAt: { gt: Date }; id: string };
+    }) => {
+      const commitment = this.seedCommitments.find((candidate) => candidate.id === where.id);
+      if (
+        !commitment ||
+        commitment.consumedByRipId !== null ||
+        commitment.expiresAt.getTime() <= where.expiresAt.gt.getTime()
+      ) {
+        return { count: 0 };
+      }
+      Object.assign(commitment, data);
       return { count: 1 };
     },
   };
