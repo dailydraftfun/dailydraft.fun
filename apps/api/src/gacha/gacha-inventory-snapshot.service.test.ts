@@ -4,6 +4,7 @@ import type { DatabaseClient } from '@openpacksduel/db';
 import { GachaInventoryExclusionReason } from '@openpacksduel/db';
 
 import {
+  fixtureSnapshotInput,
   type GachaInventorySnapshotPolicy,
   GachaInventorySnapshotService,
   prepareGachaInventorySnapshot,
@@ -159,6 +160,143 @@ describe('prepareGachaInventorySnapshot', () => {
       }),
     ).toThrow('must be an unsigned integer');
   });
+
+  test('derives fixture evaluation time from insured and inventory evidence', () => {
+    const latestInventoryTimestamp = new Date('2026-07-24T12:00:03.000Z');
+    const input = fixtureSnapshotInput(MACHINE, [
+      {
+        ...card('fixture-card-a', 'asset-a', '35000000'),
+        insuredValue: {
+          ...card('fixture-card-a', 'asset-a', '35000000').insuredValue!,
+          sourceTimestamp: new Date('2026-07-24T12:00:02.000Z'),
+        },
+        inventorySourceTimestamp: new Date('2026-07-24T12:00:01.000Z'),
+      },
+      {
+        ...card('fixture-card-b', 'asset-b', '75000000'),
+        insuredValue: {
+          ...card('fixture-card-b', 'asset-b', '75000000').insuredValue!,
+          sourceTimestamp: new Date('2026-07-24T12:00:00.000Z'),
+        },
+        inventorySourceTimestamp: new Date('2026-07-24T12:00:01.000Z'),
+      },
+      {
+        ...card('fixture-card-c', 'asset-c', undefined),
+        inventorySourceTimestamp: latestInventoryTimestamp,
+      },
+    ]);
+
+    expect(input.evaluatedAt).toEqual(latestInventoryTimestamp);
+    expect(input.policy.minimumEligibleItems).toBe(MACHINE.committedPoolSize);
+  });
+
+  test('rejects oversized pools and malformed policy or provider evidence', () => {
+    const validCard = card('fixture-card-a', 'asset-a', '35000000');
+    const cases: Array<{ input: Parameters<typeof prepareGachaInventorySnapshot>[0]; message: string }> =
+      [
+        {
+          input: {
+            candidates: Array.from({ length: 501 }, () => validCard),
+            evaluatedAt: EVALUATED_AT,
+            policy: policy(),
+          },
+          message: 'exceeds 500 candidates',
+        },
+        {
+          input: {
+            candidates: [validCard],
+            evaluatedAt: new Date('invalid'),
+            policy: policy({ minimumEligibleItems: 1 }),
+          },
+          message: 'evaluatedAt is invalid',
+        },
+        {
+          input: {
+            candidates: [validCard],
+            evaluatedAt: EVALUATED_AT,
+            policy: policy({
+              machine: { ...MACHINE, sport: 'hockey' as SportsPackGachaMachine['sport'] },
+              minimumEligibleItems: 1,
+            }),
+          },
+          message: 'sport is invalid',
+        },
+        {
+          input: {
+            candidates: [validCard],
+            evaluatedAt: EVALUATED_AT,
+            policy: policy({
+              machine: { ...MACHINE, machineKey: 123 as unknown as string },
+              minimumEligibleItems: 1,
+            }),
+          },
+          message: 'machine.machineKey is invalid',
+        },
+        {
+          input: {
+            candidates: [validCard],
+            evaluatedAt: EVALUATED_AT,
+            policy: policy({
+              machine: { ...MACHINE, machineKey: 'invalid machine key' },
+              minimumEligibleItems: 1,
+            }),
+          },
+          message: 'machine.machineKey is invalid',
+        },
+        {
+          input: {
+            candidates: [validCard],
+            evaluatedAt: EVALUATED_AT,
+            policy: policy({ minimumEligibleItems: 0 }),
+          },
+          message: 'minimumEligibleItems is invalid',
+        },
+        {
+          input: {
+            candidates: [{ ...validCard, graded: 'yes' as unknown as boolean }],
+            evaluatedAt: EVALUATED_AT,
+            policy: policy({ minimumEligibleItems: 1 }),
+          },
+          message: 'graded is invalid',
+        },
+        {
+          input: {
+            candidates: [{ ...validCard, providerCardReference: '' }],
+            evaluatedAt: EVALUATED_AT,
+            policy: policy({ minimumEligibleItems: 1 }),
+          },
+          message: 'providerCardReference is invalid',
+        },
+        {
+          input: {
+            candidates: [{ ...validCard, displayName: 'Fixture\u0000card' }],
+            evaluatedAt: EVALUATED_AT,
+            policy: policy({ minimumEligibleItems: 1 }),
+          },
+          message: 'displayName is invalid',
+        },
+        {
+          input: {
+            candidates: [
+              {
+                ...validCard,
+                insuredValue: {
+                  ...validCard.insuredValue!,
+                  currency: 'EUR' as 'USDC',
+                },
+              },
+            ],
+            evaluatedAt: EVALUATED_AT,
+            policy: policy({ minimumEligibleItems: 1 }),
+          },
+          message: 'insuredValue must use micro-USDC',
+        },
+      ];
+
+    for (const { input, message } of cases) {
+      expect(() => prepareGachaInventorySnapshot(input)).toThrow(message);
+    }
+  });
 });
 
 describe('GachaInventorySnapshotService', () => {
@@ -239,6 +377,32 @@ describe('GachaInventorySnapshotService', () => {
     const emptyService = new GachaInventorySnapshotService(emptyDatabase);
     await expect(emptyService.findLatestSealed(MACHINE.machineKey)).rejects.toThrow(
       'No sealed Gacha inventory snapshot is available',
+    );
+  });
+
+  test('persists nullable valuation evidence and rejects an unsealed replay', async () => {
+    enableFixtureMode();
+    const database = new FixtureDatabase();
+    const service = new GachaInventorySnapshotService(database as unknown as DatabaseClient);
+    const input = {
+      candidates: [
+        card('fixture-card-a', 'asset-a', '35000000'),
+        card('fixture-card-without-value', 'asset-without-value', undefined),
+      ],
+      evaluatedAt: EVALUATED_AT,
+      policy: policy({ minimumEligibleItems: 1 }),
+    };
+
+    await expect(service.createFixtureSnapshot(input)).resolves.toMatchObject({ created: true });
+    expect(database.entries).toHaveLength(2);
+
+    const stored = database.snapshots[0];
+    expect(stored).toBeDefined();
+    if (!stored) throw new Error('Expected a stored fixture snapshot');
+    stored.sealedAt = null;
+
+    await expect(service.createFixtureSnapshot(input)).rejects.toThrow(
+      'Gacha inventory snapshot is not sealed',
     );
   });
 });

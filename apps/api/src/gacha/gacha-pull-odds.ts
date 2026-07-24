@@ -109,8 +109,8 @@ export function validateGachaPullOddsRuleSet(value: unknown): GachaPullOddsRuleS
       throw contractError('INVALID_RULES', 'Gacha pull odds band is invalid');
     }
     const band = candidate as Partial<GachaPullOddsBand>;
-    const expectedLabel = BAND_LABELS[index];
-    if (expectedLabel === undefined || band.label !== expectedLabel) {
+    const expectedLabel = BAND_LABELS[index]!;
+    if (band.label !== expectedLabel) {
       throw contractError('INVALID_RULES', 'Gacha pull odds bands must use canonical ordering');
     }
     if (

@@ -111,6 +111,60 @@ describe('versioned Gacha pull odds', () => {
       'INVALID_RULES',
     );
   });
+
+  test('rejects missing rules and malformed contract metadata', () => {
+    const cases: Array<{
+      candidate: unknown;
+      code: GachaPullOddsContractError['code'];
+    }> = [
+      { candidate: null, code: 'UNSUPPORTED_RULES' },
+      { candidate: { ...RULES, currency: 'USD' }, code: 'INVALID_RULES' },
+      { candidate: { ...RULES, rulesVersion: 'INVALID RULES VERSION' }, code: 'INVALID_RULES' },
+      { candidate: { ...RULES, snapshotContentHash: 'not-a-hash' }, code: 'INVALID_RULES' },
+      { candidate: { ...RULES, rulesHash: 'not-a-hash' }, code: 'RULES_HASH_MISMATCH' },
+      { candidate: { ...RULES, bands: RULES.bands.slice(0, 3) }, code: 'INVALID_RULES' },
+    ];
+
+    for (const { candidate, code } of cases) {
+      expectContractError(() => validateGachaPullOddsRuleSet(candidate), code);
+    }
+  });
+
+  test('rejects malformed bands and non-canonical minor units', () => {
+    const cases: unknown[] = [
+      { ...RULES, bands: [null, ...RULES.bands.slice(1)] },
+      {
+        ...RULES,
+        bands: [{ ...RULES.bands[0], label: 'plus' }, ...RULES.bands.slice(1)],
+      },
+      {
+        ...RULES,
+        bands: [{ ...RULES.bands[0], probabilityPpm: -1 }, ...RULES.bands.slice(1)],
+      },
+      {
+        ...RULES,
+        bands: [{ ...RULES.bands[0], minimumInsuredValueMinor: '1' }, ...RULES.bands.slice(1)],
+      },
+      {
+        ...RULES,
+        bands: [{ ...RULES.bands[0], minimumInsuredValueMinor: '-1' }, ...RULES.bands.slice(1)],
+      },
+      {
+        ...RULES,
+        bands: [
+          {
+            ...RULES.bands[0],
+            minimumInsuredValueMinor: '18446744073709551616',
+          },
+          ...RULES.bands.slice(1),
+        ],
+      },
+    ];
+
+    for (const candidate of cases) {
+      expectContractError(() => validateGachaPullOddsRuleSet(candidate), 'INVALID_RULES');
+    }
+  });
 });
 
 function expectContractError(

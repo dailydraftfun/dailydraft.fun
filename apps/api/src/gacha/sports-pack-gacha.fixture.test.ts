@@ -53,6 +53,16 @@ describe('Sports Pack Gacha fixture provider', () => {
     expect(settled).toMatchObject({ status: 'settled' });
   });
 
+  test('rejects unknown fixture machines', async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE = 'true';
+    delete process.env.VERCEL_ENV;
+
+    await expect(
+      new FixtureSportsPackGachaProvider().getEligibleCards('missing-machine'),
+    ).rejects.toThrow('Gacha fixture machine was not found');
+  });
+
   test('never enables fixtures in production and permits explicit test, dev, or preview use', () => {
     expect(
       gachaFixtureModeEnabled({
