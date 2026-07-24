@@ -402,8 +402,11 @@ describe('GachaRipService', () => {
     });
 
     expect(replay.rip.status).toBe(GachaRipStatus.FAILED);
-    expect(replay.serverSeed).not.toBeNull();
-    expect(sha256(replay.serverSeed ?? '')).toBe(replay.serverSeedHash);
+    const { serverSeed, serverSeedHash } = replay;
+    if (serverSeed === null || serverSeedHash === null) {
+      throw new Error('expected a failed rip replay to reveal the server seed');
+    }
+    expect(sha256(serverSeed)).toBe(serverSeedHash);
     expect(database.rips).toHaveLength(1);
   });
 
@@ -520,6 +523,57 @@ describe('GachaRipService', () => {
     expect(database.rip?.settlementReference).toBeUndefined();
     expect(database.rip?.failedAt).toBeInstanceOf(Date);
     expect(provider.operations).toEqual(['acquire']);
+    // The asset was never delivered, so it must be released back to the eligible pool
+    // rather than permanently burned: selectedAssetReference clears to null and the
+    // audit trail moves to failedAssetReference.
+    expect(database.rip?.selectedAssetReference).toBeNull();
+    expect(database.rip?.failedAssetReference).toBe('devnet:fixture:asset:base');
+  });
+
+  test('a rip that fails acquisition releases its asset for a later rip to claim', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    provider.failAcquisition = true;
+    const service = serviceWith(database, provider);
+    const rules = validateGachaPullOddsRuleSet(createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH));
+
+    const first = await service.createSeedCommitment(MACHINE_KEY);
+    const firstServerSeed = requireStoredServerSeed(database, first.commitmentId);
+    const firstClientSeed = findSeedLandingInBand(rules, firstServerSeed, 'base');
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: first.commitmentId,
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: firstClientSeed,
+      }),
+    ).rejects.toThrow('Fixture acquisition failed');
+
+    const failedRip = database.rip;
+    if (failedRip === null) throw new Error('expected the failed rip to be persisted');
+    expect(failedRip.status).toBe(GachaRipStatus.FAILED);
+    expect(failedRip.selectedAssetReference).toBeNull();
+    expect(failedRip.failedAssetReference).toBe('devnet:fixture:asset:base');
+
+    // Without the fix, this second rip would land on the same asset the failed rip
+    // still held and crash with a P2002 on the depletion unique index instead of
+    // gracefully claiming the now-released card.
+    provider.failAcquisition = false;
+    const second = await service.createSeedCommitment(MACHINE_KEY);
+    const secondServerSeed = requireStoredServerSeed(database, second.commitmentId);
+    const secondClientSeed = findSeedLandingInBand(rules, secondServerSeed, 'base');
+    const secondRip = await service.createFixtureRip({
+      commitmentId: second.commitmentId,
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: secondClientSeed,
+    });
+
+    expect(secondRip.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(secondRip.rip.selectedAssetReference).toBe('devnet:fixture:asset:base');
+    expect(database.rips).toHaveLength(2);
   });
 
   test('rejects invalid seeds and snapshots without eligible cards', async () => {
@@ -663,6 +717,7 @@ class RecordingProvider extends SportsPackGachaProvider {
 interface StoredRip {
   acquiredAt?: Date;
   acquisitionReference?: string;
+  failedAssetReference?: string | null;
   id: string;
   idempotencyKey: string | null;
   insuredValueCurrency: string;
@@ -673,7 +728,10 @@ interface StoredRip {
   oddsRulesHash: string;
   revealedAt?: Date;
   seedCommitmentHash: string;
-  selectedAssetReference: string;
+  // Nullable: a FAILED rip never delivered its asset, so it is released back to the
+  // eligible pool (see the create() duplicate check below, which mirrors Postgres's
+  // NULL-distinctness so two FAILED rips never collide on a null reference).
+  selectedAssetReference: string | null;
   selectedAt: Date;
   settledAt?: Date;
   settlementReference?: string;
@@ -691,6 +749,11 @@ interface StoredSeedCommitment {
   serverSeed: string;
   serverSeedHash: string;
 }
+
+// Production's createSeedCommitment never includes consumedByRipId in its create
+// payload (it relies on the column defaulting to NULL), so the fake's create input
+// omits it too — the stored row defaults it explicitly instead.
+type SeedCommitmentCreateInput = Omit<StoredSeedCommitment, 'consumedByRipId'>;
 
 let testIdCounter = 0;
 
@@ -737,9 +800,13 @@ class RipDatabase {
 
   readonly gachaRip = {
     create: async ({ data }: { data: StoredRip }) => {
+      // Mirrors Postgres unique-index semantics: a NULL selectedAssetReference (a
+      // FAILED rip whose asset was released) never collides with anything, including
+      // another NULL, so only a non-null match is a real duplicate.
       const duplicate = this.rips.find(
         (rip) =>
           rip.snapshotContentHash === data.snapshotContentHash &&
+          data.selectedAssetReference !== null &&
           rip.selectedAssetReference === data.selectedAssetReference,
       );
       if (duplicate) {
@@ -798,8 +865,8 @@ class RipDatabase {
   };
 
   readonly gachaRipSeedCommitment = {
-    create: async ({ data }: { data: StoredSeedCommitment }) => {
-      const stored = { consumedByRipId: null, ...data };
+    create: async ({ data }: { data: SeedCommitmentCreateInput }) => {
+      const stored: StoredSeedCommitment = { consumedByRipId: null, ...data };
       this.seedCommitments.push(stored);
       return stored;
     },

@@ -2382,6 +2382,7 @@ components:
         - oddsRulesHash
         - seedCommitmentHash
         - selectedAssetReference
+        - failedAssetReference
         - acquisitionReference
         - settlementReference
         - insuredValueMinor
@@ -2416,7 +2417,17 @@ components:
           type: string
           pattern: '^[a-f0-9]{64}$'
         selectedAssetReference:
-          type: string
+          description: |
+            The asset this rip claimed from the sealed snapshot. Null once the rip
+            has FAILED: a failed acquisition never delivered the asset, so it is
+            released back to the eligible pool for the next rip against the same
+            snapshot rather than being permanently unavailable.
+          type: [string, 'null']
+        failedAssetReference:
+          description: |
+            Audit trail of the asset a FAILED rip had selected before it was
+            released back to the eligible pool. Null for every other status.
+          type: [string, 'null']
         acquisitionReference:
           type: [string, 'null']
         settlementReference:

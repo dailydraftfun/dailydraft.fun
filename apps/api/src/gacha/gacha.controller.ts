@@ -46,9 +46,10 @@ export class GachaController {
     @Body() input: CreateFixtureGachaRipRequest,
     @Headers('idempotency-key') idempotencyKeyHeader?: string,
   ) {
+    const idempotencyKey = idempotencyKeyHeader ?? input.idempotencyKey;
     return this.rips.createFixtureRip({
       ...input,
-      idempotencyKey: idempotencyKeyHeader ?? input.idempotencyKey,
+      ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
     });
   }
 }

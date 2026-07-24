@@ -897,6 +897,12 @@ model GachaRipSeedCommitment {
 }
 
 /// One Gacha rip with reveal, ownership acquisition, and settlement recorded separately.
+///
+/// selectedAssetReference is cleared to null when a rip FAILs (its asset returns to
+/// the eligible pool for the next rip) so the (snapshotContentHash,
+/// selectedAssetReference) unique index only ever covers assets that are actually
+/// claimed. failedAssetReference preserves an audit trail of what a FAILED rip had
+/// selected before the asset was released.
 model GachaRip {
   id                     String                  @id
   machineKey             String
@@ -905,7 +911,8 @@ model GachaRip {
   snapshotContentHash    String
   oddsRulesHash          String
   seedCommitmentHash     String
-  selectedAssetReference String
+  selectedAssetReference String?
+  failedAssetReference   String?
   acquisitionReference   String?
   settlementReference    String?
   insuredValueMinor      String

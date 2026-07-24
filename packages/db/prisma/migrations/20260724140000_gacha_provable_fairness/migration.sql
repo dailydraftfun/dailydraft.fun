@@ -13,6 +13,17 @@ CREATE TABLE "GachaRipSeedCommitment" (
 ALTER TABLE "GachaRip"
 ADD COLUMN "idempotencyKey" TEXT;
 
+-- A FAILED rip never delivered its asset to the recipient, so its selected asset
+-- must return to the eligible pool for the next rip against the same snapshot.
+-- selectedAssetReference is widened to nullable and cleared on the FAILED
+-- transition so the depletion unique index below only ever covers assets that
+-- were actually claimed; failedAssetReference preserves the audit trail.
+ALTER TABLE "GachaRip"
+ADD COLUMN "failedAssetReference" TEXT;
+
+ALTER TABLE "GachaRip"
+ALTER COLUMN "selectedAssetReference" DROP NOT NULL;
+
 CREATE UNIQUE INDEX "GachaRipSeedCommitment_consumedByRipId_key"
 ON "GachaRipSeedCommitment"("consumedByRipId");
 

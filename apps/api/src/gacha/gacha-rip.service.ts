@@ -246,10 +246,16 @@ export class GachaRipService {
           status: GachaRipStatus.SETTLED,
         });
       } catch (error) {
+        // The asset was never delivered, so release it back to the eligible pool for
+        // the next rip against this snapshot instead of permanently burning it: clear
+        // selectedAssetReference (which the depletion unique index covers) and keep
+        // failedAssetReference as an audit trail of what this rip had selected.
         await this.database.gachaRip.update({
           data: {
+            failedAssetReference: outcome.selected.assetReference,
             failedAt: new Date(),
             failureReason: error instanceof Error ? error.message.slice(0, 240) : 'Unknown failure',
+            selectedAssetReference: null,
             status: GachaRipStatus.FAILED,
           },
           where: { id: ripId },
