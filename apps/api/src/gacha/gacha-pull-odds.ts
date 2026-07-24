@@ -109,7 +109,8 @@ export function validateGachaPullOddsRuleSet(value: unknown): GachaPullOddsRuleS
       throw contractError('INVALID_RULES', 'Gacha pull odds band is invalid');
     }
     const band = candidate as Partial<GachaPullOddsBand>;
-    if (band.label !== BAND_LABELS[index]) {
+    const expectedLabel = BAND_LABELS[index];
+    if (expectedLabel === undefined || band.label !== expectedLabel) {
       throw contractError('INVALID_RULES', 'Gacha pull odds bands must use canonical ordering');
     }
     if (
@@ -130,7 +131,7 @@ export function validateGachaPullOddsRuleSet(value: unknown): GachaPullOddsRuleS
     }
     bands.push(
       Object.freeze({
-        label: band.label,
+        label: expectedLabel,
         minimumInsuredValueMinor: minimum.toString(),
         probabilityPpm: band.probabilityPpm,
       }),
