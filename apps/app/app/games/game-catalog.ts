@@ -3,6 +3,7 @@ export type GameAvailability = 'gated' | 'playable' | 'preview';
 export type GameMode = {
   actionLabel: string;
   availability: GameAvailability;
+  detailsHref: string;
   description: string;
   eyebrow: string;
   href: string | null;
@@ -49,6 +50,7 @@ export const gameModes: readonly GameMode[] = [
   {
     actionLabel: 'Enter duel arena',
     availability: 'playable',
+    detailsHref: '/overview',
     description:
       'Open identical pack tiers against a wallet or the house. The higher committed card value wins the duel.',
     eyebrow: 'Live devnet mode',
@@ -60,6 +62,7 @@ export const gameModes: readonly GameMode[] = [
   },
   {
     ...resolveFlipAvailability(FLIP_DEVNET_CAPABILITIES),
+    detailsHref: '/games/flip',
     description:
       'A solo card gacha built from a committed eligible inventory pool, versioned probability bands, and a finalized acquisition reveal.',
     eyebrow: 'Fixture-backed next',
@@ -71,6 +74,7 @@ export const gameModes: readonly GameMode[] = [
   {
     actionLabel: 'Rules gate pending',
     availability: 'gated',
+    detailsHref: '/games/crash',
     description:
       'Build a run through card stages, choosing to continue or cash out before a committed bust condition ends the session.',
     eyebrow: 'Architecture gate',

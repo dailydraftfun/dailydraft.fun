@@ -19,6 +19,9 @@ describe('game lobby', () => {
     expect(markup).toContain('Enter duel arena');
     expect(markup).toContain('Provider gate pending');
     expect(markup).toContain('Rules gate pending');
+    expect(markup).toContain('href="/games/flip"');
+    expect(markup).toContain('href="/games/crash"');
+    expect(markup).toContain('Full UX test lab');
     expect(markup).not.toContain('href="/flip"');
     expect(markup).not.toContain('href="/crash"');
   });
