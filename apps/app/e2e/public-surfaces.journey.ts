@@ -69,7 +69,7 @@ test('reports no serious or critical violations across the deterministic duel jo
 
 for (const surface of [
   {
-    heading: /two packs/i,
+    heading: /own the cards/i,
     label: 'marketing',
     url: 'http://127.0.0.1:3000',
   },

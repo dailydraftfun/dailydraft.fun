@@ -17,16 +17,16 @@ describe('game preview page contract', () => {
     const page = await GamePreviewPage({ params: Promise.resolve({ mode: 'flip' }) });
     const markup = renderToStaticMarkup(page);
 
-    expect(metadata.title).toBe('Flip Gacha UX preview — Pack Duel Devnet');
+    expect(metadata.title).toBe('Sports Pack Gacha UX preview — Grail Devnet');
     expect(markup).toContain('Full UX preview');
-    expect(markup).toContain('Flip Gacha');
+    expect(markup).toContain('Sports Pack Gacha');
   });
 
-  test('publishes Crash and House metadata', async () => {
+  test('publishes Streak and House metadata', async () => {
     const crash = await generateMetadata({ params: Promise.resolve({ mode: 'crash' }) });
     const house = await generateMetadata({ params: Promise.resolve({ mode: 'house' }) });
 
-    expect(crash.title).toBe('Crash UX preview — Pack Duel Devnet');
-    expect(house.title).toBe('Instant House UX preview — Pack Duel Devnet');
+    expect(crash.title).toBe('Card Streak UX preview — Grail Devnet');
+    expect(house.title).toBe('Instant House UX preview — Grail Devnet');
   });
 });

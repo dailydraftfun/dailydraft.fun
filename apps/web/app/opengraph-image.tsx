@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-export const alt = 'Pack Duel — Two packs. One winner.';
+export const alt = 'Grail — Own the cards. Field the squad.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -28,7 +28,7 @@ export default function OpenGraphImage() {
             letterSpacing: 4,
           }}
         >
-          TRADING CARD DUELS ON SOLANA
+          SPORTS FANTASY CASINO ON SOLANA
         </div>
         <div
           style={{
@@ -41,15 +41,18 @@ export default function OpenGraphImage() {
             marginTop: 28,
           }}
         >
-          <span>Two packs.</span>
-          <span style={{ color: '#b8ff5a' }}>One winner.</span>
+          <span>Own the cards.</span>
+          <span style={{ color: '#b8ff5a' }}>Win the game.</span>
         </div>
         <div style={{ color: '#9aa39b', display: 'flex', fontSize: 25, marginTop: 34 }}>
-          Rip together. Higher verified pull takes both cards.
+          Real vaulted cards. Live match data. Powered by Collector Crypt.
         </div>
       </div>
       <div style={{ alignItems: 'center', display: 'flex', gap: 18 }}>
-        {['#b8ff5a', '#a78bfa'].map((accent, index) => (
+        {[
+          { accent: '#b8ff5a', sport: 'FOOTBALL' },
+          { accent: '#a78bfa', sport: 'HOOPS' },
+        ].map(({ accent, sport }, index) => (
           <div
             key={accent}
             style={{
@@ -67,9 +70,9 @@ export default function OpenGraphImage() {
               width: 210,
             }}
           >
-            <span style={{ display: 'flex', fontSize: 14, letterSpacing: 3 }}>PACK</span>
-            <span style={{ display: 'flex', fontSize: 44, fontWeight: 700 }}>DUEL</span>
-            <span style={{ display: 'flex', fontSize: 22, marginTop: 90 }}>$50</span>
+            <span style={{ display: 'flex', fontSize: 14, letterSpacing: 3 }}>GRADED</span>
+            <span style={{ display: 'flex', fontSize: 40, fontWeight: 700 }}>{sport}</span>
+            <span style={{ display: 'flex', fontSize: 22, marginTop: 90 }}>$100</span>
           </div>
         ))}
       </div>
