@@ -24,6 +24,9 @@ const MAX_PLACES_PER_POSITION = 32;
 const MAX_HOLDERS_PER_PLACE = 4_096;
 const MAX_PLACE_BASIS_POINTS = 10_000n;
 const MAX_MONEY_AMOUNT = 79_228_162_514_264_337_593_543_950_335n;
+// `FantasyPayoutAllocation.eligibleShares` persists as a Postgres INTEGER, so share
+// counts must be rejected at the domain boundary rather than at insert time.
+const MAX_ELIGIBLE_SHARES = 1_000_000_000n;
 
 export type FantasyPayoutErrorCode =
   | 'BASIS_POINTS_TOTAL_MISMATCH'
@@ -379,7 +382,11 @@ function distributeToHolders(
       );
     }
     seenWallets.add(holder.walletAddress);
-    const eligibleShares = parseUnsignedAmount(holder.eligibleShares, 'holder eligible shares');
+    const eligibleShares = parseUnsignedAmount(
+      holder.eligibleShares,
+      'holder eligible shares',
+      MAX_ELIGIBLE_SHARES,
+    );
     totalShares += eligibleShares;
     parsed.push({ eligibleShares, walletAddress: holder.walletAddress });
   }
@@ -417,7 +424,7 @@ function parseBasisPoints(value: unknown): bigint {
   return bps;
 }
 
-function parseUnsignedAmount(value: unknown, field: string): bigint {
+function parseUnsignedAmount(value: unknown, field: string, max = MAX_MONEY_AMOUNT): bigint {
   if (typeof value !== 'string' || !FANTASY_UNSIGNED_INTEGER_PATTERN.test(value)) {
     throw contractError(
       'INVALID_INPUT',
@@ -425,7 +432,7 @@ function parseUnsignedAmount(value: unknown, field: string): bigint {
     );
   }
   const amount = BigInt(value);
-  if (amount > MAX_MONEY_AMOUNT) {
+  if (amount > max) {
     throw contractError('INVALID_INPUT', `Fantasy payout ${field} exceeds the configured bound`);
   }
   return amount;

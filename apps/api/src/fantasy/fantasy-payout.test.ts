@@ -203,6 +203,43 @@ describe('versioned position-weighted fantasy payout calculator', () => {
     }
   });
 
+  test('rejects holder eligible shares beyond the persisted INTEGER bound', () => {
+    try {
+      calculateFantasyPayouts(FIXTURE_RULES, {
+        placements: [
+          {
+            // One past MAX_ELIGIBLE_SHARES; still far below MAX_MONEY_AMOUNT, so this
+            // only fails if shares are bounded by the int4-appropriate limit.
+            holders: [{ eligibleShares: '1000000001', walletAddress: WALLET.fwd1 }],
+            place: 1,
+            playerId: 'fwd_player_1',
+            position: 'FORWARD',
+          },
+        ],
+        prizePool: USDC('1000000'),
+      });
+      throw new Error('expected calculation to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(FantasyPayoutContractError);
+      expect((error as FantasyPayoutContractError).code).toBe('INVALID_INPUT');
+    }
+  });
+
+  test('accepts holder eligible shares at exactly the persisted INTEGER bound', () => {
+    const result = calculateFantasyPayouts(FIXTURE_RULES, {
+      placements: [
+        {
+          holders: [{ eligibleShares: '1000000000', walletAddress: WALLET.fwd1 }],
+          place: 1,
+          playerId: 'fwd_player_1',
+          position: 'FORWARD',
+        },
+      ],
+      prizePool: USDC('1000000'),
+    });
+    expect(result.allocations[0]?.holderRewards[0]?.eligibleShares).toBe('1000000000');
+  });
+
   test('rejects a place below the first configured rank', () => {
     try {
       calculateFantasyPayouts(FIXTURE_RULES, {

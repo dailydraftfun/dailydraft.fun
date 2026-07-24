@@ -9,9 +9,16 @@ export type FantasySport = (typeof FANTASY_SPORTS)[number];
 export const FANTASY_POSITIONS = ['GOALKEEPER', 'DEFENDER', 'MIDFIELDER', 'FORWARD'] as const;
 export type FantasyPosition = (typeof FANTASY_POSITIONS)[number];
 
-// Shared canonical contract patterns. These mirror the CHECK constraints on the
-// fantasy tables so the application layer fails closed on the same invariants the
-// database enforces.
+// Shared canonical contract patterns.
+//
+// The rules-hash and rules-version patterns mirror CHECK constraints on the fantasy
+// tables, so the application layer fails closed on the same invariants the database
+// enforces. The integer patterns are deliberately *stricter* than their CHECK
+// counterparts (the database permits leading zeros and `-0`; these do not).
+//
+// The stat-key and Solana-address patterns have no database counterpart at all —
+// stat keys live in opaque JSONB and `walletAddress` is an unconstrained TEXT column.
+// For those two, this application-layer gate is the only enforcement point.
 export const FANTASY_RULES_HASH_PATTERN = /^[a-f0-9]{64}$/;
 export const FANTASY_RULES_VERSION_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,127}$/;
 export const FANTASY_UNSIGNED_INTEGER_PATTERN = /^(0|[1-9]\d*)$/;
