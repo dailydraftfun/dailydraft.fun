@@ -18,10 +18,10 @@ cluster genesis hash, follows `confirmed` progress, requires `finalized` before
 advancing a duel, and re-verifies the transaction signature, recent blockhash,
 signer, and one uniquely matching target instruction. That instruction must
 match the escrow program, encoded-data hash, and exact ordered account signer/write
-constraints recorded by the prepared intent. A once-daily Vercel Hobby recovery
-pass calls `GET /v1/internal/reconciliation/solana` with `CRON_SECRET`; operators
-can run the same global batch with `POST` and either the cron secret or an
-integration key. Normal finality does not wait for that recovery pass.
+constraints recorded by the prepared intent. An on-host cron.d timer calls
+`GET /v1/internal/reconciliation/solana` daily at 03:00 UTC with `CRON_SECRET`;
+operators can run the same global batch with `POST` and either the cron secret
+or an integration key. Normal finality does not wait for that recovery pass.
 
 An authenticated signer can explicitly record a wallet rejection at
 `POST /v1/duels/{duelId}/transactions/{transactionId}/rejections` only when the
@@ -70,7 +70,8 @@ bun --filter @openpacksduel/db db:deploy
 bun run dev
 ```
 
-The API listens on `http://localhost:3003/v1`. Browser players authenticate by
+The local API listens on `http://localhost:3003/v1`; the production container
+listens on port 3000. Browser players authenticate by
 signing a five-minute, domain/URI/chain-bound Wallet Standard message. The API
 stores the nonce in PostgreSQL, consumes it once, and returns a 15-minute opaque
 session whose SHA-256 hash is the only token material persisted server-side.
@@ -146,8 +147,8 @@ field. The public allowlist contains UI intent only; lifecycle transitions and
 operational failures are recorded server-side. Payloads are capped at 20 events
 and each anonymous session is capped at 120 events per five minutes. Those caps
 are defense-in-depth, not abuse resistance: session churn bypasses them. A public
-production deployment must configure Vercel Firewall/IP rate limiting while the
-API continues not to persist network identifiers.
+production deployment must configure upstream or host-level IP rate limiting
+while the API continues not to persist network identifiers.
 
 `GET /v1/analytics/funnel` requires an integration key and returns only
 aggregates: funnel conversion, match/provider latency percentiles, abandonment,
@@ -209,7 +210,7 @@ SPL mints, revokes both authorities, and atomically deposits each demo card into
 the canonical Duel v4 vault. A signed, replay-safe reference binds the duel,
 side, and pack; the immutable database snapshot and result hash bind the selected
 Pokémon TCG card, displayed market value, image, and deterministic mint. The provider keypair
-is a sensitive server-only Vercel variable and must match `ESCROW_PROVIDER_SIGNER`.
+is a sensitive server-only SSM SecureString and must match `ESCROW_PROVIDER_SIGNER`.
 After both deposits, the API signs and monitors result commitment and settlement
 transactions until finalized. These are valueless OpenPacks demo collectibles,
 not Collector Crypt inventory.
@@ -253,15 +254,15 @@ sealed, append-only revision.
 The snapshot service accepts provider fixtures only and has no HTTP controller
 or live marketplace client. It also requires
 `OPENPACKSDUEL_FLIP_FIXTURE_MODE=true` in tests, local development, or an
-explicit Vercel preview. Production remains fail-closed until the separate
+explicit non-production preview. Production remains fail-closed until the separate
 reviewed rules, acquisition, legal, and promotion gates are complete.
 
 `SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every
 worker validates the official devnet genesis hash before reading transaction
 state. Funding preparation additionally requires `ESCROW_PROGRAM_ID`,
 `ESCROW_PROVIDER_SIGNER`, `ESCROW_FEE_RECIPIENT`, and
-`OPENPACKSDUEL_DEVNET_FEE_LAMPORTS`; it fails closed if any value is missing or invalid. Set a long
-random `CRON_SECRET` in Vercel.
+`OPENPACKSDUEL_DEVNET_FEE_LAMPORTS`; it fails closed if any value is missing or invalid. Store a long
+random `CRON_SECRET` in SSM under `/openpacksduel/api/prod/CRON_SECRET`.
 
 `collector-crypt-sandbox` is a fail-closed adapter stub: no undocumented HTTP
 paths or response shapes are assumed. It remains unavailable until Collector
@@ -297,16 +298,19 @@ persistence, provider, wallet, entropy, clock, transaction, or production
 activation path. Live Crash economics and custody remain disabled until their
 separate HITL approval and promotion gate is complete.
 
-## Vercel
+## AWS production runtime
 
-The Vercel project uses `apps/api` as its Root Directory, but CLI deploys must be
-started from the monorepo root so the `@openpacksduel/db` workspace is uploaded.
-`api/index.ts` caches one initialized Nest/Fastify application per warm Node
-24 function instance and disables process shutdown hooks in serverless mode.
+The API runs as the long-lived `openpacksduel` Docker container on the shared
+network attached to `shipshit-caddy`. Caddy terminates TLS and proxies the API
+hostname to `openpacksduel:3000`. GitHub Actions builds the root-context image,
+uploads an immutable archive to S3, and invokes
+`/usr/local/bin/deploy-openpacksduel` through AWS Systems Manager.
 
-The build generates Prisma Client and explicitly includes it in the function
-trace. Database migrations are never run during a Vercel build. Follow the
-ordered migration and deploy procedure in `docs/devnet-runbook.md`.
+The host loads encrypted application values from
+`/openpacksduel/api/prod/`, applies committed Prisma migrations with
+`DATABASE_URL`, starts a candidate, and cuts Caddy over only after
+`GET /v1/health` reports database readiness. The 03:00 UTC Solana and 04:00 UTC
+treasury recovery passes are cron.d timers on the same host.
 
 Set `OPENPACKSDUEL_APP_URL` to the canonical HTTPS app origin and
 `OPENPACKSDUEL_AUTH_DOMAIN` to its matching host. Only localhost may use HTTP.

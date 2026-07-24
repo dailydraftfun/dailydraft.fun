@@ -9,8 +9,8 @@ import {
 
 const OPENAPI = `openapi: 3.1.0
 servers:
-  - url: https://openpacksduel-api.vercel.app/v1
-    description: Canonical hosted devnet API (not mainnet)
+  - url: https://api.CHANGEME/v1
+    description: Deployment placeholder for the hosted devnet API (not mainnet)
 paths:
   /health:
     get:
@@ -26,7 +26,7 @@ components:
 describe('API production artifact contract', () => {
   test('accepts the documented Bun entrypoints, bound OpenAPI, and persistence profiles', () => {
     const checks = evaluateStaticArtifact({
-      files: new Set(['api/index.js', 'src/main.js', 'openapi.yaml', 'production-manifest.json']),
+      files: new Set(['src/main.js', 'openapi.yaml', 'production-manifest.json']),
       manifest: createProductionArtifactManifest(OPENAPI),
       openapiText: OPENAPI,
       packageManager: 'bun@1.3.13',
@@ -40,7 +40,7 @@ describe('API production artifact contract', () => {
 
   test('reports missing entrypoints, drifted OpenAPI, runtime drift, and a live production server', () => {
     const productionOpenApi = OPENAPI.replace(
-      'https://openpacksduel-api.vercel.app/v1',
+      'https://api.CHANGEME/v1',
       'https://api.openpacksduel.com/v1',
     );
     const checks = evaluateStaticArtifact({
@@ -54,7 +54,6 @@ describe('API production artifact contract', () => {
       expect.arrayContaining([
         'runtime',
         'start-entrypoint',
-        'entrypoint-api/index.js',
         'entrypoint-src/main.js',
         'openapi-artifact',
         'server-state',
@@ -68,7 +67,7 @@ describe('API production artifact contract', () => {
       'required: [status]',
     );
     const checks = evaluateStaticArtifact({
-      files: new Set(['api/index.js', 'src/main.js', 'openapi.yaml']),
+      files: new Set(['src/main.js', 'openapi.yaml']),
       manifest: createProductionArtifactManifest(incomplete),
       openapiText: incomplete,
       packageManager: 'bun@1.3.13',
@@ -99,7 +98,7 @@ describe('API production artifact contract', () => {
       environmentContract: 'other.v1',
     } as unknown as typeof manifest;
     const checks = evaluateStaticArtifact({
-      files: new Set(['api/index.js', 'src/main.js', 'openapi.yaml']),
+      files: new Set(['src/main.js', 'openapi.yaml']),
       manifest: drifted,
       openapiText: OPENAPI,
       packageManager: 'bun@1.3.13',

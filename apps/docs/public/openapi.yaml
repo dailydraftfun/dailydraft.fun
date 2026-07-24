@@ -18,8 +18,8 @@ info:
 servers:
   - url: http://localhost:3003/v1
     description: Local development
-  - url: https://openpacksduel-api.vercel.app/v1
-    description: Canonical hosted devnet API (not mainnet)
+  - url: https://api.CHANGEME/v1
+    description: Deployment placeholder for the hosted devnet API pending DNS cutover (not mainnet)
 tags:
   - name: Authentication
     description: Replay-safe Solana devnet wallet ownership sessions.
@@ -960,10 +960,10 @@ paths:
       tags: [Operations]
       summary: Reconcile a bounded batch of submitted Solana transactions
       description: |
-        Vercel Cron supplies `Authorization: Bearer $CRON_SECRET`. Confirmed
-        transactions remain pending; only finalized and verified transactions
-        can advance duel state. The same bounded pass can recover an exact
-        persisted prepared funding message from its escrow-PDA history.
+        The on-host cron.d timer supplies `Authorization: Bearer $CRON_SECRET`.
+        Confirmed transactions remain pending; only finalized and verified
+        transactions can advance duel state. The same bounded pass can recover
+        an exact persisted prepared funding message from its escrow-PDA history.
       x-openpacksduel-availability: devnet
       security:
         - cronSecret: []
@@ -1124,7 +1124,7 @@ paths:
         Only UI-intent events are accepted; canonical lifecycle and operational
         events are server-authored. The 120-event anonymous-session cap is
         defense-in-depth and can be bypassed through session churn. Production
-        must enforce Vercel Firewall/IP rate limiting before exposing this route.
+        must enforce upstream or host-level IP rate limiting before exposing this route.
       x-openpacksduel-availability: devnet
       requestBody:
         required: true
@@ -1558,7 +1558,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: random server secret
-      description: Vercel Cron bearer secret; accepted only by internal worker routes.
+      description: Host reconciliation timer bearer secret; accepted only by internal worker routes.
     integrationKey:
       type: http
       scheme: bearer

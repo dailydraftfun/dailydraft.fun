@@ -68,7 +68,7 @@ const report = {
   deployment: manifest?.deployment ?? null,
   environmentContract: manifest?.environmentContract ?? null,
   passed: checks.every((check) => check.passed),
-  schemaVersion: 1,
+  schemaVersion: 2,
 };
 await mkdir(dirname(reportPath), { recursive: true });
 await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
