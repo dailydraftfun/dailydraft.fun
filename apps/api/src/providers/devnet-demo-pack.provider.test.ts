@@ -42,6 +42,7 @@ describe('DevnetDemoPackProvider', () => {
     expect(opened.result.assetReference).toBe(MINT.toBase58());
     expect(opened.result.poolVersion).toBe('openpacksduel-devnet-pokemon.v1');
     expect(opened.result.valuationSourceReference).toContain(':tcgplayer:holofoil:market:');
+    provider.verifyOpenedSnapshot(opened);
     expect(signer.deposits).toEqual([{ duel: DUEL, role: 'creator' }]);
   });
 

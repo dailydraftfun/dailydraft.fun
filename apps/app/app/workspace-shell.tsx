@@ -15,7 +15,7 @@ function BrandMark() {
 
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const gamesNavigationActive = pathname === '/games';
+  const gamesNavigationActive = isGamesNavigationActive(pathname);
   const duelNavigationActive = pathname === '/overview' || pathname.startsWith('/duel/');
   const leaderboardNavigationActive = pathname === '/leaderboard';
 
@@ -69,4 +69,8 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
+}
+
+export function isGamesNavigationActive(pathname: string) {
+  return pathname === '/games' || pathname.startsWith('/games/');
 }

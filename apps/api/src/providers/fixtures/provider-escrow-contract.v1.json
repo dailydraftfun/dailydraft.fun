@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "openpacksduel.provider-escrow-fixture.v1",
+  "duelId": "fixture-duel",
+  "escrowRecipient": "fixture-escrow-wallet",
+  "providerPackId": "pokemon_50",
+  "inventory": [
+    {
+      "assetReference": "fixture-card-charizard",
+      "displayName": "Fixture Charizard",
+      "insuredValueAmount": "50000001"
+    },
+    {
+      "assetReference": "fixture-card-pikachu",
+      "displayName": "Fixture Pikachu",
+      "insuredValueAmount": "50000000"
+    }
+  ],
+  "openRequests": [
+    {
+      "side": "creator",
+      "generateIdempotencyKey": "fixture-duel:creator:generate",
+      "openIdempotencyKey": "fixture-duel:creator:open",
+      "providerReference": "fixture-creator",
+      "recipientWallet": "fixture-escrow-wallet"
+    },
+    {
+      "side": "opponent",
+      "generateIdempotencyKey": "fixture-duel:opponent:generate",
+      "openIdempotencyKey": "fixture-duel:opponent:open",
+      "providerReference": "fixture-opponent",
+      "recipientWallet": "fixture-escrow-wallet"
+    }
+  ],
+  "results": [
+    {
+      "side": "creator",
+      "providerReference": "fixture-creator",
+      "assetReference": "fixture-card-charizard",
+      "displayName": "Fixture Charizard",
+      "insuredValueAmount": "50000001"
+    },
+    {
+      "side": "opponent",
+      "providerReference": "fixture-opponent",
+      "assetReference": "fixture-card-pikachu",
+      "displayName": "Fixture Pikachu",
+      "insuredValueAmount": "50000000"
+    }
+  ],
+  "winnerHistory": {
+    "winnerSide": "creator",
+    "creatorProviderReference": "fixture-creator",
+    "opponentProviderReference": "fixture-opponent",
+    "settlementAllowedAfterBothResults": true
+  },
+  "outage": {
+    "ambiguousSide": "opponent",
+    "recoveryStatus": "RECOVERY_REQUIRED",
+    "reuseOpenIdempotencyKey": "fixture-duel:opponent:open",
+    "settlementAllowed": false
+  }
+}

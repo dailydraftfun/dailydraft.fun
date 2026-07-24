@@ -88,6 +88,10 @@ test('completes tabs, dialogs, cancellation, disclosure, share, and rematch with
 
   const settled = journey.snapshot().duel;
   expect(settled?.status).toBe('settled');
+  await expect(page.getByTestId(journeyTestIds.duelHeadline)).toHaveText(
+    'Outcome locked. Reveal in 3…',
+  );
+  await expect(page.getByTestId(journeyTestIds.duelPhase)).toContainText('Outcome committed');
   await page.clock.fastForward(6_000);
   await expect(page.getByTestId(journeyTestIds.resultMargin)).toHaveText('$31.5');
 

@@ -16,6 +16,7 @@ import {
 } from './duels.controller.js';
 import { DuelsService } from './duels.service.js';
 import { PrismaDuelRepository } from './prisma-duel.repository.js';
+import { ProviderOpeningRepository } from './provider-opening.repository.js';
 
 @Module({
   controllers: [DuelsController, DuelProfilesController, DuelLeaderboardController],
@@ -30,6 +31,7 @@ import { PrismaDuelRepository } from './prisma-duel.repository.js';
   providers: [
     DuelsService,
     DuelOpeningService,
+    ProviderOpeningRepository,
     IntegrationKeyGuard,
     { provide: DuelRepository, useClass: PrismaDuelRepository },
   ],

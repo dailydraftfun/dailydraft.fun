@@ -7,6 +7,7 @@ import {
   CheckCircleIcon,
   CrosshairIcon,
   CubeIcon,
+  FlaskIcon,
   LightningIcon,
   LockKeyIcon,
   ReceiptIcon,
@@ -78,6 +79,40 @@ export function GameLobby() {
           {gameModes.map((game) => (
             <GameModeCard game={game} key={game.id} />
           ))}
+        </div>
+      </section>
+
+      <section
+        className="grid gap-5 rounded-xl border border-lime/20 bg-lime/5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto]"
+        aria-labelledby="test-lab-title"
+      >
+        <div>
+          <p className="proof-label">Full UX test lab</p>
+          <h2 id="test-lab-title" className="mt-2 text-2xl font-semibold text-primary">
+            Test every player loop before the engines go live.
+          </h2>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-secondary">
+            Fixture previews exercise Flip reveal, Crash decisions, House admission, receipts, and
+            activity receipt UI without connecting a wallet or moving funds.
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:w-[25rem]">
+          <Link className="proof-secondary-action gap-2" href="/games/activity">
+            <ReceiptIcon size={15} />
+            Activity
+          </Link>
+          <Link className="proof-secondary-action gap-2" href="/games/flip">
+            <CardsThreeIcon size={15} weight="fill" />
+            Flip
+          </Link>
+          <Link className="proof-secondary-action gap-2" href="/games/crash">
+            <ChartLineUpIcon size={15} weight="bold" />
+            Crash
+          </Link>
+          <Link className="proof-secondary-action gap-2" href="/games/house">
+            <SwordIcon size={15} weight="fill" />
+            Instant House
+          </Link>
         </div>
       </section>
 
@@ -214,12 +249,18 @@ function GameModeCard({ game }: { game: GameMode }) {
             {game.actionLabel}
           </Link>
         ) : (
-          <div
-            className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-border bg-tertiary px-4 py-2 text-center text-xs font-semibold text-secondary"
-            role="status"
-          >
-            <LockKeyIcon size={15} />
-            {game.actionLabel}
+          <div className="grid gap-2">
+            <Link className="proof-secondary-action w-full gap-2" href={game.detailsHref}>
+              <FlaskIcon size={15} weight="fill" />
+              Open {game.name} UX preview
+            </Link>
+            <div
+              className="flex min-h-10 items-center justify-center gap-2 rounded-md border border-border bg-tertiary px-4 py-2 text-center text-xs font-semibold text-secondary"
+              role="status"
+            >
+              <LockKeyIcon size={15} />
+              {game.actionLabel}
+            </div>
           </div>
         )}
       </div>

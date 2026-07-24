@@ -6,6 +6,7 @@ import { IdempotencyKey } from '../common/idempotency-key.decorator.js';
 import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
 // biome-ignore lint/style/useImportType: Nest needs the DTO constructor for runtime route validation metadata.
 import { DuelIdParams } from '../duels/duel.dto.js';
+import { RealValueAdmission, RealValuePolicyGuard } from '../policy/real-value-policy.guard.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { DuelFundingService } from './duel-funding.service.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
@@ -99,6 +100,8 @@ export class ProviderSettlementController {
 
   @Post()
   @HttpCode(201)
+  @RealValueAdmission('provider.escrow.prepare')
+  @UseGuards(RealValuePolicyGuard)
   prepare(
     @Param() params: DuelIdParams,
     @Body() input: PrepareProviderEscrowRequest,

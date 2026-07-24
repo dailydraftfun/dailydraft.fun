@@ -47,6 +47,21 @@ normalizes USDC insured values, compares integer amounts, and records a public,
 sanitized result ready for the settlement service. House and wallet opponents
 use the same path.
 
+Before any provider request, the opening orchestrator commits one immutable
+operation per duel side with the exact provider pack, escrow recipient, and
+stable generate/open idempotency keys. An ambiguous request enters
+`RECOVERY_REQUIRED`; retries poll the committed provider reference first and
+reuse the same keys rather than issuing a second logical open. Reveal readiness
+is emitted only after both card identifiers, normalized result hashes, bounded
+raw response payloads, and provider-verified signatures are durable.
+
+The deterministic mock response signature is fixture-only and remains restricted
+to devnet tests and previews. The OpenPacks devnet provider signs the same
+evidence envelope with its server-only provider key. Collector Crypt operations
+remain fail-closed until the partner contract, credentials, alternate-recipient
+behavior, and response-signature verification are approved; this evidence
+contract does not promote or enable that integration.
+
 ## Local development
 
 ```bash
@@ -91,6 +106,37 @@ explicit endpoint, includes disclosure in the session response, and remains disa
 by default through `OPENPACKSDUEL_HOUSE_ENABLED=false`. It is never an automatic queue
 conversion. Wallet-level limits do not prevent coordinated multi-wallet abuse, which
 still requires upstream identity/risk controls before mainnet.
+
+## Real-value policy admission
+
+Every authenticated HTTP boundary that can create exposure records an immutable
+`RealValuePolicyDecision` before the operation runs. The guarded capabilities are
+direct, open, and House duel creation; direct join; public matchmaking and House
+fallback; funding preparation; pack opening; and provider escrow preparation.
+Cancellation, wallet rejection, settlement/refund recovery, and reconciliation
+remain outside the admission gate so a policy denial cannot trap existing funds.
+
+Fixture and Solana devnet operations use the hash-pinned
+`openpacksduel.non-production-policy.v1` contract. They remain testable while every
+decision explicitly records `productionEnabled: false` and retains no production
+approval evidence. A malformed policy document still fails closed even in
+non-production, preventing a broken deployment from being mistaken for approval.
+
+Real-value mode is deny-by-default. Production admission requires all three:
+
+- `OPENPACKSDUEL_REAL_VALUE_MODE=true`
+- `OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED=true`
+- a strict `OPENPACKSDUEL_REAL_VALUE_POLICY_JSON` document using schema
+  `openpacksduel.real-value-policy.v1`
+
+The document binds one policy version, explicit capabilities, and stable evidence
+references for legal, jurisdiction, age, limits, sanctions, disclosure, and
+production approval. Missing or malformed inputs return
+`REAL_VALUE_POLICY_DENIED` with a stable machine-readable reason. The exact
+canonical document hash and evidence are retained for each attempt; the database
+rejects updates or deletes to those records. No legal decision, jurisdiction,
+threshold, vendor, credential, or production approval is committed in this
+repository.
 
 ## Privacy-safe observability
 

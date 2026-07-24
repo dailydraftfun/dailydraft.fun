@@ -1,0 +1,41 @@
+import { Body, Controller, Get, Header, HttpCode, Param, Post } from '@nestjs/common';
+
+// biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
+import { CreateFixtureGachaRipRequest, GachaMachineParams } from './gacha.dto.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { GachaInventorySnapshotService } from './gacha-inventory-snapshot.service.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { GachaRipService } from './gacha-rip.service.js';
+
+@Controller('gacha')
+export class GachaController {
+  constructor(
+    private readonly snapshots: GachaInventorySnapshotService,
+    private readonly rips: GachaRipService,
+  ) {}
+
+  @Get('capability')
+  @Header('cache-control', 'no-store')
+  capability() {
+    return this.rips.capability();
+  }
+
+  @Get('machines/:machineKey/inventory')
+  @Header('cache-control', 'no-store')
+  findInventory(@Param() params: GachaMachineParams) {
+    return this.snapshots.findLatestSealed(params.machineKey);
+  }
+
+  @Get('machines/:machineKey/odds')
+  @Header('cache-control', 'no-store')
+  findOdds(@Param() params: GachaMachineParams) {
+    return this.rips.findCommittedOdds(params.machineKey);
+  }
+
+  @Post('rips')
+  @HttpCode(201)
+  @Header('cache-control', 'no-store')
+  createFixtureRip(@Body() input: CreateFixtureGachaRipRequest) {
+    return this.rips.createFixtureRip(input);
+  }
+}
