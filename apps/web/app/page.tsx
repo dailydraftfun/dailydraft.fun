@@ -15,22 +15,26 @@ const steps = [
   {
     number: '01',
     title: 'Rip a sports pack',
-    detail: 'Open a Collector Crypt football, soccer, baseball, or basketball pack and pull a real, vaulted, graded card.',
+    detail:
+      'Open a Collector Crypt football, soccer, baseball, or basketball pack and pull a real, vaulted, graded card.',
   },
   {
     number: '02',
     title: 'Build your squad',
-    detail: 'Hold the players you believe in. Your cards are the roster you take into every tournament.',
+    detail:
+      'Hold the players you believe in. Your cards are the roster you take into every tournament.',
   },
   {
     number: '03',
     title: 'Auto-enter tournaments',
-    detail: 'Squads lock at kickoff. No lineups to submit—if you hold the card before the whistle, you are in.',
+    detail:
+      'Squads lock at kickoff. No lineups to submit—if you hold the card before the whistle, you are in.',
   },
   {
     number: '04',
     title: 'Win on real match data',
-    detail: 'Live stats score your players. Top finishers by position pay out, weighted by the cards you hold.',
+    detail:
+      'Live stats score your players. Top finishers by position pay out, weighted by the cards you hold.',
   },
 ] as const;
 
@@ -43,7 +47,8 @@ const principles = [
   {
     icon: LockKeyIcon,
     title: 'Real cards, on-chain',
-    detail: 'Cards are Collector Crypt assets—real graded collectibles vaulted and tokenized on Solana.',
+    detail:
+      'Cards are Collector Crypt assets—real graded collectibles vaulted and tokenized on Solana.',
   },
   {
     icon: CheckCircleIcon,
@@ -110,7 +115,10 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <section className="duel-visual" aria-label="Preview of a Collector Crypt sports pack rip">
+          <section
+            className="duel-visual"
+            aria-label="Preview of a Collector Crypt sports pack rip"
+          >
             <div className="duel-status">
               <span className="live-dot" /> COLLECTOR CRYPT · SPORTS PACK
               <span>DEVNET</span>
@@ -210,8 +218,8 @@ export default function LandingPage() {
             </span>
             <h2>Every tournament becomes a story.</h2>
             <p>
-              Squad locked, players scoring, finished on the podium—each result gets a shareable card
-              that pulls the next collector into the arena.
+              Squad locked, players scoring, finished on the podium—each result gets a shareable
+              card that pulls the next collector into the arena.
             </p>
           </div>
           <div className="share-preview" aria-hidden="true">
