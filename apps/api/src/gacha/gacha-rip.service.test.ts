@@ -508,14 +508,19 @@ describe('GachaRipService', () => {
     const provider = new RecordingProvider();
     provider.failAcquisition = true;
     const service = serviceWith(database, provider);
+    const rules = validateGachaPullOddsRuleSet(createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH));
     const commitment = await service.createSeedCommitment(MACHINE_KEY);
+    // createSeedCommitment mints a fresh random serverSeed, so the landing band is only
+    // deterministic once the client seed is chosen against that specific server seed.
+    const serverSeed = requireStoredServerSeed(database, commitment.commitmentId);
+    const clientSeed = findSeedLandingInBand(rules, serverSeed, 'base');
 
     await expect(
       service.createFixtureRip({
         commitmentId: commitment.commitmentId,
         machineKey: MACHINE_KEY,
         recipientWallet: WALLET,
-        seed: FIXED_SEED,
+        seed: clientSeed,
       }),
     ).rejects.toThrow('Fixture acquisition failed');
     expect(database.rip).toMatchObject({ status: GachaRipStatus.FAILED });

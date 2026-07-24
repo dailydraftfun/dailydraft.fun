@@ -123,6 +123,7 @@ describe('GachaController', () => {
         acquiredAt: now,
         acquisitionReference: 'devnet-acquisition-reference',
         createdAt: now,
+        failedAssetReference: null,
         failedAt: null,
         failureReason: null,
         id: 'gacharip_fixture',
