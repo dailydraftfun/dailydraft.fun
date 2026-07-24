@@ -3,6 +3,9 @@ export type GameAvailability = 'gated' | 'playable' | 'preview';
 export type GameMode = {
   actionLabel: string;
   availability: GameAvailability;
+  // Absent for modes with no fixture preview built yet, so the lobby renders the
+  // gate status without linking to a route that would 404.
+  detailsHref?: string;
   description: string;
   eyebrow: string;
   href: string | null;
@@ -12,10 +15,44 @@ export type GameMode = {
   trustContract: string;
 };
 
+export type FlipCapabilities = {
+  acquisition: boolean;
+  odds: boolean;
+  provider: boolean;
+  settlement: boolean;
+};
+
+export const FLIP_DEVNET_CAPABILITIES = Object.freeze({
+  acquisition: false,
+  odds: false,
+  provider: false,
+  settlement: false,
+} satisfies FlipCapabilities);
+
+export function resolveFlipAvailability(caps: FlipCapabilities): {
+  actionLabel: string;
+  availability: GameAvailability;
+  href: string | null;
+} {
+  if (caps.provider && caps.odds && caps.acquisition && caps.settlement) {
+    return {
+      actionLabel: 'Rip a sports pack',
+      availability: 'playable',
+      href: '/games/flip',
+    };
+  }
+  return {
+    actionLabel: 'Collector Crypt gate pending',
+    availability: 'preview',
+    href: null,
+  };
+}
+
 export const gameModes: readonly GameMode[] = [
   {
     actionLabel: 'Enter duel arena',
     availability: 'playable',
+    detailsHref: '/overview',
     description:
       'Open identical sports pack tiers against a wallet or the house. The higher graded card value wins the duel.',
     eyebrow: 'Live devnet mode',
@@ -26,12 +63,11 @@ export const gameModes: readonly GameMode[] = [
     trustContract: 'Capability-gated packs, durable duel state, and public receipts.',
   },
   {
-    actionLabel: 'Collector Crypt gate pending',
-    availability: 'preview',
+    ...resolveFlipAvailability(FLIP_DEVNET_CAPABILITIES),
+    detailsHref: '/games/flip',
     description:
       'Rip a real, vaulted Collector Crypt sports pack — football, soccer, baseball, or basketball — from a committed inventory pool with versioned pull odds and a finalized on-chain acquisition.',
     eyebrow: 'Collector Crypt · next',
-    href: null,
     id: 'flip',
     name: 'Sports Pack Gacha',
     playerLoop: 'Pick a sport · commit the rip · reveal your card',
@@ -47,11 +83,13 @@ export const gameModes: readonly GameMode[] = [
     id: 'tournaments',
     name: 'Fantasy Tournaments',
     playerLoop: 'Hold your squad · lock at kickoff · score on real games',
-    trustContract: 'No entries until the match-data oracle, snapshot lock, and payout math are approved.',
+    trustContract:
+      'No entries until the match-data oracle, snapshot lock, and payout math are approved.',
   },
   {
     actionLabel: 'Rules gate pending',
     availability: 'gated',
+    detailsHref: '/games/crash',
     description:
       'Build a streak through card stages, choosing to continue or cash out before a committed bust condition ends the run.',
     eyebrow: 'Architecture gate',

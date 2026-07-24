@@ -191,16 +191,16 @@ that boundary.
 
    Never substitute `prisma db push`; migration history is the deployment
    contract. A failed migration stops the release before the function deploy.
-   The script sets `VERCEL_ORG_ID=team_KHSVltukbViA3Mbyd0KBdW22` and
+   The script sets `VERCEL_ORG_ID=team_hFVCbNU4RnfEpQOeSWRxmhEJ` and
    `VERCEL_PROJECT_ID=prj_rX5EyAaDo5slW8ea0mUDjwVhb1Xq`, so the repository’s
    frontend `.vercel/project.json` cannot redirect the deployment.
 3. For a preview-only deployment after the production database is already at
    the committed migration, deploy from the monorepo root:
 
    ```bash
-   VERCEL_ORG_ID=team_KHSVltukbViA3Mbyd0KBdW22 \
+   VERCEL_ORG_ID=team_hFVCbNU4RnfEpQOeSWRxmhEJ \
    VERCEL_PROJECT_ID=prj_rX5EyAaDo5slW8ea0mUDjwVhb1Xq \
-   vercel deploy --scope vincentshipsit
+   vercel deploy --scope shipshitdev
    ```
 
 4. Confirm the canonical alias and database readiness:

@@ -31,15 +31,30 @@ export interface ProviderCardResult {
   valuationPolicyHash: string;
 }
 
+export const PROVIDER_RESPONSE_EVIDENCE_SCHEMA_VERSION =
+  'openpacksduel.provider-response-evidence.v1';
+
+export interface ProviderResponseEvidence {
+  payloadHash: string;
+  rawPayload: string;
+  schemaVersion: typeof PROVIDER_RESPONSE_EVIDENCE_SCHEMA_VERSION;
+  signature: string;
+  signatureAlgorithm: string;
+  signingKeyReference: string;
+}
+
+export interface OpenedProviderPackSnapshot {
+  evidence: ProviderResponseEvidence;
+  openedAt: string;
+  providerReference: string;
+  result: ProviderCardResult;
+  status: 'opened';
+}
+
 export type ProviderPackSnapshot =
   | { providerReference: string; status: 'generated' | 'opening' }
   | { errorCode: string; providerReference: string; status: 'failed' }
-  | {
-      openedAt: string;
-      providerReference: string;
-      result: ProviderCardResult;
-      status: 'opened';
-    };
+  | OpenedProviderPackSnapshot;
 
 export abstract class PackProvider {
   abstract readonly mode: PackProviderMode;
@@ -47,4 +62,5 @@ export abstract class PackProvider {
   abstract generatePack(input: GeneratePackInput): Promise<GeneratedPack>;
   abstract getPack(providerReference: string): Promise<ProviderPackSnapshot>;
   abstract openPack(input: OpenPackInput): Promise<ProviderPackSnapshot>;
+  abstract verifyOpenedSnapshot(snapshot: OpenedProviderPackSnapshot): void;
 }

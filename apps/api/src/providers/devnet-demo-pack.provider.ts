@@ -14,6 +14,7 @@ import { DevnetDemoSignerService } from '../transactions/devnet-demo-signer.serv
 import type {
   GeneratedPack,
   GeneratePackInput,
+  OpenedProviderPackSnapshot,
   OpenPackInput,
   ProviderCardResult,
   ProviderPackSnapshot,
@@ -21,6 +22,11 @@ import type {
 import { PackProvider } from './pack-provider.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { PokemonTcgClient } from './pokemon-tcg.client.js';
+import {
+  assertProviderResponseEvidence,
+  createProviderResponseEvidence,
+  rawProviderResponsePayload,
+} from './provider-response-evidence.js';
 import { DEVNET_DEMO_VALUATION_POLICY_HASH } from './valuation-policy.js';
 
 const REFERENCE_PREFIX = 'opd1_';
@@ -113,6 +119,13 @@ export class DevnetDemoPackProvider extends PackProvider {
     }
     const opened = await this.ensureSnapshotDeposited(providerReference, reference, snapshot);
     return this.openedSnapshot(providerReference, opened.mint, opened.openedAt, snapshot);
+  }
+
+  verifyOpenedSnapshot(snapshot: OpenedProviderPackSnapshot): void {
+    assertProviderResponseEvidence(
+      snapshot,
+      this.signer.referenceMac(snapshot.evidence.rawPayload),
+    );
   }
 
   private async ensureSnapshotDeposited(
@@ -235,11 +248,21 @@ export class DevnetDemoPackProvider extends PackProvider {
       sourceTimestamp: Date;
     },
   ): ProviderPackSnapshot {
-    return {
+    const unsigned = {
       openedAt: openedAt.toISOString(),
       providerReference,
       result: resultFor(mint, snapshot),
       status: 'opened',
+    } as const;
+    const rawPayload = rawProviderResponsePayload(unsigned);
+    return {
+      ...unsigned,
+      evidence: createProviderResponseEvidence({
+        rawPayload,
+        signature: this.signer.referenceMac(rawPayload),
+        signatureAlgorithm: 'hmac-sha256-devnet',
+        signingKeyReference: 'openpacksduel-devnet-provider-v1',
+      }),
     };
   }
 

@@ -17,6 +17,7 @@ import { DuelMutationGuard } from '../auth/duel-mutation.guard.js';
 import { IdempotencyKey } from '../common/idempotency-key.decorator.js';
 import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
 import type { Duel, Page } from '../domain.js';
+import { RealValueAdmission, RealValuePolicyGuard } from '../policy/real-value-policy.guard.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { DuelFundingService } from '../transactions/duel-funding.service.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
@@ -50,7 +51,8 @@ export class DuelsController {
 
   @Post()
   @HttpCode(201)
-  @UseGuards(DuelMutationGuard)
+  @RealValueAdmission('duel.create')
+  @UseGuards(DuelMutationGuard, RealValuePolicyGuard)
   create(
     @Body() input: CreateDuelRequest,
     @CurrentDuelAuthentication() authentication: DuelAuthentication,
@@ -80,7 +82,8 @@ export class DuelsController {
 
   @Post(':duelId/join')
   @HttpCode(200)
-  @UseGuards(DuelMutationGuard)
+  @RealValueAdmission('duel.join')
+  @UseGuards(DuelMutationGuard, RealValuePolicyGuard)
   join(
     @Param() params: DuelIdParams,
     @Body() input: JoinDuelRequest,
@@ -118,7 +121,8 @@ export class DuelsController {
 
   @Post(':duelId/transactions')
   @HttpCode(201)
-  @UseGuards(DuelMutationGuard)
+  @RealValueAdmission('duel.funding.prepare')
+  @UseGuards(DuelMutationGuard, RealValuePolicyGuard)
   prepareTransaction(
     @Param() params: DuelIdParams,
     @Body() input: PrepareTransactionRequest,
@@ -161,7 +165,8 @@ export class DuelsController {
 
   @Post(':duelId/open-packs')
   @HttpCode(200)
-  @UseGuards(DuelMutationGuard)
+  @RealValueAdmission('duel.pack.open')
+  @UseGuards(DuelMutationGuard, RealValuePolicyGuard)
   async openPacks(
     @Param() params: DuelIdParams,
     @CurrentDuelAuthentication() authentication: DuelAuthentication,

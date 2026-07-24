@@ -5,10 +5,13 @@ import { AnalyticsModule } from './analytics/analytics.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { DuelsModule } from './duels/duels.module.js';
+import { FantasyModule } from './fantasy/fantasy.module.js';
 import { FlipInventoryModule } from './flip/flip-inventory.module.js';
+import { GachaModule } from './gacha/gacha.module.js';
 import { HealthModule } from './health/health.module.js';
 import { MatchmakingModule } from './matchmaking/matchmaking.module.js';
 import { PacksModule } from './packs/packs.module.js';
+import { RealValuePolicyModule } from './policy/real-value-policy.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
 import { TransactionsModule } from './transactions/transactions.module.js';
 import { HouseTreasuryModule } from './treasury/house-treasury.module.js';
@@ -20,10 +23,13 @@ import { HouseTreasuryModule } from './treasury/house-treasury.module.js';
     AnalyticsModule,
     AuthModule,
     HealthModule,
+    RealValuePolicyModule,
     MatchmakingModule,
     PacksModule,
     ProvidersModule,
     FlipInventoryModule,
+    GachaModule,
+    FantasyModule,
     DuelsModule,
     TransactionsModule,
     HouseTreasuryModule,
