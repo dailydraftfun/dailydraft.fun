@@ -6,9 +6,9 @@ describe('games page contract', () => {
   test('publishes the card games lobby with no-index preview metadata', () => {
     const markup = renderToStaticMarkup(<GamesPage />);
 
-    expect(markup).toContain('Three card loops');
-    expect(markup).toContain('Duels');
-    expect(metadata.title).toBe('Card games — Pack Duel Devnet');
+    expect(markup).toContain('Four sports loops');
+    expect(markup).toContain('Card Duels');
+    expect(metadata.title).toBe('Card games — Grail Devnet');
     expect(metadata.robots).toEqual({ follow: false, index: false, nocache: true });
   });
 });

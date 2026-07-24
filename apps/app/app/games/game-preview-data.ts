@@ -1,5 +1,13 @@
 export type PreviewMode = 'crash' | 'flip' | 'house';
 
+// Single source for preview mode naming so the client preview component and the
+// server-rendered route metadata cannot drift apart on a rebrand.
+export const previewModeTitles: Record<PreviewMode, string> = {
+  crash: 'Card Streak',
+  flip: 'Sports Pack Gacha',
+  house: 'Instant House',
+};
+
 export type PreviewCard = {
   imageUrl: string;
   name: string;

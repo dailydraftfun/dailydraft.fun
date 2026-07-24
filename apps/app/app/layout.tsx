@@ -9,11 +9,11 @@ import { WorkspaceShell } from './workspace-shell';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://openpacksduel.vercel.app'),
-  title: 'Pack Duel Devnet — Rip together. Winner takes all.',
+  title: 'Grail Devnet — Own the cards. Field the squad.',
   description:
-    'Devnet preview: challenge another wallet to a synchronized trading card pack duel using test SOL and test assets.',
+    'Devnet preview: rip real, vaulted sports cards from Collector Crypt and play sports fantasy loops on Solana using test SOL and test assets.',
   openGraph: {
-    siteName: 'Pack Duel Devnet',
+    siteName: 'Grail Devnet',
     type: 'website',
   },
   twitter: {

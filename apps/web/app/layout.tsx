@@ -7,20 +7,32 @@ import './globals.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://openpacksduel-web.vercel.app'),
-  title: 'Pack Duel — Two packs. One winner.',
+  title: 'Grail — Own the cards. Field the squad.',
   description:
-    'Challenge a friend or another wallet to a synchronized trading card pack duel on Solana.',
-  keywords: ['trading cards', 'pack opening', 'Solana', 'Pokémon cards', 'wallet duel'],
+    'A sports fantasy casino on Solana. Rip real, vaulted sports cards from Collector Crypt, build a squad, and win tournaments scored by live match data.',
+  keywords: [
+    'sports fantasy',
+    'fantasy casino',
+    'Solana',
+    'Collector Crypt',
+    'sports cards',
+    'football',
+    'soccer',
+    'baseball',
+    'basketball',
+  ],
   openGraph: {
-    title: 'Pack Duel — Two packs. One winner.',
-    description: 'Rip the same pack together. The higher verified card value takes both pulls.',
-    siteName: 'Pack Duel',
+    title: 'Grail — Own the cards. Field the squad.',
+    description:
+      'Rip real, vaulted sports cards from Collector Crypt and win tournaments scored by live match data on Solana.',
+    siteName: 'Grail',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Pack Duel — Two packs. One winner.',
-    description: 'Rip the same pack together. The higher verified card value takes both pulls.',
+    title: 'Grail — Own the cards. Field the squad.',
+    description:
+      'Rip real, vaulted sports cards from Collector Crypt and win tournaments scored by live match data on Solana.',
   },
 };
 

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { GameModePreview } from '../game-mode-preview';
-import type { PreviewMode } from '../game-preview-data';
+import { type PreviewMode, previewModeTitles } from '../game-preview-data';
 
 const previewModes = new Set<PreviewMode>(['crash', 'flip', 'house']);
 
@@ -15,9 +15,9 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: GamePreviewPageProps): Promise<Metadata> {
   const { mode } = await params;
   if (!isPreviewMode(mode)) return {};
-  const title = mode === 'flip' ? 'Flip Gacha' : mode === 'crash' ? 'Crash' : 'Instant House';
+  const title = previewModeTitles[mode];
   return {
-    title: `${title} UX preview — Pack Duel Devnet`,
+    title: `${title} UX preview — Grail Devnet`,
     description: `Fixture-backed ${title} player journey with no live funds or assets.`,
     robots: { follow: false, index: false, nocache: true },
   };

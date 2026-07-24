@@ -20,7 +20,12 @@ import {
 import Image from 'next/image';
 import Link from 'next/link';
 import { type ReactNode, useState } from 'react';
-import { type PreviewCard, type PreviewMode, previewCards } from './game-preview-data';
+import {
+  type PreviewCard,
+  type PreviewMode,
+  previewCards,
+  previewModeTitles,
+} from './game-preview-data';
 
 const modeCopy: Record<
   PreviewMode,
@@ -31,21 +36,21 @@ const modeCopy: Record<
     icon: <ChartLineUpIcon size={22} weight="bold" />,
     summary:
       'Continue through committed card stages or cash out the fixture pot before the next stage busts.',
-    title: 'Crash',
+    title: previewModeTitles.crash,
   },
   flip: {
     eyebrow: 'Solo acquisition loop',
     icon: <CardsThreeIcon size={22} weight="fill" />,
     summary:
       'Choose an eligible inventory pool, commit its probability band, reveal a selected card, then inspect acquisition finality.',
-    title: 'Flip Gacha',
+    title: previewModeTitles.flip,
   },
   house: {
     eyebrow: 'Instant duel liquidity',
     icon: <SwordIcon size={22} weight="fill" />,
     summary:
       'Accept a disclosed house opponent whose pack path is committed before either result can be observed.',
-    title: 'Instant House',
+    title: previewModeTitles.house,
   },
 };
 
