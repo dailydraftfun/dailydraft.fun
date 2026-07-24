@@ -20,7 +20,7 @@ describe('root layout contract', () => {
     expect(metadata.description).toContain('Collector Crypt');
     expect(metadata.description).toContain('sports fantasy loops on Solana');
     expect(metadata.openGraph?.siteName).toBe('Grail Devnet');
-    expect(metadata.twitter?.card).toBe('summary_large_image');
+    expect(metadata.twitter).toEqual(expect.objectContaining({ card: 'summary_large_image' }));
   });
 
   test('wraps every route in the workspace shell', () => {

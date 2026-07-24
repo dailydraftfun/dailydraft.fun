@@ -25,7 +25,7 @@ describe('marketing layout contract', () => {
     expect(metadata.openGraph?.description).toBe(
       'Rip real, vaulted sports cards from Collector Crypt and win tournaments scored by live match data on Solana.',
     );
-    expect(metadata.twitter?.card).toBe('summary_large_image');
+    expect(metadata.twitter).toEqual(expect.objectContaining({ card: 'summary_large_image' }));
     expect(metadata.twitter?.title).toBe('Grail — Own the cards. Field the squad.');
     expect(metadata.twitter?.description).toBe(metadata.openGraph?.description);
   });
