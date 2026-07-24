@@ -908,3 +908,238 @@ model GachaRip {
   @@index([snapshotContentHash])
   @@index([oddsRulesHash])
 }
+
+// Fantasy Tournaments foundation (sport.fun model on Solana, sourced from
+// Collector Crypt sports packs). Data model + module skeleton only; the loop
+// stays gated until the oracle feed, kickoff snapshot, and payout math are
+// approved. No live entries are accepted from these tables yet.
+
+enum FantasySport {
+  SOCCER
+  FOOTBALL
+  BASEBALL
+  BASKETBALL
+}
+
+enum FantasyPosition {
+  GOALKEEPER
+  DEFENDER
+  MIDFIELDER
+  FORWARD
+}
+
+enum FantasyTournamentStatus {
+  DRAFT
+  SCHEDULED
+  LOCKED
+  SCORING
+  SETTLED
+  CANCELLED
+}
+
+enum FantasyMatchResultStatus {
+  PENDING
+  CONFIRMED
+  VOIDED
+}
+
+// A player identity mapped to a Collector Crypt sports-card cohort. "Shares" are
+// ripped/vaulted graded cards attributed to this identity, not AMM units.
+model FantasyPlayer {
+  id                      String                   @id
+  sport                   FantasySport
+  position                FantasyPosition
+  collectorCryptPlayerRef String                   @unique
+  displayName             String
+  teamReference           String?
+  active                  Boolean                  @default(true)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  holdings                FantasyPlayerHolding[]
+  entries                 FantasyTournamentEntry[]
+
+  @@index([sport, position])
+  @@index([active, sport])
+}
+
+// A wallet's custody of graded cards attributed to a player. `shares` is the
+// count of eligible cards under the referenced custody record.
+model FantasyPlayerHolding {
+  id               String                   @id
+  walletAddress    String
+  playerId         String
+  shares           Int
+  custodyReference String                   @unique
+  acquiredAt       DateTime
+  releasedAt       DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  player           FantasyPlayer            @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  entries          FantasyTournamentEntry[]
+
+  @@unique([walletAddress, playerId, custodyReference])
+  @@index([playerId, walletAddress])
+  @@index([walletAddress])
+}
+
+// A scored window for a sport. Scoring/payout rule identities are committed on
+// the tournament so results and allocations are reproducible against a hash.
+model FantasyTournament {
+  id                String                    @id
+  sport             FantasySport
+  status            FantasyTournamentStatus   @default(DRAFT)
+  title             String
+  opensAt           DateTime
+  locksAt           DateTime
+  settlesAt         DateTime
+  prizePoolAmount   String
+  prizePoolCurrency String                    @default("USDC")
+  prizePoolDecimals Int                       @default(6)
+  scoringVersion    String
+  scoringRulesHash  String
+  payoutVersion     String
+  payoutRulesHash   String
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  entries           FantasyTournamentEntry[]
+  snapshots         FantasyKickoffSnapshot[]
+  matchResults      FantasyMatchResult[]
+  playerScores      FantasyPlayerScore[]
+  payoutAllocations FantasyPayoutAllocation[]
+
+  @@index([sport, status, locksAt])
+  @@index([status, settlesAt])
+}
+
+// A holding auto-entered into a tournament. One entry per holding per
+// tournament; `shares`/`playerId` are denormalized from the holding at enrol.
+model FantasyTournamentEntry {
+  id            String               @id
+  tournamentId  String
+  holdingId     String
+  walletAddress String
+  playerId      String
+  shares        Int
+  enrolledAt    DateTime
+  createdAt     DateTime             @default(now())
+  tournament    FantasyTournament    @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+  holding       FantasyPlayerHolding @relation(fields: [holdingId], references: [id], onDelete: Restrict)
+  player        FantasyPlayer        @relation(fields: [playerId], references: [id], onDelete: Restrict)
+
+  @@unique([tournamentId, holdingId])
+  @@index([tournamentId, playerId])
+  @@index([walletAddress])
+}
+
+// The sealed kickoff lock for a tournament: per-player eligible shares frozen at
+// match start. Immutable + revisioned, mirroring the flip inventory snapshot.
+model FantasyKickoffSnapshot {
+  id                 String                       @id
+  tournamentId       String
+  revision           Int
+  schemaVersion      String
+  policyVersion      String
+  policyHash         String
+  contentHash        String
+  policy             Json
+  eligibleShareTotal String
+  entryCount         Int
+  playerCount        Int
+  kickoffAt          DateTime
+  evaluatedAt        DateTime
+  sealedAt           DateTime?
+  createdAt          DateTime                     @default(now())
+  tournament         FantasyTournament            @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+  entries            FantasyKickoffSnapshotEntry[]
+
+  @@unique([tournamentId, revision])
+  @@unique([tournamentId, contentHash])
+  @@index([tournamentId, createdAt])
+}
+
+// One frozen holding row inside a kickoff snapshot. Player/wallet references are
+// denormalized strings so the sealed evidence stays self-contained.
+model FantasyKickoffSnapshotEntry {
+  id               String                 @id
+  snapshotId       String
+  ordinal          Int
+  walletAddress    String
+  playerId         String
+  position         FantasyPosition
+  eligibleShares   Int
+  custodyReference String
+  lockedAt         DateTime
+  snapshot         FantasyKickoffSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  @@unique([snapshotId, ordinal])
+  @@unique([snapshotId, custodyReference])
+  @@index([snapshotId, playerId])
+  @@index([snapshotId, position, playerId])
+}
+
+// Oracle-ingested match data for a player in a tournament. `statLine` is the raw
+// provider payload; scoring consumes it after the result is CONFIRMED.
+model FantasyMatchResult {
+  id                String                   @id
+  tournamentId      String
+  playerId          String
+  position          FantasyPosition
+  oracleMode        String
+  providerReference String
+  statLine          Json
+  status            FantasyMatchResultStatus @default(PENDING)
+  observedAt        DateTime
+  ingestedAt        DateTime                 @default(now())
+  tournament        FantasyTournament        @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+
+  @@unique([tournamentId, playerId, providerReference])
+  @@index([tournamentId, status])
+  @@index([tournamentId, playerId])
+}
+
+// Versioned scoring output for a player. `totalPoints` is signed milli-point
+// minor units (scale 1000); `calculationHash` binds the rule set + inputs.
+model FantasyPlayerScore {
+  id               String            @id
+  tournamentId     String
+  playerId         String
+  position         FantasyPosition
+  scoringVersion   String
+  scoringRulesHash String
+  calculationHash  String
+  totalPoints      String
+  pointsScale      Int               @default(1000)
+  breakdown        Json
+  computedAt       DateTime          @default(now())
+  tournament       FantasyTournament @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+
+  @@unique([tournamentId, playerId, scoringRulesHash])
+  @@index([tournamentId, position])
+}
+
+// Versioned position-weighted payout allocation for one holder placement. Sum of
+// place basis points across positions is 10000; amounts are USDC minor units.
+model FantasyPayoutAllocation {
+  id                    String            @id
+  tournamentId          String
+  payoutVersion         String
+  payoutRulesHash       String
+  calculationHash       String
+  position              FantasyPosition
+  place                 Int
+  playerId              String
+  walletAddress         String
+  eligibleShares        Int
+  placeBasisPoints      Int
+  placeAllocationAmount String
+  amount                String
+  currency              String            @default("USDC")
+  decimals              Int               @default(6)
+  settledAt             DateTime?
+  createdAt             DateTime          @default(now())
+  tournament            FantasyTournament @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+
+  @@unique([tournamentId, payoutRulesHash, position, place, walletAddress])
+  @@index([tournamentId, position, place])
+  @@index([walletAddress])
+}
