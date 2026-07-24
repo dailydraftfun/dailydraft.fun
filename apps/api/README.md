@@ -106,6 +106,37 @@ by default through `OPENPACKSDUEL_HOUSE_ENABLED=false`. It is never an automatic
 conversion. Wallet-level limits do not prevent coordinated multi-wallet abuse, which
 still requires upstream identity/risk controls before mainnet.
 
+## Real-value policy admission
+
+Every authenticated HTTP boundary that can create exposure records an immutable
+`RealValuePolicyDecision` before the operation runs. The guarded capabilities are
+direct, open, and House duel creation; direct join; public matchmaking and House
+fallback; funding preparation; pack opening; and provider escrow preparation.
+Cancellation, wallet rejection, settlement/refund recovery, and reconciliation
+remain outside the admission gate so a policy denial cannot trap existing funds.
+
+Fixture and Solana devnet operations use the hash-pinned
+`openpacksduel.non-production-policy.v1` contract. They remain testable while every
+decision explicitly records `productionEnabled: false` and retains no production
+approval evidence. A malformed policy document still fails closed even in
+non-production, preventing a broken deployment from being mistaken for approval.
+
+Real-value mode is deny-by-default. Production admission requires all three:
+
+- `OPENPACKSDUEL_REAL_VALUE_MODE=true`
+- `OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED=true`
+- a strict `OPENPACKSDUEL_REAL_VALUE_POLICY_JSON` document using schema
+  `openpacksduel.real-value-policy.v1`
+
+The document binds one policy version, explicit capabilities, and stable evidence
+references for legal, jurisdiction, age, limits, sanctions, disclosure, and
+production approval. Missing or malformed inputs return
+`REAL_VALUE_POLICY_DENIED` with a stable machine-readable reason. The exact
+canonical document hash and evidence are retained for each attempt; the database
+rejects updates or deletes to those records. No legal decision, jurisdiction,
+threshold, vendor, credential, or production approval is committed in this
+repository.
+
 ## Privacy-safe observability
 
 `POST /v1/analytics/events` accepts only allowlisted names and bounded

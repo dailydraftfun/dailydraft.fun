@@ -483,6 +483,25 @@ model ProductEvent {
   @@index([duelId, createdAt])
 }
 
+/// Immutable decision evidence recorded before an exposure-creating API operation.
+model RealValuePolicyDecision {
+  id            String   @id
+  capability    String
+  runtimeMode   String
+  schemaVersion String
+  policyVersion String
+  policyHash    String
+  allowed       Boolean
+  denialReason  String?
+  evidence      Json
+  evaluatedAt   DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([capability, evaluatedAt])
+  @@index([allowed, evaluatedAt])
+  @@index([policyVersion, evaluatedAt])
+}
+
 model RuntimeControl {
   key        String              @id
   paused     Boolean             @default(false)
