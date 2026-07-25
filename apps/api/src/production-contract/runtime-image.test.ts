@@ -50,7 +50,7 @@ describe('API runtime image database TLS', () => {
     const bundle = readFileSync(`${repoRoot}${copiesBundle?.[1]}`, 'utf8');
     const certificates = Array.from(
       bundle.matchAll(/-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/g),
-      (match) => match[1],
+      (match) => match[1] ?? '',
     );
     expect(certificates.length, 'bundle holds no PEM certificate blocks').toBeGreaterThan(0);
 
