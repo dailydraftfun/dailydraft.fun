@@ -108,7 +108,9 @@ test.describe('deterministic duel failure recovery', () => {
     await expect(page.getByTestId(journeyTestIds.persistedDuel)).toContainText(
       'Looking for an opponent',
     );
-    expect(journey.snapshot().duel).toEqual(expect.objectContaining({ id: duelId, status: 'waiting' }));
+    expect(journey.snapshot().duel).toEqual(
+      expect.objectContaining({ id: duelId, status: 'waiting' }),
+    );
     expect(requestsEndingWith(journey.snapshot().requests, '/matchmaking/search')).toHaveLength(1);
     expect(requestsEndingWith(journey.snapshot().requests, '/transactions')).toHaveLength(0);
     expect(requestsEndingWith(journey.snapshot().requests, '/submissions')).toHaveLength(0);
@@ -118,7 +120,9 @@ test.describe('deterministic duel failure recovery', () => {
     await page.getByTestId(journeyTestIds.persistedDuelContinue).click();
 
     await expect(page.getByTestId(journeyTestIds.persistedDuel)).toContainText('Opponent found');
-    expect(journey.snapshot().duel).toEqual(expect.objectContaining({ id: duelId, status: 'matched' }));
+    expect(journey.snapshot().duel).toEqual(
+      expect.objectContaining({ id: duelId, status: 'matched' }),
+    );
     expect(requestsEndingWith(journey.snapshot().requests, '/matchmaking/search')).toHaveLength(1);
     expect(requestsEndingWith(journey.snapshot().requests, '/submissions')).toHaveLength(0);
     await expectWalletTelemetry(page, 'fault-recovery', {
@@ -171,7 +175,9 @@ test.describe('deterministic duel failure recovery', () => {
       await stepper.getByTestId(entryTestIds.confirmFunding).click();
       await expect(page.getByTestId(journeyTestIds.battle)).toBeVisible();
       await expect
-        .poll(() => page.evaluate((key) => window.localStorage.getItem(key), DUEL_ENTRY_DRAFT_STORAGE_KEY))
+        .poll(() =>
+          page.evaluate((key) => window.localStorage.getItem(key), DUEL_ENTRY_DRAFT_STORAGE_KEY),
+        )
         .toBeNull();
       expect(journey.snapshot().duel?.status).toBe(checkpoint);
       const committedHash = journey.snapshot().duel?.result?.resultHash;

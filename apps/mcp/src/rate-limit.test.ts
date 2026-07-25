@@ -1,6 +1,13 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 
 import { FixedWindowRateLimiter } from './rate-limit.js';
+
+const originalRateLimit = process.env.DAILYDRAFT_MCP_RATE_LIMIT;
+
+afterEach(() => {
+  if (originalRateLimit === undefined) delete process.env.DAILYDRAFT_MCP_RATE_LIMIT;
+  else process.env.DAILYDRAFT_MCP_RATE_LIMIT = originalRateLimit;
+});
 
 describe('FixedWindowRateLimiter', () => {
   test('limits each credential fingerprint and resets after the window', () => {
@@ -23,5 +30,19 @@ describe('FixedWindowRateLimiter', () => {
       allowed: true,
       remaining: 1,
     });
+  });
+
+  test('takes its default budget from the environment', () => {
+    process.env.DAILYDRAFT_MCP_RATE_LIMIT = '120';
+
+    expect(new FixedWindowRateLimiter().consume('credential-a', 0).limit).toBe(120);
+  });
+
+  test('refuses to start with a budget outside the supported range', () => {
+    process.env.DAILYDRAFT_MCP_RATE_LIMIT = '0';
+
+    expect(() => new FixedWindowRateLimiter()).toThrow(
+      'DAILYDRAFT_MCP_RATE_LIMIT must be an integer between 1 and 10000',
+    );
   });
 });

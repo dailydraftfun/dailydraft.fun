@@ -55,6 +55,20 @@ describe('resolvePublicAppUrl', () => {
 
     expectConfigurationFailure(() => resolvePublicAppUrl(), 'must use HTTPS');
   });
+
+  test('rejects configuration that is not a parseable absolute URL', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DAILYDRAFT_APP_URL = '::::';
+
+    expectConfigurationFailure(() => resolvePublicAppUrl(), 'must be an absolute URL');
+  });
+
+  test('rejects embedded credentials so they cannot leak into published links', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DAILYDRAFT_APP_URL = 'https://user:pw@play.dailydraft.fun';
+
+    expectConfigurationFailure(() => resolvePublicAppUrl(), 'must not include credentials');
+  });
 });
 
 function expectConfigurationFailure(action: () => unknown, message: string): void {

@@ -24,7 +24,7 @@ test('boots an isolated actionable lobby without live wallet, RPC, or provider a
     'Solana devnet · online',
   );
   await expect(page.getByTestId(journeyTestIds.walletOption)).toContainText(
-    'Pack Duel Journey Fixture',
+    'DailyDraft Journey Fixture',
   );
   await page.getByTestId(journeyTestIds.walletOption).click();
   await expect(page.getByTestId(journeyTestIds.walletMenu)).toContainText('1111…1111');

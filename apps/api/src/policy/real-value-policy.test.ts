@@ -208,6 +208,12 @@ describe('real-value policy contract', () => {
       }),
     ).toMatchObject({ allowed: false, denialReason: 'runtime_unclassified' });
   });
+
+  test('refuses to guess a runtime when no network or provider marker is present', () => {
+    // A production NODE_ENV on its own names no chain and no provider, so it must fall past
+    // the devnet markers rather than being read as either a fixture or a real-value runtime.
+    expect(resolveRealValueRuntime({ NODE_ENV: 'production' })).toBe('unclassified');
+  });
 });
 
 function productionEnvironment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {

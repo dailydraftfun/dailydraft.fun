@@ -8,9 +8,10 @@ import { getPageMap } from 'nextra/page-map';
 import { Footer, Layout, Navbar } from 'nextra-theme-docs';
 import 'nextra-theme-docs/style.css';
 import './globals.css';
+import { resolveDocsMetadataBase } from './metadata-base';
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://dailydraft-docs.vercel.app'),
+  metadataBase: new URL(resolveDocsMetadataBase()),
   title: {
     default: 'DailyDraft Docs',
     template: '%s — DailyDraft',
@@ -34,7 +35,7 @@ const navbar = (
           <span />
           <span />
         </span>
-        <strong>PACK DUEL</strong>
+        <strong>DAILYDRAFT</strong>
         <span>DOCS</span>
       </span>
     }

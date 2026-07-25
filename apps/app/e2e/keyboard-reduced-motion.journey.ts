@@ -78,13 +78,17 @@ test('completes tabs, dialogs, cancellation, disclosure, share, and rematch with
 
   await page.keyboard.press('Enter');
   await expect(stepper).toHaveAttribute('data-stage', 'connect');
-  await completeEntry(page, (locator) => keyboardActivate(page, locator), async () => {
-    const technicalDetails = stepper.locator('details.duel-technical-details');
-    const technicalSummary = technicalDetails.locator('summary');
-    await keyboardActivate(page, technicalSummary);
-    await expect(technicalDetails).toHaveAttribute('open', '');
-    await expect(technicalDetails).toContainText('Funding side');
-  });
+  await completeEntry(
+    page,
+    (locator) => keyboardActivate(page, locator),
+    async () => {
+      const technicalDetails = stepper.locator('details.duel-technical-details');
+      const technicalSummary = technicalDetails.locator('summary');
+      await keyboardActivate(page, technicalSummary);
+      await expect(technicalDetails).toHaveAttribute('open', '');
+      await expect(technicalDetails).toContainText('Funding side');
+    },
+  );
 
   const settled = journey.snapshot().duel;
   expect(settled?.status).toBe('settled');
@@ -97,10 +101,14 @@ test('completes tabs, dialogs, cancellation, disclosure, share, and rematch with
 
   const share = page.getByTestId(journeyTestIds.resultShare);
   await keyboardActivate(page, share);
-  await expect(page.getByText('Result link copied with its status-aware social preview.')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(
-    `I won a $50 Pack Duel with Charizard fixture pull at $72.5.\n${appOrigin}/duel/${settled?.id}`,
-  );
+  await expect(
+    page.getByText('Result link copied with its status-aware social preview.'),
+  ).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(
+      `I won a $50 Pack Duel with Charizard fixture pull at $72.5.\n${appOrigin}/duel/${settled?.id}`,
+    );
 
   const receipt = page.getByRole('link', { name: 'Verified receipt' });
   await tabTo(page, receipt);
@@ -125,7 +133,9 @@ test('exposes the same committed result without cinematic motion', async ({ jour
   await page.getByTestId(journeyTestIds.primaryAction).click();
   await completeEntry(page, (locator) => locator.click());
 
-  await expect.poll(() => page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches))
+    .toBe(true);
   await expect(page.getByTestId(journeyTestIds.duelHeadline)).toHaveText(
     'Your committed pull is revealed',
   );
@@ -201,7 +211,9 @@ async function tabTo(page: Page, locator: Locator, limit = 50): Promise<void> {
     if (await isFocused(locator)) return;
     await page.keyboard.press('Tab');
   }
-  throw new Error(`Keyboard focus did not reach ${await locator.evaluate((element) => element.outerHTML)}`);
+  throw new Error(
+    `Keyboard focus did not reach ${await locator.evaluate((element) => element.outerHTML)}`,
+  );
 }
 
 async function shiftTabTo(page: Page, locator: Locator, limit = 50): Promise<void> {

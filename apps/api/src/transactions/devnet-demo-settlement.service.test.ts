@@ -36,6 +36,31 @@ describe('DevnetDemoSettlementService', () => {
     expect(fixture.bindings).toBe(2);
     expect(fixture.status).toBe(DuelStatus.SETTLED);
   });
+
+  test('refuses to auto-settle duels that are not on the DailyDraft demo provider', async () => {
+    const database = {
+      duel: {
+        findUnique: async () => ({
+          providerMode: ProviderMode.MOCK,
+          status: DuelStatus.AWAITING_ASSETS,
+        }),
+      },
+    };
+    const monitor = { reconcile: async () => undefined };
+    const service = new DevnetDemoSettlementService(
+      database as unknown as DatabaseClient,
+      {} as unknown as ProviderSettlementService,
+      {} as unknown as DevnetDemoSignerService,
+      monitor as unknown as TransactionMonitorService,
+    );
+
+    const error = await service
+      .finalizeDuel('duel_mock_settlement')
+      .then(() => undefined)
+      .catch((value: unknown) => value);
+
+    expect((error as Error | undefined)?.message).toContain('limited to DailyDraft devnet packs');
+  });
 });
 
 class SettlementFixture {

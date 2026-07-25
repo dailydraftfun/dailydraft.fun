@@ -18,10 +18,12 @@ const WALLET = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
 const OPPONENT = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
 const originalAppUrl = process.env.DAILYDRAFT_APP_URL;
 const originalNodeEnvironment = process.env.NODE_ENV;
+const originalProviderMode = process.env.DAILYDRAFT_PROVIDER_MODE;
 
 afterEach(() => {
   setEnvironment('DAILYDRAFT_APP_URL', originalAppUrl);
   setEnvironment('NODE_ENV', originalNodeEnvironment);
+  setEnvironment('DAILYDRAFT_PROVIDER_MODE', originalProviderMode);
 });
 
 describe('DuelsService', () => {
@@ -129,6 +131,29 @@ describe('DuelsService', () => {
 
     expect(joined.status).toBe('matched');
     expect(joined.opponentWallet).toBe(OPPONENT);
+  });
+
+  test('refuses to create a duel under an unrecognised provider mode', async () => {
+    // An unknown mode must fail closed rather than silently falling back to mock pricing.
+    process.env.DAILYDRAFT_PROVIDER_MODE = 'bogus-provider';
+    const service = new DuelsService(new FakeDuelRepository(), new PacksService());
+
+    const error = await service
+      .create(
+        {
+          creatorWallet: WALLET,
+          expiresAt: futureDate(),
+          matchmakingMode: 'open',
+          packId: 'pokemon_50',
+        },
+        'idempotency-key-0006',
+      )
+      .then(() => undefined)
+      .catch((value: unknown) => value);
+
+    expect((error as Error | undefined)?.message).toContain(
+      'must be mock, dailydraft-devnet, or collector-crypt-sandbox',
+    );
   });
 });
 

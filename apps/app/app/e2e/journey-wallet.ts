@@ -93,7 +93,7 @@ export function createJourneyFixtureWallet(bootstrap: JourneyFixtureBootstrap): 
       },
     },
     icon: fixtureIcon,
-    name: 'Pack Duel Journey Fixture',
+    name: 'DailyDraft Journey Fixture',
     version: '1.0.0',
   } as unknown as Wallet;
 }
