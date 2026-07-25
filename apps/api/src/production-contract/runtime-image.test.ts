@@ -33,6 +33,34 @@ const workspaceDirectoryFor = (packageName: string): string | undefined => {
   return undefined;
 };
 
+describe('API runtime image database TLS', () => {
+  // pg-connection-string resolves sslmode=require to verify-full, so the image has to
+  // trust the Amazon RDS root or every query fails on an unverifiable chain while
+  // migrations -- which run through the Prisma engine, not the pg adapter -- pass.
+  test('trusts the vendored RDS certificate bundle', () => {
+    const certificateTarget = /^ENV .*NODE_EXTRA_CA_CERTS=(\S+)/m.exec(runnerStage)?.[1];
+    expect(certificateTarget, 'runner stage sets no NODE_EXTRA_CA_CERTS').toBeDefined();
+
+    const copiesBundle = new RegExp(
+      `^COPY\\s+(\\S*rds\\S*\\.pem)\\s+${certificateTarget}$`,
+      'm',
+    ).exec(runnerStage);
+    expect(copiesBundle, `nothing is copied to ${certificateTarget}`).not.toBeNull();
+
+    const bundle = readFileSync(`${repoRoot}${copiesBundle?.[1]}`, 'utf8');
+    const certificates = Array.from(
+      bundle.matchAll(/-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/g),
+      (match) => match[1] ?? '',
+    );
+    expect(certificates.length, 'bundle holds no PEM certificate blocks').toBeGreaterThan(0);
+
+    // The issuer name is base64-encoded inside each block, so decode before matching:
+    // DER stores subject fields as raw bytes, which is why latin1 reads them back.
+    const issuers = certificates.map((block) => Buffer.from(block, 'base64').toString('latin1'));
+    expect(issuers.some((der) => der.includes('Amazon RDS'))).toBe(true);
+  });
+});
+
 describe('API runtime image layout', () => {
   test('copies the dependency store and the API symlink farm that points into it', () => {
     expect(copiedSources).toContain('/app/node_modules');
