@@ -26,4 +26,17 @@ describe('docs API reference route', () => {
     expect(capturedConfig?.metaData?.title).toBe('DailyDraft API Reference');
     expect(capturedConfig?.metaData?.title).not.toContain('OpenPacks');
   });
+
+  // The description sat one field away from an asserted title and still shipped the
+  // retired brand to the live reference page, so both metadata fields are guarded.
+  test('describes the reference with the current game-mode name', () => {
+    expect(capturedConfig?.metaData?.description).toBe(
+      'Preview integration contract for card duels on Solana devnet',
+    );
+    const metaData = Object.values(capturedConfig?.metaData ?? {})
+      .join(' ')
+      .toLowerCase();
+    expect(metaData).not.toContain('pack duel');
+    expect(metaData).not.toContain('openpacksduel');
+  });
 });
