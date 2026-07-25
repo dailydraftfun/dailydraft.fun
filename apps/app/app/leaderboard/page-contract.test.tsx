@@ -18,7 +18,7 @@ describe('leaderboard page contract', () => {
 
   test('renders the leaderboard view when a durable snapshot is available', async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => Response.json(leaderboard())) as typeof fetch;
+    globalThis.fetch = (async () => Response.json(leaderboard())) as unknown as typeof fetch;
 
     try {
       const markup = renderToStaticMarkup(await LeaderboardPage());
@@ -31,7 +31,7 @@ describe('leaderboard page contract', () => {
 
   test('fails closed to the unavailable view when no snapshot is returned', async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response(null, { status: 503 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response(null, { status: 503 })) as unknown as typeof fetch;
 
     try {
       const markup = renderToStaticMarkup(await LeaderboardPage());

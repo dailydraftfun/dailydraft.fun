@@ -15,7 +15,7 @@ describe('public duel page contract', () => {
     const originalFetch = globalThis.fetch;
     const receipt = createPublicSurfaceReceipt('duel_public_settled');
     if (!receipt) throw new Error('Missing public duel fixture');
-    globalThis.fetch = (async () => Response.json(receipt)) as typeof fetch;
+    globalThis.fetch = (async () => Response.json(receipt)) as unknown as typeof fetch;
 
     try {
       const metadata = await generateMetadata({
@@ -30,7 +30,7 @@ describe('public duel page contract', () => {
 
   test('falls back to unavailable metadata when no duel receipt exists', async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response(null, { status: 404 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
 
     try {
       const metadata = await generateMetadata({

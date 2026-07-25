@@ -11,7 +11,7 @@ describe('wallet profile page contract', () => {
   test('publishes rebranded metadata and history copy for a known wallet', async () => {
     const originalFetch = globalThis.fetch;
     const wallet = 'wallet_profile_metadata_present';
-    globalThis.fetch = (async () => Response.json(profile(wallet))) as typeof fetch;
+    globalThis.fetch = (async () => Response.json(profile(wallet))) as unknown as typeof fetch;
 
     try {
       const metadata = await generateMetadata({ params: Promise.resolve({ wallet }) });
@@ -29,7 +29,7 @@ describe('wallet profile page contract', () => {
   test('falls back to unavailable metadata for an unknown wallet', async () => {
     const originalFetch = globalThis.fetch;
     const wallet = 'wallet_profile_metadata_missing';
-    globalThis.fetch = (async () => new Response(null, { status: 404 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
 
     try {
       const metadata = await generateMetadata({ params: Promise.resolve({ wallet }) });
@@ -44,7 +44,7 @@ describe('wallet profile page contract', () => {
   test('renders durable activity for a wallet with a public profile', async () => {
     const originalFetch = globalThis.fetch;
     const wallet = 'wallet_profile_page_present';
-    globalThis.fetch = (async () => Response.json(profile(wallet))) as typeof fetch;
+    globalThis.fetch = (async () => Response.json(profile(wallet))) as unknown as typeof fetch;
 
     try {
       const markup = renderToStaticMarkup(
@@ -61,7 +61,7 @@ describe('wallet profile page contract', () => {
   test('fails closed when no durable profile is available', async () => {
     const originalFetch = globalThis.fetch;
     const wallet = 'wallet_profile_page_missing';
-    globalThis.fetch = (async () => new Response(null, { status: 404 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
 
     try {
       const markup = renderToStaticMarkup(
