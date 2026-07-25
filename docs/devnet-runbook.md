@@ -7,14 +7,18 @@ not a mainnet deployment and must not accept assets with real-world value.
 
 | Surface | Address |
 | --- | --- |
-| Product app | <https://dailydraft.fun> |
-| Marketing site | <https://dailydraft-web.vercel.app> |
+| Marketing site | <https://dailydraft.fun> |
+| Product app | <https://app.dailydraft.fun> |
+| API | <https://api.dailydraft.fun> |
+| Docs | <https://docs.dailydraft.fun> |
+| MCP server | <https://mcp.dailydraft.fun> |
 | Solana RPC fallback | `https://api.devnet.solana.com` |
 | Escrow program | `Co198eFfQcmn1WzZRnHV6jxcSLBDCv1qNfPfiBYdCLfS` |
 
-The API project is provisioned as `dailydraft-api` in Vercel. Its production
-alias becomes canonical only after `GET /v1/health` passes the manual devnet
-smoke workflow.
+Every surface except the API is a Vercel project named after the host it serves,
+rooted at the matching workspace: `apps/web`, `apps/app`, `apps/docs`, `apps/mcp`.
+The API runs on EC2 behind Caddy and is canonical only after `GET /v1/health`
+passes the manual devnet smoke workflow.
 
 ## Safety boundary
 
@@ -51,7 +55,7 @@ smoke workflow.
 | `ESCROW_PROVIDER_SIGNER` | Public key authorized to attest provider outcomes; never a private key. |
 | `ESCROW_FEE_RECIPIENT` | Public key that receives the platform fee during settlement. |
 | `DAILYDRAFT_DEVNET_FEE_LAMPORTS` | Per-side platform fee deposited as WSOL; `1000000` for the MVP. |
-| `CRON_SECRET` | Long random bearer secret used by Vercel Cron. |
+| `CRON_SECRET` | Long random bearer secret used by the host reconciliation timers. |
 | `SOLANA_RPC_TIMEOUT_MS` | Optional per-request timeout; bounded to 30 seconds. |
 | `SOLANA_RPC_RETRIES` | Optional retry count; bounded to four retries. |
 | `SOLANA_RECONCILIATION_STUCK_MS` | Operator alert threshold; defaults to ten minutes. |
@@ -86,8 +90,9 @@ Every submitted transaction receives an opportunistic finality check. Either
 authenticated participant can continue the duel-scoped check at
 `POST /v1/duels/{duelId}/transactions/reconciliation`, and the product polls
 that endpoint while a known transaction remains active. The global transaction
-worker is a once-daily Vercel Hobby recovery net and can also be invoked manually
-at `POST /v1/internal/reconciliation/solana`. Both paths treat `confirmed` as
+worker is a once-daily recovery net driven by the `dailydraft-reconcile-solana`
+systemd timer on the API host, and can also be invoked manually at
+`POST /v1/internal/reconciliation/solana`. Both paths treat `confirmed` as
 progress and advance duel state only after a `finalized` transaction matches the
 stored signer and blockhash plus one unique escrow instruction with the stored
 data hash and exact ordered account constraints. The public RPC fallback is
@@ -155,7 +160,7 @@ incident owner confirms recovery.
 2. Fund the isolated devnet deployment authority from a faucet. Never change
    the machine-wide Solana RPC configuration to accomplish this.
 3. Deploy the escrow using explicit devnet RPC and keypair arguments.
-4. Apply the devnet database migration and deploy `dailydraft-api`.
+4. Deploy the API; the workflow applies the committed migrations itself.
 5. Configure the product app variables and deploy `apps/app` to Vercel.
    Before exposing `/v1/analytics/events`, enable Vercel Firewall/IP rate
    limiting. Its anonymous-session cap is defense-in-depth and session churn
@@ -167,58 +172,49 @@ incident owner confirms recovery.
 
 ## API deployment from the monorepo
 
-The `dailydraft-api` Vercel project is configured with Root Directory
-`apps/api`, Framework `Other`, and Node.js 24. Run Vercel CLI from the monorepo
-root—not `apps/api`—so Bun workspaces and `packages/db` are uploaded together.
-Vercel CLI 20.1 or newer is required for shared monorepo source; the current
-deployment baseline is 54.9.1.
+The API deploys through the `Deploy API production` GitHub workflow. It builds
+`apps/api/Dockerfile` from the monorepo root so Bun workspaces and `packages/db`
+resolve together, uploads the image and `deploy/dailydraft/deploy-dailydraft.sh`
+to S3, then runs that script on the API instance through Systems Manager. There
+is no operator-side deploy command and no credential ever leaves SSM.
 
-Before the first deploy, verify **Include source files outside of the Root
-Directory** is enabled in the Vercel project’s Root Directory settings. Modern
-projects enable it by default, but the API cannot import `packages/db` without
-that boundary.
-
-1. Configure all required API variables in the Vercel project. Do not put
-   credentials in tracked files. `DATABASE_URL` must use the pooled Neon runtime
-   connection when available.
-2. In a secure operator shell, set `DATABASE_URL` to the direct migration
-   connection. The production deployment script applies only committed
-   migrations and stops before deployment if migration fails:
+1. Configure API variables as SSM parameters under `/dailydraft/api/prod/`, one
+   parameter per environment key. Do not put credentials in tracked files.
+   Secrets—`DATABASE_URL`, `CRON_SECRET`, `DAILYDRAFT_DEVNET_PROVIDER_KEYPAIR_JSON`,
+   `DAILYDRAFT_API_KEYS`—must be `SecureString`. The host script reads the path
+   with decryption at deploy time and writes a `0600` env file the container
+   never outlives.
+2. Merge to `main`. Pushes touching `apps/api/**`, `packages/db/**`,
+   `deploy/dailydraft/**`, or the lockfile deploy automatically; otherwise
+   dispatch the workflow by hand. Runs are serialized and never cancelled in
+   flight, because a half-applied deploy can leave the host with no container.
+3. The host script applies committed migrations before anything is swapped:
 
    ```bash
-   bun run deploy:api:prod
+   bun --filter @dailydraft/db db:deploy
    ```
 
    Never substitute `prisma db push`; migration history is the deployment
-   contract. A failed migration stops the release before the function deploy.
-   The script sets `VERCEL_ORG_ID=team_hFVCbNU4RnfEpQOeSWRxmhEJ` and
-   `VERCEL_PROJECT_ID=prj_rX5EyAaDo5slW8ea0mUDjwVhb1Xq`, so the repository’s
-   frontend `.vercel/project.json` cannot redirect the deployment.
-3. For a preview-only deployment after the production database is already at
-   the committed migration, deploy from the monorepo root:
+   contract. A failed migration aborts the deploy with the previous container
+   still serving. The new image is then started as `dailydraft-candidate` and
+   only renamed over the live container after its own health check passes, so a
+   broken build cannot take production down.
+4. Confirm the canonical host and database readiness:
 
    ```bash
-   VERCEL_ORG_ID=team_hFVCbNU4RnfEpQOeSWRxmhEJ \
-   VERCEL_PROJECT_ID=prj_rX5EyAaDo5slW8ea0mUDjwVhb1Xq \
-   vercel deploy --scope shipshitdev
+   curl --fail-with-body https://api.dailydraft.fun/v1/health
    ```
 
-4. Confirm the canonical alias and database readiness:
-
-   ```bash
-   curl --fail-with-body https://dailydraft-api.vercel.app/v1/health
-   ```
-
-The function fails closed during bootstrap when `DATABASE_URL` is missing. Its
-health endpoint returns `503` when PostgreSQL is unavailable or migrations are
-pending. Vercel builds generate Prisma Client but never mutate the database.
+The API fails closed during bootstrap when `DATABASE_URL` is missing. Its health
+endpoint returns `503` when PostgreSQL is unavailable or migrations are pending.
+The image build generates Prisma Client but never mutates the database.
 
 ## Promotion gate
 
 For `dailydraft-devnet`, provider escrow orchestration creates valueless SPL
 demo cards and signs their deposit, result, and settlement transactions with an
-isolated keypair stored only as a sensitive Vercel server variable. The key must
-never appear in API responses, browser bundles, MCP output, logs, or issues.
+isolated keypair stored only as an SSM `SecureString`. The key must never appear
+in API responses, browser bundles, MCP output, logs, or issues.
 The visible name, image, and comparison value are persisted from the Pokémon TCG
 API before funding proof is resolved. The committed demo policy fixes the TCGPlayer
 market variant order and conversion rule; every outcome hash binds the selected

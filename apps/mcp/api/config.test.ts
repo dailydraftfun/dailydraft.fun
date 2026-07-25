@@ -60,7 +60,7 @@ describe('MCP config endpoint', () => {
   test('falls back to the canonical hosted origin when the request carries no host', () => {
     const body = parseBody(call());
 
-    expect(body.endpoint).toBe('https://dailydraft-mcp.vercel.app/mcp');
+    expect(body.endpoint).toBe('https://mcp.dailydraft.fun/mcp');
   });
 
   test('prefers the forwarded host so proxied deployments advertise themselves', () => {

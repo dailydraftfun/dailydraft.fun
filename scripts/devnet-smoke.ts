@@ -2,9 +2,10 @@ import { createPrivateKey, sign as cryptoSign, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Connection, Keypair, Transaction } from '@solana/web3.js';
 
-const apiUrl = (
-  process.env.DAILYDRAFT_SMOKE_API_URL ?? 'https://dailydraft-api.vercel.app/v1'
-).replace(/\/$/, '');
+const apiUrl = (process.env.DAILYDRAFT_SMOKE_API_URL ?? 'https://api.dailydraft.fun/v1').replace(
+  /\/$/,
+  '',
+);
 const rpcUrl = process.env.DAILYDRAFT_SMOKE_RPC_URL ?? 'https://api.devnet.solana.com';
 const creatorPath = requiredEnvironment('DAILYDRAFT_SMOKE_CREATOR_KEYPAIR');
 const opponentPath = requiredEnvironment('DAILYDRAFT_SMOKE_OPPONENT_KEYPAIR');
