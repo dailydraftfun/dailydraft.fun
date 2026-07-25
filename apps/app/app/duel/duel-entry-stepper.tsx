@@ -172,7 +172,7 @@ export function DuelEntryStepper({
           {stage === 'confirming' ? (
             <ProgressStep
               label="Confirming escrow funding"
-              detail="The transaction was broadcast. Pack Duel is verifying finalized escrow state and will advance automatically."
+              detail="The transaction was broadcast. DailyDraft is verifying finalized escrow state and will advance automatically."
             />
           ) : null}
           {stage === 'waiting' ? (

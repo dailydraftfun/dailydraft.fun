@@ -31,6 +31,11 @@ import {
   storeActiveDuel,
 } from './duel/active-duel-storage';
 import {
+  battleEyebrowLabel,
+  DUEL_SHARE_RESULT_TITLE,
+  opponentWalletLabel,
+} from './duel/duel-battle-copy';
+import {
   createDuelEntryDraft,
   DUEL_ENTRY_DRAFT_STORAGE_KEY,
   parseDuelEntryDraft,
@@ -1509,7 +1514,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     } else {
       try {
         const outcome = await shareNativeResult(
-          { text, title: 'Pack Duel result', url: shareUrl },
+          { text, title: DUEL_SHARE_RESULT_TITLE, url: shareUrl },
           {
             ...(navigator.share ? { share: navigator.share.bind(navigator) } : {}),
             writeClipboard: (value) => navigator.clipboard.writeText(value),
@@ -1584,7 +1589,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           <div className="battle-heading">
             <div>
               <span className="eyebrow">
-                <SwordIcon size={14} weight="fill" /> {liveDuel.tier} Pack Duel
+                <SwordIcon size={14} weight="fill" /> {battleEyebrowLabel(liveDuel.tier)}
               </span>
               <h1 data-testid={journeyTestIds.duelHeadline}>{presentationHeadline}</h1>
             </div>
@@ -1644,15 +1649,13 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               stage={rightStage}
               resolution={showResolution ? revealSideResolution(liveDuel.winner, 'opponent') : null}
               tier={liveDuel.tier}
-              walletLabel={
-                persistedDuel.houseOpponent
-                  ? 'Pack Duel House'
-                  : (shortReference(
-                      walletConnection.address === persistedDuel.opponentWallet
-                        ? persistedDuel.creatorWallet
-                        : persistedDuel.opponentWallet,
-                    ) ?? 'Opponent wallet')
-              }
+              walletLabel={opponentWalletLabel({
+                creatorWallet: persistedDuel.creatorWallet,
+                houseOpponent: persistedDuel.houseOpponent,
+                opponentWallet: persistedDuel.opponentWallet,
+                shortenWallet: shortReference,
+                viewerAddress: walletConnection.address,
+              })}
             />
           </div>
 

@@ -33,7 +33,7 @@ export function PrimaryNavigation({
         href="/overview"
       >
         <LightningIcon size={15} weight="fill" />
-        Duels
+        Card Duels
       </a>
       <a
         aria-current={leaderboardActive ? 'page' : undefined}

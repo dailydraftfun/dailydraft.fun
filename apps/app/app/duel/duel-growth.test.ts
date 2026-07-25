@@ -28,7 +28,7 @@ describe('duel growth actions', () => {
         tier: '$50',
         winningPull: { name: 'Rival pull', value: '$72.50' },
       }),
-    ).toBe('I lost a $50 Pack Duel to Rival pull at $72.50. Revenge is one click away.');
+    ).toBe('I lost a $50 Card Duel to Rival pull at $72.50. Revenge is one click away.');
   });
 
   test('keeps winner and tie sharing truthful', () => {
@@ -38,9 +38,18 @@ describe('duel growth actions', () => {
         tier: '$50',
         winningPull: { name: 'Winner pull', value: '$80' },
       }),
-    ).toBe('I won a $50 Pack Duel with Winner pull at $80.');
+    ).toBe('I won a $50 Card Duel with Winner pull at $80.');
     expect(resultShareText({ result: viewerResult('tie'), tier: '$50', winningPull: null })).toBe(
-      'My $50 Pack Duel ended in a tie. Run it back with me.',
+      'My $50 Card Duel ended in a tie. Run it back with me.',
     );
+  });
+
+  test('shares a win or loss without a winning pull on record', () => {
+    expect(resultShareText({ result: viewerResult('you'), tier: '$50', winningPull: null })).toBe(
+      'I won a $50 Card Duel. See the verified result.',
+    );
+    expect(
+      resultShareText({ result: viewerResult('opponent'), tier: '$50', winningPull: null }),
+    ).toBe('I lost a $50 Card Duel. Run it back with me.');
   });
 });

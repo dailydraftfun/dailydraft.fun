@@ -8,7 +8,7 @@ export function buildDuelMetadata(
   receipt: PublicDuelReceipt,
   appUrl = process.env.NEXT_PUBLIC_APP_URL ?? defaultAppUrl,
 ): Metadata {
-  const title = `${receiptTitle(receipt)} — Pack Duel`;
+  const title = `${receiptTitle(receipt)} — DailyDraft`;
   const participantSummary = `${receipt.participants.creator.display} vs ${receipt.participants.opponent?.display ?? 'open seat'}`;
   const snapshot = getDuelSocialSnapshot(receipt);
   const expiry =
@@ -31,7 +31,7 @@ export function buildDuelMetadata(
       title,
       description,
       images: [{ alt: imageAlt, height: 630, url: imageUrl, width: 1200 }],
-      siteName: 'Pack Duel',
+      siteName: 'DailyDraft',
       type: 'website',
       url: canonicalUrl,
     },

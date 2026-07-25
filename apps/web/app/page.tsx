@@ -63,12 +63,12 @@ export default function LandingPage() {
       <section className="marketing-hero">
         <div className="hero-grid" aria-hidden="true" />
         <header className="marketing-nav">
-          <a href="/" className="brand" aria-label="Grail home">
+          <a href="/" className="brand" aria-label="DailyDraft home">
             <span className="brand-mark">
               <span />
               <span />
             </span>
-            <span>GRAIL</span>
+            <span>DAILYDRAFT</span>
           </a>
           <nav aria-label="Main navigation">
             <a href="#how-it-works">How it works</a>
@@ -239,17 +239,17 @@ export default function LandingPage() {
           no real-world value.
         </p>
         <a className="primary-cta" href={appUrl}>
-          Play Grail <ArrowRightIcon size={18} weight="bold" />
+          Play DailyDraft <ArrowRightIcon size={18} weight="bold" />
         </a>
       </section>
 
       <footer className="marketing-footer">
-        <a href="/" className="brand" aria-label="Grail home">
+        <a href="/" className="brand" aria-label="DailyDraft home">
           <span className="brand-mark brand-mark-small">
             <span />
             <span />
           </span>
-          <span>GRAIL</span>
+          <span>DAILYDRAFT</span>
         </a>
         <p>
           Devnet preview. Wallet signatures and settlement are real; demo assets have no real-world

@@ -1,7 +1,7 @@
 ---
 version: "alpha"
 name: dailydraft Design System
-description: "Premium dark gacha arena with deep charcoal surfaces, crisp card values, and a high-contrast lime action for Pack Duel."
+description: "Premium dark gacha arena with deep charcoal surfaces, crisp card values, and a high-contrast lime action for DailyDraft."
 
 colors:
   primary: "#fafafa"
@@ -113,7 +113,7 @@ components:
 
 ## Overview
 
-Pack Duel uses a dark premium gacha arena: deep charcoal surfaces, crisp white typography, compact on-chain proof, and lime actions.
+DailyDraft uses a dark premium gacha arena: deep charcoal surfaces, crisp white typography, compact on-chain proof, and lime actions.
 
 Design reference: https://styles.refero.design/style/90ce5883-bb24-4466-93f7-801cd617b0d1
 

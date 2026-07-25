@@ -118,7 +118,7 @@ test('completes the deterministic desktop duel from lobby through share and rema
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(
-      `I won a $50 Pack Duel with Charizard fixture pull at $72.5.\n${appOrigin}/duel/${settled?.id}`,
+      `I won a $50 Card Duel with Charizard fixture pull at $72.5.\n${appOrigin}/duel/${settled?.id}`,
     );
 
   await page.getByTestId(journeyTestIds.resultRematch).click();

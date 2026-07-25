@@ -7,7 +7,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dailydraft.fun'),
-  title: 'Grail — Own the cards. Field the squad.',
+  title: 'DailyDraft — Own the cards. Field the squad.',
   description:
     'A sports fantasy casino on Solana. Rip real, vaulted sports cards from Collector Crypt, build a squad, and win tournaments scored by live match data.',
   keywords: [
@@ -22,15 +22,15 @@ export const metadata: Metadata = {
     'basketball',
   ],
   openGraph: {
-    title: 'Grail — Own the cards. Field the squad.',
+    title: 'DailyDraft — Own the cards. Field the squad.',
     description:
       'Rip real, vaulted sports cards from Collector Crypt and win tournaments scored by live match data on Solana.',
-    siteName: 'Grail',
+    siteName: 'DailyDraft',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Grail — Own the cards. Field the squad.',
+    title: 'DailyDraft — Own the cards. Field the squad.',
     description:
       'Rip real, vaulted sports cards from Collector Crypt and win tournaments scored by live match data on Solana.',
   },

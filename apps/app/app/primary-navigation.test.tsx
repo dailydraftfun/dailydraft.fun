@@ -37,5 +37,6 @@ describe('primary navigation', () => {
     expect(markup).toContain('href="/games"');
     expect(markup).toContain('href="/overview"');
     expect(markup).toContain('href="/leaderboard"');
+    expect(markup).toContain('Card Duels');
   });
 });

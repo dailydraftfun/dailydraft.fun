@@ -37,7 +37,7 @@ describe('duel metadata', () => {
       'https://dailydraft.fun',
     );
 
-    expect(metadata.title).toBe('Devnet mock result — Pack Duel');
+    expect(metadata.title).toBe('Devnet mock result — DailyDraft');
     expect(metadata.description).toContain('Solana devnet');
     expect(metadata.openGraph?.images).toEqual([
       expect.objectContaining({
@@ -49,7 +49,7 @@ describe('duel metadata', () => {
 
   test.each([
     ['waiting', 'Creator opened a $50 challenge.'],
-    ['matched', 'Creator vs Waiting for opponent in a $50 Pack Duel.'],
+    ['matched', 'Creator vs Waiting for opponent in a $50 Card Duel.'],
     ['opening', 'The outcomes stay hidden until both results are committed.'],
     ['settled', 'Mock pull A ($51) faced Mock pull B ($50)'],
     ['cancelled', 'No cards changed hands.'],

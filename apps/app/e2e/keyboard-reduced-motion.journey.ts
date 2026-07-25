@@ -107,7 +107,7 @@ test('completes tabs, dialogs, cancellation, disclosure, share, and rematch with
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(
-      `I won a $50 Pack Duel with Charizard fixture pull at $72.5.\n${appOrigin}/duel/${settled?.id}`,
+      `I won a $50 Card Duel with Charizard fixture pull at $72.5.\n${appOrigin}/duel/${settled?.id}`,
     );
 
   const receipt = page.getByRole('link', { name: 'Verified receipt' });

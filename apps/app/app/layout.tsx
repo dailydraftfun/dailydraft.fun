@@ -9,11 +9,11 @@ import { WorkspaceShell } from './workspace-shell';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://dailydraft.fun'),
-  title: 'Grail Devnet — Own the cards. Field the squad.',
+  title: 'DailyDraft Devnet — Own the cards. Field the squad.',
   description:
     'Devnet preview: rip real, vaulted sports cards from Collector Crypt and play sports fantasy loops on Solana using test SOL and test assets.',
   openGraph: {
-    siteName: 'Grail Devnet',
+    siteName: 'DailyDraft Devnet',
     type: 'website',
   },
   twitter: {

@@ -217,7 +217,7 @@ export function getPrimaryAction(snapshot: DuelSocialSnapshot): DuelAction {
 
 export function getSocialDescription(snapshot: DuelSocialSnapshot): string {
   if (snapshot.status === 'settled' && snapshot.pulls.length === 2) {
-    return `${snapshot.pulls[0]?.displayName} (${snapshot.pulls[0]?.value}) faced ${snapshot.pulls[1]?.displayName} (${snapshot.pulls[1]?.value}) in a ${snapshot.tier} Pack Duel.`;
+    return `${snapshot.pulls[0]?.displayName} (${snapshot.pulls[0]?.value}) faced ${snapshot.pulls[1]?.displayName} (${snapshot.pulls[1]?.value}) in a ${snapshot.tier} Card Duel.`;
   }
 
   if (snapshot.status === 'waiting') {
@@ -229,7 +229,7 @@ export function getSocialDescription(snapshot: DuelSocialSnapshot): string {
       snapshot.status,
     )
   ) {
-    return `${snapshot.player} vs ${snapshot.opponent} in a ${snapshot.tier} Pack Duel. ${snapshot.subline}`;
+    return `${snapshot.player} vs ${snapshot.opponent} in a ${snapshot.tier} Card Duel. ${snapshot.subline}`;
   }
 
   return `${snapshot.headline} ${snapshot.subline}`;

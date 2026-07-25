@@ -23,7 +23,7 @@ const markup = renderToStaticMarkup(captured.element as ReactElement);
 
 describe('marketing open graph card', () => {
   test('publishes the rebranded alt text at the standard card size', () => {
-    expect(alt).toBe('Grail — Own the cards. Field the squad.');
+    expect(alt).toBe('DailyDraft — Own the cards. Field the squad.');
     expect(contentType).toBe('image/png');
     expect(size).toEqual({ width: 1200, height: 630 });
     expect(captured.options).toEqual(size);

@@ -3,8 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import RootLayout, { metadata } from './layout';
 
 describe('marketing layout contract', () => {
-  test('publishes the Grail sports fantasy identity', () => {
-    expect(metadata.title).toBe('Grail — Own the cards. Field the squad.');
+  test('publishes the DailyDraft sports fantasy identity', () => {
+    expect(metadata.title).toBe('DailyDraft — Own the cards. Field the squad.');
     expect(metadata.description).toContain('sports fantasy casino on Solana');
     expect(metadata.description).toContain('live match data');
   });
@@ -20,13 +20,13 @@ describe('marketing layout contract', () => {
   });
 
   test('shares one rebranded story across Open Graph and Twitter cards', () => {
-    expect(metadata.openGraph?.title).toBe('Grail — Own the cards. Field the squad.');
-    expect(metadata.openGraph?.siteName).toBe('Grail');
+    expect(metadata.openGraph?.title).toBe('DailyDraft — Own the cards. Field the squad.');
+    expect(metadata.openGraph?.siteName).toBe('DailyDraft');
     expect(metadata.openGraph?.description).toBe(
       'Rip real, vaulted sports cards from Collector Crypt and win tournaments scored by live match data on Solana.',
     );
     expect(metadata.twitter).toEqual(expect.objectContaining({ card: 'summary_large_image' }));
-    expect(metadata.twitter?.title).toBe('Grail — Own the cards. Field the squad.');
+    expect(metadata.twitter?.title).toBe('DailyDraft — Own the cards. Field the squad.');
     expect(metadata.twitter?.description).toBe(metadata.openGraph?.description);
   });
 

@@ -5,12 +5,12 @@ import LandingPage from './page';
 const markup = renderToStaticMarkup(<LandingPage />);
 
 describe('landing page contract', () => {
-  test('leads with the Grail squad-building promise', () => {
+  test('leads with the DailyDraft squad-building promise', () => {
     expect(markup).toContain('Own the cards.');
     expect(markup).toContain('Field the squad.');
     expect(markup).toContain('Sports fantasy casino on Solana');
     expect(markup).toContain('Collector Crypt');
-    expect(markup).toContain('GRAIL');
+    expect(markup).toContain('DAILYDRAFT');
   });
 
   test('explains the full rip-to-payout loop in order', () => {
@@ -41,7 +41,7 @@ describe('landing page contract', () => {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dailydraft.fun';
 
     expect(markup).toContain('Start playing');
-    expect(markup).toContain('Play Grail');
+    expect(markup).toContain('Play DailyDraft');
     expect(markup).toContain('Enter the arena');
     expect(markup).toContain(`href="${appUrl}"`);
     expect(markup).toContain('href="#how-it-works"');
