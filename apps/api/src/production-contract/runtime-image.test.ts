@@ -48,8 +48,16 @@ describe('API runtime image database TLS', () => {
     expect(copiesBundle, `nothing is copied to ${certificateTarget}`).not.toBeNull();
 
     const bundle = readFileSync(`${repoRoot}${copiesBundle?.[1]}`, 'utf8');
-    expect(bundle).toContain('-----BEGIN CERTIFICATE-----');
-    expect(bundle).toContain('Amazon RDS');
+    const certificates = Array.from(
+      bundle.matchAll(/-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/g),
+      (match) => match[1],
+    );
+    expect(certificates.length, 'bundle holds no PEM certificate blocks').toBeGreaterThan(0);
+
+    // The issuer name is base64-encoded inside each block, so decode before matching:
+    // DER stores subject fields as raw bytes, which is why latin1 reads them back.
+    const issuers = certificates.map((block) => Buffer.from(block, 'base64').toString('latin1'));
+    expect(issuers.some((der) => der.includes('Amazon RDS'))).toBe(true);
   });
 });
 
