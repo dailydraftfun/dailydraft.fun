@@ -47,8 +47,10 @@ describe('docs layout contract', () => {
   });
 
   test('anchors relative metadata against an absolute docs origin', () => {
+    // Next declares metadataBase as `string | URL | null`, so the scheme is read back
+    // through a URL built from the value instead of off the union directly.
     expect(metadata.metadataBase).toBeInstanceOf(URL);
-    expect(metadata.metadataBase?.protocol).toBe('https:');
+    expect(new URL(String(metadata.metadataBase)).protocol).toBe('https:');
   });
 
   test('renders the rebranded shell around page content', async () => {
