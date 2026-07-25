@@ -1,15 +1,13 @@
 import { createHash } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
 
-// The two identifiers below deliberately keep the pre-rebrand "openpacksduel"
-// prefix. They are hashed into CANONICAL_VALUATION_POLICY_HASH and
-// DEVNET_DEMO_VALUATION_POLICY_HASH, which are written into escrow funding
-// instructions and settlement evidence and stored on every duel row;
-// requireCanonicalValuationPolicyHash rejects any other value. Renaming them
-// moves both hashes and invalidates the policy pinned by every in-flight duel.
-// Like the applied Prisma migrations, a committed hashed identifier is history
-// rather than branding. Neighbouring policyVersion values are already not
-// brand-named, so nothing user-facing depends on the prefix.
+// schemaVersion and the demo policyVersion below are hashed into
+// CANONICAL_VALUATION_POLICY_HASH and DEVNET_DEMO_VALUATION_POLICY_HASH, which
+// are written into escrow funding instructions and stored on every duel row.
+// Renaming them therefore moves both hashes, so the rebrand ships with a
+// migration that rewrites the stored hashes on Duel, MatchmakingTicket, and
+// DuelPackOutcome. The preview runs on devnet only, so no settled mainnet
+// evidence pins the retired values.
 export const CANONICAL_VALUATION_POLICY = Object.freeze({
   authoritativeField: 'collector-crypt.gacha.result.insuredValue',
   comparisonMetric: 'insured-value',
@@ -22,14 +20,14 @@ export const CANONICAL_VALUATION_POLICY = Object.freeze({
   policyVersion: 'collector-crypt-insured-value-usdc-v1',
   providerCorrectionRule: 'immutable-after-result-commit-dispute-or-refund',
   rounding: 'none',
-  schemaVersion: 'openpacksduel.valuation-policy.v1',
+  schemaVersion: 'dailydraft.valuation-policy.v1',
   tieRule: 'return-original-assets-and-refund-platform-fees',
 } as const);
 
 export type CanonicalValuationPolicy = typeof CANONICAL_VALUATION_POLICY;
 
 export const CANONICAL_VALUATION_POLICY_HASH =
-  '406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b';
+  'b1334fcec0e89380bc0b32b2210a9ca99fb72d64bfd75e4c2c2d64cbe40b43ba';
 
 const calculatedPolicyHash = createHash('sha256')
   .update(stableStringify(CANONICAL_VALUATION_POLICY))
@@ -44,7 +42,7 @@ export const DEVNET_DEMO_VALUATION_POLICY = Object.freeze({
   authoritativeField: 'pokemon-tcg.tcgplayer.prices.<first-supported-variant>.market',
   maxFutureSkewSeconds: 0,
   maxSourceAgeSeconds: 604800,
-  policyVersion: 'openpacksduel-pokemon-tcg-market-usdc-v1',
+  policyVersion: 'dailydraft-pokemon-tcg-market-usdc-v1',
   sourceSelection: {
     fallbackRule: 'reject-if-no-listed-variant-has-positive-market',
     priceField: 'market',
@@ -55,7 +53,7 @@ export const DEVNET_DEMO_VALUATION_POLICY = Object.freeze({
 } as const);
 
 export const DEVNET_DEMO_VALUATION_POLICY_HASH =
-  '39186a3c3b133d001d3c17dd3832b45c2286e3df81ba13494e3cef638a48baf8';
+  '0d8f1654c4d5c86622e207622bea835d029ecc78ed2ca1a24ba739a2c356c9fd';
 
 const calculatedDemoPolicyHash = createHash('sha256')
   .update(stableStringify(DEVNET_DEMO_VALUATION_POLICY))
