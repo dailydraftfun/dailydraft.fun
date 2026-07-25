@@ -54,7 +54,7 @@ export default function configHandler(request: IncomingMessage, response: Server
 function publicOrigin(request: IncomingMessage): string {
   const forwardedHost = firstHeader(request.headers['x-forwarded-host']);
   const host = forwardedHost ?? firstHeader(request.headers.host);
-  if (!host) return 'https://dailydraft-mcp.vercel.app';
+  if (!host) return 'https://mcp.dailydraft.fun';
 
   const forwardedProtocol = firstHeader(request.headers['x-forwarded-proto']);
   const protocol = forwardedProtocol ?? (host.startsWith('localhost') ? 'http' : 'https');

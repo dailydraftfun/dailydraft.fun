@@ -2,7 +2,7 @@
 
 Authenticated Model Context Protocol server for non-custodial DailyDraft
 integrations. It supports local stdio and stateless Streamable HTTP at `/mcp`.
-The production endpoint is `https://dailydraft-mcp.vercel.app/mcp`.
+The production endpoint is `https://mcp.dailydraft.fun/mcp`.
 
 The server wraps the public v1 API contract with agent-safe tools for pack
 discovery, duel status, proof references, and canonical social-card URLs. Its

@@ -1,4 +1,4 @@
-const canonicalEndpoint = 'https://dailydraft-mcp.vercel.app/mcp';
+const canonicalEndpoint = 'https://mcp.dailydraft.fun/mcp';
 const endpoint = `${window.location.origin}/mcp`;
 
 for (const element of document.querySelectorAll('[data-endpoint-text]')) {
