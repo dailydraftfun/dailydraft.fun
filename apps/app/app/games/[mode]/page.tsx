@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: GamePreviewPageProps): Promis
   if (!isPreviewMode(mode)) return {};
   const title = previewModeTitles[mode];
   return {
-    title: `${title} UX preview — Grail Devnet`,
+    title: `${title} UX preview — DailyDraft Devnet`,
     description: `Fixture-backed ${title} player journey with no live funds or assets.`,
     robots: { follow: false, index: false, nocache: true },
   };

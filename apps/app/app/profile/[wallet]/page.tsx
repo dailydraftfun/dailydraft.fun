@@ -17,10 +17,10 @@ export async function generateMetadata({ params }: WalletProfilePageProps): Prom
 
   return {
     title: profile
-      ? `${profile.wallet.display} — Pack Duel`
-      : 'Wallet profile unavailable — Pack Duel',
+      ? `${profile.wallet.display} — DailyDraft`
+      : 'Wallet profile unavailable — DailyDraft',
     description: profile
-      ? `Pseudonymous Pack Duel history for ${profile.wallet.display} on Solana devnet.`
+      ? `Pseudonymous Card Duel history for ${profile.wallet.display} on Solana devnet.`
       : 'No durable public wallet history is available.',
     robots: { follow: false, index: false, nocache: true },
   };

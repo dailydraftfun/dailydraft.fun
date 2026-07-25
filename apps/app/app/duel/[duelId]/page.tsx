@@ -34,7 +34,7 @@ export async function generateMetadata({ params }: DuelPageProps): Promise<Metad
   const receipt = await getReceipt(duelId);
   if (!receipt) {
     return {
-      title: 'Duel proof unavailable — Pack Duel',
+      title: 'Duel proof unavailable — DailyDraft',
       robots: { follow: false, index: false, nocache: true },
     };
   }
@@ -63,7 +63,7 @@ export default async function DuelPage({ params }: DuelPageProps) {
         <header className="receipt-artifact-header">
           <div className="min-w-0">
             <p className="receipt-serial">
-              Pack Duel receipt · {receipt.duel.id} · {receipt.duel.network}
+              DailyDraft receipt · {receipt.duel.id} · {receipt.duel.network}
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <span
@@ -232,7 +232,7 @@ function ResultArtifact({
               ) : (
                 <div className="receipt-pull-placeholder" aria-hidden="true">
                   <span>Verified pull</span>
-                  <strong>PACK DUEL</strong>
+                  <strong>DAILYDRAFT</strong>
                 </div>
               )}
               <h2>{outcome.displayName}</h2>

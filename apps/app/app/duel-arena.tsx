@@ -1509,7 +1509,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     } else {
       try {
         const outcome = await shareNativeResult(
-          { text, title: 'Pack Duel result', url: shareUrl },
+          { text, title: 'Card Duel result', url: shareUrl },
           {
             ...(navigator.share ? { share: navigator.share.bind(navigator) } : {}),
             writeClipboard: (value) => navigator.clipboard.writeText(value),
@@ -1584,7 +1584,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           <div className="battle-heading">
             <div>
               <span className="eyebrow">
-                <SwordIcon size={14} weight="fill" /> {liveDuel.tier} Pack Duel
+                <SwordIcon size={14} weight="fill" /> {liveDuel.tier} Card Duel
               </span>
               <h1 data-testid={journeyTestIds.duelHeadline}>{presentationHeadline}</h1>
             </div>
@@ -1646,7 +1646,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               tier={liveDuel.tier}
               walletLabel={
                 persistedDuel.houseOpponent
-                  ? 'Pack Duel House'
+                  ? 'DailyDraft House'
                   : (shortReference(
                       walletConnection.address === persistedDuel.opponentWallet
                         ? persistedDuel.creatorWallet

@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { shareNativeResult } from './result-sharing';
 
 const payload = {
-  text: 'I won a Pack Duel.',
-  title: 'Pack Duel result',
+  text: 'I won a Card Duel.',
+  title: 'Card Duel result',
   url: 'https://dailydraft.example/duel/duel_share',
 };
 

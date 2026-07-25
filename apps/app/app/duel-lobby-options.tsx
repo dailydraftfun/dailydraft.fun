@@ -33,7 +33,7 @@ export function ProductCapabilityPanel({
         <SpinnerGapIcon className="wallet-spinner" size={22} />
         <div>
           <strong>Checking duel availability</strong>
-          <p>Pack Duel is verifying playable modes and pack tiers before showing an action.</p>
+          <p>DailyDraft is verifying playable modes and pack tiers before showing an action.</p>
         </div>
       </div>
     );

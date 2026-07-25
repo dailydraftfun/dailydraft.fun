@@ -45,7 +45,7 @@ describe('duel entry stepper', () => {
         challengeId: 'challenge',
         domain: 'dailydraft.fun',
         expiresAt: '2026-07-17T09:15:00.000Z',
-        message: 'Sign in to Pack Duel',
+        message: 'Sign in to DailyDraft',
         uri: 'https://dailydraft.fun',
         wallet: 'wallet',
       },

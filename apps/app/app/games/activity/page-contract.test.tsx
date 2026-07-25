@@ -7,7 +7,7 @@ describe('activity page contract', () => {
     const markup = renderToStaticMarkup(<ActivityPage />);
 
     expect(markup).toContain('Lobby activity');
-    expect(metadata.title).toBe('Activity receipt lab — Grail Devnet');
+    expect(metadata.title).toBe('Activity receipt lab — DailyDraft Devnet');
     expect(metadata.robots).toEqual({ follow: false, index: false, nocache: true });
   });
 });

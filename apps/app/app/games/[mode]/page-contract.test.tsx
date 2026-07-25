@@ -17,7 +17,7 @@ describe('game preview page contract', () => {
     const page = await GamePreviewPage({ params: Promise.resolve({ mode: 'flip' }) });
     const markup = renderToStaticMarkup(page);
 
-    expect(metadata.title).toBe('Sports Pack Gacha UX preview — Grail Devnet');
+    expect(metadata.title).toBe('Sports Pack Gacha UX preview — DailyDraft Devnet');
     expect(markup).toContain('Full UX preview');
     expect(markup).toContain('Sports Pack Gacha');
   });
@@ -26,7 +26,7 @@ describe('game preview page contract', () => {
     const crash = await generateMetadata({ params: Promise.resolve({ mode: 'crash' }) });
     const house = await generateMetadata({ params: Promise.resolve({ mode: 'house' }) });
 
-    expect(crash.title).toBe('Card Streak UX preview — Grail Devnet');
-    expect(house.title).toBe('Instant House UX preview — Grail Devnet');
+    expect(crash.title).toBe('Card Streak UX preview — DailyDraft Devnet');
+    expect(house.title).toBe('Instant House UX preview — DailyDraft Devnet');
   });
 });

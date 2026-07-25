@@ -8,7 +8,7 @@ describe('games page contract', () => {
 
     expect(markup).toContain('Four sports loops');
     expect(markup).toContain('Card Duels');
-    expect(metadata.title).toBe('Card games — Grail Devnet');
+    expect(metadata.title).toBe('Card games — DailyDraft Devnet');
     expect(metadata.robots).toEqual({ follow: false, index: false, nocache: true });
   });
 });

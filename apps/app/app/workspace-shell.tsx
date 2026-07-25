@@ -26,11 +26,11 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <a
             href="/overview"
             className="flex shrink-0 items-center gap-2.5"
-            aria-label="Pack Duel home"
+            aria-label="DailyDraft home"
           >
             <BrandMark />
             <span className="text-sm font-semibold tracking-[-0.02em] text-primary sm:text-base">
-              Pack Duel
+              DailyDraft
             </span>
             <span className="rounded-sm border border-lime/25 bg-lime/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-lime">
               Devnet

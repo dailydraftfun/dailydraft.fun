@@ -15,11 +15,11 @@ mock.module('./workspace-shell', () => ({
 const { default: RootLayout, metadata } = await import('./layout');
 
 describe('root layout contract', () => {
-  test('publishes the Grail sports fantasy identity', () => {
-    expect(metadata.title).toBe('Grail Devnet — Own the cards. Field the squad.');
+  test('publishes the DailyDraft sports fantasy identity', () => {
+    expect(metadata.title).toBe('DailyDraft Devnet — Own the cards. Field the squad.');
     expect(metadata.description).toContain('Collector Crypt');
     expect(metadata.description).toContain('sports fantasy loops on Solana');
-    expect(metadata.openGraph?.siteName).toBe('Grail Devnet');
+    expect(metadata.openGraph?.siteName).toBe('DailyDraft Devnet');
     expect(metadata.twitter).toEqual(expect.objectContaining({ card: 'summary_large_image' }));
   });
 
