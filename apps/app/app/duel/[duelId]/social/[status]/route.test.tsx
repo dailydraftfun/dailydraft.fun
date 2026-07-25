@@ -67,14 +67,19 @@ function socialSnapshot(overrides: Partial<DuelSocialSnapshot> = {}): DuelSocial
   };
 }
 
+// The ImageResponse stub assigns through a closure that control-flow analysis cannot
+// follow, so after the reset below the compiler still believes the capture is null.
+// Reading it back across a function boundary restores its declared type.
+function readCapture(): CapturedCard | null {
+  return captured;
+}
+
 async function renderCard(status = 'settled'): Promise<string> {
   captured = null;
   await GET(new Request(`https://dailydraft.fun/duel/duel-1/social/${status}`), {
     params: Promise.resolve({ duelId: 'duel-1', status }),
   });
-  // The route assigns through a closure, which control-flow analysis cannot see, so the
-  // capture is re-widened before the guard narrows it back down.
-  const rendered: CapturedCard | null = captured;
+  const rendered = readCapture();
   if (!rendered) throw new Error('The social card route never produced an image.');
   return renderToStaticMarkup(rendered.element);
 }
