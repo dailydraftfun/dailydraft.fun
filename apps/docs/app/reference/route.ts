@@ -9,6 +9,6 @@ export const GET = ApiReference({
   hideTestRequestButton: true,
   metaData: {
     title: 'DailyDraft API Reference',
-    description: 'Preview integration contract for pack duels on Solana devnet',
+    description: 'Preview integration contract for card duels on Solana devnet',
   },
 });
