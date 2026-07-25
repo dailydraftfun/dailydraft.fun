@@ -11,6 +11,7 @@ on:
       - "package.json"
       - "turbo.json"
       - "apps/api/Dockerfile"
+      - "deploy/dailydraft/**"
       - ".github/workflows/deploy-api-production.yml"
   workflow_dispatch:
 
@@ -55,12 +56,40 @@ jobs:
             "s3://${ARTIFACT_BUCKET}/images/dailydraft-${GITHUB_SHA}.tar.gz" \
             --only-show-errors
 
+      # /usr/local/bin/deploy-dailydraft used to be installed by hand, so edits to
+      # the tracked script changed nothing on the host and the two drifted apart
+      # silently. Shipping it alongside the image pins both to the same commit.
+      - name: Upload host deploy script
+        run: |
+          set -euo pipefail
+          aws s3 cp \
+            deploy/dailydraft/deploy-dailydraft.sh \
+            "s3://${ARTIFACT_BUCKET}/scripts/deploy-dailydraft-${GITHUB_SHA}.sh" \
+            --only-show-errors
+
       - name: Deploy through Systems Manager
         run: |
           set -euo pipefail
           image_key="images/dailydraft-${GITHUB_SHA}.tar.gz"
-          host_command="/usr/local/bin/deploy-dailydraft '${image_key}' '${GITHUB_SHA}'"
-          parameters="$(jq -cn --arg command "$host_command" '{commands: [$command]}')"
+          script_key="scripts/deploy-dailydraft-${GITHUB_SHA}.sh"
+          # AWS-RunShellScript concatenates these into one bash script, so the
+          # leading set and the temporary file carry across the whole sequence.
+          parameters="$(
+            jq -cn \
+              --arg bucket "$ARTIFACT_BUCKET" \
+              --arg region "$AWS_REGION" \
+              --arg script_key "$script_key" \
+              --arg image_key "$image_key" \
+              --arg sha "$GITHUB_SHA" \
+              '{commands: [
+                 "set -euo pipefail",
+                 "script_file=\"$(mktemp)\"",
+                 "aws s3 cp \"s3://\($bucket)/\($script_key)\" \"$script_file\" --region \($region) --only-show-errors",
+                 "install -m 755 \"$script_file\" /usr/local/bin/deploy-dailydraft",
+                 "rm -f \"$script_file\"",
+                 "/usr/local/bin/deploy-dailydraft \($image_key|@sh) \($sha|@sh)"
+               ]}'
+          )"
           command_id="$(
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
