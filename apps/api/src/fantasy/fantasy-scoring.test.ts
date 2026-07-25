@@ -66,7 +66,7 @@ const UNSIGNED_FIXTURE_RULES = {
   sport: 'SOCCER',
 } as const satisfies UnsignedFantasyScoringRuleSet;
 
-const FIXTURE_RULES_HASH = '72c2dc2b307c582a4e3b92850bb212d5c9b1dee5389849fed0a37475bd7b485f';
+const FIXTURE_RULES_HASH = 'e5abd60884b83321c8d588e915cf23a460503b2cb94d296160f951c2ceb4ae9f';
 
 const FIXTURE_RULES: FantasyScoringRuleSet = Object.freeze({
   ...UNSIGNED_FIXTURE_RULES,
@@ -92,7 +92,7 @@ describe('versioned fantasy scoring calculator', () => {
     expect(result.pointsScale).toBe(FANTASY_POINTS_SCALE);
     expect(result.rounding).toBe('exact');
     expect(result.calculationHash).toBe(
-      '19f7afffce32e2b9cdc871e89507cf622ab3b6fd292ee76e5477a7fdade21d11',
+      '258f09a4fac84b2005791db381bf63ba0e333e2946f0b358d2f9ba598a290a14',
     );
     expect(result.breakdown).toHaveLength(4);
     expect(result.breakdown.map((component) => component.milliPoints)).toEqual([

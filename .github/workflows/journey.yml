@@ -28,7 +28,11 @@ jobs:
         with:
           bun-version: 1.3.13
       - run: bun install --frozen-lockfile
-      - run: bunx playwright install --with-deps chromium
+      # Must run through the workspace bin, not `bunx playwright`: the playwright
+      # bin is not hoisted to the root node_modules, so bunx falls through to the
+      # npm registry and installs whatever chromium build latest ships rather than
+      # the one the pinned @playwright/test runner expects.
+      - run: bun --filter @dailydraft/app test:e2e:install
       - run: bun --filter @dailydraft/app test:e2e
       - name: Upload browser failure evidence
         if: failure() && !cancelled()

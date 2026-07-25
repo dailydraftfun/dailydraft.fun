@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:contract": "bun test app/solana/contract-client.test.ts",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "test:e2e": "playwright test --config playwright.config.ts",
     "lint": "biome check app/",
     "clean": "rm -rf .next out"
