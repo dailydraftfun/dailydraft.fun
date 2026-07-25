@@ -14,6 +14,10 @@ COPY --from=builder --chown=bun:bun /app/node_modules ./node_modules
 COPY --from=builder --chown=bun:bun /app/package.json ./package.json
 COPY --from=builder --chown=bun:bun /app/bun.lock ./bun.lock
 COPY --from=builder --chown=bun:bun /app/apps/api/package.json ./apps/api/package.json
+# Bun links workspaces in isolation: apps/api/node_modules holds the symlink farm for
+# this app's dependencies, each pointing into the shared /app/node_modules/.bun store.
+# Without it the API resolves none of its runtime deps and dies on reflect-metadata.
+COPY --from=builder --chown=bun:bun /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=builder --chown=bun:bun /app/apps/api/dist ./apps/api/dist
 COPY --from=builder --chown=bun:bun /app/packages/db ./packages/db
 
