@@ -240,7 +240,7 @@ safe alternative; the API never fabricates a partner transaction. Mock results,
 pending settlement, and winner/ownership mismatches return no card actions.
 Collector Crypt authentication, marketplace builders, live buyback eligibility,
 shipping fees, USDC payment, NFT burn, and shipment tracking remain open gates in
-[issue #24](https://github.com/dailydraft/app/issues/24).
+[issue #24](https://github.com/dailydraftfun/dailydraft.fun/issues/24).
 
 Flip inventory preparation is a separate, immutable market-evidence path; it
 does not write to the house inventory ledger or acquire assets. Each snapshot

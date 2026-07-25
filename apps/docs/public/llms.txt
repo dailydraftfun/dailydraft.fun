@@ -6,9 +6,9 @@
 - Solana transaction model: /guides/solana-transactions
 - Canonical valuation and proof: /guides/valuation-and-proof
 - Webhook verification: /guides/webhooks
-- Escrow protocol: https://github.com/dailydraft/escrow/blob/main/docs/protocol.md
+- Escrow protocol: https://github.com/dailydraftfun/escrow/blob/main/docs/protocol.md
 - MCP server: https://dailydraft-mcp.vercel.app
-- Agent skills: https://github.com/dailydraft/skills
+- Agent skills: https://github.com/dailydraftfun/skills
 
 The API contract is preview-only until its endpoints are deployed. Never provide
 a wallet private key or seed phrase to DailyDraft, its API, MCP server, or an

@@ -3,7 +3,7 @@
 The historical `dailydraft-escrow-v2.ts` filename remains for import stability, but the
 instruction vectors and PDA derivations are pinned to Duel v4 from the verified GitHub Actions
 artifact for
-[`dailydraft/escrow@5268637d961672588c70a1c3b1ccbf6d6ab5f5cb`](https://github.com/dailydraft/escrow/commit/5268637d961672588c70a1c3b1ccbf6d6ab5f5cb).
+[`dailydraftfun/escrow@5268637d961672588c70a1c3b1ccbf6d6ab5f5cb`](https://github.com/dailydraftfun/escrow/commit/5268637d961672588c70a1c3b1ccbf6d6ab5f5cb).
 
 - Duel account version: `4`
 - Artifact: `dailydraft-escrow-5268637d961672588c70a1c3b1ccbf6d6ab5f5cb`

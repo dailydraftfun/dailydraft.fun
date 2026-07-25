@@ -36,14 +36,14 @@ reference.
 ## Monorepo location
 
 This app lives at `apps/docs` in
-[`dailydraft/app`](https://github.com/dailydraft/app). Configure that path
+[`dailydraftfun/dailydraft.fun`](https://github.com/dailydraftfun/dailydraft.fun). Configure that path
 as the Vercel project root.
 
 ## Related repositories
 
-- [`dailydraft/app`](https://github.com/dailydraft/app) — product, docs, MCP, and API implementation
-- [`dailydraft/escrow`](https://github.com/dailydraft/escrow) — public Solana program
-- [`dailydraft/skills`](https://github.com/dailydraft/skills) — installable agent workflows
+- [`dailydraftfun/dailydraft.fun`](https://github.com/dailydraftfun/dailydraft.fun) — product, docs, MCP, and API implementation
+- [`dailydraftfun/escrow`](https://github.com/dailydraftfun/escrow) — public Solana program
+- [`dailydraftfun/skills`](https://github.com/dailydraftfun/skills) — installable agent workflows
 
 ## License
 

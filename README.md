@@ -17,8 +17,8 @@ bun run dev:app
 - `apps/docs` - static developer reference and OpenAPI contract
 - `apps/mcp` - read-only-first MCP server for agent integrations
 - `packages/contracts` - versioned API/app/MCP compatibility fixtures
-- [`dailydraft/escrow`](https://github.com/dailydraft/escrow) - public Solana escrow program
-- [`dailydraft/skills`](https://github.com/dailydraft/skills) - public agent skills
+- [`dailydraftfun/escrow`](https://github.com/dailydraftfun/escrow) - public Solana escrow program
+- [`dailydraftfun/skills`](https://github.com/dailydraftfun/skills) - public agent skills
 
 ## App Scripts
 

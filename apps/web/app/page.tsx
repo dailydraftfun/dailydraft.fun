@@ -73,7 +73,7 @@ export default function LandingPage() {
           <nav aria-label="Main navigation">
             <a href="#how-it-works">How it works</a>
             <a href="#trust">Trust</a>
-            <a href="https://github.com/dailydraft/escrow">Open escrow</a>
+            <a href="https://github.com/dailydraftfun/escrow">Open escrow</a>
           </nav>
           <a className="nav-cta" href={appUrl}>
             Enter the arena <ArrowRightIcon size={15} weight="bold" />
@@ -193,7 +193,7 @@ export default function LandingPage() {
             Every value-bearing step is designed around explicit wallet approval, public program
             rules, and evidence you can verify independently.
           </p>
-          <a href="https://github.com/dailydraft/escrow">
+          <a href="https://github.com/dailydraftfun/escrow">
             Inspect the escrow repository <ArrowRightIcon size={16} />
           </a>
         </div>

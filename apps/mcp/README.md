@@ -50,7 +50,7 @@ Example client configuration for a local checkout:
   "mcpServers": {
     "dailydraft": {
       "command": "bun",
-      "args": ["run", "/absolute/path/to/dailydraft/app/apps/mcp/src/index.ts"],
+      "args": ["run", "/absolute/path/to/dailydraft.fun/apps/mcp/src/index.ts"],
       "env": {
         "DAILYDRAFT_API_URL": "http://localhost:3003/v1"
       }
@@ -114,7 +114,7 @@ bun test
 ```
 
 CI owns tests, typechecking, and builds for this repository. See the canonical
-API contract in [`apps/docs`](https://github.com/dailydraft/app/tree/main/apps/docs).
+API contract in [`apps/docs`](https://github.com/dailydraftfun/dailydraft.fun/tree/main/apps/docs).
 
 ## License
 

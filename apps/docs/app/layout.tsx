@@ -38,7 +38,7 @@ const navbar = (
         <span>DOCS</span>
       </span>
     }
-    projectLink="https://github.com/dailydraft/app"
+    projectLink="https://github.com/dailydraftfun/dailydraft.fun"
   />
 );
 
@@ -57,7 +57,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           navbar={navbar}
           footer={footer}
           pageMap={await getPageMap()}
-          docsRepositoryBase="https://github.com/dailydraft/app/tree/main/apps/docs"
+          docsRepositoryBase="https://github.com/dailydraftfun/dailydraft.fun/tree/main/apps/docs"
           editLink="Edit this page on GitHub"
           sidebar={{ defaultMenuCollapseLevel: 1 }}
         >

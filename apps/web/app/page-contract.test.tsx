@@ -27,7 +27,7 @@ describe('landing page contract', () => {
     expect(markup).toContain('Your wallet signs');
     expect(markup).toContain('Real cards, on-chain');
     expect(markup).toContain('Verifiable outcomes');
-    expect(markup).toContain('https://github.com/dailydraft/escrow');
+    expect(markup).toContain('https://github.com/dailydraftfun/escrow');
   });
 
   test('states the devnet limit and drops the pack-duel framing', () => {
