@@ -3,10 +3,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { DuelTransactionIntent } from '../solana/duel-client';
 
+// Bun's module registry is process-wide, so this override reaches every later test file.
+// Loading the real provider up front and spreading it keeps the rest of its surface
+// intact — only the hook is swapped for a stub this file can drive.
+const walletProvider = await import('../solana/wallet-provider');
+
 let walletState = wallet();
 let authenticationState = authentication();
 
 mock.module('../solana/wallet-provider', () => ({
+  ...walletProvider,
   useSolanaWallet: () => walletState,
 }));
 

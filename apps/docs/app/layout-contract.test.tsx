@@ -14,7 +14,23 @@ mock.module('nextra/page-map', () => ({
 
 mock.module('nextra-theme-docs', () => ({
   Footer: ({ children }: { children: ReactNode }) => <footer>{children}</footer>,
-  Layout: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  // The brand chrome reaches the page through the navbar and footer slots, so the stub
+  // has to render them or the wordmark under test never appears in the markup.
+  Layout: ({
+    children,
+    footer,
+    navbar,
+  }: {
+    children: ReactNode;
+    footer: ReactNode;
+    navbar: ReactNode;
+  }) => (
+    <div>
+      {navbar}
+      {children}
+      {footer}
+    </div>
+  ),
   Navbar: ({ logo }: { logo: ReactNode }) => <nav>{logo}</nav>,
 }));
 

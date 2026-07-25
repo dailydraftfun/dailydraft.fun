@@ -4,9 +4,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { PublicDuelReceipt } from '../../../public-proof-client';
 import type { DuelSocialPull, DuelSocialSnapshot } from '../../../social-card-data';
 
+type CapturedCard = { element: React.ReactElement; options: ResponseInit };
+
 let receipt: PublicDuelReceipt | null = null;
 let snapshot: DuelSocialSnapshot = socialSnapshot();
-let captured: { element: React.ReactElement; options: ResponseInit } | null = null;
+let captured: CapturedCard | null = null;
 
 // next/og only renders inside the edge runtime, so the card element is captured here
 // and rendered with react-dom/server instead.
@@ -70,8 +72,11 @@ async function renderCard(status = 'settled'): Promise<string> {
   await GET(new Request(`https://dailydraft.fun/duel/duel-1/social/${status}`), {
     params: Promise.resolve({ duelId: 'duel-1', status }),
   });
-  if (!captured) throw new Error('The social card route never produced an image.');
-  return renderToStaticMarkup(captured.element);
+  // The route assigns through a closure, which control-flow analysis cannot see, so the
+  // capture is re-widened before the guard narrows it back down.
+  const rendered: CapturedCard | null = captured;
+  if (!rendered) throw new Error('The social card route never produced an image.');
+  return renderToStaticMarkup(rendered.element);
 }
 
 describe('duel social card route', () => {
@@ -114,9 +119,12 @@ describe('duel social card route', () => {
 
     const markup = await renderCard();
 
+    // The duel card pairs the title-case wordmark with the network badge; the uppercase
+    // lockup belongs to the not-found card asserted below.
     expect(markup).toContain('DailyDraft');
-    expect(markup).toContain('DAILYDRAFT');
+    expect(markup).toContain('DEVNET');
     expect(markup.toUpperCase()).not.toContain('PACK DUEL');
+    expect(markup.toLowerCase()).not.toContain('openpacks');
   });
 
   test('answers an unknown duel with a branded not-found card instead of a crash', async () => {
