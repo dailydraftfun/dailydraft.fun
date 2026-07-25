@@ -145,7 +145,9 @@ export function evaluateStaticArtifact(input: StaticArtifactInput): ConformanceC
     'server-state',
     servers.length > 0 &&
       servers.every((server) => server.url?.endsWith('/v1')) &&
-      !servers.some((server) => /(^|\.)api\.dailydraft\.com$/i.test(safeHostname(server.url))),
+      // The live production host is api.dailydraft.fun — the TLD is .fun, not .com.
+      // This guard only works if it names the host we actually serve.
+      !servers.some((server) => /(^|\.)api\.dailydraft\.fun$/i.test(safeHostname(server.url))),
     'servers retain the /v1 base and do not advertise a live production API host',
   );
   addCheck(
