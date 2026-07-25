@@ -398,6 +398,7 @@ export class DuelJourneyFixture {
           {
             assetReference: `fixture-asset-creator-${this.seed}`,
             displayName: 'Charizard fixture pull',
+            imageUrl: 'https://images.pokemontcg.io/base1/4_hires.png',
             insuredValue: { amount: '72500000', currency: 'USDC', decimals: 6 },
             isMock: false,
             provider: 'journey-fixture',
@@ -407,6 +408,7 @@ export class DuelJourneyFixture {
           {
             assetReference: `fixture-asset-opponent-${this.seed}`,
             displayName: 'Blastoise fixture pull',
+            imageUrl: 'https://images.pokemontcg.io/base1/2_hires.png',
             insuredValue: { amount: '41000000', currency: 'USDC', decimals: 6 },
             isMock: false,
             provider: 'journey-fixture',

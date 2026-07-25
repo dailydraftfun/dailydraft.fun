@@ -1,5 +1,6 @@
 import type { DurableDuel } from '../solana/duel-client';
 import { getDuelPlayerStatus } from './duel-player-copy';
+import { type PullRarity, pullRarityFor } from './pull-rarity';
 
 export type LiveDuelPhase = 'lobby' | 'matching' | 'opening' | 'result';
 
@@ -9,6 +10,7 @@ export type LivePull = {
   label: string;
   name: string;
   provider: string;
+  rarity: PullRarity;
   side: 'creator' | 'opponent';
   value: string;
   valueMinor: bigint;
@@ -108,14 +110,17 @@ function toPull(
   outcome: NonNullable<DurableDuel['result']>['outcomes'][number] | null,
 ): LivePull | null {
   if (!outcome) return null;
+  const valueMinor = BigInt(outcome.insuredValue.amount);
   return {
     id: outcome.assetReference,
+    ...(outcome.imageUrl ? { image: outcome.imageUrl } : {}),
     label: shortReference(outcome.assetReference),
     name: outcome.displayName,
     provider: outcome.provider,
+    rarity: pullRarityFor(valueMinor, outcome.insuredValue.decimals),
     side: outcome.side,
-    value: formatMinor(BigInt(outcome.insuredValue.amount), outcome.insuredValue.decimals),
-    valueMinor: BigInt(outcome.insuredValue.amount),
+    value: formatMinor(valueMinor, outcome.insuredValue.decimals),
+    valueMinor,
   };
 }
 

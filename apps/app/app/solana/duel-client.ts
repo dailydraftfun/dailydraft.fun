@@ -52,6 +52,7 @@ export type DurableDuel = {
     outcomes: Array<{
       assetReference: string;
       displayName: string;
+      imageUrl?: string | null;
       insuredValue: { amount: string; currency: 'USDC'; decimals: 6 };
       isMock: boolean;
       provider: string;

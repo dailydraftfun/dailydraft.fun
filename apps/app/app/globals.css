@@ -1977,11 +1977,33 @@
 }
 
 .card-stage {
+  /* Presentation tier tokens, overridden per [data-rarity] below. The tier is
+     derived from the insured value the API already committed and hashed, so it
+     only decides how loudly a decided pull is announced. */
+  --rarity-accent: var(--text-muted);
+  --rarity-veil: rgba(144, 154, 144, 0.14);
+  --rarity-sheen: 0.1;
+
   position: relative;
   width: min(100%, 280px);
   aspect-ratio: 0.705;
   margin: 18px auto 0;
   perspective: 1100px;
+}
+.card-stage[data-rarity="uncommon"] {
+  --rarity-accent: var(--color-agent);
+  --rarity-veil: rgba(98, 216, 255, 0.18);
+  --rarity-sheen: 0.18;
+}
+.card-stage[data-rarity="rare"] {
+  --rarity-accent: var(--violet);
+  --rarity-veil: rgba(167, 139, 250, 0.24);
+  --rarity-sheen: 0.26;
+}
+.card-stage[data-rarity="chase"] {
+  --rarity-accent: var(--gold);
+  --rarity-veil: rgba(247, 201, 72, 0.3);
+  --rarity-sheen: 0.34;
 }
 .pack-shell,
 .pull-shell {
@@ -2017,12 +2039,17 @@
 .pack-shell::after {
   bottom: 0;
 }
+/* Foil lattice for the sealed pack. Drawn rather than fetched so the pre-reveal
+   card always has a surface — the remote cardback this replaced never resolved. */
 .pack-art {
+  position: absolute;
   z-index: 1;
-  object-fit: cover;
-  opacity: 0.2;
-  filter: grayscale(1) hue-rotate(50deg);
-  transform: scale(1.25);
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 32%, rgba(184, 255, 90, 0.18), transparent 64%),
+    repeating-linear-gradient(54deg, rgba(184, 255, 90, 0.2) 0 2px, transparent 2px 10px),
+    repeating-linear-gradient(-54deg, rgba(184, 255, 90, 0.14) 0 2px, transparent 2px 10px);
+  opacity: 0.85;
 }
 .pack-glint {
   position: absolute;
@@ -2077,6 +2104,17 @@
   font-size: 12px;
   font-weight: 700;
 }
+.pack-seam {
+  position: absolute;
+  z-index: 5;
+  top: 6px;
+  bottom: 6px;
+  left: 50%;
+  width: 2px;
+  background: linear-gradient(180deg, transparent, rgba(184, 255, 90, 0.55), transparent);
+  opacity: 0;
+  transform: translateX(-50%) scaleY(0.35);
+}
 .pull-shell {
   opacity: 0;
   transform: rotateY(90deg) scale(0.86);
@@ -2084,12 +2122,55 @@
 .pull-image {
   object-fit: contain;
 }
+.pull-sheen {
+  position: absolute;
+  z-index: 3;
+  inset: -40%;
+  background: linear-gradient(
+    115deg,
+    transparent 40%,
+    rgba(255, 255, 255, var(--rarity-sheen)) 47%,
+    var(--rarity-veil) 50%,
+    rgba(255, 255, 255, var(--rarity-sheen)) 53%,
+    transparent 60%
+  );
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-65%) rotate(3deg);
+}
+.pull-burst {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  border-radius: 15px;
+  opacity: 0;
+  pointer-events: none;
+}
+.pull-rarity {
+  position: absolute;
+  z-index: 7;
+  top: 9px;
+  left: 9px;
+  border: 1px solid var(--rarity-accent);
+  border-radius: 4px;
+  background: rgba(7, 8, 7, 0.78);
+  padding: 3px 6px;
+  color: var(--rarity-accent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
 
 .card-stage-opening .pack-shell {
-  animation: pack-rip 1.05s cubic-bezier(0.2, 0.8, 0.2, 1) infinite alternate;
+  animation: pack-rip 1.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite;
 }
 .card-stage-opening .pack-glint {
   animation: glint 1.2s ease-in-out infinite;
+}
+.card-stage-opening .pack-seam {
+  animation: pack-seam-split 1.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite;
 }
 .card-stage-revealed .pack-shell {
   opacity: 0;
@@ -2099,8 +2180,28 @@
   opacity: 1;
   transform: rotateY(0) scale(1);
 }
+.card-stage-revealed .pull-sheen {
+  animation: pull-sheen-sweep 1.6s cubic-bezier(0.22, 1, 0.36, 1) 320ms both;
+}
+.card-stage-revealed[data-rarity="rare"] .pull-sheen {
+  animation-iteration-count: 2;
+}
+.card-stage-revealed[data-rarity="chase"] .pull-sheen {
+  animation: pull-sheen-sweep 2.8s cubic-bezier(0.22, 1, 0.36, 1) 320ms infinite;
+}
+.card-stage-revealed[data-rarity="rare"] .pull-burst,
+.card-stage-revealed[data-rarity="chase"] .pull-burst {
+  background: radial-gradient(circle at 50% 48%, var(--rarity-veil), transparent 64%);
+  animation: pull-burst-ring 940ms cubic-bezier(0.22, 1, 0.36, 1) 380ms both;
+}
 .reveal-winner .pull-shell {
   filter: drop-shadow(0 0 24px rgba(184, 255, 90, 0.22));
+}
+.card-stage-revealed[data-rarity="rare"] .pull-shell {
+  filter: drop-shadow(0 0 22px rgba(167, 139, 250, 0.3));
+}
+.card-stage-revealed[data-rarity="chase"] .pull-shell {
+  filter: drop-shadow(0 0 28px rgba(247, 201, 72, 0.36));
 }
 
 .opening-status {
@@ -2176,10 +2277,14 @@
   white-space: nowrap;
 }
 .pull-value {
+  display: inline-block;
   color: var(--lime);
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 700;
+}
+.reveal-winner .pull-meta-visible .pull-value {
+  animation: pull-value-pop 640ms cubic-bezier(0.22, 1, 0.36, 1) 520ms both;
 }
 
 .versus-mark {
@@ -2310,12 +2415,95 @@
   color: var(--bg-primary);
 }
 
+/* Escalating tear: the shake builds across a single cycle instead of wobbling
+   symmetrically, so the pack reads as straining rather than idling. */
 @keyframes pack-rip {
-  from {
-    transform: translateY(-3px) rotate(-1deg);
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
   }
-  to {
-    transform: translateY(4px) rotate(1deg) scale(1.015);
+  14% {
+    transform: translate3d(-2px, 1px, 0) rotate(-0.5deg);
+  }
+  28% {
+    transform: translate3d(2px, -1px, 0) rotate(0.5deg);
+  }
+  42% {
+    transform: translate3d(-3px, 2px, 0) rotate(-0.9deg) scale(1.008);
+  }
+  56% {
+    transform: translate3d(3px, -2px, 0) rotate(0.9deg) scale(1.012);
+  }
+  70% {
+    transform: translate3d(-4px, 2px, 0) rotate(-1.3deg) scale(1.016);
+  }
+  84% {
+    transform: translate3d(4px, -3px, 0) rotate(1.3deg) scale(1.02);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1.024);
+  }
+}
+
+@keyframes pack-seam-split {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scaleY(0.35);
+  }
+  55% {
+    opacity: 0.85;
+    transform: translateX(-50%) scaleY(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) scaleY(1) scaleX(7);
+  }
+}
+
+@keyframes pull-sheen-sweep {
+  0% {
+    opacity: 0;
+    transform: translateX(-65%) rotate(3deg);
+  }
+  18% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(65%) rotate(3deg);
+  }
+}
+
+@keyframes pull-burst-ring {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.4);
+  }
+}
+
+@keyframes pull-value-pop {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.82);
+  }
+  55% {
+    opacity: 1;
+    text-shadow: 0 0 18px rgba(184, 255, 90, 0.55);
+    transform: scale(1.18);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
@@ -3379,6 +3567,12 @@
   .animate-ping,
   .card-stage-opening .pack-shell,
   .card-stage-opening .pack-glint,
+  .card-stage-opening .pack-seam,
+  .card-stage-revealed .pull-sheen,
+  .card-stage-revealed[data-rarity="chase"] .pull-sheen,
+  .card-stage-revealed[data-rarity="rare"] .pull-burst,
+  .card-stage-revealed[data-rarity="chase"] .pull-burst,
+  .reveal-winner .pull-meta-visible .pull-value,
   .opening-status span,
   .reveal-countdown strong {
     animation: none;

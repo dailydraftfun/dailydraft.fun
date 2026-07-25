@@ -63,6 +63,7 @@ import {
   getPlayerActionError,
 } from './duel/duel-player-copy';
 import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
+import { pullRarityLabel } from './duel/pull-rarity';
 import { shareNativeResult } from './duel/result-sharing';
 import {
   parseStoredRevealTimeline,
@@ -203,21 +204,20 @@ function DuelCard({
         ) : null}
       </div>
 
-      <div className={`card-stage card-stage-${stage}`}>
+      <div className={`card-stage card-stage-${stage}`} data-rarity={displayPull?.rarity}>
         <div className="pack-shell" aria-hidden={visible}>
           <div className="pack-glint" />
+          <div className="pack-seam" />
           <div className="pack-brand">
             <span>PACK</span>
             <strong>DUEL</strong>
             <small>COMMITTED PACK</small>
           </div>
-          <Image
-            src="https://images.pokemontcg.io/cardback.png"
-            alt=""
-            fill
-            sizes="(max-width: 768px) 42vw, 260px"
-            className="pack-art"
-          />
+          {/* Drawn in CSS rather than fetched: the third-party cardback this used to
+              point at has always 404'd, so the pack you stare at before the reveal
+              rendered as flat colour. A local texture also drops a network round trip
+              from the one screen where latency is most visible. */}
+          <div className="pack-art" aria-hidden="true" />
           <span className="pack-tier">{visible ? '—' : tier}</span>
         </div>
         <div className="pull-shell" aria-hidden={!visible}>
@@ -237,7 +237,12 @@ function DuelCard({
               <small>{displayPull.label}</small>
             </div>
           ) : null}
+          {displayPull ? <span className="pull-sheen" aria-hidden="true" /> : null}
+          {displayPull ? (
+            <span className="pull-rarity">{pullRarityLabel(displayPull.rarity)}</span>
+          ) : null}
         </div>
+        {visible && displayPull ? <span className="pull-burst" aria-hidden="true" /> : null}
         {stage === 'opening' ? (
           <div className="opening-status" role="status">
             <span /> Opening pack
