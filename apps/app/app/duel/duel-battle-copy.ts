@@ -12,12 +12,15 @@ export function battleEyebrowLabel(tier: string): string {
   return `${tier} Card Duel`;
 }
 
+// The wallet fields mirror DuelArena's persisted duel record, where a counterpart
+// wallet is absent until a duel is accepted, so they stay as wide as the
+// `shortReference` helper they are handed to.
 export function opponentWalletLabel(params: {
-  creatorWallet: string;
+  creatorWallet?: string | null;
   houseOpponent: boolean;
-  opponentWallet: string;
-  shortenWallet: (address: string) => string | null;
-  viewerAddress: string | null;
+  opponentWallet?: string | null;
+  shortenWallet: (address?: string | null) => string | null;
+  viewerAddress?: string | null;
 }): string {
   if (params.houseOpponent) return 'DailyDraft House';
   const counterpartWallet =
