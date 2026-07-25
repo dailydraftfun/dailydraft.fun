@@ -1,5 +1,5 @@
 {
-  "name": "@openpacksduel/monorepo",
+  "name": "@dailydraft/monorepo",
   "private": true,
   "packageManager": "bun@1.3.13",
   "workspaces": [
@@ -9,12 +9,12 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "dev:api": "turbo run dev --filter=@openpacksduel/api",
-    "dev:web": "turbo run dev --filter=@openpacksduel/web",
-    "dev:app": "turbo run dev --filter=@openpacksduel/app",
-    "dev:docs": "turbo run dev --filter=@openpacksduel/docs",
-    "dev:mcp": "turbo run dev --filter=@openpacksduel/mcp",
-    "deploy:api:migrate": "bun --filter @openpacksduel/db db:deploy",
+    "dev:api": "turbo run dev --filter=@dailydraft/api",
+    "dev:web": "turbo run dev --filter=@dailydraft/web",
+    "dev:app": "turbo run dev --filter=@dailydraft/app",
+    "dev:docs": "turbo run dev --filter=@dailydraft/docs",
+    "dev:mcp": "turbo run dev --filter=@dailydraft/mcp",
+    "deploy:api:migrate": "bun --filter @dailydraft/db db:deploy",
     "smoke:devnet": "bun run scripts/devnet-smoke.ts",
     "conformance:api-production": "bun scripts/api-production-conformance.ts --artifact apps/api/dist --report artifacts/api-production-conformance.json",
     "typecheck": "turbo run typecheck",

@@ -17,7 +17,7 @@ export interface Pack {
 
 export type MatchmakingMode = 'direct' | 'house' | 'open';
 
-export type PackProviderMode = 'collector-crypt-sandbox' | 'mock' | 'openpacksduel-devnet';
+export type PackProviderMode = 'collector-crypt-sandbox' | 'mock' | 'dailydraft-devnet';
 
 export type DuelStatus =
   | 'waiting'

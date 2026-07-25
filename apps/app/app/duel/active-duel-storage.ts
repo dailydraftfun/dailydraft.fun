@@ -4,7 +4,7 @@ type StoredActiveDuel = {
   duelId: string;
 };
 
-const activeDuelStorageKey = 'openpacksduel:active-duel:v1';
+const activeDuelStorageKey = 'dailydraft:active-duel:v1';
 const duelIdPattern = /^duel_[A-Za-z0-9_-]{1,120}$/;
 
 export function readStoredActiveDuel(storage: ActiveDuelStorage): StoredActiveDuel | null {

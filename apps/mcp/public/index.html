@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Connect Claude Code, Codex, and other MCP clients to the authenticated OpenPacks Duel integration."
+      content="Connect Claude Code, Codex, and other MCP clients to the authenticated DailyDraft integration."
     />
     <meta name="theme-color" content="#070907" />
-    <title>OpenPacks Duel MCP — Connect Claude and Codex</title>
+    <title>DailyDraft MCP — Connect Claude and Codex</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -22,7 +22,7 @@
     <div class="page-grid" aria-hidden="true"></div>
 
     <header class="site-header">
-      <a class="brand" href="/" aria-label="OpenPacks Duel MCP home">
+      <a class="brand" href="/" aria-label="DailyDraft MCP home">
         <span class="brand-mark" aria-hidden="true">
           <span></span>
           <span></span>
@@ -32,10 +32,10 @@
       </a>
 
       <nav class="header-nav" aria-label="Primary navigation">
-        <a href="https://openpacksduel-docs.vercel.app">Docs</a>
+        <a href="https://dailydraft-docs.vercel.app">Docs</a>
         <a href="/config">Config</a>
         <a href="/health">Health</a>
-        <a href="https://github.com/openpacksduel/app">GitHub</a>
+        <a href="https://github.com/dailydraft/app">GitHub</a>
       </nav>
 
       <a class="header-cta" href="#connect">Connect an agent</a>
@@ -56,7 +56,7 @@
 
         <p class="eyebrow">The agent interface for on-chain pack duels</p>
         <h1 id="hero-title">
-          OpenPacks Duel MCP.
+          DailyDraft MCP.
           <span>Claude + Codex.</span>
         </h1>
         <p class="hero-copy">
@@ -66,7 +66,7 @@
 
         <div class="hero-actions">
           <a class="primary-button" href="#connect">Connect now</a>
-          <a class="secondary-button" href="https://openpacksduel-docs.vercel.app">
+          <a class="secondary-button" href="https://dailydraft-docs.vercel.app">
             Read the API docs
           </a>
         </div>
@@ -94,7 +94,7 @@
         </div>
         <div class="endpoint-control">
           <span class="endpoint-lock" aria-hidden="true">↗</span>
-          <code id="mcp-endpoint" data-endpoint-text>https://openpacksduel-mcp.vercel.app/mcp</code>
+          <code id="mcp-endpoint" data-endpoint-text>https://dailydraft-mcp.vercel.app/mcp</code>
           <button class="copy-button" type="button" data-copy-target="mcp-endpoint">
             <span class="copy-default">Copy</span>
             <span class="copy-success">Copied</span>
@@ -109,7 +109,7 @@
             <h2 id="connect-title">Connect in under a minute.</h2>
           </div>
           <p>
-            Obtain a scoped MCP credential from the OpenPacks Duel operator, store it in an
+            Obtain a scoped MCP credential from the DailyDraft operator, store it in an
             environment variable, then register the hosted endpoint with your client.
           </p>
         </div>
@@ -164,14 +164,14 @@
           >
             <div class="step-label"><span>1</span> Store the credential in your shell</div>
             <div class="code-block">
-              <pre><code id="claude-env">export OPENPACKSDUEL_MCP_TOKEN="replace-with-your-scoped-token"</code></pre>
+              <pre><code id="claude-env">export DAILYDRAFT_MCP_TOKEN="replace-with-your-scoped-token"</code></pre>
               <button class="code-copy" type="button" data-copy-target="claude-env" aria-label="Copy environment variable command">
                 Copy
               </button>
             </div>
             <div class="step-label"><span>2</span> Register the hosted MCP server</div>
             <div class="code-block">
-              <pre><code id="claude-command" data-endpoint-code>claude mcp add --transport http openpacksduel --scope user https://openpacksduel-mcp.vercel.app/mcp --header "Authorization: Bearer $OPENPACKSDUEL_MCP_TOKEN"</code></pre>
+              <pre><code id="claude-command" data-endpoint-code>claude mcp add --transport http dailydraft --scope user https://dailydraft-mcp.vercel.app/mcp --header "Authorization: Bearer $DAILYDRAFT_MCP_TOKEN"</code></pre>
               <button class="code-copy" type="button" data-copy-target="claude-command" aria-label="Copy Claude Code setup command">
                 Copy
               </button>
@@ -191,14 +191,14 @@
           >
             <div class="step-label"><span>1</span> Store the credential in your shell</div>
             <div class="code-block">
-              <pre><code id="codex-env">export OPENPACKSDUEL_MCP_TOKEN="replace-with-your-scoped-token"</code></pre>
+              <pre><code id="codex-env">export DAILYDRAFT_MCP_TOKEN="replace-with-your-scoped-token"</code></pre>
               <button class="code-copy" type="button" data-copy-target="codex-env" aria-label="Copy environment variable command">
                 Copy
               </button>
             </div>
             <div class="step-label"><span>2</span> Register the hosted MCP server</div>
             <div class="code-block">
-              <pre><code id="codex-command" data-endpoint-code>codex mcp add openpacksduel --url https://openpacksduel-mcp.vercel.app/mcp --bearer-token-env-var OPENPACKSDUEL_MCP_TOKEN</code></pre>
+              <pre><code id="codex-command" data-endpoint-code>codex mcp add dailydraft --url https://dailydraft-mcp.vercel.app/mcp --bearer-token-env-var DAILYDRAFT_MCP_TOKEN</code></pre>
               <button class="code-copy" type="button" data-copy-target="codex-command" aria-label="Copy Codex setup command">
                 Copy
               </button>
@@ -218,9 +218,9 @@
           >
             <div class="step-label"><span>1</span> Add the server to an MCP client config</div>
             <div class="code-block">
-              <pre><code id="manual-config" data-endpoint-code>[mcp_servers.openpacksduel]
-url = "https://openpacksduel-mcp.vercel.app/mcp"
-bearer_token_env_var = "OPENPACKSDUEL_MCP_TOKEN"</code></pre>
+              <pre><code id="manual-config" data-endpoint-code>[mcp_servers.dailydraft]
+url = "https://dailydraft-mcp.vercel.app/mcp"
+bearer_token_env_var = "DAILYDRAFT_MCP_TOKEN"</code></pre>
               <button class="code-copy" type="button" data-copy-target="manual-config" aria-label="Copy manual MCP configuration">
                 Copy
               </button>
@@ -303,7 +303,7 @@ bearer_token_env_var = "OPENPACKSDUEL_MCP_TOKEN"</code></pre>
             Solana, not trusted from API text alone.
           </p>
         </div>
-        <a href="https://github.com/openpacksduel/escrow">
+        <a href="https://github.com/dailydraft/escrow">
           Inspect the public escrow
           <span aria-hidden="true">↗</span>
         </a>
@@ -312,7 +312,7 @@ bearer_token_env_var = "OPENPACKSDUEL_MCP_TOKEN"</code></pre>
 
     <footer class="site-footer">
       <div class="site-footer-copy">
-        <a class="brand" href="/" aria-label="OpenPacks Duel MCP home">
+        <a class="brand" href="/" aria-label="DailyDraft MCP home">
           <span class="brand-mark brand-mark-small" aria-hidden="true">
             <span></span>
             <span></span>
@@ -320,11 +320,11 @@ bearer_token_env_var = "OPENPACKSDUEL_MCP_TOKEN"</code></pre>
           <span class="brand-name">PACK DUEL</span>
           <span class="brand-product">MCP</span>
         </a>
-        <p>Authenticated agent tooling for the OpenPacks Duel devnet preview.</p>
+        <p>Authenticated agent tooling for the DailyDraft devnet preview.</p>
       </div>
       <nav class="footer-nav" aria-label="Footer navigation">
-        <a href="https://openpacksduel.vercel.app">App</a>
-        <a href="https://openpacksduel-docs.vercel.app">Docs</a>
+        <a href="https://dailydraft.fun">App</a>
+        <a href="https://dailydraft-docs.vercel.app">Docs</a>
         <a href="/config">Machine config</a>
         <a href="/health">Status</a>
       </nav>

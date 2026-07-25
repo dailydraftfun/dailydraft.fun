@@ -1,4 +1,4 @@
-ALTER TYPE "ProviderMode" ADD VALUE 'OPENPACKSDUEL_DEVNET';
+ALTER TYPE "ProviderMode" ADD VALUE 'DAILYDRAFT_DEVNET';
 
 CREATE TABLE "DevnetPackSnapshot" (
     "providerReference" TEXT NOT NULL,

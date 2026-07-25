@@ -48,7 +48,7 @@ export default async function DuelPage({ params }: DuelPageProps) {
 
   const active = !terminalStatuses.has(receipt.duel.status);
   const socialSnapshot = getDuelSocialSnapshot(receipt);
-  const canonicalOrigin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://openpacksduel.vercel.app';
+  const canonicalOrigin = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dailydraft.fun';
   const canonicalUrl = `${canonicalOrigin}/duel/${encodeURIComponent(receipt.duel.id)}`;
   const socialImagePath = `/duel/${encodeURIComponent(receipt.duel.id)}/social/${receipt.duel.status}`;
   const shareUrl = `https://x.com/intent/post?${new URLSearchParams({

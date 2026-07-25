@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 # Two overlapping runs would race on docker load, prisma migrate deploy, and the
-# rm/rename swap, which can leave the host with no container named openpacksduel.
+# rm/rename swap, which can leave the host with no container named dailydraft.
 # Never cancel in flight: a half-applied deploy is worse than a queued one.
 concurrency:
   group: deploy-api-production
@@ -30,16 +30,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      ARTIFACT_BUCKET: openpacksduel-production-deploy-948918267147-us-west-1
+      ARTIFACT_BUCKET: dailydraft-production-deploy-948918267147-us-west-1
       AWS_REGION: us-west-1
       INSTANCE_ID: i-00e74422e719396c3
-      IMAGE_NAME: openpacksduel
+      IMAGE_NAME: dailydraft
     steps:
       - uses: actions/checkout@v7
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::948918267147:role/openpacksduel-github-production-deploy
+          role-to-assume: arn:aws:iam::948918267147:role/dailydraft-github-production-deploy
           aws-region: us-west-1
 
       - name: Build production image
@@ -48,25 +48,25 @@ jobs:
       - name: Upload immutable image artifact
         run: |
           set -euo pipefail
-          artifact_file="${RUNNER_TEMP}/openpacksduel-${GITHUB_SHA}.tar.gz"
+          artifact_file="${RUNNER_TEMP}/dailydraft-${GITHUB_SHA}.tar.gz"
           docker save "${IMAGE_NAME}:${GITHUB_SHA}" | gzip >"$artifact_file"
           aws s3 cp \
             "$artifact_file" \
-            "s3://${ARTIFACT_BUCKET}/images/openpacksduel-${GITHUB_SHA}.tar.gz" \
+            "s3://${ARTIFACT_BUCKET}/images/dailydraft-${GITHUB_SHA}.tar.gz" \
             --only-show-errors
 
       - name: Deploy through Systems Manager
         run: |
           set -euo pipefail
-          image_key="images/openpacksduel-${GITHUB_SHA}.tar.gz"
-          host_command="/usr/local/bin/deploy-openpacksduel '${image_key}' '${GITHUB_SHA}'"
+          image_key="images/dailydraft-${GITHUB_SHA}.tar.gz"
+          host_command="/usr/local/bin/deploy-dailydraft '${image_key}' '${GITHUB_SHA}'"
           parameters="$(jq -cn --arg command "$host_command" '{commands: [$command]}')"
           command_id="$(
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name AWS-RunShellScript \
               --parameters "$parameters" \
-              --comment "Deploy OpenPacksDuel API ${GITHUB_SHA}" \
+              --comment "Deploy DailyDraft API ${GITHUB_SHA}" \
               --query "Command.CommandId" \
               --output text
           )"

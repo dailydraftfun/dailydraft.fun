@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly artifact_bucket="openpacksduel-production-deploy-948918267147-us-west-1"
+readonly artifact_bucket="dailydraft-production-deploy-948918267147-us-west-1"
 readonly aws_region="us-west-1"
-readonly parameter_path="/openpacksduel/api/prod/"
+readonly parameter_path="/dailydraft/api/prod/"
 readonly image_key="${1:-}"
 readonly sha="${2:-}"
 
@@ -12,20 +12,20 @@ if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
   exit 2
 fi
 
-if [[ "$image_key" != "images/openpacksduel-${sha}.tar.gz" ]]; then
+if [[ "$image_key" != "images/dailydraft-${sha}.tar.gz" ]]; then
   echo "Image key does not match the requested Git SHA" >&2
   exit 2
 fi
 
-readonly image="openpacksduel:${sha}"
-readonly environment_directory="/etc/openpacksduel"
-readonly environment_file="${environment_directory}/openpacksduel.env"
-readonly cron_file="/etc/cron.d/openpacksduel"
-readonly artifact_directory="/var/lib/openpacksduel"
+readonly image="dailydraft:${sha}"
+readonly environment_directory="/etc/dailydraft"
+readonly environment_file="${environment_directory}/dailydraft.env"
+readonly cron_file="/etc/cron.d/dailydraft"
+readonly artifact_directory="/var/lib/dailydraft"
 
 install -d -m 700 "$environment_directory" "$artifact_directory"
-temporary_environment="$(mktemp "${environment_directory}/openpacksduel.env.XXXXXX")"
-artifact_file="$(mktemp "${artifact_directory}/openpacksduel.XXXXXX.tar.gz")"
+temporary_environment="$(mktemp "${environment_directory}/dailydraft.env.XXXXXX")"
+artifact_file="$(mktemp "${artifact_directory}/dailydraft.XXXXXX.tar.gz")"
 trap 'rm -f "$temporary_environment" "$artifact_file"' EXIT
 umask 077
 
@@ -132,11 +132,11 @@ docker run --rm \
   --network "$network" \
   --env-file "$environment_file" \
   "$image" \
-  bun --filter @openpacksduel/db db:deploy
+  bun --filter @dailydraft/db db:deploy
 
-docker rm -f openpacksduel-candidate >/dev/null 2>&1 || true
+docker rm -f dailydraft-candidate >/dev/null 2>&1 || true
 docker run -d \
-  --name openpacksduel-candidate \
+  --name dailydraft-candidate \
   --network "$network" \
   --env-file "$environment_file" \
   --restart no \
@@ -144,14 +144,14 @@ docker run -d \
 
 candidate_healthy=false
 for _ in $(seq 1 30); do
-  if docker exec openpacksduel-candidate bun -e \
+  if docker exec dailydraft-candidate bun -e \
     "await fetch('http://127.0.0.1:3000/v1/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
   then
     candidate_healthy=true
     break
   fi
 
-  if [[ "$(docker inspect -f '{{.State.Running}}' openpacksduel-candidate)" != "true" ]]; then
+  if [[ "$(docker inspect -f '{{.State.Running}}' dailydraft-candidate)" != "true" ]]; then
     break
   fi
   sleep 2
@@ -159,21 +159,21 @@ done
 
 if [[ "$candidate_healthy" != "true" ]]; then
   echo "Candidate API failed its health check" >&2
-  docker logs --tail 200 openpacksduel-candidate >&2 || true
-  docker rm -f openpacksduel-candidate >/dev/null 2>&1 || true
+  docker logs --tail 200 dailydraft-candidate >&2 || true
+  docker rm -f dailydraft-candidate >/dev/null 2>&1 || true
   exit 1
 fi
 
-docker rm -f openpacksduel >/dev/null 2>&1 || true
-docker rename openpacksduel-candidate openpacksduel
-docker update --restart unless-stopped openpacksduel >/dev/null
+docker rm -f dailydraft >/dev/null 2>&1 || true
+docker rename dailydraft-candidate dailydraft
+docker update --restart unless-stopped dailydraft >/dev/null
 docker exec shipshit-caddy caddy reload --config /etc/caddy/Caddyfile
 
 # This host is shared with other tenants, so an unbounded image set is a
 # host-wide outage rather than a local one. docker images lists newest first;
 # retain the running image plus the previous one for a fast manual rollback.
 stale_images="$(
-  docker images --filter reference='openpacksduel:*' --format '{{.Repository}}:{{.Tag}}' \
+  docker images --filter reference='dailydraft:*' --format '{{.Repository}}:{{.Tag}}' \
     | grep -Fxv "$image" \
     | tail -n +2
 )" || true
@@ -182,7 +182,7 @@ if [[ -n "$stale_images" ]]; then
   xargs -r docker rmi >/dev/null 2>&1 <<<"$stale_images" || true
 fi
 
-temporary_cron="$(mktemp /etc/cron.d/openpacksduel.XXXXXX)"
+temporary_cron="$(mktemp /etc/cron.d/dailydraft.XXXXXX)"
 trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_cron"' EXIT
 # docker exec inherits the environment the container was created with, so
 # CRON_SECRET is already present inside it. Re-reading the secret on the host and
@@ -190,9 +190,9 @@ trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_cron"' EXIT
 cat >"$temporary_cron" <<'CRON'
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-0 3 * * * root docker exec openpacksduel bun -e "const secret=process.env.CRON_SECRET; if(!secret){console.error('CRON_SECRET is not set inside the container');process.exit(1);} await fetch('http://127.0.0.1:3000/v1/internal/reconciliation/solana',{headers:{Authorization:'Bearer '+secret}}).then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
-0 4 * * * root docker exec openpacksduel bun -e "const secret=process.env.CRON_SECRET; if(!secret){console.error('CRON_SECRET is not set inside the container');process.exit(1);} await fetch('http://127.0.0.1:3000/v1/internal/reconciliation/treasury',{headers:{Authorization:'Bearer '+secret}}).then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+0 3 * * * root docker exec dailydraft bun -e "const secret=process.env.CRON_SECRET; if(!secret){console.error('CRON_SECRET is not set inside the container');process.exit(1);} await fetch('http://127.0.0.1:3000/v1/internal/reconciliation/solana',{headers:{Authorization:'Bearer '+secret}}).then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+0 4 * * * root docker exec dailydraft bun -e "const secret=process.env.CRON_SECRET; if(!secret){console.error('CRON_SECRET is not set inside the container');process.exit(1);} await fetch('http://127.0.0.1:3000/v1/internal/reconciliation/treasury',{headers:{Authorization:'Bearer '+secret}}).then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
 CRON
 install -m 644 "$temporary_cron" "$cron_file"
 
-echo "OpenPacksDuel API deployed: ${image}"
+echo "DailyDraft API deployed: ${image}"

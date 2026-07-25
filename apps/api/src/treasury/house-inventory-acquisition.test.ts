@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DuelSide, HouseTreasuryLedgerType, type Prisma } from '@openpacksduel/db';
+import { DuelSide, HouseTreasuryLedgerType, type Prisma } from '@dailydraft/db';
 
 import { acquireHouseInventoryAsset } from './house-treasury.service.js';
 

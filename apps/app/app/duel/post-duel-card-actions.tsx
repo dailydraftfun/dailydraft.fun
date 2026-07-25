@@ -174,7 +174,7 @@ function actionTarget(action: PostDuelCardActionCapability): string | null {
   ) {
     return null;
   }
-  const base = new URL('https://openpacksduel.invalid');
+  const base = new URL('https://dailydraft.invalid');
   const target = new URL(action.href, base);
   if (target.origin !== base.origin) return null;
   return `${target.pathname}${target.search}${target.hash}`;

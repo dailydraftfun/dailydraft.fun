@@ -10,17 +10,15 @@ import 'nextra-theme-docs/style.css';
 import './globals.css';
 
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://openpacksduel-docs.vercel.app',
-  ),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://dailydraft-docs.vercel.app'),
   title: {
-    default: 'OpenPacks Duel Docs',
-    template: '%s — OpenPacks Duel',
+    default: 'DailyDraft Docs',
+    template: '%s — DailyDraft',
   },
   description:
     'Integration guides, API reference, Solana transaction rules, and verifiable duel proofs.',
   openGraph: {
-    siteName: 'OpenPacks Duel Docs',
+    siteName: 'DailyDraft Docs',
     type: 'website',
   },
   twitter: {
@@ -40,13 +38,13 @@ const navbar = (
         <span>DOCS</span>
       </span>
     }
-    projectLink="https://github.com/openpacksduel/app"
+    projectLink="https://github.com/dailydraft/app"
   />
 );
 
 const footer = (
   <Footer>
-    <span>OpenPacks Duel · Solana devnet preview</span>
+    <span>DailyDraft · Solana devnet preview</span>
   </Footer>
 );
 
@@ -59,7 +57,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           navbar={navbar}
           footer={footer}
           pageMap={await getPageMap()}
-          docsRepositoryBase="https://github.com/openpacksduel/app/tree/main/apps/docs"
+          docsRepositoryBase="https://github.com/dailydraft/app/tree/main/apps/docs"
           editLink="Edit this page on GitHub"
           sidebar={{ defaultMenuCollapseLevel: 1 }}
         >

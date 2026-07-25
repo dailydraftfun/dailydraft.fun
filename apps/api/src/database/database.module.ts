@@ -1,5 +1,5 @@
+import { createDatabaseClient, type DatabaseClient } from '@dailydraft/db';
 import { Global, Inject, Injectable, Module, type OnApplicationShutdown } from '@nestjs/common';
-import { createDatabaseClient, type DatabaseClient } from '@openpacksduel/db';
 
 import { DATABASE_CLIENT } from './database.constants.js';
 

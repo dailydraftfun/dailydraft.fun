@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
+import type { DatabaseClient, Prisma } from '@dailydraft/db';
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import type { DatabaseClient, Prisma } from '@openpacksduel/db';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import { stableStringify } from '../providers/valuation-policy.js';
@@ -13,7 +13,7 @@ import {
   isFantasySport,
 } from './fantasy-domain.js';
 
-export const FANTASY_KICKOFF_SCHEMA_VERSION = 'openpacksduel.fantasy-kickoff.v1';
+export const FANTASY_KICKOFF_SCHEMA_VERSION = 'dailydraft.fantasy-kickoff.v1';
 
 // Distinct advisory-lock namespace so kickoff sealing never contends with the
 // flip inventory snapshot lock (1_584_503_769).
@@ -250,7 +250,7 @@ export function prepareFantasyKickoffSnapshot(
 export function fantasyKickoffFixtureModeEnabled(
   environment: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  if (environment.OPENPACKSDUEL_FANTASY_FIXTURE_MODE !== 'true') return false;
+  if (environment.DAILYDRAFT_FANTASY_FIXTURE_MODE !== 'true') return false;
   if (environment.VERCEL_ENV === 'production') return false;
   return (
     environment.NODE_ENV === 'test' ||

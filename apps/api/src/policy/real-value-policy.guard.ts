@@ -13,7 +13,7 @@ import { REAL_VALUE_CAPABILITIES, type RealValueCapability } from './real-value-
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { RealValuePolicyService } from './real-value-policy.service.js';
 
-export const REAL_VALUE_ADMISSION_BOUNDARY = 'openpacksduel.real-value-admission';
+export const REAL_VALUE_ADMISSION_BOUNDARY = 'dailydraft.real-value-admission';
 
 export type RealValueAdmissionBoundary = 'duel.create' | RealValueCapability;
 

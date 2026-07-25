@@ -13,7 +13,7 @@ export const CANONICAL_VALUATION_POLICY = Object.freeze({
   policyVersion: 'collector-crypt-insured-value-usdc-v1',
   providerCorrectionRule: 'immutable-after-result-commit-dispute-or-refund',
   rounding: 'none',
-  schemaVersion: 'openpacksduel.valuation-policy.v1',
+  schemaVersion: 'dailydraft.valuation-policy.v1',
   tieRule: 'return-original-assets-and-refund-platform-fees',
 } as const);
 
@@ -35,7 +35,7 @@ export const DEVNET_DEMO_VALUATION_POLICY = Object.freeze({
   authoritativeField: 'pokemon-tcg.tcgplayer.prices.<first-supported-variant>.market',
   maxFutureSkewSeconds: 0,
   maxSourceAgeSeconds: 604800,
-  policyVersion: 'openpacksduel-pokemon-tcg-market-usdc-v1',
+  policyVersion: 'dailydraft-pokemon-tcg-market-usdc-v1',
   sourceSelection: {
     fallbackRule: 'reject-if-no-listed-variant-has-positive-market',
     priceField: 'market',
@@ -78,7 +78,7 @@ export function currentValuationPolicy(): {
   policy: SupportedValuationPolicy;
   policyHash: string;
 } {
-  return process.env.OPENPACKSDUEL_PROVIDER_MODE === 'openpacksduel-devnet'
+  return process.env.DAILYDRAFT_PROVIDER_MODE === 'dailydraft-devnet'
     ? {
         policy: DEVNET_DEMO_VALUATION_POLICY,
         policyHash: DEVNET_DEMO_VALUATION_POLICY_HASH,

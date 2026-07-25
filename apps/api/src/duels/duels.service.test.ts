@@ -16,11 +16,11 @@ import { DuelsService } from './duels.service.js';
 
 const WALLET = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
 const OPPONENT = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
-const originalAppUrl = process.env.OPENPACKSDUEL_APP_URL;
+const originalAppUrl = process.env.DAILYDRAFT_APP_URL;
 const originalNodeEnvironment = process.env.NODE_ENV;
 
 afterEach(() => {
-  setEnvironment('OPENPACKSDUEL_APP_URL', originalAppUrl);
+  setEnvironment('DAILYDRAFT_APP_URL', originalAppUrl);
   setEnvironment('NODE_ENV', originalNodeEnvironment);
 });
 
@@ -69,7 +69,7 @@ describe('DuelsService', () => {
 
   test('creates a disclosed devnet house match without marking it funded', async () => {
     process.env.NODE_ENV = 'production';
-    process.env.OPENPACKSDUEL_APP_URL = 'https://openpacksduel.vercel.app';
+    process.env.DAILYDRAFT_APP_URL = 'https://dailydraft.fun';
     const service = new DuelsService(new FakeDuelRepository(), new PacksService());
 
     const duel = await service.create(
@@ -92,7 +92,7 @@ describe('DuelsService', () => {
 
   test('fails closed instead of generating localhost social links in production', async () => {
     process.env.NODE_ENV = 'production';
-    delete process.env.OPENPACKSDUEL_APP_URL;
+    delete process.env.DAILYDRAFT_APP_URL;
     const service = new DuelsService(new FakeDuelRepository(), new PacksService());
     const duel = await service.create(
       {

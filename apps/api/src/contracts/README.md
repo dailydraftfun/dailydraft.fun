@@ -1,13 +1,13 @@
 # Vendored escrow contract surface
 
-The historical `openpacksduel-escrow-v2.ts` filename remains for import stability, but the
+The historical `dailydraft-escrow-v2.ts` filename remains for import stability, but the
 instruction vectors and PDA derivations are pinned to Duel v4 from the verified GitHub Actions
 artifact for
-[`openpacksduel/escrow@5268637d961672588c70a1c3b1ccbf6d6ab5f5cb`](https://github.com/openpacksduel/escrow/commit/5268637d961672588c70a1c3b1ccbf6d6ab5f5cb).
+[`dailydraft/escrow@5268637d961672588c70a1c3b1ccbf6d6ab5f5cb`](https://github.com/dailydraft/escrow/commit/5268637d961672588c70a1c3b1ccbf6d6ab5f5cb).
 
 - Duel account version: `4`
-- Artifact: `openpacksduel-escrow-5268637d961672588c70a1c3b1ccbf6d6ab5f5cb`
-- IDL file: `openpacksduel_escrow.json`
+- Artifact: `dailydraft-escrow-5268637d961672588c70a1c3b1ccbf6d6ab5f5cb`
+- IDL file: `dailydraft_escrow.json`
 - IDL SHA-256: `f16eda95787367db629051203dac8a5db61794f1c048528ecfecd868245e070d`
 - Program: `Co198eFfQcmn1WzZRnHV6jxcSLBDCv1qNfPfiBYdCLfS`
 

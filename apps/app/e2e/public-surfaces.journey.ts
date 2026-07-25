@@ -13,7 +13,7 @@ import { journeyApiOrigin, journeyOpponentWallet, journeyRpcUrl } from './fixtur
 import { expect, test } from './fixtures/playwright';
 
 const appOrigin = 'http://127.0.0.1:3001';
-const canonicalAppOrigin = 'https://openpacksduel.vercel.app';
+const canonicalAppOrigin = 'https://dailydraft.fun';
 type AxeResults = Awaited<ReturnType<AxeBuilder['analyze']>>;
 
 test.use({ journeySeed: 'public-surfaces' });
@@ -79,7 +79,7 @@ for (const surface of [
     url: 'http://127.0.0.1:3002',
   },
   {
-    heading: /openpacks duel mcp/i,
+    heading: /dailydraft mcp/i,
     label: 'MCP onboarding',
     url: 'http://127.0.0.1:3004',
   },

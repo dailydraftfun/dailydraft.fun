@@ -1,5 +1,5 @@
 {
-  "name": "@openpacksduel/app",
+  "name": "@dailydraft/app",
   "version": "0.0.1",
   "private": true,
   "packageManager": "bun@1.3.13",
@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
-    "@openpacksduel/contracts": "workspace:*",
+    "@dailydraft/contracts": "workspace:*",
     "@playwright/test": "1.61.1",
     "@tailwindcss/postcss": "4.2.4",
     "@types/bun": "1.3.8",

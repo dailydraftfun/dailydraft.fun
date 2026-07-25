@@ -4,7 +4,7 @@ interface HealthBody {
   authenticationConfigured: boolean;
   endpoint: string;
   network: 'solana-devnet';
-  service: 'openpacksduel-mcp';
+  service: 'dailydraft-mcp';
   status: 'ready' | 'unavailable';
   transport: 'streamable-http';
   upstreamApiConfigured: boolean;
@@ -22,14 +22,14 @@ export default function healthHandler(request: IncomingMessage, response: Server
     return;
   }
 
-  const authenticationConfigured = Boolean(process.env.OPENPACKSDUEL_MCP_KEYS?.trim());
-  const upstreamApiConfigured = Boolean(process.env.OPENPACKSDUEL_API_URL?.trim());
+  const authenticationConfigured = Boolean(process.env.DAILYDRAFT_MCP_KEYS?.trim());
+  const upstreamApiConfigured = Boolean(process.env.DAILYDRAFT_API_URL?.trim());
   const ready = authenticationConfigured && upstreamApiConfigured;
   const body: HealthBody = {
     authenticationConfigured,
     endpoint: '/mcp',
     network: 'solana-devnet',
-    service: 'openpacksduel-mcp',
+    service: 'dailydraft-mcp',
     status: ready ? 'ready' : 'unavailable',
     transport: 'streamable-http',
     upstreamApiConfigured,

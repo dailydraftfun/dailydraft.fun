@@ -162,7 +162,7 @@ describe('duel lobby capability controls', () => {
       {
         modes: valid.modes,
         network: 'solana-devnet',
-        provider: { mode: 'openpacksduel-devnet', ready: true },
+        provider: { mode: 'dailydraft-devnet', ready: true },
       },
       { ...valid, modes: { ...valid.modes, direct: { enabled: true } } },
       { ...valid, packs: {} },
@@ -175,7 +175,7 @@ describe('duel lobby capability controls', () => {
         modes: { ...valid.modes, direct: { enabled: true, reason: 503 } },
       },
       { ...valid, network: 'solana-mainnet' },
-      { ...valid, provider: { mode: 'openpacksduel-devnet' } },
+      { ...valid, provider: { mode: 'dailydraft-devnet' } },
       {
         ...valid,
         packs: valid.packs.map((pack, index) => (index === 0 ? { ...pack, reason: 503 } : pack)),
@@ -241,6 +241,6 @@ function capabilityFixture({
         tier: 100,
       },
     ],
-    provider: { mode: 'openpacksduel-devnet', ready: coreEnabled },
+    provider: { mode: 'dailydraft-devnet', ready: coreEnabled },
   };
 }

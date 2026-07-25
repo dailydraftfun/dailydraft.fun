@@ -1,11 +1,11 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { type DatabaseClient, DuelSide as DatabaseDuelSide } from '@dailydraft/db';
 import {
   BadRequestException,
   Inject,
   Injectable,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { type DatabaseClient, DuelSide as DatabaseDuelSide } from '@openpacksduel/db';
 import { PublicKey } from '@solana/web3.js';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
@@ -30,7 +30,7 @@ import {
 import { DEVNET_DEMO_VALUATION_POLICY_HASH } from './valuation-policy.js';
 
 const REFERENCE_PREFIX = 'opd1_';
-const POOL_VERSION = 'openpacksduel-devnet-pokemon.v1';
+const POOL_VERSION = 'dailydraft-devnet-pokemon.v1';
 const PACK_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/;
 const CARD_POOL = ['base1-4', 'base1-58', 'base1-2', 'base1-15', 'base1-22'] as const;
 const DEPOSIT_LEASE_MS = 120_000;
@@ -45,7 +45,7 @@ interface DemoPackReference {
 
 @Injectable()
 export class DevnetDemoPackProvider extends PackProvider {
-  readonly mode = 'openpacksduel-devnet' as const;
+  readonly mode = 'dailydraft-devnet' as const;
 
   constructor(
     @Inject(DATABASE_CLIENT) private readonly database: DatabaseClient,
@@ -261,7 +261,7 @@ export class DevnetDemoPackProvider extends PackProvider {
         rawPayload,
         signature: this.signer.referenceMac(rawPayload),
         signatureAlgorithm: 'hmac-sha256-devnet',
-        signingKeyReference: 'openpacksduel-devnet-provider-v1',
+        signingKeyReference: 'dailydraft-devnet-provider-v1',
       }),
     };
   }

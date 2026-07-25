@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { OperatorReasonCode } from '@openpacksduel/db';
+import { OperatorReasonCode } from '@dailydraft/db';
 
 import {
   assertPauseVersionUpdated,
@@ -21,10 +21,10 @@ describe('devnet risk controls', () => {
   test('normalizes allowed tiers and bounds numeric configuration', () => {
     expect(
       readRiskLimits({
-        OPENPACKSDUEL_ALLOWED_TIERS: '100,25,invalid,100',
-        OPENPACKSDUEL_HOUSE_ENABLED: 'true',
-        OPENPACKSDUEL_MAX_ACTIVE_DUELS_PER_WALLET: '0',
-        OPENPACKSDUEL_MAX_CONCURRENT_DUELS_PER_TIER: '5000',
+        DAILYDRAFT_ALLOWED_TIERS: '100,25,invalid,100',
+        DAILYDRAFT_HOUSE_ENABLED: 'true',
+        DAILYDRAFT_MAX_ACTIVE_DUELS_PER_WALLET: '0',
+        DAILYDRAFT_MAX_CONCURRENT_DUELS_PER_TIER: '5000',
       }),
     ).toEqual({
       allowedTiers: [25, 100],
@@ -47,10 +47,8 @@ describe('devnet risk controls', () => {
   });
 
   test('fails closed when an explicit tier configuration is empty or malformed', () => {
-    expect(readRiskLimits({ OPENPACKSDUEL_ALLOWED_TIERS: '' }).allowedTiers).toEqual([]);
-    expect(readRiskLimits({ OPENPACKSDUEL_ALLOWED_TIERS: 'invalid,0,500' }).allowedTiers).toEqual(
-      [],
-    );
+    expect(readRiskLimits({ DAILYDRAFT_ALLOWED_TIERS: '' }).allowedTiers).toEqual([]);
+    expect(readRiskLimits({ DAILYDRAFT_ALLOWED_TIERS: 'invalid,0,500' }).allowedTiers).toEqual([]);
   });
 
   test('makes identical pause retries no-ops and detects a lost version race', () => {

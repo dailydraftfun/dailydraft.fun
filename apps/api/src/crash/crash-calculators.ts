@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 import type { Money } from '../domain.js';
 import { stableStringify } from '../providers/valuation-policy.js';
 
-export const CRASH_CALCULATOR_VERSION = 'openpacksduel.crash-calculators.v1' as const;
-export const CRASH_RULES_SCHEMA_VERSION = 'openpacksduel.crash-rules.v1' as const;
+export const CRASH_CALCULATOR_VERSION = 'dailydraft.crash-calculators.v1' as const;
+export const CRASH_RULES_SCHEMA_VERSION = 'dailydraft.crash-rules.v1' as const;
 
 const BPS_SCALE = 10_000n;
 const MAX_POT_CONTRIBUTION_BPS = 1_000_000;

@@ -5,7 +5,7 @@ import {
   ESCROW_DUEL_VERSION,
   ESCROW_V2_PROGRAM_ID,
   SETTLE_DUEL_DISCRIMINATOR,
-} from '../contracts/openpacksduel-escrow-v2.js';
+} from '../contracts/dailydraft-escrow-v2.js';
 import {
   type AcquiredGachaCard,
   type AcquireGachaCardInput,
@@ -91,7 +91,7 @@ export class FixtureSportsPackGachaProvider extends SportsPackGachaProvider {
 }
 
 export function gachaFixtureModeEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
-  if (environment.OPENPACKSDUEL_GACHA_FIXTURE_MODE !== 'true') return false;
+  if (environment.DAILYDRAFT_GACHA_FIXTURE_MODE !== 'true') return false;
   if (environment.VERCEL_ENV === 'production') return false;
   return (
     environment.NODE_ENV === 'test' ||

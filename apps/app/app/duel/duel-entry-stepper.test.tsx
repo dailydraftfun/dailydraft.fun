@@ -37,10 +37,10 @@ describe('duel entry stepper', () => {
       challenge: {
         chain: 'solana:devnet',
         challengeId: 'challenge',
-        domain: 'openpacksduel.vercel.app',
+        domain: 'dailydraft.fun',
         expiresAt: '2026-07-17T09:15:00.000Z',
         message: 'Sign in to Pack Duel',
-        uri: 'https://openpacksduel.vercel.app',
+        uri: 'https://dailydraft.fun',
         wallet: 'wallet',
       },
     });

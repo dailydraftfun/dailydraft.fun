@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import {
   type DatabaseClient,
   GachaInventoryExclusionReason,
   GachaSport,
   type Prisma,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
+import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import { stableStringify } from '../providers/valuation-policy.js';
@@ -16,7 +16,7 @@ import type {
   SportsPackGachaSport,
 } from './sports-pack-gacha.provider.js';
 
-export const GACHA_INVENTORY_SCHEMA_VERSION = 'openpacksduel.gacha-inventory.v1';
+export const GACHA_INVENTORY_SCHEMA_VERSION = 'dailydraft.gacha-inventory.v1';
 
 const GACHA_INVENTORY_LOCK_NAMESPACE = 1_191_047_329;
 const MAX_CANDIDATES = 500;

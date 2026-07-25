@@ -49,12 +49,12 @@ export const FORBIDDEN_TARGET_VARIABLES = [
   'DATABASE_URL',
   'ESCROW_FEE_RECIPIENT',
   'ESCROW_PROVIDER_SIGNER',
-  'OPENPACKSDUEL_API_URL',
-  'OPENPACKSDUEL_API_KEYS',
-  'OPENPACKSDUEL_DEVNET_PROVIDER_KEYPAIR_JSON',
-  'OPENPACKSDUEL_DEVNET_FUNDING_SIGNER',
-  'OPENPACKSDUEL_HOUSE_DEVNET_FUNDING_SIGNER',
-  'OPENPACKSDUEL_PROVIDER_MODE',
+  'DAILYDRAFT_API_URL',
+  'DAILYDRAFT_API_KEYS',
+  'DAILYDRAFT_DEVNET_PROVIDER_KEYPAIR_JSON',
+  'DAILYDRAFT_DEVNET_FUNDING_SIGNER',
+  'DAILYDRAFT_HOUSE_DEVNET_FUNDING_SIGNER',
+  'DAILYDRAFT_PROVIDER_MODE',
   'POKEMON_TCG_API_KEY',
   'NEXT_PUBLIC_DUEL_API_URL',
   'NEXT_PUBLIC_SOLANA_RPC_URL',
@@ -141,8 +141,8 @@ export function assertSafeEnvironment(environment: NodeJS.ProcessEnv): void {
   if (environment.SOAK_FIXTURE_MODE !== 'deterministic') {
     throw new Error('SOAK_FIXTURE_MODE must be deterministic');
   }
-  if (environment.OPENPACKSDUEL_NETWORK !== 'solana-devnet') {
-    throw new Error('OPENPACKSDUEL_NETWORK must be solana-devnet');
+  if (environment.DAILYDRAFT_NETWORK !== 'solana-devnet') {
+    throw new Error('DAILYDRAFT_NETWORK must be solana-devnet');
   }
   if (environment.NODE_ENV === 'production') {
     throw new Error('NODE_ENV must not be production');

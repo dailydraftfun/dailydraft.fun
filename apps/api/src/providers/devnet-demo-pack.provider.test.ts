@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import type { DatabaseClient } from '@openpacksduel/db';
+import type { DatabaseClient } from '@dailydraft/db';
 import { Keypair, type PublicKey } from '@solana/web3.js';
 
 import type { DevnetDemoSignerService } from '../transactions/devnet-demo-signer.service.js';
@@ -40,7 +40,7 @@ describe('DevnetDemoPackProvider', () => {
     );
     if (opened.status !== 'opened') throw new Error('Expected an opened pack');
     expect(opened.result.assetReference).toBe(MINT.toBase58());
-    expect(opened.result.poolVersion).toBe('openpacksduel-devnet-pokemon.v1');
+    expect(opened.result.poolVersion).toBe('dailydraft-devnet-pokemon.v1');
     expect(opened.result.valuationSourceReference).toContain(':tcgplayer:holofoil:market:');
     provider.verifyOpenedSnapshot(opened);
     expect(signer.deposits).toEqual([{ duel: DUEL, role: 'creator' }]);

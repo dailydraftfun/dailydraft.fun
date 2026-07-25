@@ -4,17 +4,17 @@ const LOCAL_APP_URL = 'http://localhost:3001';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 export function resolvePublicAppUrl(): URL {
-  const configuredUrl = process.env.OPENPACKSDUEL_APP_URL?.trim();
+  const configuredUrl = process.env.DAILYDRAFT_APP_URL?.trim();
   if (!configuredUrl) {
     if (isExplicitLocalDevelopment()) return new URL(LOCAL_APP_URL);
-    throw new ServiceUnavailableException('OPENPACKSDUEL_APP_URL is not configured');
+    throw new ServiceUnavailableException('DAILYDRAFT_APP_URL is not configured');
   }
 
   let appUrl: URL;
   try {
     appUrl = new URL(configuredUrl);
   } catch {
-    throw new ServiceUnavailableException('OPENPACKSDUEL_APP_URL must be an absolute URL');
+    throw new ServiceUnavailableException('DAILYDRAFT_APP_URL must be an absolute URL');
   }
 
   if (
@@ -22,12 +22,12 @@ export function resolvePublicAppUrl(): URL {
     !(isExplicitLocalDevelopment() && LOCAL_HOSTS.has(appUrl.hostname))
   ) {
     throw new ServiceUnavailableException(
-      'OPENPACKSDUEL_APP_URL must use HTTPS outside local development',
+      'DAILYDRAFT_APP_URL must use HTTPS outside local development',
     );
   }
 
   if (appUrl.username || appUrl.password) {
-    throw new ServiceUnavailableException('OPENPACKSDUEL_APP_URL must not include credentials');
+    throw new ServiceUnavailableException('DAILYDRAFT_APP_URL must not include credentials');
   }
 
   return new URL(appUrl.origin);

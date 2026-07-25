@@ -297,7 +297,7 @@ export async function GET(
       ...imageSize,
       headers: {
         'Cache-Control': 'no-store',
-        'X-Openpacksduel-Status': duel.status,
+        'X-Dailydraft-Status': duel.status,
       },
     },
   );

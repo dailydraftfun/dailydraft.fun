@@ -2,7 +2,7 @@ import { getAnalyticsSessionId } from '../analytics-client';
 import type { SOLANA_CHAIN, SOLANA_CLUSTER } from './config';
 
 export type DuelOpponentType = 'direct' | 'matchmaking' | 'house';
-export type DuelProviderMode = 'collector-crypt-sandbox' | 'mock' | 'openpacksduel-devnet';
+export type DuelProviderMode = 'collector-crypt-sandbox' | 'mock' | 'dailydraft-devnet';
 
 export type DuelTransactionIntent = {
   action: 'fund';

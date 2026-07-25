@@ -99,8 +99,8 @@ async function runWorkspaceCoverage(
     cwd: workspace.directory,
     env: {
       ...process.env,
-      OPENPACKSDUEL_COVERAGE_OUTPUT: coveragePath,
-      OPENPACKSDUEL_COVERAGE_TARGETS: targetsPath,
+      DAILYDRAFT_COVERAGE_OUTPUT: coveragePath,
+      DAILYDRAFT_COVERAGE_TARGETS: targetsPath,
     },
     stderr: 'pipe',
     stdout: 'pipe',
@@ -197,7 +197,7 @@ function boundedLog(log: string): Uint8Array {
 }
 
 function safeName(name: string): string {
-  return basename(name.replace('@openpacksduel/', '')).replaceAll(/[^a-zA-Z0-9_-]/g, '-');
+  return basename(name.replace('@dailydraft/', '')).replaceAll(/[^a-zA-Z0-9_-]/g, '-');
 }
 
 function markdownSummary(summary: {

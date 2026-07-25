@@ -3,7 +3,7 @@ import {
   type DatabaseClient,
   DuelStatus as DatabaseDuelStatus,
   ProviderMode,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
 
 import type { Duel } from '../domain.js';
 import { PrismaDuelRepository } from './prisma-duel.repository.js';
@@ -279,11 +279,11 @@ function duel({
       id: 'pokemon_50',
       name: 'Pokémon $50 Pack',
       price: { amount: '50000000', currency: 'USDC', decimals: 6 },
-      provider: 'openpacksduel',
+      provider: 'dailydraft',
       providerPackId: 'pokemon_50',
       valuationPolicyHash: 'policy_hash',
     },
-    providerMode: 'openpacksduel-devnet',
+    providerMode: 'dailydraft-devnet',
     result: {
       comparisonMetric: 'insured-value',
       outcomes: [outcome('creator', firstValue), outcome('opponent', secondValue)],
@@ -309,7 +309,7 @@ function outcome(side: 'creator' | 'opponent', amount: string) {
     insuredValue: { amount, currency: 'USDC' as const, decimals: 6 as const },
     isMock: false,
     openedAt: '2026-07-20T00:00:00.000Z',
-    provider: 'openpacksduel',
+    provider: 'dailydraft',
     providerReference: `${side}_provider`,
     poolVersion: 'pool-v1',
     resultHash: `${side}_hash`,

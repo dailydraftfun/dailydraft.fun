@@ -16,7 +16,7 @@ export class FixedWindowRateLimiter {
   readonly #windowMs: number;
 
   constructor(
-    limit = readPositiveInteger(process.env.OPENPACKSDUEL_MCP_RATE_LIMIT, 60),
+    limit = readPositiveInteger(process.env.DAILYDRAFT_MCP_RATE_LIMIT, 60),
     windowMs = 60_000,
   ) {
     this.#limit = limit;
@@ -51,7 +51,7 @@ function readPositiveInteger(value: string | undefined, fallback: number): numbe
   if (!value) return fallback;
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 10_000) {
-    throw new Error('OPENPACKSDUEL_MCP_RATE_LIMIT must be an integer between 1 and 10000');
+    throw new Error('DAILYDRAFT_MCP_RATE_LIMIT must be an integer between 1 and 10000');
   }
   return parsed;
 }

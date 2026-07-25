@@ -34,12 +34,12 @@ describe('MCP HTTP authentication', () => {
   });
 
   test('accepts absent origins and exact allowlisted browser origins only', () => {
-    const origins = parseAllowedOrigins('https://openpacksduel.vercel.app,http://localhost:3001');
+    const origins = parseAllowedOrigins('https://dailydraft.fun,http://localhost:3001');
 
     expect(isAllowedOrigin(undefined, origins)).toBe(true);
-    expect(isAllowedOrigin('https://openpacksduel.vercel.app', origins)).toBe(true);
+    expect(isAllowedOrigin('https://dailydraft.fun', origins)).toBe(true);
     expect(isAllowedOrigin('https://attacker.example', origins)).toBe(false);
-    expect(() => parseAllowedOrigins('https://openpacksduel.vercel.app/path')).toThrow(
+    expect(() => parseAllowedOrigins('https://dailydraft.fun/path')).toThrow(
       'exact HTTP(S) origins',
     );
   });

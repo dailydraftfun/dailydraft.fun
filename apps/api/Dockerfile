@@ -3,8 +3,8 @@ WORKDIR /app
 
 COPY . .
 RUN bun install --frozen-lockfile
-RUN bun --filter @openpacksduel/db db:generate
-RUN bun --filter @openpacksduel/api build
+RUN bun --filter @dailydraft/db db:generate
+RUN bun --filter @dailydraft/api build
 
 FROM oven/bun:1.3.13 AS runner
 WORKDIR /app

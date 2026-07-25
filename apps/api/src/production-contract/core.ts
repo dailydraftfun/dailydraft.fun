@@ -145,7 +145,7 @@ export function evaluateStaticArtifact(input: StaticArtifactInput): ConformanceC
     'server-state',
     servers.length > 0 &&
       servers.every((server) => server.url?.endsWith('/v1')) &&
-      !servers.some((server) => /(^|\.)api\.openpacksduel\.com$/i.test(safeHostname(server.url))),
+      !servers.some((server) => /(^|\.)api\.dailydraft\.com$/i.test(safeHostname(server.url))),
     'servers retain the /v1 base and do not advertise a live production API host',
   );
   addCheck(
@@ -191,15 +191,15 @@ export function evaluateEnvironmentNegativeFixtures(): ConformanceCheck {
 
 export function productionEnvironmentFixture(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
-    CORS_ORIGINS: 'https://openpacksduel.example',
+    CORS_ORIGINS: 'https://dailydraft.example',
     CRON_SECRET: 'contract-cron-secret-at-least-32-characters',
-    DATABASE_URL: 'postgresql://openpacksduel:contract@localhost:5432/openpacksduel_contract',
+    DATABASE_URL: 'postgresql://dailydraft:contract@localhost:5432/dailydraft_contract',
     NODE_ENV: 'production',
-    OPENPACKSDUEL_API_KEYS: 'contract-api-key-at-least-32-characters',
-    OPENPACKSDUEL_APP_URL: 'https://openpacksduel.example',
-    OPENPACKSDUEL_AUTH_DOMAIN: 'openpacksduel.example',
-    OPENPACKSDUEL_NETWORK: 'solana-devnet',
-    OPENPACKSDUEL_PROVIDER_MODE: 'openpacksduel-devnet',
+    DAILYDRAFT_API_KEYS: 'contract-api-key-at-least-32-characters',
+    DAILYDRAFT_APP_URL: 'https://dailydraft.example',
+    DAILYDRAFT_AUTH_DOMAIN: 'dailydraft.example',
+    DAILYDRAFT_NETWORK: 'solana-devnet',
+    DAILYDRAFT_PROVIDER_MODE: 'dailydraft-devnet',
     PORT: '33159',
     ...overrides,
   };

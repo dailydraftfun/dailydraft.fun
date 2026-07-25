@@ -32,7 +32,7 @@ export type ProductEvent = {
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_DUEL_API_URL?.replace(/\/$/, '');
-const sessionStorageKey = 'openpacksduel.analytics-session';
+const sessionStorageKey = 'dailydraft.analytics-session';
 const queuedEvents: ProductEvent[] = [];
 let flushTimer: number | undefined;
 let pagehideListenerRegistered = false;

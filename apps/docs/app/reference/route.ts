@@ -8,7 +8,7 @@ export const GET = ApiReference({
   hideModels: false,
   hideTestRequestButton: true,
   metaData: {
-    title: 'OpenPacks Duel API Reference',
+    title: 'DailyDraft API Reference',
     description: 'Preview integration contract for pack duels on Solana devnet',
   },
 });

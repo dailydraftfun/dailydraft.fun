@@ -85,9 +85,9 @@ function duel({
       id: 'pokemon_50',
       name: 'Pokemon $50',
       price: { amount: '50000000', currency: 'USDC', decimals: 6 },
-      provider: 'openpacksduel',
+      provider: 'dailydraft',
     },
-    providerMode: 'openpacksduel-devnet',
+    providerMode: 'dailydraft-devnet',
     result:
       result === null
         ? null
@@ -120,7 +120,7 @@ function outcome(
     displayName,
     insuredValue: { amount, currency: 'USDC', decimals: 6 },
     isMock: false,
-    provider: 'openpacksduel',
+    provider: 'dailydraft',
     providerReference: `${side}_provider_reference`,
     side,
   };

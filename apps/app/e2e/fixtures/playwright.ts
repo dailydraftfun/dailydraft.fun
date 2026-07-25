@@ -21,7 +21,7 @@ export const test = base.extend<JourneyFixtures>({
       walletTransactionRejections: journeyWalletRejections,
     });
     await page.addInitScript((bootstrap) => {
-      window.__OPENPACKSDUEL_JOURNEY__ = bootstrap;
+      window.__DAILYDRAFT_JOURNEY__ = bootstrap;
     }, journey.bootstrap());
     await page.route(journeyRpcUrl, async (route) => {
       await fulfill(route, () => journey.handleRpc(readJsonBody(route.request().postData())));
@@ -58,7 +58,7 @@ async function fulfill(route: Route, handler: () => FixtureResponse): Promise<vo
         detail: error instanceof Error ? error.message : 'Journey fixture request is invalid.',
         status: 422,
         title: 'Journey fixture setup failed',
-        type: 'https://fixture.openpacksduel.test/problems/journey-fixture-setup',
+        type: 'https://fixture.dailydraft.test/problems/journey-fixture-setup',
       }),
       contentType: 'application/json',
       status: 422,

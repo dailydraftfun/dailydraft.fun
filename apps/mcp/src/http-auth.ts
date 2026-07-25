@@ -21,7 +21,7 @@ interface CredentialConfig {
 export class McpCredentialStore {
   readonly #credentials: StoredCredential[];
 
-  constructor(serialized = process.env.OPENPACKSDUEL_MCP_KEYS ?? '') {
+  constructor(serialized = process.env.DAILYDRAFT_MCP_KEYS ?? '') {
     this.#credentials = parseCredentialConfig(serialized);
   }
 
@@ -47,7 +47,7 @@ export class McpCredentialStore {
 }
 
 export function parseAllowedOrigins(
-  serialized = process.env.OPENPACKSDUEL_MCP_ALLOWED_ORIGINS ?? '',
+  serialized = process.env.DAILYDRAFT_MCP_ALLOWED_ORIGINS ?? '',
 ): ReadonlySet<string> {
   const origins = serialized
     .split(',')
@@ -78,9 +78,9 @@ function parseCredentialConfig(serialized: string): StoredCredential[] {
   try {
     value = JSON.parse(serialized);
   } catch {
-    throw new Error('OPENPACKSDUEL_MCP_KEYS must be a JSON array');
+    throw new Error('DAILYDRAFT_MCP_KEYS must be a JSON array');
   }
-  if (!Array.isArray(value)) throw new Error('OPENPACKSDUEL_MCP_KEYS must be a JSON array');
+  if (!Array.isArray(value)) throw new Error('DAILYDRAFT_MCP_KEYS must be a JSON array');
 
   const credentials = value.map(parseCredential);
   const ids = new Set<string>();

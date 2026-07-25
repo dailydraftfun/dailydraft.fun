@@ -1,12 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import {
   type DatabaseClient,
   DuelSide as DatabaseDuelSide,
   DuelStatus as DatabaseDuelStatus,
@@ -15,11 +8,18 @@ import {
   DuelTransactionStatus,
   type Prisma,
   ProviderMode,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   ESCROW_V2_MAX_OPENING_FUTURE_SKEW_SECONDS,
   toEscrowV2UnixSeconds,
-} from '../contracts/openpacksduel-escrow-v2.js';
+} from '../contracts/dailydraft-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type {
   Duel,
@@ -986,13 +986,13 @@ function toDatabaseMode(mode: MatchmakingMode): DuelMode {
 
 function toDatabaseProviderMode(mode: Duel['providerMode']): ProviderMode {
   if (mode === 'mock') return ProviderMode.MOCK;
-  if (mode === 'openpacksduel-devnet') return ProviderMode.OPENPACKSDUEL_DEVNET;
+  if (mode === 'dailydraft-devnet') return ProviderMode.DAILYDRAFT_DEVNET;
   return ProviderMode.COLLECTOR_CRYPT_SANDBOX;
 }
 
 function toApiProviderMode(mode: ProviderMode): Duel['providerMode'] {
   if (mode === ProviderMode.MOCK) return 'mock';
-  if (mode === ProviderMode.OPENPACKSDUEL_DEVNET) return 'openpacksduel-devnet';
+  if (mode === ProviderMode.DAILYDRAFT_DEVNET) return 'dailydraft-devnet';
   return 'collector-crypt-sandbox';
 }
 

@@ -108,7 +108,7 @@ async function probeBuiltHealthEndpoint(artifactDirectory: string): Promise<Conf
       response.status === 200 &&
       Boolean(response.headers.get('x-request-id')) &&
       body.dependencies?.database === 'ok' &&
-      body.service === 'openpacksduel-api' &&
+      body.service === 'dailydraft-api' &&
       body.status === 'ok' &&
       typeof body.version === 'string' &&
       body.version.length > 0;
@@ -138,7 +138,7 @@ async function listArtifactFiles(root: string, prefix = ''): Promise<string[]> {
 }
 
 async function runRouteCompatibilityGate(): Promise<ConformanceCheck> {
-  const child = Bun.spawn(['bun', '--filter', '@openpacksduel/api', 'test:contract'], {
+  const child = Bun.spawn(['bun', '--filter', '@dailydraft/api', 'test:contract'], {
     cwd: repositoryRoot,
     env: process.env,
     stderr: 'pipe',

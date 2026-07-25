@@ -1,6 +1,6 @@
-# OpenPacks Duel Developer Docs
+# DailyDraft Developer Docs
 
-Nextra-powered, contract-first integration documentation for OpenPacks Duel.
+Nextra-powered, contract-first integration documentation for DailyDraft.
 
 The canonical API contract is [`public/openapi.yaml`](public/openapi.yaml). The
 docs app exposes it at `/openapi.yaml` and renders an interactive Scalar
@@ -9,7 +9,7 @@ production persistence and Solana settlement remain preview work.
 
 > [!IMPORTANT]
 > The v1 API is a preview contract. Endpoints marked with
-> `x-openpacksduel-availability: preview` are not production promises yet.
+> `x-dailydraft-availability: preview` are not production promises yet.
 
 ## Local preview
 
@@ -36,14 +36,14 @@ reference.
 ## Monorepo location
 
 This app lives at `apps/docs` in
-[`openpacksduel/app`](https://github.com/openpacksduel/app). Configure that path
+[`dailydraft/app`](https://github.com/dailydraft/app). Configure that path
 as the Vercel project root.
 
 ## Related repositories
 
-- [`openpacksduel/app`](https://github.com/openpacksduel/app) — product, docs, MCP, and API implementation
-- [`openpacksduel/escrow`](https://github.com/openpacksduel/escrow) — public Solana program
-- [`openpacksduel/skills`](https://github.com/openpacksduel/skills) — installable agent workflows
+- [`dailydraft/app`](https://github.com/dailydraft/app) — product, docs, MCP, and API implementation
+- [`dailydraft/escrow`](https://github.com/dailydraft/escrow) — public Solana program
+- [`dailydraft/skills`](https://github.com/dailydraft/skills) — installable agent workflows
 
 ## License
 

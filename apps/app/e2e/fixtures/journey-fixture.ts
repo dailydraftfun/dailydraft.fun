@@ -213,17 +213,17 @@ export class DuelJourneyFixture {
       return ok({
         chain: 'solana:devnet',
         challengeId: this.#challengeId,
-        domain: 'fixture.openpacksduel.test',
+        domain: 'fixture.dailydraft.test',
         expiresAt: '2099-01-01T00:15:00.000Z',
         message: [
-          'fixture.openpacksduel.test wants you to sign in with your Solana account:',
+          'fixture.dailydraft.test wants you to sign in with your Solana account:',
           CREATOR_WALLET,
           '',
           `Journey seed: ${this.seed}`,
           `Request ID: ${this.#challengeId}`,
           'Chain ID: solana:devnet',
         ].join('\n'),
-        uri: 'https://fixture.openpacksduel.test',
+        uri: 'https://fixture.dailydraft.test',
         wallet,
       });
     }
@@ -379,7 +379,7 @@ export class DuelJourneyFixture {
         provider: 'journey-fixture',
         providerPackId: `fixture-pack-${this.seed}`,
       },
-      providerMode: 'openpacksduel-devnet',
+      providerMode: 'dailydraft-devnet',
       result: null,
       stake: { amount: '50000000', currency: 'USDC', decimals: 6 },
       status: 'matched',
@@ -505,7 +505,7 @@ export class DuelJourneyFixture {
       opponentWallet: this.#matchmakingState === 'searching' ? null : journeyOpponentWallet,
       queue: {
         packId: 'pokemon_50',
-        providerMode: 'openpacksduel-devnet',
+        providerMode: 'dailydraft-devnet',
         queueKey: `fixture-${this.seed}`,
         regionSegment: 'fixture',
         riskSegment: 'devnet',
@@ -565,7 +565,7 @@ function problem(status: number, detail: string): FixtureResponse {
       detail,
       status,
       title: 'Journey fixture request failed',
-      type: 'https://fixture.openpacksduel.test/problems/journey-fixture',
+      type: 'https://fixture.dailydraft.test/problems/journey-fixture',
     },
     status,
   };

@@ -15,8 +15,8 @@ function packs(): readonly Pack[] {
         name: pack.name,
         price: { amount: String(pack.tier * 1_000_000), currency: 'USDC', decimals: 6 },
         provider:
-          process.env.OPENPACKSDUEL_PROVIDER_MODE === 'openpacksduel-devnet'
-            ? 'openpacksduel-devnet'
+          process.env.DAILYDRAFT_PROVIDER_MODE === 'dailydraft-devnet'
+            ? 'dailydraft-devnet'
             : 'collector-crypt',
         providerPackId: pack.id,
         valuationPolicyHash: policyHash,

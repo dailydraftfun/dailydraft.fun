@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import {
   type DatabaseClient,
   DuelStatus,
   DuelTransactionStatus,
   ProviderMode,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
@@ -29,7 +29,7 @@ export class DevnetDemoSettlementService {
 
   async finalizeDuel(duelId: string): Promise<void> {
     const providerRequestId = createHash('sha256')
-      .update(`openpacksduel-demo-result:v1:${duelId}`)
+      .update(`dailydraft-demo-result:v1:${duelId}`)
       .digest('hex');
 
     for (let attempt = 0; attempt < MAX_SETTLEMENT_POLL_ATTEMPTS; attempt += 1) {
@@ -39,8 +39,8 @@ export class DevnetDemoSettlementService {
         where: { id: duelId },
       });
       if (!duel) throw new ConflictException(`Duel ${duelId} was not found`);
-      if (duel.providerMode !== ProviderMode.OPENPACKSDUEL_DEVNET) {
-        throw new ConflictException('Automatic settlement is limited to OpenPacks devnet packs');
+      if (duel.providerMode !== ProviderMode.DAILYDRAFT_DEVNET) {
+        throw new ConflictException('Automatic settlement is limited to DailyDraft devnet packs');
       }
       if (duel.status === DuelStatus.SETTLED) return;
 
@@ -73,7 +73,7 @@ export class DevnetDemoSettlementService {
       }
 
       throw new ConflictException(
-        `OpenPacks devnet settlement cannot continue from ${duel.status.toLowerCase()}`,
+        `DailyDraft devnet settlement cannot continue from ${duel.status.toLowerCase()}`,
       );
     }
 
@@ -132,7 +132,7 @@ export class DevnetDemoSettlementService {
 }
 
 function settlementPollMs(): number {
-  const parsed = Number.parseInt(process.env.OPENPACKSDUEL_SETTLEMENT_POLL_MS ?? '', 10);
+  const parsed = Number.parseInt(process.env.DAILYDRAFT_SETTLEMENT_POLL_MS ?? '', 10);
   return Number.isInteger(parsed)
     ? Math.max(10, Math.min(parsed, 5_000))
     : DEFAULT_SETTLEMENT_POLL_MS;

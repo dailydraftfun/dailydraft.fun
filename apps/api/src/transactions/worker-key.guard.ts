@@ -11,7 +11,7 @@ import type { FastifyRequest } from 'fastify';
 @Injectable()
 export class WorkerKeyGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
-    const keys = [process.env.CRON_SECRET, ...(process.env.OPENPACKSDUEL_API_KEYS ?? '').split(',')]
+    const keys = [process.env.CRON_SECRET, ...(process.env.DAILYDRAFT_API_KEYS ?? '').split(',')]
       .map((key) => key?.trim())
       .filter((key): key is string => Boolean(key));
     if (keys.length === 0) {

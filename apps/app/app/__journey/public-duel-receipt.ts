@@ -42,7 +42,7 @@ function receipt(
       cards: [],
       reason: settled ? 'ownership-pending' : 'duel-not-settled',
       receiptHref: `/v1/duels/${duelId}/receipt`,
-      schemaVersion: 'openpacksduel.card-actions.v1',
+      schemaVersion: 'dailydraft.card-actions.v1',
     },
     custody: {
       cardAssets: {
@@ -77,7 +77,7 @@ function receipt(
       id: 'pokemon_50',
       name: 'Pokémon $50 Pack',
       provider: 'journey-fixture',
-      providerMode: 'openpacksduel-devnet',
+      providerMode: 'dailydraft-devnet',
       providerPackId: 'fixture-pack-public-surfaces',
       tier: { amount: '50000000', currency: 'USDC', decimals: 6 },
     },
@@ -176,7 +176,7 @@ function receipt(
               escrowAddress: privateFixtureEscrowAddress,
               network: 'solana-devnet',
               opponentWallet: privateFixtureOpponentWallet,
-              providerMode: 'openpacksduel-devnet',
+              providerMode: 'dailydraft-devnet',
             },
             creatorResultHash: 'fixture-creator-result-hash',
             opponentResultHash: 'fixture-opponent-result-hash',
@@ -186,7 +186,7 @@ function receipt(
               scope: 'escrow-mints-values-policy',
               status: 'on-chain-commitment-finalized',
             },
-            schemaVersion: 'openpacksduel.result-proof.v1',
+            schemaVersion: 'dailydraft.result-proof.v1',
           },
           resultHash: 'fixture-combined-result-hash',
           settlementReady: true,
@@ -200,6 +200,6 @@ function receipt(
           winnerSide: 'creator',
         }
       : null,
-    schemaVersion: 'openpacksduel.receipt.v1',
+    schemaVersion: 'dailydraft.receipt.v1',
   };
 }

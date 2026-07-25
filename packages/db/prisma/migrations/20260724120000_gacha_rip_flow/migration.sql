@@ -227,7 +227,7 @@ ADD CONSTRAINT "GachaMachine_contract_check" CHECK (
 ALTER TABLE "GachaInventorySnapshot"
 ADD CONSTRAINT "GachaInventorySnapshot_contract_check" CHECK (
   "revision" > 0
-  AND "schemaVersion" = 'openpacksduel.gacha-inventory.v1'
+  AND "schemaVersion" = 'dailydraft.gacha-inventory.v1'
   AND "policyHash" ~ '^[a-f0-9]{64}$'
   AND "contentHash" ~ '^[a-f0-9]{64}$'
   AND "committedPoolSize" > 0
@@ -284,8 +284,8 @@ ADD CONSTRAINT "GachaInventorySnapshotEntry_decision_check" CHECK (
 ALTER TABLE "GachaPullOddsCommitment"
 ADD CONSTRAINT "GachaPullOddsCommitment_contract_check" CHECK (
   "version" > 0
-  AND "schemaVersion" = 'openpacksduel.gacha-pull-odds.v1'
-  AND "calculatorVersion" = 'openpacksduel.gacha-pull-odds-calculator.v1'
+  AND "schemaVersion" = 'dailydraft.gacha-pull-odds.v1'
+  AND "calculatorVersion" = 'dailydraft.gacha-pull-odds-calculator.v1'
   AND "rulesHash" ~ '^[a-f0-9]{64}$'
   AND "snapshotContentHash" ~ '^[a-f0-9]{64}$'
   AND "probabilityScalePpm" = 1000000

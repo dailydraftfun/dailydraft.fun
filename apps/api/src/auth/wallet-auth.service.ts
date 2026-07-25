@@ -170,7 +170,7 @@ export function createWalletSignInMessage(input: {
     `${input.domain} wants you to sign in with your Solana account:`,
     input.wallet,
     '',
-    'Authenticate to create, join, or cancel OpenPacks Duel sessions on Solana devnet.',
+    'Authenticate to create, join, or cancel DailyDraft sessions on Solana devnet.',
     '',
     `URI: ${input.uri}`,
     'Version: 1',
@@ -228,18 +228,18 @@ export function resolveWalletAuthPolicy(
 ): WalletAuthPolicy {
   return {
     challengeLimit: readBoundedPositiveInteger(
-      environment.OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT,
+      environment.DAILYDRAFT_AUTH_CHALLENGE_LIMIT,
       DEFAULT_CHALLENGE_LIMIT,
       MAX_CHALLENGE_LIMIT,
     ),
     challengeWindowMs:
       readBoundedPositiveInteger(
-        environment.OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS,
+        environment.DAILYDRAFT_AUTH_CHALLENGE_WINDOW_SECONDS,
         DEFAULT_CHALLENGE_WINDOW_SECONDS,
         MAX_CHALLENGE_WINDOW_SECONDS,
       ) * 1_000,
     cleanupBatchSize: readBoundedPositiveInteger(
-      environment.OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE,
+      environment.DAILYDRAFT_AUTH_CLEANUP_BATCH_SIZE,
       DEFAULT_CLEANUP_BATCH_SIZE,
       MAX_CLEANUP_BATCH_SIZE,
     ),
@@ -274,11 +274,9 @@ function readBoundedPositiveInteger(
 
 function resolveAudience(): { domain: string; uri: string } {
   const appUrl = resolvePublicAppUrl();
-  const configuredDomain = process.env.OPENPACKSDUEL_AUTH_DOMAIN?.trim();
+  const configuredDomain = process.env.DAILYDRAFT_AUTH_DOMAIN?.trim();
   if (configuredDomain && configuredDomain !== appUrl.host) {
-    throw new ServiceUnavailableException(
-      'OPENPACKSDUEL_AUTH_DOMAIN must match OPENPACKSDUEL_APP_URL',
-    );
+    throw new ServiceUnavailableException('DAILYDRAFT_AUTH_DOMAIN must match DAILYDRAFT_APP_URL');
   }
   return { domain: configuredDomain ?? appUrl.host, uri: appUrl.origin };
 }

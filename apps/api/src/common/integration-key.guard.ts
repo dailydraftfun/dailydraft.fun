@@ -30,7 +30,7 @@ export class IntegrationKeyGuard implements CanActivate {
 }
 
 export function getIntegrationKeys(): string[] {
-  return (process.env.OPENPACKSDUEL_API_KEYS ?? '')
+  return (process.env.DAILYDRAFT_API_KEYS ?? '')
     .split(',')
     .map((key) => key.trim())
     .filter(Boolean);

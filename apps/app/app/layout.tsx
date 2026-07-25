@@ -8,7 +8,7 @@ import { Providers } from './providers';
 import { WorkspaceShell } from './workspace-shell';
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://openpacksduel.vercel.app'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://dailydraft.fun'),
   title: 'Grail Devnet — Own the cards. Field the squad.',
   description:
     'Devnet preview: rip real, vaulted sports cards from Collector Crypt and play sports fantasy loops on Solana using test SOL and test assets.',

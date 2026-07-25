@@ -1,4 +1,3 @@
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import {
   type DatabaseClient,
   DuelStatus,
@@ -6,7 +5,8 @@ import {
   DuelTransactionStatus,
   type Prisma,
   ProviderMode,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { PublicKey } from '@solana/web3.js';
 
 import {
@@ -15,7 +15,7 @@ import {
   ESCROW_V2_PROGRAM_ID,
   type EscrowV2Role,
   type EscrowV4RefundState,
-} from '../contracts/openpacksduel-escrow-v2.js';
+} from '../contracts/dailydraft-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { DevnetDemoSignerService } from './devnet-demo-signer.service.js';
@@ -96,7 +96,7 @@ export class DevnetRefundOrchestratorService {
       orderBy: { updatedAt: 'asc' },
       take: limit,
       where: {
-        providerMode: ProviderMode.OPENPACKSDUEL_DEVNET,
+        providerMode: ProviderMode.DAILYDRAFT_DEVNET,
         status: DuelStatus.REFUNDING,
       },
     });

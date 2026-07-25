@@ -17,8 +17,8 @@ import {
 } from './provider-response-evidence.js';
 import { CANONICAL_VALUATION_POLICY_HASH } from './valuation-policy.js';
 
-const MOCK_POOL_VERSION = 'openpacksduel.mock-pool.devnet.v1';
-const MOCK_SIGNING_KEY = 'openpacksduel-fixture-only-provider-response-v1';
+const MOCK_POOL_VERSION = 'dailydraft.mock-pool.devnet.v1';
+const MOCK_SIGNING_KEY = 'dailydraft-fixture-only-provider-response-v1';
 const CARD_NAMES = [
   'Devnet Charizard Test Card',
   'Devnet Pikachu Test Card',
@@ -63,7 +63,7 @@ export class MockPackProvider extends PackProvider {
         rawPayload,
         signature: fixtureSignature(rawPayload),
         signatureAlgorithm: 'hmac-sha256-fixture',
-        signingKeyReference: 'openpacksduel-mock-fixture-v1',
+        signingKeyReference: 'dailydraft-mock-fixture-v1',
       }),
     };
     this.#packs.set(input.providerReference, opened);
@@ -100,7 +100,7 @@ function createMockResult(providerReference: string, openedAt: string): Provider
 }
 
 function assertDevnetMockEnabled(): void {
-  const network = process.env.OPENPACKSDUEL_NETWORK ?? 'solana-devnet';
+  const network = process.env.DAILYDRAFT_NETWORK ?? 'solana-devnet';
   if (network !== 'solana-devnet') {
     throw new ConflictException('The deterministic mock pack provider is devnet-only');
   }

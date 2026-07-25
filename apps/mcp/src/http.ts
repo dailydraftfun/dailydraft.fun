@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
-import { OpenPacksApiClient } from './api-client.js';
+import { DailyDraftApiClient } from './api-client.js';
 import {
   isAllowedOrigin,
   McpCredentialStore,
@@ -9,18 +9,18 @@ import {
   parseAllowedOrigins,
 } from './http-auth.js';
 import { FixedWindowRateLimiter } from './rate-limit.js';
-import { createOpenPacksDuelServer } from './server.js';
+import { createDailyDraftServer } from './server.js';
 
 interface HttpHandlerOptions {
   allowedOrigins?: ReadonlySet<string>;
-  apiClientFactory?: () => OpenPacksApiClient;
+  apiClientFactory?: () => DailyDraftApiClient;
   credentialStore?: McpCredentialStore;
   rateLimiter?: FixedWindowRateLimiter;
 }
 
 export function createMcpHttpHandler(options: HttpHandlerOptions = {}) {
   const allowedOrigins = options.allowedOrigins ?? parseAllowedOrigins();
-  const apiClientFactory = options.apiClientFactory ?? (() => new OpenPacksApiClient());
+  const apiClientFactory = options.apiClientFactory ?? (() => new DailyDraftApiClient());
   const credentialStore = options.credentialStore ?? new McpCredentialStore();
   const rateLimiter = options.rateLimiter ?? new FixedWindowRateLimiter();
 
@@ -60,7 +60,7 @@ export function createMcpHttpHandler(options: HttpHandlerOptions = {}) {
     }
     const principal = credentialStore.authenticate(singleHeader(request.headers.authorization));
     if (!principal) {
-      response.setHeader('WWW-Authenticate', 'Bearer realm="openpacksduel-mcp"');
+      response.setHeader('WWW-Authenticate', 'Bearer realm="dailydraft-mcp"');
       sendJsonRpcError(response, 401, -32001, 'Missing or invalid MCP credential');
       return;
     }
@@ -88,9 +88,9 @@ async function handleAuthenticatedRequest(
   request: IncomingMessage,
   response: ServerResponse,
   principal: McpPrincipal,
-  client: OpenPacksApiClient,
+  client: DailyDraftApiClient,
 ): Promise<void> {
-  const server = createOpenPacksDuelServer(client, {
+  const server = createDailyDraftServer(client, {
     canPrepareTransactions: principal.scopes.has('prepare') && client.hasIntegrationCredential,
   });
   const transport = new StreamableHTTPServerTransport({
@@ -103,7 +103,7 @@ async function handleAuthenticatedRequest(
     await transport.handleRequest(request, response, Reflect.get(request, 'body'));
   } catch {
     if (!response.headersSent) {
-      sendJsonRpcError(response, 500, -32603, 'OpenPacks Duel MCP request failed');
+      sendJsonRpcError(response, 500, -32603, 'DailyDraft MCP request failed');
     }
   } finally {
     await transport.close().catch(() => undefined);

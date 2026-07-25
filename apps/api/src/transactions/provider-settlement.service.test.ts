@@ -6,7 +6,7 @@ import {
   DuelTransactionAction,
   DuelTransactionStatus,
   ProviderMode,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { PublicKey, Transaction } from '@solana/web3.js';
 
@@ -20,7 +20,7 @@ import {
   deriveEscrowV2Addresses,
   deriveEscrowV2CardVault,
   ESCROW_V2_PROGRAM_ID,
-} from '../contracts/openpacksduel-escrow-v2.js';
+} from '../contracts/dailydraft-escrow-v2.js';
 import { normalizeProviderResult } from '../providers/provider-result.js';
 import {
   CANONICAL_VALUATION_POLICY_HASH,
@@ -86,7 +86,7 @@ describe('provider settlement evidence', () => {
       '200',
       '100',
       DEVNET_DEMO_VALUATION_POLICY_HASH,
-      ProviderMode.OPENPACKSDUEL_DEVNET,
+      ProviderMode.DAILYDRAFT_DEVNET,
     );
     expect(validateCanonicalEvidence(demo).winner).toBe('creator');
   });
@@ -176,8 +176,8 @@ describe('ProviderSettlementService', () => {
   const original = { ...process.env };
 
   beforeEach(() => {
-    process.env.OPENPACKSDUEL_NETWORK = 'solana-devnet';
-    process.env.OPENPACKSDUEL_PROVIDER_ASSET_STANDARD = 'legacy-spl-nft';
+    process.env.DAILYDRAFT_NETWORK = 'solana-devnet';
+    process.env.DAILYDRAFT_PROVIDER_ASSET_STANDARD = 'legacy-spl-nft';
     process.env.ESCROW_PROGRAM_ID = ESCROW_V2_PROGRAM_ID.toBase58();
     process.env.ESCROW_PROVIDER_SIGNER = PROVIDER.toBase58();
     process.env.ESCROW_FEE_RECIPIENT = CREATOR.toBase58();
@@ -206,7 +206,7 @@ describe('ProviderSettlementService', () => {
   });
 
   test('prepares a permissionless expired payment refund without server signing', async () => {
-    delete process.env.OPENPACKSDUEL_PROVIDER_ASSET_STANDARD;
+    delete process.env.DAILYDRAFT_PROVIDER_ASSET_STANDARD;
     delete process.env.ESCROW_PROVIDER_SIGNER;
     delete process.env.ESCROW_FEE_RECIPIENT;
     const duel: MutableDuelFixture = {
@@ -299,7 +299,7 @@ describe('ProviderSettlementService', () => {
   });
 
   test('keeps card and result operations fail-closed when asset standard is unset', async () => {
-    delete process.env.OPENPACKSDUEL_PROVIDER_ASSET_STANDARD;
+    delete process.env.DAILYDRAFT_PROVIDER_ASSET_STANDARD;
     const duel = databaseDuel(new Date(Date.now() + 60_000));
     const service = new ProviderSettlementService(database(duel), new FixtureRpc());
 
@@ -379,7 +379,7 @@ describe('ProviderSettlementService', () => {
         creatorValue,
         opponentValue,
         DEVNET_DEMO_VALUATION_POLICY_HASH,
-        ProviderMode.OPENPACKSDUEL_DEVNET,
+        ProviderMode.DAILYDRAFT_DEVNET,
       ),
       status: 'SETTLING',
     };

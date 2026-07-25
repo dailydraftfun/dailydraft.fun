@@ -1,4 +1,4 @@
-# openpacksduel
+# dailydraft
 
 ## Scope
 

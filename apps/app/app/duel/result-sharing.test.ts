@@ -4,7 +4,7 @@ import { shareNativeResult } from './result-sharing';
 const payload = {
   text: 'I won a Pack Duel.',
   title: 'Pack Duel result',
-  url: 'https://openpacksduel.example/duel/duel_share',
+  url: 'https://dailydraft.example/duel/duel_share',
 };
 
 describe('native result sharing', () => {

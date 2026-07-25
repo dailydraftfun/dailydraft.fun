@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { type DatabaseClient, DuelSide, DuelStatus } from '@openpacksduel/db';
+import { type DatabaseClient, DuelSide, DuelStatus } from '@dailydraft/db';
 
 import type { ProviderCardResult } from '../providers/pack-provider.js';
 import { compareInsuredValues, normalizeProviderResult } from '../providers/provider-result.js';

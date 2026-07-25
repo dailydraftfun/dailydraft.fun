@@ -46,7 +46,7 @@ describe('AuthController', () => {
       requestId: 'req_auth_rate_limit',
       status: 429,
       title: 'Too Many Requests',
-      type: 'https://openpacksduel.com/problems/too-many-requests',
+      type: 'https://dailydraft.fun/problems/too-many-requests',
     });
   });
 });

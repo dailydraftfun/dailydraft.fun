@@ -31,8 +31,7 @@ export interface ProviderCardResult {
   valuationPolicyHash: string;
 }
 
-export const PROVIDER_RESPONSE_EVIDENCE_SCHEMA_VERSION =
-  'openpacksduel.provider-response-evidence.v1';
+export const PROVIDER_RESPONSE_EVIDENCE_SCHEMA_VERSION = 'dailydraft.provider-response-evidence.v1';
 
 export interface ProviderResponseEvidence {
   payloadHash: string;

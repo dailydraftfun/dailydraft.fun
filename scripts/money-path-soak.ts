@@ -99,7 +99,7 @@ async function runIteration(index: number) {
       ...process.env,
       FORCE_COLOR: '0',
       NO_COLOR: '1',
-      OPENPACKSDUEL_NETWORK: 'solana-devnet',
+      DAILYDRAFT_NETWORK: 'solana-devnet',
       SOAK_FIXTURE_MODE: 'deterministic',
     },
     stderr: 'pipe',

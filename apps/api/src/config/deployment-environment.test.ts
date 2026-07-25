@@ -37,7 +37,7 @@ describe('deployed API environment contract', () => {
 
   test('rejects malformed database, origin, auth, CORS, and network configuration', () => {
     expectIssues(
-      validEnvironment({ DATABASE_URL: 'https://database.example/openpacksduel' }),
+      validEnvironment({ DATABASE_URL: 'https://database.example/dailydraft' }),
       'DATABASE_URL must use',
     );
     expectIssues(
@@ -45,36 +45,36 @@ describe('deployed API environment contract', () => {
       'host, user, and database',
     );
     expectIssues(
-      validEnvironment({ OPENPACKSDUEL_APP_URL: 'http://openpacksduel.example' }),
+      validEnvironment({ DAILYDRAFT_APP_URL: 'http://dailydraft.example' }),
       'credential-free HTTPS origin',
     );
     expectIssues(
-      validEnvironment({ OPENPACKSDUEL_AUTH_DOMAIN: 'other.example' }),
-      'must match OPENPACKSDUEL_APP_URL',
+      validEnvironment({ DAILYDRAFT_AUTH_DOMAIN: 'other.example' }),
+      'must match DAILYDRAFT_APP_URL',
     );
     expectIssues(
       validEnvironment({ CORS_ORIGINS: 'https://admin.example' }),
-      'must include OPENPACKSDUEL_APP_URL',
+      'must include DAILYDRAFT_APP_URL',
     );
     expectIssues(
-      validEnvironment({ CORS_ORIGINS: 'https://openpacksduel.example/path' }),
+      validEnvironment({ CORS_ORIGINS: 'https://dailydraft.example/path' }),
       'credential-free HTTPS origin',
     );
     expectIssues(
-      validEnvironment({ OPENPACKSDUEL_NETWORK: 'solana-mainnet' }),
+      validEnvironment({ DAILYDRAFT_NETWORK: 'solana-mainnet' }),
       'must be solana-devnet',
     );
   });
 
   test('rejects weak secrets, production mock mode, invalid ports, and unknown deployment markers', () => {
     expectIssues(
-      validEnvironment({ OPENPACKSDUEL_API_KEYS: 'short' }),
+      validEnvironment({ DAILYDRAFT_API_KEYS: 'short' }),
       'keys of at least 32 characters',
     );
     expectIssues(validEnvironment({ CRON_SECRET: 'short' }), 'at least 32 characters');
     expectIssues(
-      validEnvironment({ OPENPACKSDUEL_PROVIDER_MODE: 'mock' }),
-      'must be openpacksduel-devnet',
+      validEnvironment({ DAILYDRAFT_PROVIDER_MODE: 'mock' }),
+      'must be dailydraft-devnet',
     );
     expectIssues(validEnvironment({ PORT: '0' }), 'PORT must be an integer');
     expectIssues(validEnvironment({ PORT: 'not-a-port' }), 'PORT must be an integer');
@@ -89,7 +89,7 @@ describe('deployed API environment contract', () => {
   test('allows preview fixtures to omit production-only worker and provider controls', () => {
     const environment = validEnvironment({ VERCEL_ENV: 'preview' });
     delete environment.CRON_SECRET;
-    delete environment.OPENPACKSDUEL_PROVIDER_MODE;
+    delete environment.DAILYDRAFT_PROVIDER_MODE;
     expect(validateDeploymentEnvironment(environment)).toMatchObject({
       persistence: 'ephemeral-preview',
       profile: 'preview',
@@ -99,15 +99,15 @@ describe('deployed API environment contract', () => {
 
 function validEnvironment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
-    CORS_ORIGINS: 'https://openpacksduel.example,https://admin.openpacksduel.example',
+    CORS_ORIGINS: 'https://dailydraft.example,https://admin.dailydraft.example',
     CRON_SECRET: 'cron-secret-that-is-at-least-32-characters',
-    DATABASE_URL: 'postgresql://openpacksduel:secret@database.example/openpacksduel',
+    DATABASE_URL: 'postgresql://dailydraft:secret@database.example/dailydraft',
     NODE_ENV: 'production',
-    OPENPACKSDUEL_API_KEYS: 'api-key-that-is-at-least-32-characters',
-    OPENPACKSDUEL_APP_URL: 'https://openpacksduel.example',
-    OPENPACKSDUEL_AUTH_DOMAIN: 'openpacksduel.example',
-    OPENPACKSDUEL_NETWORK: 'solana-devnet',
-    OPENPACKSDUEL_PROVIDER_MODE: 'openpacksduel-devnet',
+    DAILYDRAFT_API_KEYS: 'api-key-that-is-at-least-32-characters',
+    DAILYDRAFT_APP_URL: 'https://dailydraft.example',
+    DAILYDRAFT_AUTH_DOMAIN: 'dailydraft.example',
+    DAILYDRAFT_NETWORK: 'solana-devnet',
+    DAILYDRAFT_PROVIDER_MODE: 'dailydraft-devnet',
     PORT: '3003',
     VERCEL_ENV: 'production',
     ...overrides,

@@ -34,7 +34,7 @@ The command used by CI is:
 
 ```bash
 SOAK_FIXTURE_MODE=deterministic \
-OPENPACKSDUEL_NETWORK=solana-devnet \
+DAILYDRAFT_NETWORK=solana-devnet \
 bun scripts/money-path-soak.ts \
   --iterations 24 \
   --concurrency 3 \

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { DatabaseClient } from '@openpacksduel/db';
+import type { DatabaseClient } from '@dailydraft/db';
 
 import {
   RealValuePolicyDeniedException,
@@ -17,8 +17,8 @@ describe('RealValuePolicyService', () => {
         'duel.funding.prepare',
         {
           NODE_ENV: 'production',
-          OPENPACKSDUEL_NETWORK: 'solana-devnet',
-          OPENPACKSDUEL_PROVIDER_MODE: 'openpacksduel-devnet',
+          DAILYDRAFT_NETWORK: 'solana-devnet',
+          DAILYDRAFT_PROVIDER_MODE: 'dailydraft-devnet',
         },
         evaluatedAt,
       ),
@@ -46,8 +46,8 @@ describe('RealValuePolicyService', () => {
     try {
       await service.assertAllowed('duel.create.house', {
         NODE_ENV: 'production',
-        OPENPACKSDUEL_NETWORK: 'solana-mainnet',
-        OPENPACKSDUEL_REAL_VALUE_MODE: 'true',
+        DAILYDRAFT_NETWORK: 'solana-mainnet',
+        DAILYDRAFT_REAL_VALUE_MODE: 'true',
       });
     } catch (error) {
       rejection = error;

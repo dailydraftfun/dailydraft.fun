@@ -6,7 +6,7 @@ import {
   HouseInventoryStatus,
   HouseTreasuryLedgerType,
   HouseTreasuryReservationStatus,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
 
 import { SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
 import { ACTIVE_HOUSE_RESERVATION_STATUSES } from './house-treasury.policy.js';
@@ -758,16 +758,16 @@ function lifecycleDatabase(reservations: ReservationFixture[]) {
 
 async function withHouseEnvironment<T>(operation: () => Promise<T>): Promise<T> {
   const values: Record<string, string> = {
-    OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: '100000000',
-    OPENPACKSDUEL_HOUSE_DEVNET_FUNDING_SIGNER: HOT_WALLET,
-    OPENPACKSDUEL_HOUSE_DEVNET_USDC_MINT: USDC_MINT,
-    OPENPACKSDUEL_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT: TOKEN_ACCOUNT,
-    OPENPACKSDUEL_HOUSE_DEVNET_WALLET: HOT_WALLET,
-    OPENPACKSDUEL_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY: COLD_OWNER,
-    OPENPACKSDUEL_HOUSE_ENABLED: 'true',
-    OPENPACKSDUEL_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO: '100000000',
-    OPENPACKSDUEL_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '20000000',
-    OPENPACKSDUEL_NETWORK: 'solana-devnet',
+    DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: '100000000',
+    DAILYDRAFT_HOUSE_DEVNET_FUNDING_SIGNER: HOT_WALLET,
+    DAILYDRAFT_HOUSE_DEVNET_USDC_MINT: USDC_MINT,
+    DAILYDRAFT_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT: TOKEN_ACCOUNT,
+    DAILYDRAFT_HOUSE_DEVNET_WALLET: HOT_WALLET,
+    DAILYDRAFT_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY: COLD_OWNER,
+    DAILYDRAFT_HOUSE_ENABLED: 'true',
+    DAILYDRAFT_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO: '100000000',
+    DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '20000000',
+    DAILYDRAFT_NETWORK: 'solana-devnet',
   };
   const previous = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries(values)) {

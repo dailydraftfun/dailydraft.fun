@@ -15,7 +15,7 @@ export interface PublicDuelLeaderboard {
     indexable: false;
     reason: string;
   };
-  schemaVersion: 'openpacksduel.leaderboard.v1';
+  schemaVersion: 'dailydraft.leaderboard.v1';
 }
 
 export interface PublicDuelLeaderboardEntry {
@@ -166,7 +166,7 @@ export function buildPublicDuelLeaderboard(
       reason:
         'Ranks use shortened wallet labels. Profile links resolve to public Solana identifiers and must not be indexed.',
     },
-    schemaVersion: 'openpacksduel.leaderboard.v1',
+    schemaVersion: 'dailydraft.leaderboard.v1',
   };
 }
 

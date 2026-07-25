@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
-export const REAL_VALUE_POLICY_SCHEMA_VERSION = 'openpacksduel.real-value-policy.v1';
-export const NON_PRODUCTION_POLICY_VERSION = 'openpacksduel.non-production-policy.v1';
+export const REAL_VALUE_POLICY_SCHEMA_VERSION = 'dailydraft.real-value-policy.v1';
+export const NON_PRODUCTION_POLICY_VERSION = 'dailydraft.non-production-policy.v1';
 
 export const REAL_VALUE_CAPABILITIES = [
   'duel.create.direct',
@@ -127,13 +127,13 @@ export function evaluateRealValuePolicy(
   environment: NodeJS.ProcessEnv = process.env,
 ): RealValuePolicyDecision {
   const runtimeMode = resolveRealValueRuntime(environment);
-  const rawPolicy = environment.OPENPACKSDUEL_REAL_VALUE_POLICY_JSON?.trim();
+  const rawPolicy = environment.DAILYDRAFT_REAL_VALUE_POLICY_JSON?.trim();
   const parsedPolicy = rawPolicy ? parseRealValuePolicy(rawPolicy) : null;
   const baseEvidence = {
     configurationPresent: Boolean(rawPolicy),
-    network: normalized(environment.OPENPACKSDUEL_NETWORK),
-    productionEnabled: environment.OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED === 'true',
-    providerMode: normalized(environment.OPENPACKSDUEL_PROVIDER_MODE),
+    network: normalized(environment.DAILYDRAFT_NETWORK),
+    productionEnabled: environment.DAILYDRAFT_REAL_VALUE_PRODUCTION_ENABLED === 'true',
+    providerMode: normalized(environment.DAILYDRAFT_PROVIDER_MODE),
     runtimeMode,
     schemaVersion: REAL_VALUE_POLICY_SCHEMA_VERSION,
   } as const;
@@ -201,7 +201,7 @@ export function evaluateRealValuePolicy(
       runtimeMode,
     });
   }
-  if (environment.OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED !== 'true') {
+  if (environment.DAILYDRAFT_REAL_VALUE_PRODUCTION_ENABLED !== 'true') {
     return deniedProductionDecision(
       capability,
       'production_approval_missing',
@@ -232,26 +232,26 @@ export function evaluateRealValuePolicy(
 export function resolveRealValueRuntime(
   environment: NodeJS.ProcessEnv = process.env,
 ): RealValueRuntimeMode {
-  const explicit = environment.OPENPACKSDUEL_REAL_VALUE_MODE?.trim();
+  const explicit = environment.DAILYDRAFT_REAL_VALUE_MODE?.trim();
   if (explicit && explicit !== 'true' && explicit !== 'false') return 'unclassified';
   if (
     explicit === 'true' ||
-    environment.OPENPACKSDUEL_NETWORK === 'solana-mainnet' ||
-    environment.OPENPACKSDUEL_PROVIDER_MODE === 'collector-crypt-production'
+    environment.DAILYDRAFT_NETWORK === 'solana-mainnet' ||
+    environment.DAILYDRAFT_PROVIDER_MODE === 'collector-crypt-production'
   ) {
     return 'production';
   }
   if (
     environment.NODE_ENV === 'test' ||
     environment.NODE_ENV === 'development' ||
-    environment.OPENPACKSDUEL_PROVIDER_MODE === 'mock'
+    environment.DAILYDRAFT_PROVIDER_MODE === 'mock'
   ) {
     return 'fixture';
   }
   if (
-    environment.OPENPACKSDUEL_NETWORK === 'solana-devnet' ||
-    environment.OPENPACKSDUEL_PROVIDER_MODE === 'openpacksduel-devnet' ||
-    environment.OPENPACKSDUEL_PROVIDER_MODE === 'collector-crypt-sandbox'
+    environment.DAILYDRAFT_NETWORK === 'solana-devnet' ||
+    environment.DAILYDRAFT_PROVIDER_MODE === 'dailydraft-devnet' ||
+    environment.DAILYDRAFT_PROVIDER_MODE === 'collector-crypt-sandbox'
   ) {
     return 'devnet';
   }

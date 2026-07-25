@@ -64,6 +64,6 @@ function leaderboard(entries: PublicDuelLeaderboard['entries']): PublicDuelLeade
       indexable: false,
       reason: 'Pseudonymous test fixture.',
     },
-    schemaVersion: 'openpacksduel.leaderboard.v1',
+    schemaVersion: 'dailydraft.leaderboard.v1',
   };
 }

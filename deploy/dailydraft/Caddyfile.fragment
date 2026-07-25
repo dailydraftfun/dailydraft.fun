@@ -1,0 +1,12 @@
+# Import into the shipshit-caddy Caddyfile. api.dailydraft.fun resolves to
+# 52.8.153.188 (Route53 zone Z09742203V5F08IZVJZCS). Caddy provisions the
+# certificate on first request, so the name must already resolve before this
+# fragment is loaded -- a non-resolving host burns Let's Encrypt failure budget
+# for every other tenant this instance terminates TLS for.
+#
+# The upstream is the container name the deploy script renames into place, on
+# the Docker network shipshit-caddy shares with it.
+api.dailydraft.fun {
+	encode zstd gzip
+	reverse_proxy dailydraft:3000
+}

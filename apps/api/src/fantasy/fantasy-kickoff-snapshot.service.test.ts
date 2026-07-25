@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { DatabaseClient } from '@openpacksduel/db';
+import type { DatabaseClient } from '@dailydraft/db';
 
 import {
   type FantasyKickoffHolding,
@@ -15,13 +15,13 @@ const KICKOFF_AT = new Date('2026-07-24T12:00:00.000Z');
 const WALLET_A = '11111111111111111111111111111111';
 const WALLET_B = '22222222222222222222222222222222';
 const ORIGINAL_ENV = {
-  fixture: process.env.OPENPACKSDUEL_FANTASY_FIXTURE_MODE,
+  fixture: process.env.DAILYDRAFT_FANTASY_FIXTURE_MODE,
   node: process.env.NODE_ENV,
   vercel: process.env.VERCEL_ENV,
 };
 
 afterEach(() => {
-  restoreEnvironment('OPENPACKSDUEL_FANTASY_FIXTURE_MODE', ORIGINAL_ENV.fixture);
+  restoreEnvironment('DAILYDRAFT_FANTASY_FIXTURE_MODE', ORIGINAL_ENV.fixture);
   restoreEnvironment('NODE_ENV', ORIGINAL_ENV.node);
   restoreEnvironment('VERCEL_ENV', ORIGINAL_ENV.vercel);
 });
@@ -203,33 +203,33 @@ describe('fantasyKickoffFixtureModeEnabled', () => {
     expect(
       fantasyKickoffFixtureModeEnabled({
         NODE_ENV: 'test',
-        OPENPACKSDUEL_FANTASY_FIXTURE_MODE: 'true',
+        DAILYDRAFT_FANTASY_FIXTURE_MODE: 'true',
         VERCEL_ENV: 'production',
       }),
     ).toBe(false);
     expect(
       fantasyKickoffFixtureModeEnabled({
         NODE_ENV: 'test',
-        OPENPACKSDUEL_FANTASY_FIXTURE_MODE: 'true',
+        DAILYDRAFT_FANTASY_FIXTURE_MODE: 'true',
       }),
     ).toBe(true);
     expect(
       fantasyKickoffFixtureModeEnabled({
         NODE_ENV: 'development',
-        OPENPACKSDUEL_FANTASY_FIXTURE_MODE: 'true',
+        DAILYDRAFT_FANTASY_FIXTURE_MODE: 'true',
       }),
     ).toBe(true);
     expect(
       fantasyKickoffFixtureModeEnabled({
         NODE_ENV: 'production',
-        OPENPACKSDUEL_FANTASY_FIXTURE_MODE: 'true',
+        DAILYDRAFT_FANTASY_FIXTURE_MODE: 'true',
         VERCEL_ENV: 'preview',
       }),
     ).toBe(true);
     expect(
       fantasyKickoffFixtureModeEnabled({
         NODE_ENV: 'production',
-        OPENPACKSDUEL_FANTASY_FIXTURE_MODE: 'true',
+        DAILYDRAFT_FANTASY_FIXTURE_MODE: 'true',
         VERCEL_ENV: 'staging',
       }),
     ).toBe(false);
@@ -239,7 +239,7 @@ describe('fantasyKickoffFixtureModeEnabled', () => {
 describe('FantasyKickoffSnapshotService', () => {
   test('fails closed before database access when fixture mode is disabled', async () => {
     process.env.NODE_ENV = 'test';
-    delete process.env.OPENPACKSDUEL_FANTASY_FIXTURE_MODE;
+    delete process.env.DAILYDRAFT_FANTASY_FIXTURE_MODE;
     const database = new FixtureDatabase();
     const service = new FantasyKickoffSnapshotService(database as unknown as DatabaseClient);
 
@@ -342,7 +342,7 @@ function holding(
 
 function enableFixtureMode(): void {
   process.env.NODE_ENV = 'test';
-  process.env.OPENPACKSDUEL_FANTASY_FIXTURE_MODE = 'true';
+  process.env.DAILYDRAFT_FANTASY_FIXTURE_MODE = 'true';
   delete process.env.VERCEL_ENV;
 }
 

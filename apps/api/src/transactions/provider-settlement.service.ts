@@ -1,13 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
-import {
   type DatabaseClient,
   DuelSide,
   DuelStatus,
@@ -15,7 +7,15 @@ import {
   DuelTransactionStatus,
   type Prisma,
   ProviderMode,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
@@ -38,7 +38,7 @@ import {
   ESCROW_V2_PROGRAM_ID,
   type EscrowV2Role,
   toEscrowV2UnixSeconds,
-} from '../contracts/openpacksduel-escrow-v2.js';
+} from '../contracts/dailydraft-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import {
   assertNormalizedOutcome,
@@ -304,7 +304,7 @@ export class ProviderSettlementService {
           ata(caller, destinations.opponentCard, opponentCardOwner, evidence.opponent.mint),
         ],
         suffix:
-          duel.providerMode === ProviderMode.OPENPACKSDUEL_DEVNET
+          duel.providerMode === ProviderMode.DAILYDRAFT_DEVNET
             ? [
                 createClosePaymentVaultInstruction({
                   caller,
@@ -655,7 +655,7 @@ export function validateCanonicalEvidence(duel: {
 }): CanonicalEvidence {
   if (
     duel.providerMode !== ProviderMode.COLLECTOR_CRYPT_SANDBOX &&
-    duel.providerMode !== ProviderMode.OPENPACKSDUEL_DEVNET
+    duel.providerMode !== ProviderMode.DAILYDRAFT_DEVNET
   ) {
     throw new ServiceUnavailableException('Live settlement requires confirmed provider evidence');
   }
@@ -768,7 +768,7 @@ export function validateCanonicalEvidence(duel: {
 }
 
 function assertEscrowProgramConfiguration(): void {
-  if (process.env.OPENPACKSDUEL_NETWORK !== 'solana-devnet') {
+  if (process.env.DAILYDRAFT_NETWORK !== 'solana-devnet') {
     throw new ServiceUnavailableException('Provider settlement is devnet-only');
   }
   const configuredProgram = parseConfigurationKey('ESCROW_PROGRAM_ID');
@@ -778,7 +778,7 @@ function assertEscrowProgramConfiguration(): void {
 }
 
 function loadProviderConfiguration(): { feeRecipient: PublicKey; providerSigner: PublicKey } {
-  if (process.env.OPENPACKSDUEL_PROVIDER_ASSET_STANDARD !== 'legacy-spl-nft') {
+  if (process.env.DAILYDRAFT_PROVIDER_ASSET_STANDARD !== 'legacy-spl-nft') {
     throw new ServiceUnavailableException('Canonical provider asset standard is not confirmed');
   }
   return {

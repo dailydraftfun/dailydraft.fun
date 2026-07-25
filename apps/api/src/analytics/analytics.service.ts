@@ -1,11 +1,11 @@
-import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import {
   type DatabaseClient,
   ProductEventName as DatabaseEventName,
   DuelMode,
   DuelStatus,
   ProductEventSource,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
+import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type {
@@ -363,7 +363,7 @@ function ratio(numerator: number, denominator: number): number {
 }
 
 function resolveStuckThresholdMinutes(): number {
-  const parsed = Number.parseInt(process.env.OPENPACKSDUEL_STUCK_FUNDED_MINUTES ?? '5', 10);
+  const parsed = Number.parseInt(process.env.DAILYDRAFT_STUCK_FUNDED_MINUTES ?? '5', 10);
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 1_440 ? parsed : 5;
 }
 

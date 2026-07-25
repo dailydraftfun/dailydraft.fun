@@ -26,18 +26,18 @@ jobs:
       postgres:
         image: postgres:18-alpine
         env:
-          POSTGRES_DB: openpacksduel_ci
-          POSTGRES_PASSWORD: openpacksduel
-          POSTGRES_USER: openpacksduel
+          POSTGRES_DB: dailydraft_ci
+          POSTGRES_PASSWORD: dailydraft
+          POSTGRES_USER: dailydraft
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U openpacksduel -d openpacksduel_ci"
+          --health-cmd "pg_isready -U dailydraft -d dailydraft_ci"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql://openpacksduel:openpacksduel@localhost:5432/openpacksduel_ci?schema=public
+      DATABASE_URL: postgresql://dailydraft:dailydraft@localhost:5432/dailydraft_ci?schema=public
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -45,7 +45,7 @@ jobs:
           bun-version: 1.3.13
       - run: bun install --frozen-lockfile
       - name: Apply committed migrations
-        run: bun --filter @openpacksduel/db db:deploy
+        run: bun --filter @dailydraft/db db:deploy
       - name: Verify house treasury migration contract
         run: |
           database_url="${DATABASE_URL%%\?*}"
@@ -59,7 +59,7 @@ jobs:
             --set ON_ERROR_STOP=1 \
             --file packages/db/prisma/verify-flip-inventory.sql
       - name: Validate Prisma schema
-        run: bun --filter @openpacksduel/db db:validate
+        run: bun --filter @dailydraft/db db:validate
       - name: Prove schema-only drift is rejected
         working-directory: packages/db
         run: |
@@ -77,4 +77,4 @@ jobs:
 
           test "$drift_status" -eq 2
       - name: Reject migration and schema drift
-        run: bun --filter @openpacksduel/db db:drift-check
+        run: bun --filter @dailydraft/db db:drift-check

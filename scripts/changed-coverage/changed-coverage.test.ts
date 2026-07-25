@@ -114,7 +114,7 @@ function location(line: number) {
 }
 
 function runInstrumentedFixture(complete: boolean) {
-  const directory = mkdtempSync(resolve(tmpdir(), 'openpacksduel-coverage-'));
+  const directory = mkdtempSync(resolve(tmpdir(), 'dailydraft-coverage-'));
   const fixturePath = resolve(import.meta.dir, 'fixtures/branch.fixture.ts');
   const testPath = resolve(import.meta.dir, 'fixtures/branch.fixture.test.ts');
   const targetsPath = resolve(directory, 'targets.json');
@@ -128,9 +128,9 @@ function runInstrumentedFixture(complete: boolean) {
         cwd: integrationRepositoryRoot,
         env: {
           ...process.env,
-          OPENPACKSDUEL_COVERAGE_FIXTURE_COMPLETE: complete ? '1' : '0',
-          OPENPACKSDUEL_COVERAGE_OUTPUT: outputPath,
-          OPENPACKSDUEL_COVERAGE_TARGETS: targetsPath,
+          DAILYDRAFT_COVERAGE_FIXTURE_COMPLETE: complete ? '1' : '0',
+          DAILYDRAFT_COVERAGE_OUTPUT: outputPath,
+          DAILYDRAFT_COVERAGE_TARGETS: targetsPath,
         },
         stderr: 'pipe',
         stdout: 'pipe',

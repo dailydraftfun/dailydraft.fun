@@ -1,5 +1,5 @@
+import type { DatabaseClient } from '@dailydraft/db';
 import { Controller, Get, Header, Inject, ServiceUnavailableException } from '@nestjs/common';
-import type { DatabaseClient } from '@openpacksduel/db';
 
 import { AdminService } from '../admin/admin.service.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
@@ -51,7 +51,7 @@ export class HealthController {
 
     return {
       dependencies: { database: 'ok' },
-      service: 'openpacksduel-api',
+      service: 'dailydraft-api',
       status: 'ok',
       version: '0.2.0-devnet',
     };

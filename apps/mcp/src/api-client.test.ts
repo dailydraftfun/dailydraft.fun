@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { OpenPacksApiClient, OpenPacksApiError } from './api-client.js';
+import { DailyDraftApiClient, DailyDraftApiError } from './api-client.js';
 
 const pack = {
   active: true,
@@ -10,10 +10,10 @@ const pack = {
   provider: 'preview',
 };
 
-describe('OpenPacksApiClient', () => {
+describe('DailyDraftApiClient', () => {
   test('encodes filters and authenticates without exposing the key', async () => {
     let request: Request | undefined;
-    const client = new OpenPacksApiClient({
+    const client = new DailyDraftApiClient({
       apiKey: 'opd_test_secret',
       baseUrl: 'https://api.example.test/v1',
       fetch: async (input, init) => {
@@ -30,7 +30,7 @@ describe('OpenPacksApiClient', () => {
   });
 
   test('returns a bounded API error with request correlation', async () => {
-    const client = new OpenPacksApiClient({
+    const client = new DailyDraftApiClient({
       baseUrl: 'https://api.example.test/v1',
       fetch: async () =>
         Response.json(
@@ -41,12 +41,12 @@ describe('OpenPacksApiClient', () => {
 
     const error = await client.getDuel('duel_missing').catch((value: unknown) => value);
 
-    expect(error).toBeInstanceOf(OpenPacksApiError);
+    expect(error).toBeInstanceOf(DailyDraftApiError);
     expect(error).toMatchObject({ requestId: 'req_123', status: 404 });
   });
 
   test('rejects API responses that drift from the contract', async () => {
-    const client = new OpenPacksApiClient({
+    const client = new DailyDraftApiClient({
       baseUrl: 'https://api.example.test/v1',
       fetch: async () => Response.json({ data: [{ ...pack, price: 50 }], hasMore: false }),
     });
@@ -58,7 +58,7 @@ describe('OpenPacksApiClient', () => {
 
   test('prepares an unsigned transaction with an idempotency key', async () => {
     let request: Request | undefined;
-    const client = new OpenPacksApiClient({
+    const client = new DailyDraftApiClient({
       apiKey: 'opd_test_secret',
       baseUrl: 'https://api.example.test/v1',
       fetch: async (input, init) => {
@@ -106,7 +106,7 @@ describe('OpenPacksApiClient', () => {
 
   test('redacts the upstream key from errors and rejects it in successful output', async () => {
     const apiKey = 'opd_server_only_12345678901234567890';
-    const errorClient = new OpenPacksApiClient({
+    const errorClient = new DailyDraftApiClient({
       apiKey,
       baseUrl: 'https://api.example.test/v1',
       fetch: async () => Response.json({ detail: `Do not leak ${apiKey}` }, { status: 502 }),
@@ -116,7 +116,7 @@ describe('OpenPacksApiClient', () => {
 
     expect(String(upstreamError)).not.toContain(apiKey);
 
-    const outputClient = new OpenPacksApiClient({
+    const outputClient = new DailyDraftApiClient({
       apiKey,
       baseUrl: 'https://api.example.test/v1',
       fetch: async () => Response.json({ ...pack, name: apiKey }),
@@ -128,17 +128,17 @@ describe('OpenPacksApiClient', () => {
   });
 
   test('requires an explicit API URL and reports upstream credential availability', () => {
-    expect(() => new OpenPacksApiClient({ baseUrl: '' })).toThrow(
-      'OPENPACKSDUEL_API_URL is required',
+    expect(() => new DailyDraftApiClient({ baseUrl: '' })).toThrow(
+      'DAILYDRAFT_API_URL is required',
     );
     expect(
-      new OpenPacksApiClient({
+      new DailyDraftApiClient({
         apiKey: 'configured',
         baseUrl: 'https://api.example.test/v1',
       }).hasIntegrationCredential,
     ).toBe(true);
     expect(
-      new OpenPacksApiClient({ baseUrl: 'https://api.example.test/v1' }).hasIntegrationCredential,
+      new DailyDraftApiClient({ baseUrl: 'https://api.example.test/v1' }).hasIntegrationCredential,
     ).toBe(false);
   });
 });

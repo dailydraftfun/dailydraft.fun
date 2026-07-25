@@ -29,12 +29,12 @@ export class PackProviderService {
       }
       return this.mock;
     }
-    if (duel.providerMode === 'openpacksduel-devnet') {
+    if (duel.providerMode === 'dailydraft-devnet') {
       if (duel.environment !== 'solana-devnet') {
-        throw new ConflictException('The OpenPacks demo provider is devnet-only');
+        throw new ConflictException('The DailyDraft demo provider is devnet-only');
       }
       if (!this.devnetDemo) {
-        throw new ServiceUnavailableException('The OpenPacks demo provider is not configured');
+        throw new ServiceUnavailableException('The DailyDraft demo provider is not configured');
       }
       return this.devnetDemo;
     }

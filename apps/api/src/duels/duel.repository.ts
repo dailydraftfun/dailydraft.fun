@@ -1,4 +1,4 @@
-import type { Prisma } from '@openpacksduel/db';
+import type { Prisma } from '@dailydraft/db';
 
 import type {
   Duel,

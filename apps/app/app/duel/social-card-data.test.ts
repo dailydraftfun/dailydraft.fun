@@ -102,7 +102,7 @@ function receipt({
       cards: [],
       reason: withResult ? 'mock-assets' : 'duel-not-settled',
       receiptHref: '/v1/duels/duel_truth/receipt',
-      schemaVersion: 'openpacksduel.card-actions.v1',
+      schemaVersion: 'dailydraft.card-actions.v1',
     },
     custody: {
       cardAssets: { detail: 'Test', status: 'pending' },
@@ -127,8 +127,8 @@ function receipt({
     pack: {
       id: 'pokemon_50',
       name: 'Pokemon $50',
-      provider: 'openpacksduel',
-      providerMode: 'openpacksduel-devnet',
+      provider: 'dailydraft',
+      providerMode: 'dailydraft-devnet',
       providerPackId: null,
       tier: { amount: '50000000', currency: 'USDC', decimals: 6 },
     },
@@ -166,13 +166,13 @@ function receipt({
               escrowAddress: 'escrow',
               network: 'solana-devnet',
               opponentWallet: 'opponent',
-              providerMode: 'openpacksduel-devnet',
+              providerMode: 'dailydraft-devnet',
             },
             creatorResultHash: 'creator_hash',
             opponentResultHash: 'opponent_hash',
             poolVersion: 'pool-v1',
             providerAttestation: { required: true, scope: 'none', status: 'not-recorded' },
-            schemaVersion: 'openpacksduel.result-proof.v1',
+            schemaVersion: 'dailydraft.result-proof.v1',
           },
           resultHash: 'result_hash',
           settlementReady: true,
@@ -182,7 +182,7 @@ function receipt({
           winnerSide: 'creator',
         }
       : null,
-    schemaVersion: 'openpacksduel.receipt.v1',
+    schemaVersion: 'dailydraft.receipt.v1',
   };
 }
 
