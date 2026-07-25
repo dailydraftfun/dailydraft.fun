@@ -115,8 +115,13 @@ const NON_PRODUCTION_POLICY = Object.freeze({
   schemaVersion: REAL_VALUE_POLICY_SCHEMA_VERSION,
 });
 
+// Repinned for the DailyDraft rename. Unlike the valuation policy hash, this
+// one is an audit field on RealValuePolicyDecision that nothing compares
+// against, and the schemaVersion it covers is pinned by a CHECK constraint that
+// the 20260725120000_rebrand_dailydraft migration rewrites, so the constant has
+// to move with the identifiers rather than hold them back.
 export const NON_PRODUCTION_POLICY_HASH =
-  'd47e913535eeec01193a4324b92a6171958dfbf02c1d1fca38f6f26b724a5206';
+  '2a652daea4b85b74f975caf1e5e65257ec2306676922983d8d8f1f6401eb0402';
 
 if (sha256(canonicalJson(NON_PRODUCTION_POLICY)) !== NON_PRODUCTION_POLICY_HASH) {
   throw new Error('Non-production policy changed without an explicit hash/version update');

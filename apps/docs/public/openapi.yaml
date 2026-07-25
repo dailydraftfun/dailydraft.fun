@@ -2607,10 +2607,10 @@ components:
       properties:
         schemaVersion:
           type: string
-          const: dailydraft.valuation-policy.v1
+          const: openpacksduel.valuation-policy.v1
         policyVersion:
           type: string
-          enum: [collector-crypt-insured-value-usdc-v1, dailydraft-pokemon-tcg-market-usdc-v1]
+          enum: [collector-crypt-insured-value-usdc-v1, openpacksduel-pokemon-tcg-market-usdc-v1]
         authoritativeField:
           type: string
           enum: [collector-crypt.gacha.result.insuredValue, pokemon-tcg.tcgplayer.prices.<first-supported-variant>.market]
@@ -3202,7 +3202,7 @@ components:
             hashAlgorithm: { type: string, const: sha256 }
             maxSourceAgeSeconds: { type: integer, enum: [300, 604800] }
             maxValueMinorUnits: { type: string, const: '18446744073709551615' }
-            policyVersion: { type: string, enum: [collector-crypt-insured-value-usdc-v1, dailydraft-pokemon-tcg-market-usdc-v1] }
+            policyVersion: { type: string, enum: [collector-crypt-insured-value-usdc-v1, openpacksduel-pokemon-tcg-market-usdc-v1] }
             rounding: { type: string, const: none }
             tieRule: { type: string, const: return-original-assets-and-refund-platform-fees }
         proof:

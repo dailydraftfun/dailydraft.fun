@@ -287,7 +287,7 @@ export const contractOperations = [
   },
 ] as const satisfies readonly ContractOperation[];
 
-export const CONTRACT_FIXTURE_VERSION = '2026-07-20.v1+f69a52e94bf6';
+export const CONTRACT_FIXTURE_VERSION = '2026-07-20.v2+5013526b6a26';
 
 export function contractFixtureFingerprint(): string {
   return createHash('sha256')

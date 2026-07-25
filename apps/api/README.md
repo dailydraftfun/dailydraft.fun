@@ -218,7 +218,7 @@ not Collector Crypt inventory.
 The deterministic `mock` provider still refuses to run outside devnet, but it
 never enters real settlement and must not be selected by the hosted demo.
 All new duels snapshot the valuation policy for their provider before funding.
-The hosted demo uses `dailydraft-pokemon-tcg-market-usdc-v1` and a persisted
+The hosted demo uses `openpacksduel-pokemon-tcg-market-usdc-v1` and a persisted
 Pokémon TCG `tcgplayer.prices.market` snapshot. The disabled Collector Crypt adapter
 uses `collector-crypt-insured-value-usdc-v1`. Provider outcomes must match the
 pre-funded SHA-256, use integer micro-USDC comparison values, share one pool version, and carry the
