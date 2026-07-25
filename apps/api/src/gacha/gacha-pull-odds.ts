@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 
 import { stableStringify } from '../providers/valuation-policy.js';
 
-export const GACHA_PULL_ODDS_SCHEMA_VERSION = 'openpacksduel.gacha-pull-odds.v1' as const;
+export const GACHA_PULL_ODDS_SCHEMA_VERSION = 'dailydraft.gacha-pull-odds.v1' as const;
 export const GACHA_PULL_ODDS_CALCULATOR_VERSION =
-  'openpacksduel.gacha-pull-odds-calculator.v1' as const;
+  'dailydraft.gacha-pull-odds-calculator.v1' as const;
 
 export const GACHA_PROBABILITY_SCALE_PPM = 1_000_000;
 

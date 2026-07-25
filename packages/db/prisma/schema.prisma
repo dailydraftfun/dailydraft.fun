@@ -35,7 +35,7 @@ enum SolanaNetwork {
 
 enum ProviderMode {
   MOCK
-  OPENPACKSDUEL_DEVNET
+  DAILYDRAFT_DEVNET
   COLLECTOR_CRYPT_SANDBOX
 }
 

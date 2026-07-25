@@ -3,10 +3,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { DuelTransactionIntent } from '../solana/duel-client';
 
+// Bun's module registry is process-wide, so this override reaches every later test file.
+// Loading the real provider up front and spreading it keeps the rest of its surface
+// intact — only the hook is swapped for a stub this file can drive.
+const walletProvider = await import('../solana/wallet-provider');
+
 let walletState = wallet();
 let authenticationState = authentication();
 
 mock.module('../solana/wallet-provider', () => ({
+  ...walletProvider,
   useSolanaWallet: () => walletState,
 }));
 
@@ -37,10 +43,10 @@ describe('duel entry stepper', () => {
       challenge: {
         chain: 'solana:devnet',
         challengeId: 'challenge',
-        domain: 'openpacksduel.vercel.app',
+        domain: 'dailydraft.fun',
         expiresAt: '2026-07-17T09:15:00.000Z',
         message: 'Sign in to Pack Duel',
-        uri: 'https://openpacksduel.vercel.app',
+        uri: 'https://dailydraft.fun',
         wallet: 'wallet',
       },
     });

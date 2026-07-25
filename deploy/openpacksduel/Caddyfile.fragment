@@ -1,4 +1,0 @@
-# Replace api.CHANGEME with the real API host and point its DNS A record to 52.8.153.188.
-api.CHANGEME {
-	reverse_proxy openpacksduel:3000
-}

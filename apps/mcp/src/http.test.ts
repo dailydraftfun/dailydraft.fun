@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createServer, type Server } from 'node:http';
-import { OpenPacksApiClient } from './api-client.js';
+import { DailyDraftApiClient } from './api-client.js';
 import { createMcpHttpHandler } from './http.js';
 import { McpCredentialStore } from './http-auth.js';
 import { FixedWindowRateLimiter } from './rate-limit.js';
@@ -57,7 +57,7 @@ describe('MCP Streamable HTTP transport', () => {
     expect(response.headers.get('mcp-session-id')).toBeNull();
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     expect(body.jsonrpc).toBe('2.0');
-    expect(body.result?.serverInfo?.name).toBe('openpacksduel');
+    expect(body.result?.serverInfo?.name).toBe('dailydraft');
   });
 
   test('accepts a platform-preparsed JSON body', async () => {
@@ -70,7 +70,7 @@ describe('MCP Streamable HTTP transport', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      result: { serverInfo: { name: 'openpacksduel' } },
+      result: { serverInfo: { name: 'dailydraft' } },
     });
   });
 
@@ -120,9 +120,9 @@ describe('MCP Streamable HTTP transport', () => {
 
 async function listen(options: { preparseBody?: boolean } = {}): Promise<string> {
   const handler = createMcpHttpHandler({
-    allowedOrigins: new Set(['https://openpacksduel.vercel.app']),
+    allowedOrigins: new Set(['https://dailydraft.fun']),
     apiClientFactory: () =>
-      new OpenPacksApiClient({
+      new DailyDraftApiClient({
         baseUrl: 'https://api.example.test/v1',
         fetch: async () =>
           Response.json({ detail: 'Unexpected upstream request' }, { status: 500 }),
@@ -161,7 +161,7 @@ function initializeRequest() {
     method: 'initialize',
     params: {
       capabilities: {},
-      clientInfo: { name: 'openpacksduel-test', version: '1.0.0' },
+      clientInfo: { name: 'dailydraft-test', version: '1.0.0' },
       protocolVersion: '2025-06-18',
     },
   };

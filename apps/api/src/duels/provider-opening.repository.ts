@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import {
   type DatabaseClient,
   DuelSide as DatabaseDuelSide,
   DuelStatus as DatabaseDuelStatus,
   DuelProviderOperationStatus,
   type Prisma,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
+import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type { DuelSide, ProviderResponseEvidence } from '../providers/pack-provider.js';

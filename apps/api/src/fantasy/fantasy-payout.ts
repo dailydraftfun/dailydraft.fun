@@ -14,8 +14,8 @@ import {
   isFantasySport,
 } from './fantasy-domain.js';
 
-export const FANTASY_PAYOUT_VERSION = 'openpacksduel.fantasy-payout.v1' as const;
-export const FANTASY_PAYOUT_SCHEMA_VERSION = 'openpacksduel.fantasy-payout-rules.v1' as const;
+export const FANTASY_PAYOUT_VERSION = 'dailydraft.fantasy-payout.v1' as const;
+export const FANTASY_PAYOUT_SCHEMA_VERSION = 'dailydraft.fantasy-payout-rules.v1' as const;
 
 export const FANTASY_PAYOUT_BASIS_POINTS_TOTAL = 10_000n;
 

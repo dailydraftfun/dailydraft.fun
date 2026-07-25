@@ -30,7 +30,7 @@ const pack = {
   imageUrl: 'https://images.example.test/pokemon-50.png',
   name: 'Pokemon $50',
   price: { amount: '50000000', currency: 'USDC', decimals: 6 },
-  provider: 'OpenPacks Duel Devnet',
+  provider: 'DailyDraft Devnet',
   providerPackId: 'pokemon-50-devnet',
   valuationPolicyHash: 'a'.repeat(64),
 } as const;
@@ -60,7 +60,7 @@ export const contractFixtures = {
       opponentJoinedAt: '2026-07-20T12:01:00.000Z',
       opponentWallet: contractValues.opponentWallet,
       pack,
-      providerMode: 'openpacksduel-devnet',
+      providerMode: 'dailydraft-devnet',
       result: null,
       stake: { amount: '50000000', currency: 'USDC', decimals: 6 },
       status: 'matched',
@@ -73,7 +73,7 @@ export const contractFixtures = {
   health: {
     response: {
       dependencies: { database: 'ok' },
-      service: 'openpacksduel-api',
+      service: 'dailydraft-api',
       status: 'ok',
       version: OPENAPI_CONTRACT_VERSION,
     },
@@ -84,7 +84,7 @@ export const contractFixtures = {
       requestId: 'req_contract_fixture',
       status: 409,
       title: 'Conflict',
-      type: 'https://openpacksduel.com/problems/conflict',
+      type: 'https://dailydraft.fun/problems/conflict',
     },
   },
   publicProof: {
@@ -103,7 +103,7 @@ export const contractFixtures = {
         cards: [],
         reason: 'duel-not-settled',
         receiptHref: `/duel/${contractValues.duelId}/receipt`,
-        schemaVersion: 'openpacksduel.card-actions.v1',
+        schemaVersion: 'dailydraft.card-actions.v1',
       },
       custody: {
         cardAssets: {
@@ -136,7 +136,7 @@ export const contractFixtures = {
         id: pack.id,
         name: pack.name,
         provider: pack.provider,
-        providerMode: 'openpacksduel-devnet',
+        providerMode: 'dailydraft-devnet',
         providerPackId: pack.providerPackId,
         tier: pack.price,
       },
@@ -159,7 +159,7 @@ export const contractFixtures = {
       recovery: { alerts: [], status: 'none' },
       references: { provider: [], solana: [] },
       result: null,
-      schemaVersion: 'openpacksduel.receipt.v1',
+      schemaVersion: 'dailydraft.receipt.v1',
     },
   },
   transactionPreparation: {
@@ -194,10 +194,10 @@ export const contractFixtures = {
     challengeResponse: {
       chain: 'solana:devnet',
       challengeId: contractValues.challengeId,
-      domain: 'openpacksduel.example.test',
+      domain: 'dailydraft.example.test',
       expiresAt: '2026-07-20T12:05:00.000Z',
-      message: 'Sign in to OpenPacks Duel on Solana devnet.',
-      uri: 'https://openpacksduel.example.test',
+      message: 'Sign in to DailyDraft on Solana devnet.',
+      uri: 'https://dailydraft.example.test',
       wallet: contractValues.creatorWallet,
     },
     sessionRequest: {
@@ -287,7 +287,7 @@ export const contractOperations = [
   },
 ] as const satisfies readonly ContractOperation[];
 
-export const CONTRACT_FIXTURE_VERSION = '2026-07-20.v1+f69a52e94bf6';
+export const CONTRACT_FIXTURE_VERSION = '2026-07-20.v2+5013526b6a26';
 
 export function contractFixtureFingerprint(): string {
   return createHash('sha256')

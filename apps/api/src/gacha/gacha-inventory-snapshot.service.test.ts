@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import type { DatabaseClient } from '@openpacksduel/db';
-import { GachaInventoryExclusionReason } from '@openpacksduel/db';
+import type { DatabaseClient } from '@dailydraft/db';
+import { GachaInventoryExclusionReason } from '@dailydraft/db';
 
 import {
   fixtureSnapshotInput,
@@ -21,13 +21,13 @@ const MACHINE: SportsPackGachaMachine = {
   tierPriceMinor: '50000000',
 };
 const ORIGINAL_ENV = {
-  fixture: process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE,
+  fixture: process.env.DAILYDRAFT_GACHA_FIXTURE_MODE,
   node: process.env.NODE_ENV,
   vercel: process.env.VERCEL_ENV,
 };
 
 afterEach(() => {
-  restoreEnvironment('OPENPACKSDUEL_GACHA_FIXTURE_MODE', ORIGINAL_ENV.fixture);
+  restoreEnvironment('DAILYDRAFT_GACHA_FIXTURE_MODE', ORIGINAL_ENV.fixture);
   restoreEnvironment('NODE_ENV', ORIGINAL_ENV.node);
   restoreEnvironment('VERCEL_ENV', ORIGINAL_ENV.vercel);
 });
@@ -337,7 +337,7 @@ describe('GachaInventorySnapshotService', () => {
 
   test('fails closed before database access when fixture mode is disabled', async () => {
     process.env.NODE_ENV = 'test';
-    delete process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE;
+    delete process.env.DAILYDRAFT_GACHA_FIXTURE_MODE;
     const database = new FixtureDatabase();
     const service = new GachaInventorySnapshotService(database as unknown as DatabaseClient);
 
@@ -499,7 +499,7 @@ function deniedCard(sourceTimestamp: Date): SportsPackGachaCard {
 
 function enableFixtureMode(): void {
   process.env.NODE_ENV = 'test';
-  process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE = 'true';
+  process.env.DAILYDRAFT_GACHA_FIXTURE_MODE = 'true';
   delete process.env.VERCEL_ENV;
 }
 

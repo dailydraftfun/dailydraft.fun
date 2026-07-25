@@ -27,7 +27,7 @@ describe('landing page contract', () => {
     expect(markup).toContain('Your wallet signs');
     expect(markup).toContain('Real cards, on-chain');
     expect(markup).toContain('Verifiable outcomes');
-    expect(markup).toContain('https://github.com/openpacksduel/escrow');
+    expect(markup).toContain('https://github.com/dailydraftfun/escrow');
   });
 
   test('states the devnet limit and drops the pack-duel framing', () => {
@@ -38,7 +38,7 @@ describe('landing page contract', () => {
   });
 
   test('routes both primary calls to action at the app', () => {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://openpacksduel.vercel.app';
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dailydraft.fun';
 
     expect(markup).toContain('Start playing');
     expect(markup).toContain('Play Grail');

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { DuelStatus } from '@openpacksduel/db';
+import { DuelStatus } from '@dailydraft/db';
 
-import { ESCROW_V2_PROGRAM_ID } from '../contracts/openpacksduel-escrow-v2.js';
+import { ESCROW_V2_PROGRAM_ID } from '../contracts/dailydraft-escrow-v2.js';
 import { CANONICAL_VALUATION_POLICY_HASH } from '../providers/valuation-policy.js';
 import { HouseTreasuryService } from '../treasury/house-treasury.service.js';
 import { DuelFundingService } from './duel-funding.service.js';
@@ -72,8 +72,8 @@ async function withFundingEnvironment(operation: () => Promise<void>): Promise<v
     ESCROW_FEE_RECIPIENT: HOUSE,
     ESCROW_PROGRAM_ID: ESCROW_V2_PROGRAM_ID.toBase58(),
     ESCROW_PROVIDER_SIGNER: PROVIDER,
-    OPENPACKSDUEL_DEVNET_FEE_LAMPORTS: '1000000',
-    OPENPACKSDUEL_NETWORK: 'solana-devnet',
+    DAILYDRAFT_DEVNET_FEE_LAMPORTS: '1000000',
+    DAILYDRAFT_NETWORK: 'solana-devnet',
   };
   const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
   Object.assign(process.env, values);

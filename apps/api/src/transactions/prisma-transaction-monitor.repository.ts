@@ -1,18 +1,18 @@
 import {
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import {
   type DatabaseClient,
   DuelMode as DatabaseDuelMode,
   DuelStatus as DatabaseDuelStatus,
   DuelTransactionAction,
   DuelTransactionStatus,
   type Prisma,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type { DuelStatus } from '../domain.js';

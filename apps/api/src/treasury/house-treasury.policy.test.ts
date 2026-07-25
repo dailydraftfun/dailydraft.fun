@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { HttpStatus } from '@nestjs/common';
 import {
   type DatabaseClient,
   DuelStatus,
   HouseTreasuryReservationStatus,
   type Prisma,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
+import { HttpStatus } from '@nestjs/common';
 
 import {
   evaluateHouseExposureLimits,
@@ -83,7 +83,7 @@ describe('house treasury policy', () => {
 
   test('requires withdrawal authority separation', () => {
     const environment = configuredEnvironment();
-    environment.OPENPACKSDUEL_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY = HOUSE;
+    environment.DAILYDRAFT_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY = HOUSE;
     expect(houseTreasuryConfigurationErrors(readHouseTreasuryConfig(environment))).toContain(
       'withdrawal_authority_not_separated',
     );
@@ -92,11 +92,11 @@ describe('house treasury policy', () => {
   test('bounds invalid concurrency configuration and disables missing amount limits', () => {
     const config = readHouseTreasuryConfig({
       ...configuredEnvironment(),
-      OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: 'invalid',
-      OPENPACKSDUEL_HOUSE_MAX_ACTIVE_PER_WALLET: '2junk',
-      OPENPACKSDUEL_HOUSE_MAX_CONCURRENT_PER_TIER: '0',
-      OPENPACKSDUEL_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO: '-1',
-      OPENPACKSDUEL_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '',
+      DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: 'invalid',
+      DAILYDRAFT_HOUSE_MAX_ACTIVE_PER_WALLET: '2junk',
+      DAILYDRAFT_HOUSE_MAX_CONCURRENT_PER_TIER: '0',
+      DAILYDRAFT_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO: '-1',
+      DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '',
     });
 
     expect(config.maxActivePerWallet).toBe(1);
@@ -386,7 +386,7 @@ describe('house treasury policy', () => {
 
   test('includes unresolved reservations in atomic daily-loss headroom', async () => {
     const environment = configuredEnvironment();
-    environment.OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO = '50000000';
+    environment.DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO = '50000000';
     const transaction = fakeTransaction({
       created: [],
       existingExposure: [{ amount: '50000000' }],
@@ -423,18 +423,18 @@ describe('house treasury policy', () => {
 
 function configuredEnvironment(): NodeJS.ProcessEnv {
   return {
-    OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: '100000000',
-    OPENPACKSDUEL_HOUSE_DEVNET_FUNDING_SIGNER: HOUSE,
-    OPENPACKSDUEL_HOUSE_DEVNET_USDC_MINT: USDC_MINT,
-    OPENPACKSDUEL_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT: TOKEN_ACCOUNT,
-    OPENPACKSDUEL_HOUSE_DEVNET_WALLET: HOUSE,
-    OPENPACKSDUEL_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY: WITHDRAWAL,
-    OPENPACKSDUEL_HOUSE_ENABLED: 'true',
-    OPENPACKSDUEL_HOUSE_MAX_ACTIVE_PER_WALLET: '2',
-    OPENPACKSDUEL_HOUSE_MAX_CONCURRENT_PER_TIER: '2',
-    OPENPACKSDUEL_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO: '100000000',
-    OPENPACKSDUEL_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '20000000',
-    OPENPACKSDUEL_NETWORK: 'solana-devnet',
+    DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: '100000000',
+    DAILYDRAFT_HOUSE_DEVNET_FUNDING_SIGNER: HOUSE,
+    DAILYDRAFT_HOUSE_DEVNET_USDC_MINT: USDC_MINT,
+    DAILYDRAFT_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT: TOKEN_ACCOUNT,
+    DAILYDRAFT_HOUSE_DEVNET_WALLET: HOUSE,
+    DAILYDRAFT_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY: WITHDRAWAL,
+    DAILYDRAFT_HOUSE_ENABLED: 'true',
+    DAILYDRAFT_HOUSE_MAX_ACTIVE_PER_WALLET: '2',
+    DAILYDRAFT_HOUSE_MAX_CONCURRENT_PER_TIER: '2',
+    DAILYDRAFT_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO: '100000000',
+    DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '20000000',
+    DAILYDRAFT_NETWORK: 'solana-devnet',
   };
 }
 

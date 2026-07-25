@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import type { DatabaseClient } from '@openpacksduel/db';
-import { DuelStatus, DuelTransactionStatus, ProviderMode } from '@openpacksduel/db';
+import type { DatabaseClient } from '@dailydraft/db';
+import { DuelStatus, DuelTransactionStatus, ProviderMode } from '@dailydraft/db';
 import { Keypair } from '@solana/web3.js';
 
 import { DevnetDemoSettlementService } from './devnet-demo-settlement.service.js';
@@ -9,15 +9,15 @@ import type { ProviderSettlementService } from './provider-settlement.service.js
 import type { TransactionMonitorService } from './transaction-monitor.service.js';
 
 describe('DevnetDemoSettlementService', () => {
-  const originalPollMs = process.env.OPENPACKSDUEL_SETTLEMENT_POLL_MS;
+  const originalPollMs = process.env.DAILYDRAFT_SETTLEMENT_POLL_MS;
 
   beforeEach(() => {
-    process.env.OPENPACKSDUEL_SETTLEMENT_POLL_MS = '10';
+    process.env.DAILYDRAFT_SETTLEMENT_POLL_MS = '10';
   });
 
   afterEach(() => {
-    if (originalPollMs === undefined) delete process.env.OPENPACKSDUEL_SETTLEMENT_POLL_MS;
-    else process.env.OPENPACKSDUEL_SETTLEMENT_POLL_MS = originalPollMs;
+    if (originalPollMs === undefined) delete process.env.DAILYDRAFT_SETTLEMENT_POLL_MS;
+    else process.env.DAILYDRAFT_SETTLEMENT_POLL_MS = originalPollMs;
   });
 
   test('waits for finalization instead of resubmitting active commit and settlement intents', async () => {
@@ -35,6 +35,31 @@ describe('DevnetDemoSettlementService', () => {
     expect(fixture.broadcasts).toBe(2);
     expect(fixture.bindings).toBe(2);
     expect(fixture.status).toBe(DuelStatus.SETTLED);
+  });
+
+  test('refuses to auto-settle duels that are not on the DailyDraft demo provider', async () => {
+    const database = {
+      duel: {
+        findUnique: async () => ({
+          providerMode: ProviderMode.MOCK,
+          status: DuelStatus.AWAITING_ASSETS,
+        }),
+      },
+    };
+    const monitor = { reconcile: async () => undefined };
+    const service = new DevnetDemoSettlementService(
+      database as unknown as DatabaseClient,
+      {} as unknown as ProviderSettlementService,
+      {} as unknown as DevnetDemoSignerService,
+      monitor as unknown as TransactionMonitorService,
+    );
+
+    const error = await service
+      .finalizeDuel('duel_mock_settlement')
+      .then(() => undefined)
+      .catch((value: unknown) => value);
+
+    expect((error as Error | undefined)?.message).toContain('limited to DailyDraft devnet packs');
   });
 });
 
@@ -57,7 +82,7 @@ class SettlementFixture {
   readonly database = {
     duel: {
       findUnique: async () => ({
-        providerMode: ProviderMode.OPENPACKSDUEL_DEVNET,
+        providerMode: ProviderMode.DAILYDRAFT_DEVNET,
         status: this.status,
       }),
     },

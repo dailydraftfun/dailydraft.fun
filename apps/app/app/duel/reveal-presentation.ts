@@ -67,7 +67,7 @@ export function revealSideResolution(
 }
 
 export function revealStorageKey(duelId: string): string {
-  return `openpacksduel:reveal:v1:${duelId}`;
+  return `dailydraft:reveal:v1:${duelId}`;
 }
 
 export function parseStoredRevealTimeline(value: string | null): StoredRevealTimeline | null {

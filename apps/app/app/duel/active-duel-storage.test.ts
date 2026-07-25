@@ -33,18 +33,15 @@ describe('active duel storage', () => {
 
   test('rejects malformed payloads and unsafe duel IDs', () => {
     const malformedStorage = createStorage();
-    malformedStorage.setItem('openpacksduel:active-duel:v1', '{not-json');
+    malformedStorage.setItem('dailydraft:active-duel:v1', '{not-json');
     expect(readStoredActiveDuel(malformedStorage)).toBeNull();
 
     const unsafeStorage = createStorage();
-    unsafeStorage.setItem(
-      'openpacksduel:active-duel:v1',
-      JSON.stringify({ duelId: '../duel_other' }),
-    );
+    unsafeStorage.setItem('dailydraft:active-duel:v1', JSON.stringify({ duelId: '../duel_other' }));
     expect(readStoredActiveDuel(unsafeStorage)).toBeNull();
 
     const missingStorage = createStorage();
-    missingStorage.setItem('openpacksduel:active-duel:v1', JSON.stringify({ duelId: 42 }));
+    missingStorage.setItem('dailydraft:active-duel:v1', JSON.stringify({ duelId: 42 }));
     expect(readStoredActiveDuel(missingStorage)).toBeNull();
   });
 

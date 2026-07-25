@@ -1,4 +1,4 @@
-# OpenPacks Duel database
+# DailyDraft database
 
 Prisma 7 schema and PostgreSQL migrations for durable devnet duel state.
 
@@ -8,13 +8,13 @@ Set the target database URL explicitly, then deploy the checked-in migrations:
 
 ```bash
 export DATABASE_URL='postgresql://...'
-bun --filter @openpacksduel/db db:deploy
+bun --filter @dailydraft/db db:deploy
 ```
 
 Generate the client without connecting to PostgreSQL:
 
 ```bash
-bun --filter @openpacksduel/db db:generate
+bun --filter @dailydraft/db db:generate
 ```
 
 Client generation uses an inert localhost URL when `DATABASE_URL` is absent.

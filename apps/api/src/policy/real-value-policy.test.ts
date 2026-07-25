@@ -45,9 +45,9 @@ describe('real-value policy contract', () => {
     expect(
       evaluateRealValuePolicy('duel.funding.prepare', {
         NODE_ENV: 'production',
-        OPENPACKSDUEL_NETWORK: 'solana-devnet',
-        OPENPACKSDUEL_PROVIDER_MODE: 'openpacksduel-devnet',
-        OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED: 'true',
+        DAILYDRAFT_NETWORK: 'solana-devnet',
+        DAILYDRAFT_PROVIDER_MODE: 'dailydraft-devnet',
+        DAILYDRAFT_REAL_VALUE_PRODUCTION_ENABLED: 'true',
       }),
     ).toMatchObject({
       allowed: true,
@@ -70,7 +70,7 @@ describe('real-value policy contract', () => {
       evaluateRealValuePolicy(
         'duel.create.direct',
         productionEnvironment({
-          OPENPACKSDUEL_REAL_VALUE_POLICY_JSON: JSON.stringify(validPolicy()),
+          DAILYDRAFT_REAL_VALUE_POLICY_JSON: JSON.stringify(validPolicy()),
         }),
       ),
     ).toMatchObject({
@@ -87,7 +87,7 @@ describe('real-value policy contract', () => {
       {
         expected: 'policy_schema_unsupported',
         mutate: (policy) => {
-          policy.schemaVersion = 'openpacksduel.real-value-policy.v2';
+          policy.schemaVersion = 'dailydraft.real-value-policy.v2';
         },
       },
       {
@@ -150,7 +150,7 @@ describe('real-value policy contract', () => {
       evaluateRealValuePolicy(
         'duel.create.direct',
         productionEnvironment({
-          OPENPACKSDUEL_REAL_VALUE_POLICY_JSON: '{not-json',
+          DAILYDRAFT_REAL_VALUE_POLICY_JSON: '{not-json',
         }),
       ),
     ).toMatchObject({ allowed: false, denialReason: 'policy_malformed' });
@@ -162,7 +162,7 @@ describe('real-value policy contract', () => {
         evaluateRealValuePolicy(
           'duel.create.direct',
           productionEnvironment({
-            OPENPACKSDUEL_REAL_VALUE_POLICY_JSON: JSON.stringify(policy),
+            DAILYDRAFT_REAL_VALUE_POLICY_JSON: JSON.stringify(policy),
           }),
         ),
       ).toMatchObject({ allowed: false, denialReason: expected });
@@ -171,8 +171,8 @@ describe('real-value policy contract', () => {
 
   test('enables only explicitly approved production capabilities and binds exact evidence', () => {
     const environment = productionEnvironment({
-      OPENPACKSDUEL_REAL_VALUE_POLICY_JSON: JSON.stringify(validPolicy()),
-      OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED: 'true',
+      DAILYDRAFT_REAL_VALUE_POLICY_JSON: JSON.stringify(validPolicy()),
+      DAILYDRAFT_REAL_VALUE_PRODUCTION_ENABLED: 'true',
     });
     const allowed = evaluateRealValuePolicy('duel.create.direct', environment);
     const denied = evaluateRealValuePolicy('provider.escrow.prepare', environment);
@@ -201,21 +201,27 @@ describe('real-value policy contract', () => {
   });
 
   test('rejects ambiguous runtime markers instead of treating them as fixtures', () => {
-    expect(resolveRealValueRuntime({ OPENPACKSDUEL_REAL_VALUE_MODE: 'yes' })).toBe('unclassified');
+    expect(resolveRealValueRuntime({ DAILYDRAFT_REAL_VALUE_MODE: 'yes' })).toBe('unclassified');
     expect(
       evaluateRealValuePolicy('duel.create.direct', {
-        OPENPACKSDUEL_REAL_VALUE_MODE: 'yes',
+        DAILYDRAFT_REAL_VALUE_MODE: 'yes',
       }),
     ).toMatchObject({ allowed: false, denialReason: 'runtime_unclassified' });
+  });
+
+  test('refuses to guess a runtime when no network or provider marker is present', () => {
+    // A production NODE_ENV on its own names no chain and no provider, so it must fall past
+    // the devnet markers rather than being read as either a fixture or a real-value runtime.
+    expect(resolveRealValueRuntime({ NODE_ENV: 'production' })).toBe('unclassified');
   });
 });
 
 function productionEnvironment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
     NODE_ENV: 'production',
-    OPENPACKSDUEL_NETWORK: 'solana-mainnet',
-    OPENPACKSDUEL_PROVIDER_MODE: 'collector-crypt-production',
-    OPENPACKSDUEL_REAL_VALUE_MODE: 'true',
+    DAILYDRAFT_NETWORK: 'solana-mainnet',
+    DAILYDRAFT_PROVIDER_MODE: 'collector-crypt-production',
+    DAILYDRAFT_REAL_VALUE_MODE: 'true',
     ...overrides,
   };
 }

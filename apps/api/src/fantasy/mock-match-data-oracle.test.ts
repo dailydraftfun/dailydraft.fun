@@ -4,17 +4,17 @@ import type { FantasyPosition } from './fantasy-domain.js';
 import type { MatchDataRequest } from './match-data-oracle.js';
 import { MockMatchDataOracle } from './mock-match-data-oracle.js';
 
-const ORIGINAL_NETWORK = process.env.OPENPACKSDUEL_NETWORK;
+const ORIGINAL_NETWORK = process.env.DAILYDRAFT_NETWORK;
 
 afterEach(() => {
-  if (ORIGINAL_NETWORK === undefined) delete process.env.OPENPACKSDUEL_NETWORK;
-  else process.env.OPENPACKSDUEL_NETWORK = ORIGINAL_NETWORK;
+  if (ORIGINAL_NETWORK === undefined) delete process.env.DAILYDRAFT_NETWORK;
+  else process.env.DAILYDRAFT_NETWORK = ORIGINAL_NETWORK;
   setSystemTime();
 });
 
 describe('MockMatchDataOracle', () => {
   test('returns a deterministic finalized lineup for every supported position', async () => {
-    delete process.env.OPENPACKSDUEL_NETWORK;
+    delete process.env.DAILYDRAFT_NETWORK;
     setSystemTime(new Date('2026-07-24T12:30:00.000Z'));
     const oracle = new MockMatchDataOracle();
     const request = { matchReference: 'fixture-match-001', sport: 'SOCCER' } as const;
@@ -29,7 +29,7 @@ describe('MockMatchDataOracle', () => {
       sport: 'SOCCER',
       status: 'final',
     });
-    expect(first.providerReference).toMatch(/^openpacksduel\.mock-match-data\.v1:[a-f0-9]{32}:11$/);
+    expect(first.providerReference).toMatch(/^dailydraft\.mock-match-data\.v1:[a-f0-9]{32}:11$/);
     expect(first.players).toHaveLength(11);
 
     const expectedKeys: Record<FantasyPosition, string[]> = {
@@ -59,19 +59,19 @@ describe('MockMatchDataOracle', () => {
 
   test('allows explicit devnet and rejects non-devnet execution', async () => {
     const oracle = new MockMatchDataOracle();
-    process.env.OPENPACKSDUEL_NETWORK = 'solana-devnet';
+    process.env.DAILYDRAFT_NETWORK = 'solana-devnet';
     await expect(
       oracle.getMatchResult({ matchReference: 'fixture-match-002', sport: 'FOOTBALL' }),
     ).resolves.toMatchObject({ sport: 'FOOTBALL' });
 
-    process.env.OPENPACKSDUEL_NETWORK = 'solana-mainnet';
+    process.env.DAILYDRAFT_NETWORK = 'solana-mainnet';
     await expect(
       oracle.getMatchResult({ matchReference: 'fixture-match-002', sport: 'FOOTBALL' }),
     ).rejects.toThrow('devnet-only');
   });
 
   test('rejects unknown sports and missing match references', async () => {
-    process.env.OPENPACKSDUEL_NETWORK = 'solana-devnet';
+    process.env.DAILYDRAFT_NETWORK = 'solana-devnet';
     const oracle = new MockMatchDataOracle();
 
     await expect(

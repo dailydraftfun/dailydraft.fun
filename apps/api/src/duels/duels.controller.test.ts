@@ -186,7 +186,7 @@ describe('public leaderboard', () => {
         sampledSettledDuels: 0,
       },
       privacy: { indexable: false, reason: 'Pseudonymous test fixture.' },
-      schemaVersion: 'openpacksduel.leaderboard.v1',
+      schemaVersion: 'dailydraft.leaderboard.v1',
     };
     const service = {
       getPublicLeaderboard: async () => snapshot,

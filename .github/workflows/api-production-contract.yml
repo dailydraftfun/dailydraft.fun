@@ -1,4 +1,3 @@
-name: API production contract
 
 on:
   pull_request:
@@ -40,18 +39,18 @@ jobs:
       postgres:
         image: postgres:18-alpine
         env:
-          POSTGRES_DB: openpacksduel_contract
-          POSTGRES_PASSWORD: openpacksduel
-          POSTGRES_USER: openpacksduel
+          POSTGRES_DB: dailydraft_contract
+          POSTGRES_PASSWORD: dailydraft
+          POSTGRES_USER: dailydraft
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U openpacksduel -d openpacksduel_contract"
+          --health-cmd "pg_isready -U dailydraft -d dailydraft_contract"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql://openpacksduel:openpacksduel@localhost:5432/openpacksduel_contract?schema=public
+      DATABASE_URL: postgresql://dailydraft:dailydraft@localhost:5432/dailydraft_contract?schema=public
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -60,12 +59,12 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Generate and migrate the workflow-local database
         run: |
-          bun --filter @openpacksduel/db db:generate
-          bun --filter @openpacksduel/db db:deploy
+          bun --filter @dailydraft/db db:generate
+          bun --filter @dailydraft/db db:deploy
       - name: Assemble the Bun production artifact
         id: build
         continue-on-error: true
-        run: bun --filter @openpacksduel/api build
+        run: bun --filter @dailydraft/api build
       - name: Compare routes, probe the compiled entrypoint, and emit conformance evidence
         id: conformance
         if: always() && !cancelled()

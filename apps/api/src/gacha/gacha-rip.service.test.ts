@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import type { DatabaseClient } from '@dailydraft/db';
+import { GachaRipStatus } from '@dailydraft/db';
 import { ServiceUnavailableException } from '@nestjs/common';
-import type { DatabaseClient } from '@openpacksduel/db';
-import { GachaRipStatus } from '@openpacksduel/db';
 import type { GachaInventorySnapshotService } from './gacha-inventory-snapshot.service.js';
 import {
   createFixtureGachaPullOddsRuleSet,
@@ -28,13 +28,13 @@ const FIXED_SERVER_SEED = 'b'.repeat(64);
 const MACHINE_KEY = 'collector-crypt-football-50000000-devnet-fixture';
 const WALLET = 'devnet-fixture-recipient-wallet';
 const ORIGINAL_ENV = {
-  fixture: process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE,
+  fixture: process.env.DAILYDRAFT_GACHA_FIXTURE_MODE,
   node: process.env.NODE_ENV,
   vercel: process.env.VERCEL_ENV,
 };
 
 afterEach(() => {
-  restoreEnvironment('OPENPACKSDUEL_GACHA_FIXTURE_MODE', ORIGINAL_ENV.fixture);
+  restoreEnvironment('DAILYDRAFT_GACHA_FIXTURE_MODE', ORIGINAL_ENV.fixture);
   restoreEnvironment('NODE_ENV', ORIGINAL_ENV.node);
   restoreEnvironment('VERCEL_ENV', ORIGINAL_ENV.vercel);
 });
@@ -447,7 +447,7 @@ describe('GachaRipService', () => {
 
   test('fails closed before reading snapshots when fixture mode is disabled', async () => {
     process.env.NODE_ENV = 'test';
-    delete process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE;
+    delete process.env.DAILYDRAFT_GACHA_FIXTURE_MODE;
     const database = new RipDatabase();
     let snapshotReads = 0;
     const snapshots = {
@@ -917,7 +917,7 @@ class RipDatabase {
 
 function enableFixtureMode(): void {
   process.env.NODE_ENV = 'test';
-  process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE = 'true';
+  process.env.DAILYDRAFT_GACHA_FIXTURE_MODE = 'true';
   delete process.env.VERCEL_ENV;
 }
 

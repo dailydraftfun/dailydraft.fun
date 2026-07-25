@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import * as z from 'zod/v4';
 
-import { OpenPacksApiClient, OpenPacksApiError } from './api-client.js';
+import { DailyDraftApiClient, DailyDraftApiError } from './api-client.js';
 import {
   createDuelIntentSchema,
   duelListSchema,
@@ -38,20 +38,20 @@ export interface McpAccess {
 
 const defaultAccess: McpAccess = { canPrepareTransactions: false };
 
-export function createOpenPacksDuelServer(
-  client = new OpenPacksApiClient(),
+export function createDailyDraftServer(
+  client = new DailyDraftApiClient(),
   access: McpAccess = defaultAccess,
 ): McpServer {
   const server = new McpServer({
-    name: 'openpacksduel',
+    name: 'dailydraft',
     version: '0.1.0',
   });
 
   server.registerTool(
     'list_packs',
     {
-      title: 'List OpenPacks Duel packs',
-      description: 'List pack definitions currently eligible for OpenPacks Duel matchmaking.',
+      title: 'List DailyDraft packs',
+      description: 'List pack definitions currently eligible for DailyDraft matchmaking.',
       inputSchema: {
         active: z.boolean().optional().default(true),
         cursor: z.string().max(256).optional(),
@@ -66,7 +66,7 @@ export function createOpenPacksDuelServer(
   server.registerTool(
     'get_pack',
     {
-      title: 'Get an OpenPacks Duel pack',
+      title: 'Get an DailyDraft pack',
       description: 'Get one pack definition by its stable integration identifier.',
       inputSchema: {
         packId: z.string().min(3).max(64),
@@ -80,7 +80,7 @@ export function createOpenPacksDuelServer(
   server.registerTool(
     'list_duels',
     {
-      title: 'List OpenPacks Duels',
+      title: 'List DailyDrafts',
       description: 'Discover public duels, optionally filtered by status or participant wallet.',
       inputSchema: {
         cursor: z.string().max(256).optional(),
@@ -99,7 +99,7 @@ export function createOpenPacksDuelServer(
   server.registerTool(
     'get_duel_proof',
     {
-      title: 'Get OpenPacks Duel proof references',
+      title: 'Get DailyDraft proof references',
       description:
         'Read the public result commitment and Solana references. API state is explicitly not treated as on-chain proof.',
       inputSchema: {
@@ -114,7 +114,7 @@ export function createOpenPacksDuelServer(
   server.registerTool(
     'prepare_create_duel',
     {
-      title: 'Prepare an OpenPacks Duel creation intent',
+      title: 'Prepare an DailyDraft creation intent',
       description:
         'Validate and return an off-chain devnet duel intent for human review. This tool does not create a duel, sign, or submit anything.',
       inputSchema: {
@@ -153,7 +153,7 @@ export function createOpenPacksDuelServer(
   server.registerTool(
     'get_duel',
     {
-      title: 'Get an OpenPacks Duel',
+      title: 'Get an DailyDraft',
       description:
         'Read canonical duel status, participants, escrow address, and chain references.',
       inputSchema: {
@@ -168,7 +168,7 @@ export function createOpenPacksDuelServer(
   server.registerTool(
     'get_duel_social_card',
     {
-      title: 'Get an OpenPacks Duel social card',
+      title: 'Get an DailyDraft social card',
       description: 'Get canonical share-page and generated social-card URLs for a duel.',
       inputSchema: {
         duelId: z.string().min(8).max(80),
@@ -181,18 +181,18 @@ export function createOpenPacksDuelServer(
 
   server.registerResource(
     'integration-safety',
-    'openpacksduel://integration/safety',
+    'dailydraft://integration/safety',
     {
-      description: 'Non-custodial safety rules for OpenPacks Duel agent integrations.',
+      description: 'Non-custodial safety rules for DailyDraft agent integrations.',
       mimeType: 'text/markdown',
-      title: 'OpenPacks Duel integration safety',
+      title: 'DailyDraft integration safety',
     },
     async () => ({
       contents: [
         {
           mimeType: 'text/markdown',
           text: [
-            '# OpenPacks Duel integration safety',
+            '# DailyDraft integration safety',
             '',
             '- Never request or transmit a wallet private key or seed phrase.',
             '- Treat API duel status as an index; verify value-bearing state on Solana.',
@@ -200,7 +200,7 @@ export function createOpenPacksDuelServer(
             '- Prepare tools return unsigned intents only; they never sign, submit, or hold keys.',
             '- Verify the program ID, accounts, amounts, mints, and expiry in the wallet.',
           ].join('\n'),
-          uri: 'openpacksduel://integration/safety',
+          uri: 'dailydraft://integration/safety',
         },
       ],
     }),
@@ -211,14 +211,14 @@ export function createOpenPacksDuelServer(
 
 function registerTransactionPreparationTool(
   server: McpServer,
-  client: OpenPacksApiClient,
+  client: DailyDraftApiClient,
   access: McpAccess,
   action: 'fund',
 ): void {
   server.registerTool(
     `prepare_${action}_duel`,
     {
-      title: `Prepare an OpenPacks Duel ${action} transaction`,
+      title: `Prepare an DailyDraft ${action} transaction`,
       description: `Request an unsigned Solana devnet ${action} transaction. A participant wallet must inspect, confirm, sign, and submit it separately.`,
       inputSchema: {
         duelId: z.string().min(8).max(80),
@@ -319,9 +319,9 @@ async function asToolResult<T extends Record<string, unknown>>(
 }
 
 function formatError(error: unknown): string {
-  if (error instanceof OpenPacksApiError) {
+  if (error instanceof DailyDraftApiError) {
     const requestId = error.requestId ? ` Request ID: ${error.requestId}.` : '';
-    return `OpenPacks Duel API error (${error.status}): ${error.message}.${requestId}`;
+    return `DailyDraft API error (${error.status}): ${error.message}.${requestId}`;
   }
-  return 'OpenPacks Duel MCP could not complete the request.';
+  return 'DailyDraft MCP could not complete the request.';
 }

@@ -50,36 +50,36 @@ export interface PrepareTransactionInput {
   wallet: string;
 }
 
-export class OpenPacksApiError extends Error {
+export class DailyDraftApiError extends Error {
   readonly requestId: string | undefined;
   readonly status: number;
 
   constructor(message: string, status: number, requestId?: string) {
     super(message);
-    this.name = 'OpenPacksApiError';
+    this.name = 'DailyDraftApiError';
     this.status = status;
     this.requestId = requestId;
   }
 }
 
-export class OpenPacksApiClient {
+export class DailyDraftApiClient {
   readonly #apiKey: string | undefined;
   readonly #baseUrl: URL;
   readonly #fetch: FetchLike;
   readonly #timeoutMs: number;
 
   constructor(options: ApiClientOptions = {}) {
-    const baseUrl = options.baseUrl ?? process.env.OPENPACKSDUEL_API_URL;
-    if (!baseUrl) throw new Error('OPENPACKSDUEL_API_URL is required');
+    const baseUrl = options.baseUrl ?? process.env.DAILYDRAFT_API_URL;
+    if (!baseUrl) throw new Error('DAILYDRAFT_API_URL is required');
     this.#baseUrl = new URL(baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
     if (
       (this.#baseUrl.protocol !== 'https:' && this.#baseUrl.protocol !== 'http:') ||
       this.#baseUrl.username ||
       this.#baseUrl.password
     ) {
-      throw new Error('OPENPACKSDUEL_API_URL must be an HTTP(S) URL without embedded credentials');
+      throw new Error('DAILYDRAFT_API_URL must be an HTTP(S) URL without embedded credentials');
     }
-    this.#apiKey = options.apiKey ?? process.env.OPENPACKSDUEL_API_KEY;
+    this.#apiKey = options.apiKey ?? process.env.DAILYDRAFT_API_KEY;
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
@@ -160,13 +160,13 @@ export class OpenPacksApiClient {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown network error';
-      throw this.#error(`OpenPacks Duel API request failed: ${message}`, 0);
+      throw this.#error(`DailyDraft API request failed: ${message}`, 0);
     }
 
     if (!response.ok) {
       const problem = await readProblem(response);
       throw this.#error(
-        problem.detail ?? problem.title ?? `OpenPacks Duel API returned ${response.status}`,
+        problem.detail ?? problem.title ?? `DailyDraft API returned ${response.status}`,
         response.status,
         problem.requestId,
       );
@@ -174,11 +174,11 @@ export class OpenPacksApiClient {
 
     const body: unknown = await response.json();
     if (containsSecret(body, this.#apiKey)) {
-      throw this.#error('OpenPacks Duel API response contained a server-only credential', 502);
+      throw this.#error('DailyDraft API response contained a server-only credential', 502);
     }
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
-      throw this.#error('OpenPacks Duel API returned an invalid response', 502);
+      throw this.#error('DailyDraft API returned an invalid response', 502);
     }
     return parsed.data;
   }
@@ -207,13 +207,13 @@ export class OpenPacksApiClient {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown network error';
-      throw this.#error(`OpenPacks Duel API request failed: ${message}`, 0);
+      throw this.#error(`DailyDraft API request failed: ${message}`, 0);
     }
 
     if (!response.ok) {
       const problem = await readProblem(response);
       throw this.#error(
-        problem.detail ?? problem.title ?? `OpenPacks Duel API returned ${response.status}`,
+        problem.detail ?? problem.title ?? `DailyDraft API returned ${response.status}`,
         response.status,
         problem.requestId,
       );
@@ -221,17 +221,17 @@ export class OpenPacksApiClient {
 
     const value: unknown = await response.json();
     if (containsSecret(value, this.#apiKey)) {
-      throw this.#error('OpenPacks Duel API response contained a server-only credential', 502);
+      throw this.#error('DailyDraft API response contained a server-only credential', 502);
     }
     const parsed = schema.safeParse(value);
     if (!parsed.success) {
-      throw this.#error('OpenPacks Duel API returned an invalid response', 502);
+      throw this.#error('DailyDraft API returned an invalid response', 502);
     }
     return parsed.data;
   }
 
-  #error(message: string, status: number, requestId?: string): OpenPacksApiError {
-    return new OpenPacksApiError(
+  #error(message: string, status: number, requestId?: string): DailyDraftApiError {
+    return new DailyDraftApiError(
       redact(message, this.#apiKey),
       status,
       requestId ? redact(requestId, this.#apiKey) : undefined,

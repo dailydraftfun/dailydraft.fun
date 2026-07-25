@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto';
 import {
+  type DatabaseClient,
+  OperatorReasonCode as DatabaseReasonCode,
+  DuelStatus,
+  DuelTransactionStatus,
+  OperatorAction,
+  OperatorActorClass,
+  type Prisma,
+} from '@dailydraft/db';
+import {
   BadRequestException,
   ConflictException,
   HttpException,
@@ -9,15 +18,6 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import {
-  type DatabaseClient,
-  OperatorReasonCode as DatabaseReasonCode,
-  DuelStatus,
-  DuelTransactionStatus,
-  OperatorAction,
-  OperatorActorClass,
-  type Prisma,
-} from '@openpacksduel/db';
 import { Keypair } from '@solana/web3.js';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
@@ -435,9 +435,9 @@ export class AdminService {
     } catch {
       rpcVerifiedDevnet = false;
     }
-    const providerMode = process.env.OPENPACKSDUEL_PROVIDER_MODE ?? 'mock';
+    const providerMode = process.env.DAILYDRAFT_PROVIDER_MODE ?? 'mock';
     const collectorRequired = providerMode === 'collector-crypt-sandbox';
-    const demoRequired = providerMode === 'openpacksduel-devnet';
+    const demoRequired = providerMode === 'dailydraft-devnet';
     const demoCredentialConfigured = demoProviderConfigured();
     const limits = readRiskLimits();
     const treasuryConfig = readHouseTreasuryConfig();
@@ -476,7 +476,7 @@ export class AdminService {
         finalizedBalanceVerifiedAt: treasurySnapshot?.verifiedAt.toISOString() ?? null,
         fundingSignerConfigured: Boolean(treasuryConfig.fundingSigner),
         houseEnabled: limits.houseEnabled,
-        houseWalletConfigured: Boolean(process.env.OPENPACKSDUEL_HOUSE_DEVNET_WALLET),
+        houseWalletConfigured: Boolean(process.env.DAILYDRAFT_HOUSE_DEVNET_WALLET),
         separationOfDuties: Boolean(
           treasuryConfig.withdrawalAuthority &&
             treasuryConfig.withdrawalAuthority !== treasuryConfig.houseWallet &&
@@ -501,9 +501,9 @@ export class AdminService {
 }
 
 function demoProviderConfigured(): boolean {
-  if (process.env.OPENPACKSDUEL_PROVIDER_ASSET_STANDARD !== 'legacy-spl-nft') return false;
+  if (process.env.DAILYDRAFT_PROVIDER_ASSET_STANDARD !== 'legacy-spl-nft') return false;
   const expected = process.env.ESCROW_PROVIDER_SIGNER?.trim();
-  const value = process.env.OPENPACKSDUEL_DEVNET_PROVIDER_KEYPAIR_JSON?.trim();
+  const value = process.env.DAILYDRAFT_DEVNET_PROVIDER_KEYPAIR_JSON?.trim();
   if (!expected || !value) return false;
   try {
     const secret: unknown = JSON.parse(value);
@@ -521,7 +521,7 @@ function demoProviderConfigured(): boolean {
 }
 
 export function readRiskLimits(environment: NodeJS.ProcessEnv = process.env): RiskLimits {
-  const configuredTiers = environment.OPENPACKSDUEL_ALLOWED_TIERS;
+  const configuredTiers = environment.DAILYDRAFT_ALLOWED_TIERS;
   const allowed = (configuredTiers ?? '50')
     .split(',')
     .map((value) => Number.parseInt(value.trim(), 10))
@@ -530,15 +530,15 @@ export function readRiskLimits(environment: NodeJS.ProcessEnv = process.env): Ri
     allowedTiers: [...new Set(configuredTiers === undefined ? [50] : allowed)].sort(
       (a, b) => a - b,
     ),
-    houseEnabled: environment.OPENPACKSDUEL_HOUSE_ENABLED === 'true',
+    houseEnabled: environment.DAILYDRAFT_HOUSE_ENABLED === 'true',
     maxActiveDuelsPerWallet: boundedInteger(
-      environment.OPENPACKSDUEL_MAX_ACTIVE_DUELS_PER_WALLET,
+      environment.DAILYDRAFT_MAX_ACTIVE_DUELS_PER_WALLET,
       3,
       1,
       100,
     ),
     maxConcurrentDuelsPerTier: boundedInteger(
-      environment.OPENPACKSDUEL_MAX_CONCURRENT_DUELS_PER_TIER,
+      environment.DAILYDRAFT_MAX_CONCURRENT_DUELS_PER_TIER,
       20,
       1,
       1_000,
@@ -709,7 +709,7 @@ function walletReference(wallet: string): string {
 }
 
 function stuckThresholdMinutes(): number {
-  return boundedInteger(process.env.OPENPACKSDUEL_STUCK_FUNDED_MINUTES, 5, 1, 1_440);
+  return boundedInteger(process.env.DAILYDRAFT_STUCK_FUNDED_MINUTES, 5, 1, 1_440);
 }
 
 function boundedInteger(

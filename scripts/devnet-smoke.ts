@@ -3,12 +3,12 @@ import { readFile } from 'node:fs/promises';
 import { Connection, Keypair, Transaction } from '@solana/web3.js';
 
 const apiUrl = (
-  process.env.OPENPACKSDUEL_SMOKE_API_URL ?? 'https://openpacksduel-api.vercel.app/v1'
+  process.env.DAILYDRAFT_SMOKE_API_URL ?? 'https://dailydraft-api.vercel.app/v1'
 ).replace(/\/$/, '');
-const rpcUrl = process.env.OPENPACKSDUEL_SMOKE_RPC_URL ?? 'https://api.devnet.solana.com';
-const creatorPath = requiredEnvironment('OPENPACKSDUEL_SMOKE_CREATOR_KEYPAIR');
-const opponentPath = requiredEnvironment('OPENPACKSDUEL_SMOKE_OPPONENT_KEYPAIR');
-const existingDuelId = process.env.OPENPACKSDUEL_SMOKE_DUEL_ID?.trim();
+const rpcUrl = process.env.DAILYDRAFT_SMOKE_RPC_URL ?? 'https://api.devnet.solana.com';
+const creatorPath = requiredEnvironment('DAILYDRAFT_SMOKE_CREATOR_KEYPAIR');
+const opponentPath = requiredEnvironment('DAILYDRAFT_SMOKE_OPPONENT_KEYPAIR');
+const existingDuelId = process.env.DAILYDRAFT_SMOKE_DUEL_ID?.trim();
 const connection = new Connection(rpcUrl, 'confirmed');
 
 const creator = await loadKeypair(creatorPath);
@@ -120,7 +120,7 @@ assert(
   'Social image is not PNG',
 );
 assert(
-  socialResponse.headers.get('x-openpacksduel-status') === 'settled',
+  socialResponse.headers.get('x-dailydraft-status') === 'settled',
   'Social image status header is not settled',
 );
 

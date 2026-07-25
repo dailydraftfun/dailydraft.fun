@@ -6,13 +6,13 @@ import {
 } from './sports-pack-gacha.fixture.js';
 
 const ORIGINAL_ENV = {
-  fixture: process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE,
+  fixture: process.env.DAILYDRAFT_GACHA_FIXTURE_MODE,
   node: process.env.NODE_ENV,
   vercel: process.env.VERCEL_ENV,
 };
 
 afterEach(() => {
-  restoreEnvironment('OPENPACKSDUEL_GACHA_FIXTURE_MODE', ORIGINAL_ENV.fixture);
+  restoreEnvironment('DAILYDRAFT_GACHA_FIXTURE_MODE', ORIGINAL_ENV.fixture);
   restoreEnvironment('NODE_ENV', ORIGINAL_ENV.node);
   restoreEnvironment('VERCEL_ENV', ORIGINAL_ENV.vercel);
 });
@@ -21,13 +21,13 @@ describe('Sports Pack Gacha fixture provider', () => {
   test('returns the twelve deterministic devnet machines only with an explicit gate', async () => {
     const provider = new FixtureSportsPackGachaProvider();
     process.env.NODE_ENV = 'test';
-    delete process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE;
+    delete process.env.DAILYDRAFT_GACHA_FIXTURE_MODE;
 
     await expect(provider.listMachines()).rejects.toThrow(
       'disabled outside explicit fixture or preview mode',
     );
 
-    process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE = 'true';
+    process.env.DAILYDRAFT_GACHA_FIXTURE_MODE = 'true';
     const machines = await provider.listMachines();
     const replay = await provider.listMachines();
     const machine = machines[0];
@@ -55,7 +55,7 @@ describe('Sports Pack Gacha fixture provider', () => {
 
   test('rejects unknown fixture machines', async () => {
     process.env.NODE_ENV = 'test';
-    process.env.OPENPACKSDUEL_GACHA_FIXTURE_MODE = 'true';
+    process.env.DAILYDRAFT_GACHA_FIXTURE_MODE = 'true';
     delete process.env.VERCEL_ENV;
 
     await expect(
@@ -67,27 +67,27 @@ describe('Sports Pack Gacha fixture provider', () => {
     expect(
       gachaFixtureModeEnabled({
         NODE_ENV: 'production',
-        OPENPACKSDUEL_GACHA_FIXTURE_MODE: 'true',
+        DAILYDRAFT_GACHA_FIXTURE_MODE: 'true',
         VERCEL_ENV: 'production',
       }),
     ).toBe(false);
     expect(
       gachaFixtureModeEnabled({
         NODE_ENV: 'production',
-        OPENPACKSDUEL_GACHA_FIXTURE_MODE: 'true',
+        DAILYDRAFT_GACHA_FIXTURE_MODE: 'true',
         VERCEL_ENV: 'preview',
       }),
     ).toBe(true);
     expect(
       gachaFixtureModeEnabled({
         NODE_ENV: 'test',
-        OPENPACKSDUEL_GACHA_FIXTURE_MODE: 'true',
+        DAILYDRAFT_GACHA_FIXTURE_MODE: 'true',
       }),
     ).toBe(true);
     expect(
       gachaFixtureModeEnabled({
         NODE_ENV: 'development',
-        OPENPACKSDUEL_GACHA_FIXTURE_MODE: 'true',
+        DAILYDRAFT_GACHA_FIXTURE_MODE: 'true',
       }),
     ).toBe(true);
   });

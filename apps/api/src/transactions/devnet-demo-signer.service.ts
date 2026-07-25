@@ -25,7 +25,7 @@ import {
   createDepositCardAssetInstruction,
   deriveEscrowV2CardVault,
   type EscrowV2Role,
-} from '../contracts/openpacksduel-escrow-v2.js';
+} from '../contracts/dailydraft-escrow-v2.js';
 
 const DEVNET_GENESIS_HASH = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
 const DEFAULT_DEVNET_RPC_URL = 'https://api.devnet.solana.com';
@@ -54,8 +54,8 @@ export class DevnetDemoSignerService {
   }
 
   async assertReady(): Promise<void> {
-    if (process.env.OPENPACKSDUEL_NETWORK !== 'solana-devnet') {
-      throw new ServiceUnavailableException('The OpenPacks demo signer is devnet-only');
+    if (process.env.DAILYDRAFT_NETWORK !== 'solana-devnet') {
+      throw new ServiceUnavailableException('The DailyDraft demo signer is devnet-only');
     }
     if ((await this.#connection.getGenesisHash()) !== DEVNET_GENESIS_HASH) {
       throw new ServiceUnavailableException('Configured Solana RPC is not devnet');
@@ -74,7 +74,7 @@ export class DevnetDemoSignerService {
 
   referenceMac(payload: string): string {
     return createHmac('sha256', this.signer().secretKey)
-      .update(`openpacksduel-demo-reference:v1:${payload}`)
+      .update(`dailydraft-demo-reference:v1:${payload}`)
       .digest('hex');
   }
 
@@ -256,14 +256,14 @@ export class DevnetDemoSignerService {
 
   private demoMintKeypair(providerReference: string): Keypair {
     const seed = createHmac('sha256', this.signer().secretKey)
-      .update(`openpacksduel-demo-mint:v1:${providerReference}`)
+      .update(`dailydraft-demo-mint:v1:${providerReference}`)
       .digest()
       .subarray(0, 32);
     return Keypair.fromSeed(seed);
   }
 
   private signer(): Keypair {
-    const value = process.env.OPENPACKSDUEL_DEVNET_PROVIDER_KEYPAIR_JSON?.trim();
+    const value = process.env.DAILYDRAFT_DEVNET_PROVIDER_KEYPAIR_JSON?.trim();
     if (!value) {
       throw new ServiceUnavailableException('Devnet provider keypair is not configured');
     }

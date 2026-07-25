@@ -31,7 +31,7 @@ describe('public duel proof', () => {
     expect(receipt.result?.proof).toEqual(
       expect.objectContaining({
         poolVersion: 'collector-crypt-pool-v1',
-        schemaVersion: 'openpacksduel.result-proof.v1',
+        schemaVersion: 'dailydraft.result-proof.v1',
       }),
     );
     expect(receipt.fees).toEqual({
@@ -298,7 +298,7 @@ describe('public duel proof', () => {
         availability: 'available',
         reason: null,
         receiptHref: '/v1/duels/duel_receipt00001/receipt',
-        schemaVersion: 'openpacksduel.card-actions.v1',
+        schemaVersion: 'dailydraft.card-actions.v1',
       }),
     );
     expect(first.cardActions.cards).toHaveLength(2);

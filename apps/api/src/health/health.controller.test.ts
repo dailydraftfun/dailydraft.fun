@@ -69,10 +69,10 @@ describe('public product capabilities', () => {
 
   test('passes through future provider modes without widening the public response surface', () => {
     const capabilities = publicProductCapabilities(
-      readiness({ providerMode: 'openpacksduel-devnet' }),
+      readiness({ providerMode: 'dailydraft-devnet' }),
     );
 
-    expect(capabilities.provider).toEqual({ mode: 'openpacksduel-devnet', ready: true });
+    expect(capabilities.provider).toEqual({ mode: 'dailydraft-devnet', ready: true });
   });
 });
 

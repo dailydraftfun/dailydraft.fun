@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { DatabaseClient } from '@openpacksduel/db';
+import type { DatabaseClient } from '@dailydraft/db';
 
 import {
   type CreateWalletAuthChallengeRecord,

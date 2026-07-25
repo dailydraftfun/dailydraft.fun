@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { type DatabaseClient, FlipInventoryExclusionReason, type Prisma } from '@dailydraft/db';
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { type DatabaseClient, FlipInventoryExclusionReason, type Prisma } from '@openpacksduel/db';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import { stableStringify } from '../providers/valuation-policy.js';
 
-export const FLIP_INVENTORY_SCHEMA_VERSION = 'openpacksduel.flip-inventory.v1';
+export const FLIP_INVENTORY_SCHEMA_VERSION = 'dailydraft.flip-inventory.v1';
 
 const FLIP_INVENTORY_LOCK_NAMESPACE = 1_584_503_769;
 const MAX_CANDIDATES = 500;
@@ -363,7 +363,7 @@ export function prepareFlipInventorySnapshot(
 export function flipInventoryFixtureModeEnabled(
   environment: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  if (environment.OPENPACKSDUEL_FLIP_FIXTURE_MODE !== 'true') return false;
+  if (environment.DAILYDRAFT_FLIP_FIXTURE_MODE !== 'true') return false;
   if (environment.VERCEL_ENV === 'production') return false;
   return (
     environment.NODE_ENV === 'test' ||

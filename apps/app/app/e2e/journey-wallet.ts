@@ -25,7 +25,7 @@ type JourneyWalletTelemetry = {
 
 declare global {
   interface Window {
-    __OPENPACKSDUEL_JOURNEY__?: JourneyFixtureBootstrap;
+    __DAILYDRAFT_JOURNEY__?: JourneyFixtureBootstrap;
   }
 }
 
@@ -34,7 +34,7 @@ const fixtureIcon: NonNullable<WalletAccount['icon']> =
 
 export function readJourneyFixtureBootstrap(): JourneyFixtureBootstrap | null {
   if (process.env.NEXT_PUBLIC_E2E_FIXTURES !== '1' || typeof window === 'undefined') return null;
-  const bootstrap = window.__OPENPACKSDUEL_JOURNEY__;
+  const bootstrap = window.__DAILYDRAFT_JOURNEY__;
   if (!bootstrap) throw new Error('Journey fixture setup is missing its browser bootstrap.');
   assertBootstrap(bootstrap);
   return bootstrap;
@@ -93,13 +93,13 @@ export function createJourneyFixtureWallet(bootstrap: JourneyFixtureBootstrap): 
       },
     },
     icon: fixtureIcon,
-    name: 'Pack Duel Journey Fixture',
+    name: 'DailyDraft Journey Fixture',
     version: '1.0.0',
   } as unknown as Wallet;
 }
 
 export function journeyWalletTelemetryKey(seed: string): string {
-  return `openpacksduel:journey-wallet:${seed}`;
+  return `dailydraft:journey-wallet:${seed}`;
 }
 
 function recordTransactionTelemetry(seed: string, signed: boolean): void {

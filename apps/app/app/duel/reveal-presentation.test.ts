@@ -6,6 +6,7 @@ import {
   recoverRevealStartedAt,
   revealPresentationAt,
   revealSideResolution,
+  revealStorageKey,
 } from './reveal-presentation';
 
 describe('reveal presentation', () => {
@@ -114,6 +115,12 @@ describe('reveal presentation', () => {
       opponent=tie
       resolution=visible"
     `);
+  });
+
+  test('namespaces reveal storage per duel under the rebranded prefix', () => {
+    expect(revealStorageKey('duel-1')).toBe('dailydraft:reveal:v1:duel-1');
+    expect(revealStorageKey('duel-2')).not.toBe(revealStorageKey('duel-1'));
+    expect(revealStorageKey('duel-1')).not.toContain('openpacksduel');
   });
 });
 

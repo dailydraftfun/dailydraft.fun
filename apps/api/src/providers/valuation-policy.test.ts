@@ -1,15 +1,23 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 
 import {
   CANONICAL_VALUATION_POLICY,
   CANONICAL_VALUATION_POLICY_HASH,
+  currentValuationPolicy,
   DEVNET_DEMO_VALUATION_POLICY,
   DEVNET_DEMO_VALUATION_POLICY_HASH,
   requireCanonicalValuationPolicyHash,
   stableStringify,
 } from './valuation-policy.js';
 import { ValuationPolicyService } from './valuation-policy.service.js';
+
+const originalProviderMode = process.env.DAILYDRAFT_PROVIDER_MODE;
+
+afterEach(() => {
+  if (originalProviderMode === undefined) delete process.env.DAILYDRAFT_PROVIDER_MODE;
+  else process.env.DAILYDRAFT_PROVIDER_MODE = originalProviderMode;
+});
 
 describe('canonical valuation policy', () => {
   test('pins the published canonical JSON to its pre-funding SHA-256 commitment', () => {
@@ -44,6 +52,22 @@ describe('canonical valuation policy', () => {
       hashAlgorithm: 'sha256',
       policy: DEVNET_DEMO_VALUATION_POLICY,
       policyHash: DEVNET_DEMO_VALUATION_POLICY_HASH,
+    });
+  });
+
+  test('selects the policy that matches the configured provider mode', () => {
+    process.env.DAILYDRAFT_PROVIDER_MODE = 'dailydraft-devnet';
+
+    expect(currentValuationPolicy()).toEqual({
+      policy: DEVNET_DEMO_VALUATION_POLICY,
+      policyHash: DEVNET_DEMO_VALUATION_POLICY_HASH,
+    });
+
+    process.env.DAILYDRAFT_PROVIDER_MODE = 'collector-crypt-sandbox';
+
+    expect(currentValuationPolicy()).toEqual({
+      policy: CANONICAL_VALUATION_POLICY,
+      policyHash: CANONICAL_VALUATION_POLICY_HASH,
     });
   });
 });

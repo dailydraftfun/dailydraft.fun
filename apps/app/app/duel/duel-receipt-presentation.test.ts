@@ -218,7 +218,7 @@ function receipt({
       cards: [],
       reason: ownershipFinal ? null : (cardActionReason ?? 'ownership-pending'),
       receiptHref: '/v1/duels/duel_receipt/receipt',
-      schemaVersion: 'openpacksduel.card-actions.v1',
+      schemaVersion: 'dailydraft.card-actions.v1',
     },
     custody: {
       cardAssets: {
@@ -295,7 +295,7 @@ function receipt({
               scope: 'escrow-mints-values-policy',
               status: 'on-chain-commitment-finalized',
             },
-            schemaVersion: 'openpacksduel.result-proof.v1',
+            schemaVersion: 'dailydraft.result-proof.v1',
           },
           resultHash: 'result_hash',
           settlementReady: true,
@@ -310,7 +310,7 @@ function receipt({
           winnerSide,
         }
       : null,
-    schemaVersion: 'openpacksduel.receipt.v1',
+    schemaVersion: 'dailydraft.receipt.v1',
   };
 }
 

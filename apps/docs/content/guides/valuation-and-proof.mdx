@@ -5,7 +5,7 @@ description: Immutable comparison policy, deterministic winners, ties, correctio
 
 # Canonical valuation and public proof
 
-OpenPacks Duel commits one provider-specific comparison field before funding.
+DailyDraft commits one provider-specific comparison field before funding.
 The hosted devnet demo snapshots Pokémon TCG API
 `tcgplayer.prices.market`; the disabled Collector Crypt adapter is reserved for
 `collector-crypt.gacha.result.insuredValue`. A marketplace listing, floor,
@@ -74,7 +74,7 @@ The public receipt exposes the two canonical outcome hashes, policy hash, pool
 version, duel ID, participant wallets, escrow address, network, provider mode,
 winner side, tie rule, and final result hash. The comparison hash is SHA-256 of
 the stable, lexicographically key-sorted JSON object documented by
-`openpacksduel.result-proof.v1`. Each outcome hash binds its side, provider
+`dailydraft.result-proof.v1`. Each outcome hash binds its side, provider
 reference, asset reference, display name, comparison value, optional card image,
 provider opening time, source timestamp, pool version, and valuation policy hash. Historical devnet
 outcomes that predate these fields remain readable, but their result proof is
@@ -84,7 +84,7 @@ For a real Collector Crypt integration, the provider must sign an attestation
 covering the complete outcome payload and escrow recipient. The API must verify
 the signature against an allowlisted, versioned provider key before recording
 the result. Devnet mock receipts explicitly mark provider attestation as
-`mock-not-applicable`. The OpenPacks demo records its on-chain mint, custody,
+`mock-not-applicable`. The DailyDraft demo records its on-chain mint, custody,
 and settlement proof but does not claim a Collector Crypt attestation. Collector
 Crypt mode remains disabled while the partner field mapping, signature
 algorithm/key distribution, and correction contract are unconfirmed;
@@ -105,7 +105,7 @@ custodial action. `list`, `sell-back`, and `redeem` are unavailable while Collec
 Crypt onboarding is incomplete; each reports the missing capability and points to
 `keep` instead of returning a dead control or invented transaction.
 
-[Issue #24](https://github.com/openpacksduel/app/issues/24) remains open for the
+[Issue #24](https://github.com/dailydraftfun/dailydraft.fun/issues/24) remains open for the
 authenticated Marketplace transaction builder, current buyback value, eligibility,
 expiry and recipient checks, and the shipping fee, USDC payment, NFT burn, and
 shipment status workflow.

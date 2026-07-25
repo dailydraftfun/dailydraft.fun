@@ -1,16 +1,16 @@
 import 'reflect-metadata';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { ValidationPipe } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
   compareRouteInventories,
   contractFixtures,
   contractOperations,
   OPENAPI_CONTRACT_VERSION,
   operationKey,
-} from '@openpacksduel/contracts';
+} from '@dailydraft/contracts';
+import { ValidationPipe } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import type { FastifyInstance, RouteOptions } from 'fastify';
@@ -38,8 +38,7 @@ type HttpMethod = 'delete' | 'get' | 'patch' | 'post' | 'put';
 
 const HTTP_METHODS = new Set<HttpMethod>(['delete', 'get', 'patch', 'post', 'put']);
 const OPENAPI_PATH = new URL('../../../docs/public/openapi.yaml', import.meta.url);
-const TEST_DATABASE_URL =
-  'postgresql://openpacksduel:openpacksduel@127.0.0.1:1/openpacksduel_contract';
+const TEST_DATABASE_URL = 'postgresql://dailydraft:dailydraft@127.0.0.1:1/dailydraft_contract';
 
 describe('API compatibility gate', () => {
   let app: NestFastifyApplication;

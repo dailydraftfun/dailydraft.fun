@@ -1,4 +1,4 @@
-# OpenPacks Duel API
+# DailyDraft API
 
 NestJS 11 API implementing the devnet contract in `apps/docs/openapi.yaml`.
 
@@ -56,7 +56,7 @@ is emitted only after both card identifiers, normalized result hashes, bounded
 raw response payloads, and provider-verified signatures are durable.
 
 The deterministic mock response signature is fixture-only and remains restricted
-to devnet tests and previews. The OpenPacks devnet provider signs the same
+to devnet tests and previews. The DailyDraft devnet provider signs the same
 evidence envelope with its server-only provider key. Collector Crypt operations
 remain fail-closed until the partner contract, credentials, alternate-recipient
 behavior, and response-signature verification are approved; this evidence
@@ -66,7 +66,7 @@ contract does not promote or enable that integration.
 
 ```bash
 cp .env.example .env
-bun --filter @openpacksduel/db db:deploy
+bun --filter @dailydraft/db db:deploy
 bun run dev
 ```
 
@@ -78,11 +78,11 @@ session whose SHA-256 hash is the only token material persisted server-side.
 That wallet session can create, join, or cancel only for its own address.
 
 Server integrations can still use a bearer key listed in
-`OPENPACKSDUEL_API_KEYS`. Integration keys retain access to operator event and
+`DAILYDRAFT_API_KEYS`. Integration keys retain access to operator event and
 transaction routes and must never be shipped to browser code.
 
 `DATABASE_URL` is mandatory. The hosted demo uses
-`OPENPACKSDUEL_PROVIDER_MODE=openpacksduel-devnet`; every duel is explicitly labeled
+`DAILYDRAFT_PROVIDER_MODE=dailydraft-devnet`; every duel is explicitly labeled
 `solana-devnet`, and the API is not mainnet-ready. `mock` remains limited to tests
 and local previews.
 
@@ -99,11 +99,11 @@ record a behavior failure and requeue the creator unless repeated failures trigg
 temporary block. Search expiry, cancellation, match, commitment failure, wait time,
 and house fallback are recorded as server-side product events.
 
-The queue fails closed until `OPENPACKSDUEL_MATCHMAKING_REGION_SEGMENT` and
-`OPENPACKSDUEL_MATCHMAKING_RISK_SEGMENT` are provided by an upstream verified policy;
+The queue fails closed until `DAILYDRAFT_MATCHMAKING_REGION_SEGMENT` and
+`DAILYDRAFT_MATCHMAKING_RISK_SEGMENT` are provided by an upstream verified policy;
 the API does not infer geolocation from user input. House fallback is a separate,
 explicit endpoint, includes disclosure in the session response, and remains disabled
-by default through `OPENPACKSDUEL_HOUSE_ENABLED=false`. It is never an automatic queue
+by default through `DAILYDRAFT_HOUSE_ENABLED=false`. It is never an automatic queue
 conversion. Wallet-level limits do not prevent coordinated multi-wallet abuse, which
 still requires upstream identity/risk controls before mainnet.
 
@@ -117,17 +117,17 @@ Cancellation, wallet rejection, settlement/refund recovery, and reconciliation
 remain outside the admission gate so a policy denial cannot trap existing funds.
 
 Fixture and Solana devnet operations use the hash-pinned
-`openpacksduel.non-production-policy.v1` contract. They remain testable while every
+`dailydraft.non-production-policy.v1` contract. They remain testable while every
 decision explicitly records `productionEnabled: false` and retains no production
 approval evidence. A malformed policy document still fails closed even in
 non-production, preventing a broken deployment from being mistaken for approval.
 
 Real-value mode is deny-by-default. Production admission requires all three:
 
-- `OPENPACKSDUEL_REAL_VALUE_MODE=true`
-- `OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED=true`
-- a strict `OPENPACKSDUEL_REAL_VALUE_POLICY_JSON` document using schema
-  `openpacksduel.real-value-policy.v1`
+- `DAILYDRAFT_REAL_VALUE_MODE=true`
+- `DAILYDRAFT_REAL_VALUE_PRODUCTION_ENABLED=true`
+- a strict `DAILYDRAFT_REAL_VALUE_POLICY_JSON` document using schema
+  `dailydraft.real-value-policy.v1`
 
 The document binds one policy version, explicit capabilities, and stable evidence
 references for legal, jurisdiction, age, limits, sanctions, disclosure, and
@@ -154,7 +154,7 @@ while the API continues not to persist network identifiers.
 aggregates: funnel conversion, match/provider latency percentiles, abandonment,
 refund and settlement-failure rates, provider/RPC error totals, duel-status
 counts, and the stuck-funded alert configured by
-`OPENPACKSDUEL_STUCK_FUNDED_MINUTES`.
+`DAILYDRAFT_STUCK_FUNDED_MINUTES`.
 Canonical funnel transitions and operational alerts use `SERVER` rows only;
 client UI errors are reported separately under `experience`.
 
@@ -171,10 +171,10 @@ house progression remain available.
 Pause changes append an immutable database audit record containing only the
 fixed `integration-key` actor class and a bounded reason code; raw API keys are
 never persisted. Configure allowed tiers, wallet exposure, tier concurrency,
-and house availability with the `OPENPACKSDUEL_ALLOWED_TIERS`,
-`OPENPACKSDUEL_MAX_ACTIVE_DUELS_PER_WALLET`,
-`OPENPACKSDUEL_MAX_CONCURRENT_DUELS_PER_TIER`, and
-`OPENPACKSDUEL_HOUSE_ENABLED` environment variables. Conservative defaults are
+and house availability with the `DAILYDRAFT_ALLOWED_TIERS`,
+`DAILYDRAFT_MAX_ACTIVE_DUELS_PER_WALLET`,
+`DAILYDRAFT_MAX_CONCURRENT_DUELS_PER_TIER`, and
+`DAILYDRAFT_HOUSE_ENABLED` environment variables. Conservative defaults are
 `50`, `3`, `20`, and `false` respectively.
 
 House mode has a second, stricter treasury gate. A serializable, advisory-locked
@@ -186,7 +186,7 @@ liquidity floor. Missing configuration disables the tier. The finalized USDC tok
 account must be owned by the separate cold withdrawal authority and delegate only a
 bounded amount to the hot funding signer. The delegate allowance may not exceed the
 configured total-exposure ceiling. House entry remains off unless
-`OPENPACKSDUEL_HOUSE_ENABLED` is explicitly `true`.
+`DAILYDRAFT_HOUSE_ENABLED` is explicitly `true`.
 
 Shared treasury and tier-limit failures persist the affected tier's stable reason and
 deterministic re-enable boundary. A later successful reservation clears that state;
@@ -205,14 +205,14 @@ House-won inventory is single-writer by canonical asset reference and retains it
 immutable source duel and outcome. Acquisition basis and insured, listing, buyback,
 and displayed valuations are separate fields; unavailable quotes remain `null` and
 are never substituted from another valuation source.
-The OpenPacks devnet provider creates actual zero-decimal, single-supply legacy
+The DailyDraft devnet provider creates actual zero-decimal, single-supply legacy
 SPL mints, revokes both authorities, and atomically deposits each demo card into
 the canonical Duel v4 vault. A signed, replay-safe reference binds the duel,
 side, and pack; the immutable database snapshot and result hash bind the selected
 Pokémon TCG card, displayed market value, image, and deterministic mint. The provider keypair
 is a sensitive server-only SSM SecureString and must match `ESCROW_PROVIDER_SIGNER`.
 After both deposits, the API signs and monitors result commitment and settlement
-transactions until finalized. These are valueless OpenPacks demo collectibles,
+transactions until finalized. These are valueless DailyDraft demo collectibles,
 not Collector Crypt inventory.
 
 The deterministic `mock` provider still refuses to run outside devnet, but it
@@ -240,7 +240,7 @@ safe alternative; the API never fabricates a partner transaction. Mock results,
 pending settlement, and winner/ownership mismatches return no card actions.
 Collector Crypt authentication, marketplace builders, live buyback eligibility,
 shipping fees, USDC payment, NFT burn, and shipment tracking remain open gates in
-[issue #24](https://github.com/openpacksduel/app/issues/24).
+[issue #24](https://github.com/dailydraftfun/dailydraft.fun/issues/24).
 
 Flip inventory preparation is a separate, immutable market-evidence path; it
 does not write to the house inventory ledger or acquire assets. Each snapshot
@@ -253,7 +253,7 @@ sealed, append-only revision.
 
 The snapshot service accepts provider fixtures only and has no HTTP controller
 or live marketplace client. It also requires
-`OPENPACKSDUEL_FLIP_FIXTURE_MODE=true` in tests, local development, or an
+`DAILYDRAFT_FLIP_FIXTURE_MODE=true` in tests, local development, or an
 explicit non-production preview. Production remains fail-closed until the separate
 reviewed rules, acquisition, legal, and promotion gates are complete.
 
@@ -261,8 +261,8 @@ reviewed rules, acquisition, legal, and promotion gates are complete.
 worker validates the official devnet genesis hash before reading transaction
 state. Funding preparation additionally requires `ESCROW_PROGRAM_ID`,
 `ESCROW_PROVIDER_SIGNER`, `ESCROW_FEE_RECIPIENT`, and
-`OPENPACKSDUEL_DEVNET_FEE_LAMPORTS`; it fails closed if any value is missing or invalid. Store a long
-random `CRON_SECRET` in SSM under `/openpacksduel/api/prod/CRON_SECRET`.
+`DAILYDRAFT_DEVNET_FEE_LAMPORTS`; it fails closed if any value is missing or invalid. Store a long
+random `CRON_SECRET` in SSM under `/dailydraft/api/prod/CRON_SECRET`.
 
 `collector-crypt-sandbox` is a fail-closed adapter stub: no undocumented HTTP
 paths or response shapes are assumed. It remains unavailable until Collector
@@ -274,9 +274,9 @@ credential is server-only and must never use a `NEXT_PUBLIC_` variable.
 The integration-only provider escrow preparation endpoint builds unsigned card
 deposit, result commitment, settlement, and per-asset expiry-refund transactions.
 It never signs or submits. Real-asset preparation remains disabled unless the
-persisted outcomes are non-mock Collector Crypt or OpenPacks devnet evidence with canonical Solana
+persisted outcomes are non-mock Collector Crypt or DailyDraft devnet evidence with canonical Solana
 mint addresses, integer USDC insured values, one valuation policy, and
-`OPENPACKSDUEL_PROVIDER_ASSET_STANDARD=legacy-spl-nft`. Finalized RPC reads must
+`DAILYDRAFT_PROVIDER_ASSET_STANDARD=legacy-spl-nft`. Finalized RPC reads must
 also prove a zero-decimal/single-supply legacy mint and the exact card in each
 escrow PDA vault before result or settlement preparation.
 
@@ -300,20 +300,20 @@ separate HITL approval and promotion gate is complete.
 
 ## AWS production runtime
 
-The API runs as the long-lived `openpacksduel` Docker container on the shared
+The API runs as the long-lived `dailydraft` Docker container on the shared
 network attached to `shipshit-caddy`. Caddy terminates TLS and proxies the API
-hostname to `openpacksduel:3000`. GitHub Actions builds the root-context image,
+hostname to `dailydraft:3000`. GitHub Actions builds the root-context image,
 uploads an immutable archive to S3, and invokes
-`/usr/local/bin/deploy-openpacksduel` through AWS Systems Manager.
+`/usr/local/bin/deploy-dailydraft` through AWS Systems Manager.
 
 The host loads encrypted application values from
-`/openpacksduel/api/prod/`, applies committed Prisma migrations with
+`/dailydraft/api/prod/`, applies committed Prisma migrations with
 `DATABASE_URL`, starts a candidate, and cuts Caddy over only after
 `GET /v1/health` reports database readiness. The 03:00 UTC Solana and 04:00 UTC
 treasury recovery passes are cron.d timers on the same host.
 
-Set `OPENPACKSDUEL_APP_URL` to the canonical HTTPS app origin and
-`OPENPACKSDUEL_AUTH_DOMAIN` to its matching host. Only localhost may use HTTP.
+Set `DAILYDRAFT_APP_URL` to the canonical HTTPS app origin and
+`DAILYDRAFT_AUTH_DOMAIN` to its matching host. Only localhost may use HTTP.
 The localhost URL fallback is available only when `NODE_ENV=development`; deployed
 environments fail with `503 Service Unavailable` when the canonical app URL is missing or invalid.
 Every signed message is hard-bound to `solana:devnet`; there is no mainnet

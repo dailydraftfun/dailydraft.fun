@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  contractFixtures,
-  contractValues,
-  OPENAPI_CONTRACT_VERSION,
-} from '@openpacksduel/contracts';
+import { contractFixtures, contractValues, OPENAPI_CONTRACT_VERSION } from '@dailydraft/contracts';
 
 import {
   DuelApiRequestError,
@@ -129,6 +125,6 @@ describe('app contract client', () => {
       status: contractFixtures.problem.response.status,
     });
     expect(contractFixtures.health.response.version).toBe(OPENAPI_CONTRACT_VERSION);
-    expect(contractFixtures.publicProof.response.schemaVersion).toBe('openpacksduel.receipt.v1');
+    expect(contractFixtures.publicProof.response.schemaVersion).toBe('dailydraft.receipt.v1');
   });
 });

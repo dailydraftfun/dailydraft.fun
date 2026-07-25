@@ -163,9 +163,7 @@ describe('deterministic duel journey fixture', () => {
       }),
     );
     expect(
-      fixture
-        .snapshot()
-        .requests.filter((request) => request.endsWith('/submissions')),
+      fixture.snapshot().requests.filter((request) => request.endsWith('/submissions')),
     ).toHaveLength(1);
   });
 
@@ -282,9 +280,7 @@ describe('deterministic duel journey fixture', () => {
         }),
       );
       expect(
-        fixture
-          .snapshot()
-          .requests.filter((request) => request.endsWith('/open-packs')),
+        fixture.snapshot().requests.filter((request) => request.endsWith('/open-packs')),
       ).toHaveLength(1);
     }
   });
@@ -403,11 +399,7 @@ function settle(fixture: DuelJourneyFixture, duelId: string, authorization: stri
   return response.body as NonNullable<ReturnType<DuelJourneyFixture['snapshot']>['duel']>;
 }
 
-function submitFunding(
-  fixture: DuelJourneyFixture,
-  duelId: string,
-  authorization: string,
-): void {
+function submitFunding(fixture: DuelJourneyFixture, duelId: string, authorization: string): void {
   const intent = fixture.handleApi({
     authorization,
     body: { action: 'fund', wallet: fixture.bootstrap().wallet.address },

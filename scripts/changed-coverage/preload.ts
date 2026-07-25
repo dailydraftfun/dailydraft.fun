@@ -6,8 +6,8 @@ import { createInstrumenter } from 'istanbul-lib-instrument';
 
 import type { IstanbulCoverage } from './evaluate';
 
-const targetsPath = requiredEnvironment('OPENPACKSDUEL_COVERAGE_TARGETS');
-const outputPath = requiredEnvironment('OPENPACKSDUEL_COVERAGE_OUTPUT');
+const targetsPath = requiredEnvironment('DAILYDRAFT_COVERAGE_TARGETS');
+const outputPath = requiredEnvironment('DAILYDRAFT_COVERAGE_OUTPUT');
 const targets = new Set(
   (JSON.parse(readFileSync(targetsPath, 'utf8')) as string[]).map((path) => resolve(path)),
 );

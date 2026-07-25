@@ -1,5 +1,5 @@
-import { journeyTestIds } from '../app/e2e/journey-test-ids';
 import { revealCommitmentCopy } from '../app/duel/reveal-presentation';
+import { journeyTestIds } from '../app/e2e/journey-test-ids';
 import { journeyApiOrigin, journeyRpcUrl } from './fixtures/journey-fixture';
 import { expect, test } from './fixtures/playwright';
 
@@ -70,9 +70,7 @@ test('completes the deterministic desktop duel from lobby through share and rema
   await expect(stepper).toContainText('Value-bearing transaction');
   await expect(stepper).toContainText('Moves 0.01 SOL after your explicit wallet approval');
   await expect(stepper.getByText('Pack purchase', { exact: true })).toBeVisible();
-  await expect(
-    stepper.getByText('Not charged in this devnet step', { exact: true }),
-  ).toBeVisible();
+  await expect(stepper.getByText('Not charged in this devnet step', { exact: true })).toBeVisible();
   await expect(stepper.getByTestId(entryTestIds.confirmFunding)).toHaveText(
     'Approve 0.01 SOL in wallet',
   );
@@ -99,9 +97,7 @@ test('completes the deterministic desktop duel from lobby through share and rema
   await expect(page.getByTestId(journeyTestIds.duelHeadline)).toHaveText('You won both pulls');
   await expect(page.getByTestId(journeyTestIds.duelPhase)).toHaveText('Complete');
   await expect(page.getByTestId(journeyTestIds.winner.you)).toHaveText('Winner');
-  await expect(page.getByTestId(journeyTestIds.pullName.you)).toHaveText(
-    'Charizard fixture pull',
-  );
+  await expect(page.getByTestId(journeyTestIds.pullName.you)).toHaveText('Charizard fixture pull');
   await expect(page.getByTestId(journeyTestIds.pullValue.you)).toHaveText('$72.5');
   await expect(page.getByTestId(journeyTestIds.provider.you)).toHaveText('journey-fixture');
   await expect(page.getByTestId(journeyTestIds.pullName.opponent)).toHaveText(
@@ -116,10 +112,14 @@ test('completes the deterministic desktop duel from lobby through share and rema
   );
 
   await page.getByTestId(journeyTestIds.resultShare).click();
-  await expect(page.getByText('Result link copied with its status-aware social preview.')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(
-    `I won a $50 Pack Duel with Charizard fixture pull at $72.5.\n${appOrigin}/duel/${settled?.id}`,
-  );
+  await expect(
+    page.getByText('Result link copied with its status-aware social preview.'),
+  ).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(
+      `I won a $50 Pack Duel with Charizard fixture pull at $72.5.\n${appOrigin}/duel/${settled?.id}`,
+    );
 
   await page.getByTestId(journeyTestIds.resultRematch).click();
   await expect(lobby).toBeVisible();
@@ -127,9 +127,7 @@ test('completes the deterministic desktop duel from lobby through share and rema
     'aria-selected',
     'true',
   );
-  await expect(page.getByTestId(journeyTestIds.opponentWallet)).toHaveValue(
-    'So111111…111112',
-  );
+  await expect(page.getByTestId(journeyTestIds.opponentWallet)).toHaveValue('So111111…111112');
   await expect(primaryAction).toHaveText(/Review \$50 rematch/);
 
   expect(journey.snapshot().requests).toEqual(
@@ -147,7 +145,9 @@ test('completes the deterministic desktop duel from lobby through share and rema
     journey
       .snapshot()
       .requests.some((request) =>
-        request.match(/^POST \/duels\/duel_fixture_[a-f0-9]+\/transactions\/intent_[a-f0-9]+\/submissions$/),
+        request.match(
+          /^POST \/duels\/duel_fixture_[a-f0-9]+\/transactions\/intent_[a-f0-9]+\/submissions$/,
+        ),
       ),
   ).toBe(true);
 });

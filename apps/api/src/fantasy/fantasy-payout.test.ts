@@ -38,7 +38,7 @@ const UNSIGNED_FIXTURE_RULES = {
   sport: 'SOCCER',
 } as const satisfies UnsignedFantasyPayoutRuleSet;
 
-const FIXTURE_RULES_HASH = 'e7074753e9bb620b1ff37f86d0a6e3ea554d0993aebf7ebd6676c2411fa2d5dc';
+const FIXTURE_RULES_HASH = '1f9f2ee7fa3c2bcd1a36deec1c7ac7477d74540f13038427c5b75f2867c27b02';
 
 const FIXTURE_RULES: FantasyPayoutRuleSet = Object.freeze({
   ...UNSIGNED_FIXTURE_RULES,
@@ -89,7 +89,7 @@ describe('versioned position-weighted fantasy payout calculator', () => {
     expect(result.residual).toEqual(USDC('2'));
     expect(result.undistributed).toEqual(USDC('760001'));
     expect(result.calculationHash).toBe(
-      '493cc08b4f11889d6913a3d1712fd9c9770b31ab2b93a2a86f0c39b4607b71ac',
+      '89f9958efb6965385bb8051bca2edfe3aee7c644a3deca3f85ad43f134d6b0b1',
     );
 
     // Conservation: distributed + residual + undistributed === prizePool.

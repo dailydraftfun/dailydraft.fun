@@ -1,25 +1,25 @@
 # Devnet MVP runbook
 
-The OpenPacks Duel devnet environment is a public integration preview. It is
+The DailyDraft devnet environment is a public integration preview. It is
 not a mainnet deployment and must not accept assets with real-world value.
 
 ## Public surfaces
 
 | Surface | Address |
 | --- | --- |
-| Product app | <https://openpacksduel.vercel.app> |
-| Marketing site | <https://openpacksduel-web.vercel.app> |
+| Product app | <https://dailydraft.fun> |
+| Marketing site | <https://dailydraft-web.vercel.app> |
 | Solana RPC fallback | `https://api.devnet.solana.com` |
 | Escrow program | `Co198eFfQcmn1WzZRnHV6jxcSLBDCv1qNfPfiBYdCLfS` |
 
-The API project is provisioned as `openpacksduel-api` in Vercel. Its production
+The API project is provisioned as `dailydraft-api` in Vercel. Its production
 alias becomes canonical only after `GET /v1/health` passes the manual devnet
 smoke workflow.
 
 ## Safety boundary
 
 - Show a persistent `DEVNET` label anywhere a wallet or transaction is shown.
-- Use only the explicit OpenPacks devnet provider and valueless, real devnet SPL
+- Use only the explicit DailyDraft devnet provider and valueless, real devnet SPL
   mints until Collector Crypt supplies approved partner credentials and confirms
   the custody flow. Never label demo cards as Collector Crypt inventory.
 - Support only the token standards explicitly implemented by the devnet escrow.
@@ -38,48 +38,48 @@ smoke workflow.
 | `NEXT_PUBLIC_SOLANA_RPC_URL` | Optional RPC override; defaults to the public devnet endpoint. |
 | `NEXT_PUBLIC_DUEL_API_URL` | Public base URL of the deployed API, including `/v1`. |
 | `NEXT_PUBLIC_ESCROW_PROGRAM_ID` | Published devnet escrow program address. |
-| `NEXT_PUBLIC_PROVIDER_MODE` | Must be `openpacksduel-devnet` for the on-chain demo. |
+| `NEXT_PUBLIC_PROVIDER_MODE` | Must be `dailydraft-devnet` for the on-chain demo. |
 
 ### API
 
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | Devnet-only PostgreSQL connection. |
-| `OPENPACKSDUEL_NETWORK` | Must be `solana-devnet`. |
+| `DAILYDRAFT_NETWORK` | Must be `solana-devnet`. |
 | `SOLANA_RPC_URL` | Server-side RPC endpoint. |
 | `ESCROW_PROGRAM_ID` | Published devnet escrow program address. |
 | `ESCROW_PROVIDER_SIGNER` | Public key authorized to attest provider outcomes; never a private key. |
 | `ESCROW_FEE_RECIPIENT` | Public key that receives the platform fee during settlement. |
-| `OPENPACKSDUEL_DEVNET_FEE_LAMPORTS` | Per-side platform fee deposited as WSOL; `1000000` for the MVP. |
+| `DAILYDRAFT_DEVNET_FEE_LAMPORTS` | Per-side platform fee deposited as WSOL; `1000000` for the MVP. |
 | `CRON_SECRET` | Long random bearer secret used by Vercel Cron. |
 | `SOLANA_RPC_TIMEOUT_MS` | Optional per-request timeout; bounded to 30 seconds. |
 | `SOLANA_RPC_RETRIES` | Optional retry count; bounded to four retries. |
 | `SOLANA_RECONCILIATION_STUCK_MS` | Operator alert threshold; defaults to ten minutes. |
-| `OPENPACKSDUEL_PROVIDER_MODE` | Must be `openpacksduel-devnet` for the on-chain demo. |
-| `OPENPACKSDUEL_PROVIDER_ASSET_STANDARD` | Must be `legacy-spl-nft` for OpenPacks devnet demo mints. |
-| `OPENPACKSDUEL_DEVNET_PROVIDER_KEYPAIR_JSON` | Sensitive JSON byte array for the isolated devnet provider signer; never expose to browser code. |
+| `DAILYDRAFT_PROVIDER_MODE` | Must be `dailydraft-devnet` for the on-chain demo. |
+| `DAILYDRAFT_PROVIDER_ASSET_STANDARD` | Must be `legacy-spl-nft` for DailyDraft devnet demo mints. |
+| `DAILYDRAFT_DEVNET_PROVIDER_KEYPAIR_JSON` | Sensitive JSON byte array for the isolated devnet provider signer; never expose to browser code. |
 | `POKEMON_TCG_API_KEY` | Optional server-only Pokémon TCG API key. Unauthenticated requests work at lower documented limits. |
 | `POKEMON_TCG_API_TIMEOUT_MS` | Optional per-attempt Pokémon TCG timeout; defaults to 20 seconds and is bounded to 60 seconds. |
 | `POKEMON_TCG_API_RETRIES` | Optional transient Pokémon TCG retry count; defaults to one and is bounded to three retries. |
 | `POKEMON_TCG_API_RETRY_DELAY_MS` | Optional linear retry backoff; defaults to 250 ms and is bounded to five seconds. |
-| `OPENPACKSDUEL_API_KEYS` | Server-to-server integration keys; never expose to the browser. |
-| `OPENPACKSDUEL_APP_URL` | Canonical HTTPS product origin; required outside explicit local development. |
-| `OPENPACKSDUEL_AUTH_DOMAIN` | Host matching the canonical product URL in wallet sign-in messages. |
-| `OPENPACKSDUEL_STUCK_FUNDED_MINUTES` | Alert threshold for funded duels that have not progressed; defaults to 5. |
-| `OPENPACKSDUEL_ALLOWED_TIERS` | Comma-separated enabled USD tiers; defaults to `50`. |
-| `OPENPACKSDUEL_MAX_ACTIVE_DUELS_PER_WALLET` | New-exposure wallet limit; defaults to 3. |
-| `OPENPACKSDUEL_MAX_CONCURRENT_DUELS_PER_TIER` | New-exposure tier limit; defaults to 20. |
-| `OPENPACKSDUEL_HOUSE_ENABLED` | Explicit house-entry switch; defaults to `false`. |
-| `OPENPACKSDUEL_HOUSE_DEVNET_FUNDING_SIGNER` | House hot-wallet public key; must equal the finalized token account's bounded SPL delegate. |
-| `OPENPACKSDUEL_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY` | Cold finalized token-account owner; must not equal the hot wallet or delegate. |
-| `OPENPACKSDUEL_HOUSE_DEVNET_USDC_MINT` | Devnet USDC mint verified from finalized RPC state. |
-| `OPENPACKSDUEL_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT` | House token account whose mint, owner, and finalized balance are verified. |
-| `OPENPACKSDUEL_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO` | Required integer total exposure ceiling; missing/zero disables house entry. |
-| `OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO` | Required integer UTC-day loss ceiling; missing/zero disables house entry. |
-| `OPENPACKSDUEL_HOUSE_MIN_LIQUIDITY_USDC_MICRO` | Required post-reservation liquidity floor; missing/zero disables house entry. |
-| `OPENPACKSDUEL_HOUSE_MAX_ACTIVE_PER_WALLET` | House reservation limit per player; defaults to 1. |
-| `OPENPACKSDUEL_HOUSE_MAX_CONCURRENT_PER_TIER` | House reservation limit per tier; defaults to 1. |
-| `OPENPACKSDUEL_HOUSE_ALLOWED_DISPOSITIONS` | Operator inventory workflow allowlist; defaults to `hold,manual_review`. |
+| `DAILYDRAFT_API_KEYS` | Server-to-server integration keys; never expose to the browser. |
+| `DAILYDRAFT_APP_URL` | Canonical HTTPS product origin; required outside explicit local development. |
+| `DAILYDRAFT_AUTH_DOMAIN` | Host matching the canonical product URL in wallet sign-in messages. |
+| `DAILYDRAFT_STUCK_FUNDED_MINUTES` | Alert threshold for funded duels that have not progressed; defaults to 5. |
+| `DAILYDRAFT_ALLOWED_TIERS` | Comma-separated enabled USD tiers; defaults to `50`. |
+| `DAILYDRAFT_MAX_ACTIVE_DUELS_PER_WALLET` | New-exposure wallet limit; defaults to 3. |
+| `DAILYDRAFT_MAX_CONCURRENT_DUELS_PER_TIER` | New-exposure tier limit; defaults to 20. |
+| `DAILYDRAFT_HOUSE_ENABLED` | Explicit house-entry switch; defaults to `false`. |
+| `DAILYDRAFT_HOUSE_DEVNET_FUNDING_SIGNER` | House hot-wallet public key; must equal the finalized token account's bounded SPL delegate. |
+| `DAILYDRAFT_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY` | Cold finalized token-account owner; must not equal the hot wallet or delegate. |
+| `DAILYDRAFT_HOUSE_DEVNET_USDC_MINT` | Devnet USDC mint verified from finalized RPC state. |
+| `DAILYDRAFT_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT` | House token account whose mint, owner, and finalized balance are verified. |
+| `DAILYDRAFT_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO` | Required integer total exposure ceiling; missing/zero disables house entry. |
+| `DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO` | Required integer UTC-day loss ceiling; missing/zero disables house entry. |
+| `DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO` | Required post-reservation liquidity floor; missing/zero disables house entry. |
+| `DAILYDRAFT_HOUSE_MAX_ACTIVE_PER_WALLET` | House reservation limit per player; defaults to 1. |
+| `DAILYDRAFT_HOUSE_MAX_CONCURRENT_PER_TIER` | House reservation limit per tier; defaults to 1. |
+| `DAILYDRAFT_HOUSE_ALLOWED_DISPOSITIONS` | Operator inventory workflow allowlist; defaults to `hold,manual_review`. |
 | `CORS_ORIGINS` | Explicit allowed browser origins. |
 
 Every submitted transaction receives an opportunistic finality check. Either
@@ -110,7 +110,7 @@ included in both daily-loss and total-exposure admission checks.
 Provider result commitments, settlement, and per-asset refunds are prepared as
 durable unsigned intents and use the same submission/reconciliation path. Card
 deposits remain operator-proof only. The global reconciliation worker decodes
-the finalized Duel v4 account for `OPENPACKSDUEL_DEVNET` duels in `refunding`,
+the finalized Duel v4 account for `DAILYDRAFT_DEVNET` duels in `refunding`,
 uses the isolated provider signer only as the permissionless fee payer, and
 submits refunds only for custody flags still held on-chain. Each finalized
 refund records its public signature and asset proof. The database reaches
@@ -136,7 +136,7 @@ issue, audit reason, or support record.
 
 ```bash
 curl --fail-with-body -X PUT "$API_URL/admin/emergency-pause" \
-  -H "Authorization: Bearer $OPENPACKSDUEL_OPERATOR_KEY" \
+  -H "Authorization: Bearer $DAILYDRAFT_OPERATOR_KEY" \
   -H "Content-Type: application/json" \
   --data '{"paused":true,"reasonCode":"provider_degraded"}'
 ```
@@ -155,7 +155,7 @@ incident owner confirms recovery.
 2. Fund the isolated devnet deployment authority from a faucet. Never change
    the machine-wide Solana RPC configuration to accomplish this.
 3. Deploy the escrow using explicit devnet RPC and keypair arguments.
-4. Apply the devnet database migration and deploy `openpacksduel-api`.
+4. Apply the devnet database migration and deploy `dailydraft-api`.
 5. Configure the product app variables and deploy `apps/app` to Vercel.
    Before exposing `/v1/analytics/events`, enable Vercel Firewall/IP rate
    limiting. Its anonymous-session cap is defense-in-depth and session churn
@@ -167,7 +167,7 @@ incident owner confirms recovery.
 
 ## API deployment from the monorepo
 
-The `openpacksduel-api` Vercel project is configured with Root Directory
+The `dailydraft-api` Vercel project is configured with Root Directory
 `apps/api`, Framework `Other`, and Node.js 24. Run Vercel CLI from the monorepo
 root—not `apps/api`—so Bun workspaces and `packages/db` are uploaded together.
 Vercel CLI 20.1 or newer is required for shared monorepo source; the current
@@ -206,7 +206,7 @@ that boundary.
 4. Confirm the canonical alias and database readiness:
 
    ```bash
-   curl --fail-with-body https://openpacksduel-api.vercel.app/v1/health
+   curl --fail-with-body https://dailydraft-api.vercel.app/v1/health
    ```
 
 The function fails closed during bootstrap when `DATABASE_URL` is missing. Its
@@ -215,7 +215,7 @@ pending. Vercel builds generate Prisma Client but never mutate the database.
 
 ## Promotion gate
 
-For `openpacksduel-devnet`, provider escrow orchestration creates valueless SPL
+For `dailydraft-devnet`, provider escrow orchestration creates valueless SPL
 demo cards and signs their deposit, result, and settlement transactions with an
 isolated keypair stored only as a sensitive Vercel server variable. The key must
 never appear in API responses, browser bundles, MCP output, logs, or issues.
@@ -228,7 +228,7 @@ as Collector Crypt insured value.
 Collector Crypt mode remains separately fail-closed until it confirms the
 canonical mint, authoritative integer insured value and valuation policy,
 stable provider references, alternate-recipient custody, and provider request
-IDs. The OpenPacks demo path is not evidence that Collector Crypt supports it.
+IDs. The DailyDraft demo path is not evidence that Collector Crypt supports it.
 
 Result and settlement preparation read finalized devnet accounts and require a
 legacy SPL mint with decimals `0`, supply `1`, and exactly one matching NFT in

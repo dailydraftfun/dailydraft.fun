@@ -48,7 +48,7 @@ const UNSIGNED_FIXTURE_RULES = {
   ],
 } as const satisfies UnsignedCrashCalculatorRuleSet;
 
-const FIXTURE_RULES_HASH = 'b458a1f37a50fa1d4a780a78b2e9d649fea71581e4a9075f9d3125548b5df380';
+const FIXTURE_RULES_HASH = 'b24c1c5ce2566b54e4d499a832ae55792a1c37621378442d312f37bdace05486';
 
 const FIXTURE_RULES: CrashCalculatorRuleSet = Object.freeze({
   ...UNSIGNED_FIXTURE_RULES,
@@ -66,7 +66,7 @@ describe('versioned Crash pot calculator', () => {
       {
         currentPot: '10000000',
         expectedChange: '5000000',
-        expectedHash: '52b50a2f2dc69bfaed5cedf61ab1b57e682c627007e0efa357fe1f8583785c09',
+        expectedHash: 'f43da4cb220e8e122d6dc44ad07826140292b2d1446db5c1dc03d131f7402688',
         expectedPot: '15000000',
         stage: 1,
         stageValue: '5000000',
@@ -74,7 +74,7 @@ describe('versioned Crash pot calculator', () => {
       {
         currentPot: '15000000',
         expectedChange: '2250000',
-        expectedHash: 'b438d79ade79b7ef7a003b33602d8562e4d865bad50a0902dc9d2da34f29362c',
+        expectedHash: 'de354d29774f2ae24c9c49c8b017d16a35829a8a52296b8dc25a5eecbea7bc13',
         expectedPot: '17250000',
         stage: 2,
         stageValue: '1500000',
@@ -82,7 +82,7 @@ describe('versioned Crash pot calculator', () => {
       {
         currentPot: '17250000',
         expectedChange: '4000000',
-        expectedHash: '4369661aad8ebe4f7c572b8f86188e04ceb416ab1a3eba398e730e4b6a6c00df',
+        expectedHash: '16d058a67b0b0621734d393c73f7ee195db09c6787f13dd11a94fac0a1a29332',
         expectedPot: '21250000',
         stage: 3,
         stageValue: '2000000',
@@ -254,19 +254,19 @@ describe('versioned Crash bust calculator', () => {
     const vectors = [
       {
         busted: true,
-        expectedHash: '7eae5fd31740a9e1920420b08b420120909ab3500540a8c281957f3b2887313f',
+        expectedHash: '175bd09c301e6b24c8daa6521ae0db9eaf85bad0de29a6ae96ae032b241edcb2',
         rollPpm: 99_999,
         stage: 1,
       },
       {
         busted: false,
-        expectedHash: '0e90cb35e6e51ea21ffacd86380a725ffc9cc96f7c69a29e76098043f25f76b0',
+        expectedHash: 'a886c1644f8ebdea70b9e6d09cc3badf3d9b2199ea86b623fbe2f4e580b41b45',
         rollPpm: 250_000,
         stage: 2,
       },
       {
         busted: true,
-        expectedHash: 'b3c2322adadb7fbba5eb88c34184e87eaf00901e2f91654b8cb2a8c17d5ff7c5',
+        expectedHash: '244218cbdeb18044799d0ff362c3bc9d579e8e2c9c4dc09ea5fa4973bbc6a56f',
         rollPpm: 499_999,
         stage: 3,
       },

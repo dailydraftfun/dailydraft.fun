@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DuelMode, DuelStatus, MatchmakingTicketRole, ProviderMode } from '@openpacksduel/db';
+import { DuelMode, DuelStatus, MatchmakingTicketRole, ProviderMode } from '@dailydraft/db';
 
 import type { Pack } from '../domain.js';
 import {
@@ -45,13 +45,13 @@ describe('open matchmaking queue policy', () => {
 
   test('fails closed without server-verified region and risk segments', () => {
     expect(() => loadQueueSegment({})).toThrow('region segment is not configured');
-    expect(() => loadQueueSegment({ OPENPACKSDUEL_MATCHMAKING_REGION_SEGMENT: 'eu' })).toThrow(
+    expect(() => loadQueueSegment({ DAILYDRAFT_MATCHMAKING_REGION_SEGMENT: 'eu' })).toThrow(
       'risk segment is not configured',
     );
     expect(
       loadQueueSegment({
-        OPENPACKSDUEL_MATCHMAKING_REGION_SEGMENT: 'eu',
-        OPENPACKSDUEL_MATCHMAKING_RISK_SEGMENT: 'standard',
+        DAILYDRAFT_MATCHMAKING_REGION_SEGMENT: 'eu',
+        DAILYDRAFT_MATCHMAKING_RISK_SEGMENT: 'standard',
       }),
     ).toEqual({ regionSegment: 'eu', riskSegment: 'standard' });
   });

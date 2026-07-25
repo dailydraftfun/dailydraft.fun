@@ -1,14 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  ConflictException,
-  HttpException,
-  HttpStatus,
-  Inject,
-  Injectable,
-  NotFoundException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
-import {
   type DatabaseClient,
   DuelMode,
   DuelStatus,
@@ -20,7 +11,16 @@ import {
   ProductEventName,
   ProductEventSource,
   ProviderMode,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
+import {
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { AdminService, readRiskLimits } from '../admin/admin.service.js';
@@ -176,7 +176,7 @@ export class MatchmakingService {
       throw new ConflictException('House fallback is available only while searching');
     }
     await this.admin.assertCreateAllowed({ mode: 'house', tier: ticket.tier, wallet });
-    const houseWallet = process.env.OPENPACKSDUEL_HOUSE_DEVNET_WALLET?.trim();
+    const houseWallet = process.env.DAILYDRAFT_HOUSE_DEVNET_WALLET?.trim();
     if (!houseWallet) throw new ServiceUnavailableException('House wallet is not configured');
     if (houseWallet === wallet) throw new ConflictException('House wallet cannot challenge itself');
     const commitmentExpiresAt = new Date(now.getTime() + commitmentWindowMs());
@@ -585,8 +585,8 @@ export interface QueueSegment {
 }
 
 export function loadQueueSegment(environment: NodeJS.ProcessEnv = process.env): QueueSegment {
-  const regionSegment = environment.OPENPACKSDUEL_MATCHMAKING_REGION_SEGMENT?.trim();
-  const riskSegment = environment.OPENPACKSDUEL_MATCHMAKING_RISK_SEGMENT?.trim();
+  const regionSegment = environment.DAILYDRAFT_MATCHMAKING_REGION_SEGMENT?.trim();
+  const riskSegment = environment.DAILYDRAFT_MATCHMAKING_RISK_SEGMENT?.trim();
   if (!regionSegment || !/^[a-z0-9][a-z0-9_-]{1,31}$/.test(regionSegment)) {
     throw new ServiceUnavailableException('Verified matchmaking region segment is not configured');
   }
@@ -801,9 +801,9 @@ export function shouldRetryMatchmakingTransaction(error: unknown, attempt: numbe
 }
 
 function resolveProviderMode(): ProviderMode {
-  const value = process.env.OPENPACKSDUEL_PROVIDER_MODE ?? 'mock';
+  const value = process.env.DAILYDRAFT_PROVIDER_MODE ?? 'mock';
   if (value === 'mock') return ProviderMode.MOCK;
-  if (value === 'openpacksduel-devnet') return ProviderMode.OPENPACKSDUEL_DEVNET;
+  if (value === 'dailydraft-devnet') return ProviderMode.DAILYDRAFT_DEVNET;
   if (value === 'collector-crypt-sandbox') return ProviderMode.COLLECTOR_CRYPT_SANDBOX;
   throw new ServiceUnavailableException('Configured provider mode is invalid');
 }
@@ -820,19 +820,19 @@ function moneyToTier(amount: string, decimals: number): number {
 }
 
 function commitmentWindowMs(): number {
-  return boundedSeconds(process.env.OPENPACKSDUEL_MATCHMAKING_COMMITMENT_SECONDS, 120, 30, 600);
+  return boundedSeconds(process.env.DAILYDRAFT_MATCHMAKING_COMMITMENT_SECONDS, 120, 30, 600);
 }
 
 function searchLifetimeMs(): number {
-  return boundedSeconds(process.env.OPENPACKSDUEL_MATCHMAKING_SEARCH_SECONDS, 900, 60, 3_600);
+  return boundedSeconds(process.env.DAILYDRAFT_MATCHMAKING_SEARCH_SECONDS, 900, 60, 3_600);
 }
 
 function maxFailedCommitments(): number {
-  return boundedInteger(process.env.OPENPACKSDUEL_MATCHMAKING_MAX_FAILURES, 3, 1, 10);
+  return boundedInteger(process.env.DAILYDRAFT_MATCHMAKING_MAX_FAILURES, 3, 1, 10);
 }
 
 function failedCommitmentBlockMs(): number {
-  return boundedSeconds(process.env.OPENPACKSDUEL_MATCHMAKING_BLOCK_SECONDS, 1_800, 60, 86_400);
+  return boundedSeconds(process.env.DAILYDRAFT_MATCHMAKING_BLOCK_SECONDS, 1_800, 60, 86_400);
 }
 
 function boundedSeconds(

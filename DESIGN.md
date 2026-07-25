@@ -1,6 +1,6 @@
 ---
 version: "alpha"
-name: openpacksduel Design System
+name: dailydraft Design System
 description: "Premium dark gacha arena with deep charcoal surfaces, crisp card values, and a high-contrast lime action for Pack Duel."
 
 colors:

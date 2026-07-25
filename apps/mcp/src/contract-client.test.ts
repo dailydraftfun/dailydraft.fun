@@ -1,18 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  contractFixtures,
-  contractValues,
-  OPENAPI_CONTRACT_VERSION,
-} from '@openpacksduel/contracts';
+import { contractFixtures, contractValues, OPENAPI_CONTRACT_VERSION } from '@dailydraft/contracts';
 
-import { OpenPacksApiClient, OpenPacksApiError } from './api-client.js';
+import { DailyDraftApiClient, DailyDraftApiError } from './api-client.js';
 
 const baseUrl = 'https://api.example.test/v1';
 
 describe('MCP contract client', () => {
   test('validates shared duel status with integration authentication and version semantics', async () => {
     let request: Request | undefined;
-    const client = new OpenPacksApiClient({
+    const client = new DailyDraftApiClient({
       apiKey: contractValues.sessionToken,
       baseUrl,
       fetch: async (input, init) => {
@@ -33,7 +29,7 @@ describe('MCP contract client', () => {
 
   test('validates shared transaction preparation request, response, and idempotency', async () => {
     let request: Request | undefined;
-    const client = new OpenPacksApiClient({
+    const client = new DailyDraftApiClient({
       apiKey: contractValues.sessionToken,
       baseUrl,
       fetch: async (input, init) => {
@@ -58,7 +54,7 @@ describe('MCP contract client', () => {
   });
 
   test('preserves shared problem response status, detail, and request correlation', async () => {
-    const client = new OpenPacksApiClient({
+    const client = new DailyDraftApiClient({
       apiKey: contractValues.sessionToken,
       baseUrl,
       fetch: async () =>
@@ -69,7 +65,7 @@ describe('MCP contract client', () => {
 
     const error = await client.getDuel(contractValues.duelId).catch((value: unknown) => value);
 
-    expect(error).toBeInstanceOf(OpenPacksApiError);
+    expect(error).toBeInstanceOf(DailyDraftApiError);
     expect(error).toMatchObject({
       message: contractFixtures.problem.response.detail,
       requestId: contractFixtures.problem.response.requestId,

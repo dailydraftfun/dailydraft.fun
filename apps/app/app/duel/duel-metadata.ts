@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { PublicDuelReceipt, PublicDuelStatus } from './public-proof-client';
 import { getDuelSocialSnapshot, getSocialDescription, isMockDuelResult } from './social-card-data';
 
-const defaultAppUrl = 'https://openpacksduel.vercel.app';
+const defaultAppUrl = 'https://dailydraft.fun';
 
 export function buildDuelMetadata(
   receipt: PublicDuelReceipt,

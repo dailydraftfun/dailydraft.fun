@@ -1,4 +1,4 @@
-# openpacksduel
+# dailydraft
 
 Generated with `@shipshitdev/v0`.
 
@@ -17,8 +17,8 @@ bun run dev:app
 - `apps/docs` - static developer reference and OpenAPI contract
 - `apps/mcp` - read-only-first MCP server for agent integrations
 - `packages/contracts` - versioned API/app/MCP compatibility fixtures
-- [`openpacksduel/escrow`](https://github.com/openpacksduel/escrow) - public Solana escrow program
-- [`openpacksduel/skills`](https://github.com/openpacksduel/skills) - public agent skills
+- [`dailydraftfun/escrow`](https://github.com/dailydraftfun/escrow) - public Solana escrow program
+- [`dailydraftfun/skills`](https://github.com/dailydraftfun/skills) - public agent skills
 
 ## App Scripts
 
@@ -27,7 +27,7 @@ bun run dev:app
 - `bun run dev:docs` - starts the developer reference at http://localhost:3002
 - `bun run dev:api` - starts the NestJS API at http://localhost:3003/v1
 - `bun run dev:mcp` - starts the MCP server over stdio
-- `bun --filter @openpacksduel/contracts test` - validates the versioned contract fixture inventory
+- `bun --filter @dailydraft/contracts test` - validates the versioned contract fixture inventory
 
 ## Vercel
 
@@ -44,7 +44,7 @@ no funds.
 ## Devnet
 
 The public product preview is available at
-[openpacksduel.vercel.app](https://openpacksduel.vercel.app). The isolated Solana
+[dailydraft.fun](https://dailydraft.fun). The isolated Solana
 devnet environment, program identity, environment contract, deployment order,
 and promotion gates are documented in [`docs/devnet-runbook.md`](docs/devnet-runbook.md).
 

@@ -1,6 +1,6 @@
 You are extending a freshly generated Shipshit.dev project scaffold.
 
-Project: openpacksduel
+Project: dailydraft
 Scope: Frontend-only Solana Pokemon pack duel MVP with quick matchmaking, wallet challenges, synchronized reveals, and shareable outcomes
 App surfaces: web, app
 Routes: /overview

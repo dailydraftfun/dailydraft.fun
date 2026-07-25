@@ -21,7 +21,7 @@ export type PublicDuelStatus =
   | 'waiting';
 
 export type PublicMoney = PublicMoneyValue;
-export type PublicProviderMode = 'collector-crypt-sandbox' | 'mock' | 'openpacksduel-devnet';
+export type PublicProviderMode = 'collector-crypt-sandbox' | 'mock' | 'dailydraft-devnet';
 
 export type PublicParticipant = {
   address: string;
@@ -76,7 +76,7 @@ export type PublicDuelReceipt = {
     cards: PublicPostDuelCardActionState[];
     reason: 'duel-not-settled' | 'mock-assets' | 'ownership-mismatch' | 'ownership-pending' | null;
     receiptHref: string;
-    schemaVersion: 'openpacksduel.card-actions.v1';
+    schemaVersion: 'dailydraft.card-actions.v1';
   };
   custody: {
     cardAssets: { detail: string; status: string };
@@ -180,7 +180,7 @@ export type PublicDuelReceipt = {
         scope: 'escrow-mints-values-policy' | 'none';
         status: 'mock-not-applicable' | 'not-recorded' | 'on-chain-commitment-finalized';
       };
-      schemaVersion: 'openpacksduel.result-proof.v1';
+      schemaVersion: 'dailydraft.result-proof.v1';
     };
     resultHash: string;
     settlementReady: boolean;
@@ -189,7 +189,7 @@ export type PublicDuelReceipt = {
     winner: PublicParticipant | null;
     winnerSide: 'creator' | 'opponent' | null;
   } | null;
-  schemaVersion: 'openpacksduel.receipt.v1';
+  schemaVersion: 'dailydraft.receipt.v1';
 };
 
 export type PublicWalletProfile = {
@@ -216,7 +216,7 @@ export type PublicWalletProfile = {
     total: number;
     wins: number;
   };
-  schemaVersion: 'openpacksduel.profile.v1';
+  schemaVersion: 'dailydraft.profile.v1';
   wallet: { address: string; display: string };
 };
 
@@ -243,7 +243,7 @@ export type PublicDuelLeaderboard = {
     sampledSettledDuels: number;
   };
   privacy: { indexable: false; reason: string };
-  schemaVersion: 'openpacksduel.leaderboard.v1';
+  schemaVersion: 'dailydraft.leaderboard.v1';
 };
 
 const apiBaseUrl = (process.env.NEXT_PUBLIC_DUEL_API_URL ?? 'http://localhost:3003/v1').replace(

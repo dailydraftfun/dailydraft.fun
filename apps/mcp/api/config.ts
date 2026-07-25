@@ -27,11 +27,11 @@ export default function configHandler(request: IncomingMessage, response: Server
   const body = {
     authentication: {
       header: 'Authorization: Bearer <token>',
-      tokenEnvironmentVariable: 'OPENPACKSDUEL_MCP_TOKEN',
+      tokenEnvironmentVariable: 'DAILYDRAFT_MCP_TOKEN',
       type: 'bearer',
     },
     endpoint,
-    name: 'openpacksduel',
+    name: 'dailydraft',
     network: 'solana-devnet',
     safety: {
       acceptsPrivateKeys: false,
@@ -54,7 +54,7 @@ export default function configHandler(request: IncomingMessage, response: Server
 function publicOrigin(request: IncomingMessage): string {
   const forwardedHost = firstHeader(request.headers['x-forwarded-host']);
   const host = forwardedHost ?? firstHeader(request.headers.host);
-  if (!host) return 'https://openpacksduel-mcp.vercel.app';
+  if (!host) return 'https://dailydraft-mcp.vercel.app';
 
   const forwardedProtocol = firstHeader(request.headers['x-forwarded-proto']);
   const protocol = forwardedProtocol ?? (host.startsWith('localhost') ? 'http' : 'https');

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "openpacksduel.provider-escrow-fixture.v1",
+  "schemaVersion": "dailydraft.provider-escrow-fixture.v1",
   "duelId": "fixture-duel",
   "escrowRecipient": "fixture-escrow-wallet",
   "providerPackId": "pokemon_50",

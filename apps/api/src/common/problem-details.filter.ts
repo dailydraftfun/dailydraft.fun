@@ -34,7 +34,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       .status(status)
       .type('application/problem+json')
       .send({
-        type: `https://openpacksduel.com/problems/${toSlug(title)}`,
+        type: `https://dailydraft.fun/problems/${toSlug(title)}`,
         title,
         status,
         detail,

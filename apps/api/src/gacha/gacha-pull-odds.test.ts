@@ -86,10 +86,10 @@ describe('versioned Gacha pull odds', () => {
 
   test('rejects schema and calculator version mismatches', () => {
     for (const candidate of [
-      { ...RULES, schemaVersion: 'openpacksduel.gacha-pull-odds.v2' },
+      { ...RULES, schemaVersion: 'dailydraft.gacha-pull-odds.v2' },
       {
         ...RULES,
-        calculatorVersion: 'openpacksduel.gacha-pull-odds-calculator.v2',
+        calculatorVersion: 'dailydraft.gacha-pull-odds-calculator.v2',
       },
     ]) {
       expectContractError(() => validateGachaPullOddsRuleSet(candidate), 'UNSUPPORTED_RULES');

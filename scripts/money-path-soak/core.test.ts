@@ -43,13 +43,13 @@ describe('money-path soak contract', () => {
 
   test('fails closed for production, RPC, database, or signer targets', () => {
     const safe = {
-      OPENPACKSDUEL_NETWORK: 'solana-devnet',
+      DAILYDRAFT_NETWORK: 'solana-devnet',
       SOAK_FIXTURE_MODE: 'deterministic',
     };
     expect(() => assertSafeEnvironment(safe)).not.toThrow();
-    expect(() =>
-      assertSafeEnvironment({ ...safe, OPENPACKSDUEL_NETWORK: 'solana-mainnet' }),
-    ).toThrow('must be solana-devnet');
+    expect(() => assertSafeEnvironment({ ...safe, DAILYDRAFT_NETWORK: 'solana-mainnet' })).toThrow(
+      'must be solana-devnet',
+    );
     expect(() => assertSafeEnvironment({ ...safe, NODE_ENV: 'production' })).toThrow(
       'must not be production',
     );
@@ -60,8 +60,8 @@ describe('money-path soak contract', () => {
       'SOLANA_RPC_URL must be unset',
     );
     expect(() =>
-      assertSafeEnvironment({ ...safe, OPENPACKSDUEL_DEVNET_PROVIDER_KEYPAIR_JSON: '[1,2,3]' }),
-    ).toThrow('OPENPACKSDUEL_DEVNET_PROVIDER_KEYPAIR_JSON must be unset');
+      assertSafeEnvironment({ ...safe, DAILYDRAFT_DEVNET_PROVIDER_KEYPAIR_JSON: '[1,2,3]' }),
+    ).toThrow('DAILYDRAFT_DEVNET_PROVIDER_KEYPAIR_JSON must be unset');
   });
 
   test('extracts operation and invariant evidence from successful test names', () => {

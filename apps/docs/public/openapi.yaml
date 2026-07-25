@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: OpenPacks Duel API
+  title: DailyDraft API
   version: 0.2.0-devnet
   summary: Build pack-opening duels on Solana
   description: |
@@ -13,8 +13,8 @@ info:
     name: MIT
     identifier: MIT
   contact:
-    name: OpenPacks Duel
-    url: https://github.com/openpacksduel
+    name: DailyDraft
+    url: https://github.com/dailydraft
 servers:
   - url: http://localhost:3003/v1
     description: Local development
@@ -49,7 +49,7 @@ paths:
     get:
       operationId: getHealth
       summary: Check API process health
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       responses:
         '200':
           description: API process is accepting requests
@@ -69,7 +69,7 @@ paths:
         This fail-closed response is the product UI source of truth. Disabled
         modes and pack tiers remain visible only as explicit unavailable or
         coming-soon choices and must never be submitted as playable.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       responses:
         '200':
           description: Current public product capabilities
@@ -94,7 +94,7 @@ paths:
       description: |
         Reports whether provider, odds, acquisition, and settlement are ready.
         Preview availability never implies that real Collector Crypt rips are enabled.
-      x-openpacksduel-availability: devnet-preview
+      x-dailydraft-availability: devnet-preview
       responses:
         '200':
           description: Current Sports Pack Gacha capability
@@ -114,7 +114,7 @@ paths:
       operationId: getGachaMachineInventory
       tags: [Gacha]
       summary: Get the latest sealed inventory snapshot for a Gacha machine
-      x-openpacksduel-availability: devnet-preview
+      x-dailydraft-availability: devnet-preview
       parameters:
         - $ref: '#/components/parameters/GachaMachineKey'
       responses:
@@ -140,7 +140,7 @@ paths:
       operationId: getGachaMachineOdds
       tags: [Gacha]
       summary: Get the latest sealed odds commitment for a Gacha machine
-      x-openpacksduel-availability: devnet-preview
+      x-dailydraft-availability: devnet-preview
       parameters:
         - $ref: '#/components/parameters/GachaMachineKey'
       responses:
@@ -173,7 +173,7 @@ paths:
         POST /gacha/rips call; the serverSeed itself is revealed only after
         that rip reaches a terminal state. Fails closed unless fixture or
         preview mode is explicitly enabled.
-      x-openpacksduel-availability: devnet-preview
+      x-dailydraft-availability: devnet-preview
       parameters:
         - $ref: '#/components/parameters/GachaMachineKey'
       responses:
@@ -207,7 +207,7 @@ paths:
         fixture or preview mode is explicitly enabled. An Idempotency-Key
         header (or idempotencyKey body field) replays the original rip
         instead of creating a second one.
-      x-openpacksduel-availability: devnet-preview
+      x-dailydraft-availability: devnet-preview
       parameters:
         - name: Idempotency-Key
           in: header
@@ -252,7 +252,7 @@ paths:
         disabled until the match-data oracle, kickoff snapshot, and payout
         settlement are reviewed and approved. The UI must never submit a mode
         marked unavailable as playable.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       responses:
         '200':
           description: Current gated fantasy tournament capabilities
@@ -278,7 +278,7 @@ paths:
         Returns the canonical JSON policy and its SHA-256 hash. The same hash is
         snapshotted on the duel, matchmaking ticket, funding transaction, result
         proof, and escrow account before either player funds.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       responses:
         '200':
           description: Current immutable valuation policy
@@ -293,7 +293,7 @@ paths:
       operationId: getValuationPolicyByHash
       tags: [Valuation]
       summary: Resolve an immutable valuation policy by its committed hash
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       parameters:
         - $ref: '#/components/parameters/ValuationPolicyHash'
       responses:
@@ -310,7 +310,7 @@ paths:
       operationId: listPacks
       tags: [Packs]
       summary: List duel-eligible pack definitions
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -333,7 +333,7 @@ paths:
       operationId: getPack
       tags: [Packs]
       summary: Get one pack definition
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       parameters:
         - $ref: '#/components/parameters/PackId'
       responses:
@@ -351,7 +351,7 @@ paths:
       tags: [Authentication]
       summary: Prepare a Solana devnet wallet-ownership message
       description: Each challenge remains independently usable once and expires after five minutes.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       requestBody:
         required: true
         content:
@@ -374,7 +374,7 @@ paths:
       operationId: createWalletSession
       tags: [Authentication]
       summary: Exchange one valid Ed25519 signature for an opaque wallet session
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       requestBody:
         required: true
         content:
@@ -435,7 +435,7 @@ paths:
       operationId: listDuels
       tags: [Duels]
       summary: List public duels
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -469,7 +469,7 @@ paths:
       tags: [Duels]
       summary: Create an off-chain duel intent
       description: The returned intent is not funded until its Solana transaction confirms.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - walletSession: []
         - integrationKey: []
@@ -638,7 +638,7 @@ paths:
       operationId: getDuel
       tags: [Duels]
       summary: Get canonical duel state
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - walletSession: []
         - integrationKey: []
@@ -665,7 +665,7 @@ paths:
       description: |
         Returns only the opposite participant after a settled direct duel.
         Spectators, house duels, unsettled duels, and non-participants fail closed.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - walletSession: []
       parameters:
@@ -701,7 +701,7 @@ paths:
         public duel state. Private transaction metadata, provider errors,
         credentials, and support notes are never included. Missing settlement
         or custody evidence is declared in `availability` instead of inferred.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       parameters:
         - $ref: '#/components/parameters/DuelId'
       responses:
@@ -730,7 +730,7 @@ paths:
       description: |
         Atomically claims an open duel or accepts a direct invitation. House
         duels are already matched at creation and cannot be joined.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - walletSession: []
         - integrationKey: []
@@ -767,7 +767,7 @@ paths:
         A participant can cancel only while the duel is waiting or matched.
         Expired waiting and matched duels deterministically become cancelled
         with the `timeout` reason.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - walletSession: []
         - integrationKey: []
@@ -801,7 +801,7 @@ paths:
       tags: [Duels]
       summary: List the authenticated immutable duel state timeline
       description: Internal event data is never exposed by an unauthenticated endpoint.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - integrationKey: []
       parameters:
@@ -825,7 +825,7 @@ paths:
       tags: [Transactions]
       summary: List authenticated reconciliation-safe Solana transaction records
       description: Raw provider errors and transaction metadata require an integration key.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - integrationKey: []
       parameters:
@@ -850,7 +850,7 @@ paths:
       description: |
         Returns an unsigned devnet transaction that wraps and escrows only the configured
         per-side platform fee. The pack purchase is not included. The API never signs for a wallet.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - walletSession: []
         - integrationKey: []
@@ -894,7 +894,7 @@ paths:
         expected signer, escrow program, target instruction data hash, exact
         ordered instruction-account access constraints, and state transition.
         Arbitrary signatures cannot create an intent.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - walletSession: []
         - integrationKey: []
@@ -934,7 +934,7 @@ paths:
         intent is expired idempotently so a replacement can be prepared
         immediately. Wallet, RPC, or transport failures with an uncertain
         broadcast outcome must use reconciliation instead.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - walletSession: []
         - integrationKey: []
@@ -972,7 +972,7 @@ paths:
         not scan recovery candidates or transactions from another duel. It is safe
         for browser polling and allows normal finality to progress without a
         high-frequency background worker.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - walletSession: []
         - integrationKey: []
@@ -1009,7 +1009,7 @@ paths:
         Confirmed transactions remain pending; only finalized and verified
         transactions can advance duel state. The same bounded pass can recover
         an exact persisted prepared funding message from its escrow-PDA history.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - cronSecret: []
         - integrationKey: []
@@ -1031,7 +1031,7 @@ paths:
       tags: [Operations]
       summary: Manually reconcile a bounded batch
       description: Accepts the cron secret or an integration API key.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - cronSecret: []
         - integrationKey: []
@@ -1053,7 +1053,7 @@ paths:
       operationId: getDuelSocialCard
       tags: [Social]
       summary: Get canonical share and social-card URLs
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       parameters:
         - $ref: '#/components/parameters/DuelId'
       responses:
@@ -1072,10 +1072,10 @@ paths:
       summary: Generate, open, and normalize both funded duel packs
       description: |
         Idempotent server-side orchestration for a funded duel. A wallet
-        participant or integration may advance the OpenPacks devnet provider,
+        participant or integration may advance the DailyDraft devnet provider,
         which mints two single-supply SPL demo cards, deposits both in escrow,
         commits the result, and settles the winner on Solana devnet.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - walletSession: []
         - integrationKey: []
@@ -1111,7 +1111,7 @@ paths:
         The API coalesces and caches the bounded database snapshot for 30 seconds,
         so cache-busting query strings cannot amplify database reads. Public edge
         rate limiting may reject abusive request bursts.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       responses:
         '200':
           description: Pseudonymous recent leaderboard
@@ -1141,7 +1141,7 @@ paths:
         Returns recent durable duel activity, record, refunds, and biggest
         recorded win. The wallet remains a public Solana address, while display
         labels are shortened and consumers must not index this response.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       parameters:
         - $ref: '#/components/parameters/Wallet'
       responses:
@@ -1170,7 +1170,7 @@ paths:
         events are server-authored. The 120-event anonymous-session cap is
         defense-in-depth and can be bypassed through session churn. Production
         must enforce upstream or host-level IP rate limiting before exposing this route.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       requestBody:
         required: true
         content:
@@ -1205,7 +1205,7 @@ paths:
         steps by duel, derives match
         and provider latency percentiles, and reports stuck-funded, refund,
         abandonment, settlement-failure, provider-error, and RPC-error health.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - integrationKey: []
       parameters:
@@ -1232,7 +1232,7 @@ paths:
       operationId: listAdminAttentionDuels
       tags: [Operations]
       summary: Paginate stuck or failed duels requiring attention
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - integrationKey: []
       parameters:
@@ -1286,7 +1286,7 @@ paths:
       operationId: getAdminDuelTimeline
       tags: [Operations]
       summary: Inspect canonical state, transaction, provider, valuation, and custody history
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - integrationKey: []
       parameters:
@@ -1308,7 +1308,7 @@ paths:
       operationId: getAdminRiskSummary
       tags: [Operations]
       summary: Inspect bounded devnet exposure and configured limits
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - integrationKey: []
       responses:
@@ -1332,7 +1332,7 @@ paths:
         House balances are verified only when a fresh finalized devnet token-account
         snapshot matches the configured cold owner, mint, and bounded hot-wallet SPL
         delegate policy.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - integrationKey: []
       responses:
@@ -1350,7 +1350,7 @@ paths:
       operationId: getHouseTreasurySummary
       tags: [Operations]
       summary: Inspect finalized devnet liquidity, reserved exposure, losses, and inventory risk
-      x-openpacksduel-availability: devnet-gated
+      x-dailydraft-availability: devnet-gated
       security:
         - integrationKey: []
       responses:
@@ -1367,7 +1367,7 @@ paths:
       operationId: listHouseInventory
       tags: [Operations]
       summary: List durable house-won card inventory and reconciliation state
-      x-openpacksduel-availability: devnet-gated
+      x-dailydraft-availability: devnet-gated
       security:
         - integrationKey: []
       parameters:
@@ -1391,7 +1391,7 @@ paths:
       operationId: reconcileHouseTreasuryFromCron
       tags: [Operations]
       summary: Reconcile finalized devnet liquidity, inventory custody, and reservation lifecycle
-      x-openpacksduel-availability: internal-devnet
+      x-dailydraft-availability: internal-devnet
       security:
         - cronSecret: []
         - integrationKey: []
@@ -1410,7 +1410,7 @@ paths:
       tags: [Operations]
       summary: Manually reconcile finalized treasury, custody, and reservation state
       description: Accepts the cron secret or an integration API key.
-      x-openpacksduel-availability: internal-devnet
+      x-dailydraft-availability: internal-devnet
       security:
         - cronSecret: []
         - integrationKey: []
@@ -1430,7 +1430,7 @@ paths:
       tags: [Operations]
       summary: Select an allowed hold, buyback, list, promotion, or review workflow
       description: Records operator intent only; it does not call an undocumented marketplace API.
-      x-openpacksduel-availability: devnet-gated
+      x-dailydraft-availability: devnet-gated
       security:
         - integrationKey: []
       parameters:
@@ -1467,7 +1467,7 @@ paths:
       operationId: completeHouseInventoryDisposition
       tags: [Operations]
       summary: Record verified realized USDC proceeds for a completed disposition
-      x-openpacksduel-availability: devnet-gated
+      x-dailydraft-availability: devnet-gated
       security:
         - integrationKey: []
       parameters:
@@ -1501,7 +1501,7 @@ paths:
       operationId: getEmergencyPause
       tags: [Operations]
       summary: Read the global new-exposure pause state
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - integrationKey: []
       responses:
@@ -1520,7 +1520,7 @@ paths:
       description: |
         Identical state-and-reason retries are no-ops. The audit actor is the
         fixed integration-key class; the raw bearer key is never persisted.
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - integrationKey: []
       requestBody:
@@ -1545,7 +1545,7 @@ paths:
       operationId: listOperatorAudit
       tags: [Operations]
       summary: Paginate immutable emergency-control audit events
-      x-openpacksduel-availability: devnet
+      x-dailydraft-availability: devnet
       security:
         - integrationKey: []
       parameters:
@@ -1574,7 +1574,7 @@ paths:
         Real card operations fail closed for mock/incomplete provider outcomes,
         unsupported asset standards, noncanonical comparison values or policies,
         invalid legacy SPL mint metadata, and missing vault custody.
-      x-openpacksduel-availability: devnet-gated
+      x-dailydraft-availability: devnet-gated
       security:
         - integrationKey: []
       parameters:
@@ -1929,7 +1929,7 @@ components:
       properties:
         service:
           type: string
-          const: openpacksduel-api
+          const: dailydraft-api
         status:
           type: string
           const: ok
@@ -2780,7 +2780,7 @@ components:
               pattern: '^[a-f0-9]{64}$'
             providerMode:
               type: string
-              enum: [mock, openpacksduel-devnet, collector-crypt-sandbox]
+              enum: [mock, dailydraft-devnet, collector-crypt-sandbox]
             regionSegment:
               type: string
             riskSegment:
@@ -2879,7 +2879,7 @@ components:
           const: solana-devnet
         providerMode:
           type: string
-          enum: [mock, openpacksduel-devnet, collector-crypt-sandbox]
+          enum: [mock, dailydraft-devnet, collector-crypt-sandbox]
           description: Mock outcomes are valueless and never represent transferred assets.
         houseOpponent:
           type: boolean
@@ -3028,7 +3028,7 @@ components:
       properties:
         schemaVersion:
           type: string
-          const: openpacksduel.receipt.v1
+          const: dailydraft.receipt.v1
         duel:
           type: object
           additionalProperties: false
@@ -3051,7 +3051,7 @@ components:
             provider: { type: string }
             providerMode:
               type: string
-              enum: [mock, openpacksduel-devnet, collector-crypt-sandbox]
+              enum: [mock, dailydraft-devnet, collector-crypt-sandbox]
             providerPackId: { type: [string, 'null'] }
             tier: { $ref: '#/components/schemas/Money' }
         participants:
@@ -3210,7 +3210,7 @@ components:
           additionalProperties: false
           required: [schemaVersion, context, creatorResultHash, opponentResultHash, poolVersion, providerAttestation]
           properties:
-            schemaVersion: { type: string, const: openpacksduel.result-proof.v1 }
+            schemaVersion: { type: string, const: dailydraft.result-proof.v1 }
             context:
               type: object
               additionalProperties: false
@@ -3223,7 +3223,7 @@ components:
                 network: { type: string, const: solana-devnet }
                 providerMode:
                   type: string
-                  enum: [mock, openpacksduel-devnet, collector-crypt-sandbox]
+                  enum: [mock, dailydraft-devnet, collector-crypt-sandbox]
             creatorResultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
             opponentResultHash: { type: string, pattern: '^[a-f0-9]{64}$' }
             poolVersion: { type: string }
@@ -3252,7 +3252,7 @@ components:
       properties:
         schemaVersion:
           type: string
-          const: openpacksduel.card-actions.v1
+          const: dailydraft.card-actions.v1
         availability:
           type: string
           enum: [available, hidden]
@@ -3359,7 +3359,7 @@ components:
       additionalProperties: false
       required: [schemaVersion, entries, methodology, privacy]
       properties:
-        schemaVersion: { type: string, const: openpacksduel.leaderboard.v1 }
+        schemaVersion: { type: string, const: dailydraft.leaderboard.v1 }
         entries:
           type: array
           maxItems: 50
@@ -3401,7 +3401,7 @@ components:
       additionalProperties: false
       required: [schemaVersion, wallet, record, biggestWin, duels, pagination, privacy]
       properties:
-        schemaVersion: { type: string, const: openpacksduel.profile.v1 }
+        schemaVersion: { type: string, const: dailydraft.profile.v1 }
         wallet:
           type: object
           additionalProperties: false

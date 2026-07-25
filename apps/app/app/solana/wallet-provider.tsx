@@ -61,7 +61,7 @@ type WalletContextValue = {
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
-const walletStorageKey = 'openpacksduel.wallet';
+const walletStorageKey = 'dailydraft.wallet';
 
 function isCompatibleWallet(wallet: Wallet): wallet is CompatibleWallet {
   return (
@@ -93,7 +93,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           jsonrpc: '2.0',
-          id: 'openpacksduel-genesis',
+          id: 'dailydraft-genesis',
           method: 'getGenesisHash',
         }),
         signal,
@@ -304,7 +304,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
 async function broadcastSignedTransaction(signedTransaction: Uint8Array): Promise<string> {
   const response = await fetch(SOLANA_RPC_URL, {
     body: JSON.stringify({
-      id: 'openpacksduel-send',
+      id: 'dailydraft-send',
       jsonrpc: '2.0',
       method: 'sendTransaction',
       params: [

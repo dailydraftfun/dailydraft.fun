@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { GachaRipStatus, GachaSport } from '@openpacksduel/db';
+import { GachaRipStatus, GachaSport } from '@dailydraft/db';
 
 import { GachaController } from './gacha.controller.js';
 import type { GachaInventorySnapshotService } from './gacha-inventory-snapshot.service.js';
@@ -77,7 +77,7 @@ describe('GachaController', () => {
       poolKey: 'fixture-machine:pool',
       provider: 'fixture',
       revision: 1,
-      schemaVersion: 'openpacksduel.gacha-inventory.v1',
+      schemaVersion: 'dailydraft.gacha-inventory.v1',
       sealedAt: now,
     } satisfies Awaited<ReturnType<GachaInventorySnapshotService['findLatestSealed']>>;
     const odds = {
@@ -88,7 +88,7 @@ describe('GachaController', () => {
         premium: '100000000',
       },
       baseProbabilityPpm: 620_000,
-      calculatorVersion: 'openpacksduel.gacha-pull-odds-calculator.v1',
+      calculatorVersion: 'dailydraft.gacha-pull-odds-calculator.v1',
       chaseProbabilityPpm: 30_000,
       committedAt: now,
       createdAt: now,
@@ -99,7 +99,7 @@ describe('GachaController', () => {
       premiumProbabilityPpm: 100_000,
       probabilityScalePpm: 1_000_000,
       rulesHash: 'b'.repeat(64),
-      schemaVersion: 'openpacksduel.gacha-pull-odds.v1',
+      schemaVersion: 'dailydraft.gacha-pull-odds.v1',
       sealedAt: now,
       snapshotContentHash: inventory.contentHash,
       version: 1,

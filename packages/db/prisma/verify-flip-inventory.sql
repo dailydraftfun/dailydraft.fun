@@ -29,7 +29,7 @@ INSERT INTO "FlipInventorySnapshot" (
   'flipsnap_verify',
   'flip-pokemon-50',
   1,
-  'openpacksduel.flip-inventory.v1',
+  'dailydraft.flip-inventory.v1',
   'fixture-policy-v1',
   'fixture-marketplace',
   repeat('a', 64),

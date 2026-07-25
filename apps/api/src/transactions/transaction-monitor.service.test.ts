@@ -721,14 +721,14 @@ function preparedRecoveryIntent(
 }
 
 async function withNetwork<T>(network: string | undefined, callback: () => Promise<T>): Promise<T> {
-  const previous = process.env.OPENPACKSDUEL_NETWORK;
-  if (network === undefined) delete process.env.OPENPACKSDUEL_NETWORK;
-  else process.env.OPENPACKSDUEL_NETWORK = network;
+  const previous = process.env.DAILYDRAFT_NETWORK;
+  if (network === undefined) delete process.env.DAILYDRAFT_NETWORK;
+  else process.env.DAILYDRAFT_NETWORK = network;
   try {
     return await callback();
   } finally {
-    if (previous === undefined) delete process.env.OPENPACKSDUEL_NETWORK;
-    else process.env.OPENPACKSDUEL_NETWORK = previous;
+    if (previous === undefined) delete process.env.DAILYDRAFT_NETWORK;
+    else process.env.DAILYDRAFT_NETWORK = previous;
   }
 }
 

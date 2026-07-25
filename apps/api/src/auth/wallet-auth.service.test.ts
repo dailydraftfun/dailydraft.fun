@@ -16,32 +16,32 @@ import {
 } from './auth.repository.js';
 import { resolveWalletAuthPolicy, WalletAuthService } from './wallet-auth.service.js';
 
-const originalAppUrl = process.env.OPENPACKSDUEL_APP_URL;
-const originalAuthDomain = process.env.OPENPACKSDUEL_AUTH_DOMAIN;
-const originalChallengeLimit = process.env.OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT;
-const originalChallengeWindow = process.env.OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS;
-const originalCleanupBatchSize = process.env.OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE;
+const originalAppUrl = process.env.DAILYDRAFT_APP_URL;
+const originalAuthDomain = process.env.DAILYDRAFT_AUTH_DOMAIN;
+const originalChallengeLimit = process.env.DAILYDRAFT_AUTH_CHALLENGE_LIMIT;
+const originalChallengeWindow = process.env.DAILYDRAFT_AUTH_CHALLENGE_WINDOW_SECONDS;
+const originalCleanupBatchSize = process.env.DAILYDRAFT_AUTH_CLEANUP_BATCH_SIZE;
 const originalNodeEnvironment = process.env.NODE_ENV;
 const originalVercel = process.env.VERCEL;
 const originalVercelEnvironment = process.env.VERCEL_ENV;
 
 beforeEach(() => {
-  delete process.env.OPENPACKSDUEL_APP_URL;
-  delete process.env.OPENPACKSDUEL_AUTH_DOMAIN;
-  delete process.env.OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT;
-  delete process.env.OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS;
-  delete process.env.OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE;
+  delete process.env.DAILYDRAFT_APP_URL;
+  delete process.env.DAILYDRAFT_AUTH_DOMAIN;
+  delete process.env.DAILYDRAFT_AUTH_CHALLENGE_LIMIT;
+  delete process.env.DAILYDRAFT_AUTH_CHALLENGE_WINDOW_SECONDS;
+  delete process.env.DAILYDRAFT_AUTH_CLEANUP_BATCH_SIZE;
   process.env.NODE_ENV = 'development';
   delete process.env.VERCEL;
   delete process.env.VERCEL_ENV;
 });
 
 afterEach(() => {
-  setEnvironment('OPENPACKSDUEL_APP_URL', originalAppUrl);
-  setEnvironment('OPENPACKSDUEL_AUTH_DOMAIN', originalAuthDomain);
-  setEnvironment('OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT', originalChallengeLimit);
-  setEnvironment('OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS', originalChallengeWindow);
-  setEnvironment('OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE', originalCleanupBatchSize);
+  setEnvironment('DAILYDRAFT_APP_URL', originalAppUrl);
+  setEnvironment('DAILYDRAFT_AUTH_DOMAIN', originalAuthDomain);
+  setEnvironment('DAILYDRAFT_AUTH_CHALLENGE_LIMIT', originalChallengeLimit);
+  setEnvironment('DAILYDRAFT_AUTH_CHALLENGE_WINDOW_SECONDS', originalChallengeWindow);
+  setEnvironment('DAILYDRAFT_AUTH_CLEANUP_BATCH_SIZE', originalCleanupBatchSize);
   setEnvironment('NODE_ENV', originalNodeEnvironment);
   setEnvironment('VERCEL', originalVercel);
   setEnvironment('VERCEL_ENV', originalVercelEnvironment);
@@ -49,14 +49,14 @@ afterEach(() => {
 
 describe('WalletAuthService', () => {
   test('issues a human-readable challenge bound to the devnet domain, URI, and chain', async () => {
-    process.env.OPENPACKSDUEL_APP_URL = 'https://openpacksduel.vercel.app';
+    process.env.DAILYDRAFT_APP_URL = 'https://dailydraft.fun';
     const wallet = createWallet();
     const service = new WalletAuthService(new FakeWalletAuthRepository());
 
     const challenge = await service.issueChallenge(wallet.address);
 
-    expect(challenge.domain).toBe('openpacksduel.vercel.app');
-    expect(challenge.uri).toBe('https://openpacksduel.vercel.app');
+    expect(challenge.domain).toBe('dailydraft.fun');
+    expect(challenge.uri).toBe('https://dailydraft.fun');
     expect(challenge.chain).toBe('solana:devnet');
     expect(challenge.message).toContain('Chain ID: solana:devnet');
     expect(challenge.message).toContain(`Request ID: ${challenge.challengeId}`);
@@ -64,7 +64,7 @@ describe('WalletAuthService', () => {
   });
 
   test('verifies Ed25519 ownership and authenticates an opaque hashed session', async () => {
-    process.env.OPENPACKSDUEL_APP_URL = 'http://localhost:3001';
+    process.env.DAILYDRAFT_APP_URL = 'http://localhost:3001';
     const repository = new FakeWalletAuthRepository();
     const service = new WalletAuthService(repository);
     const wallet = createWallet();
@@ -173,7 +173,7 @@ describe('WalletAuthService', () => {
   });
 
   test('rejects the N+1 challenge with a stable 429 error', async () => {
-    process.env.OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT = '2';
+    process.env.DAILYDRAFT_AUTH_CHALLENGE_LIMIT = '2';
     const repository = new FakeWalletAuthRepository();
     const service = new WalletAuthService(repository);
     const wallet = createWallet();
@@ -191,9 +191,9 @@ describe('WalletAuthService', () => {
   test('uses safe bounded defaults for absent or invalid rate-limit configuration', () => {
     expect(
       resolveWalletAuthPolicy({
-        OPENPACKSDUEL_AUTH_CHALLENGE_LIMIT: '0',
-        OPENPACKSDUEL_AUTH_CHALLENGE_WINDOW_SECONDS: 'disabled',
-        OPENPACKSDUEL_AUTH_CLEANUP_BATCH_SIZE: '999999',
+        DAILYDRAFT_AUTH_CHALLENGE_LIMIT: '0',
+        DAILYDRAFT_AUTH_CHALLENGE_WINDOW_SECONDS: 'disabled',
+        DAILYDRAFT_AUTH_CLEANUP_BATCH_SIZE: '999999',
       }),
     ).toEqual({
       challengeLimit: 5,
@@ -204,8 +204,8 @@ describe('WalletAuthService', () => {
 
   test('returns a stable service-unavailable error when deployed audience config is missing', async () => {
     process.env.NODE_ENV = 'production';
-    delete process.env.OPENPACKSDUEL_APP_URL;
-    delete process.env.OPENPACKSDUEL_AUTH_DOMAIN;
+    delete process.env.DAILYDRAFT_APP_URL;
+    delete process.env.DAILYDRAFT_AUTH_DOMAIN;
     const repository = new FakeWalletAuthRepository();
     const controller = new AuthController(new WalletAuthService(repository));
 
@@ -217,7 +217,7 @@ describe('WalletAuthService', () => {
     expect((error as HttpException).getStatus()).toBe(503);
     expect((error as HttpException).getResponse()).toMatchObject({
       error: 'Service Unavailable',
-      message: 'OPENPACKSDUEL_APP_URL is not configured',
+      message: 'DAILYDRAFT_APP_URL is not configured',
       statusCode: 503,
     });
     expect(repository.challengeCount).toBe(0);
@@ -225,12 +225,12 @@ describe('WalletAuthService', () => {
 
   test('refuses to create a session after deployed audience config becomes unavailable', async () => {
     process.env.NODE_ENV = 'production';
-    process.env.OPENPACKSDUEL_APP_URL = 'https://openpacksduel.vercel.app';
+    process.env.DAILYDRAFT_APP_URL = 'https://dailydraft.fun';
     const repository = new FakeWalletAuthRepository();
     const service = new WalletAuthService(repository);
     const wallet = createWallet();
     const challenge = await service.issueChallenge(wallet.address);
-    delete process.env.OPENPACKSDUEL_APP_URL;
+    delete process.env.DAILYDRAFT_APP_URL;
 
     const error = await captureFailure(
       service.createSession({
@@ -246,8 +246,8 @@ describe('WalletAuthService', () => {
 
   test('rejects an auth domain that disagrees with the configured public app host', async () => {
     process.env.NODE_ENV = 'production';
-    process.env.OPENPACKSDUEL_APP_URL = 'https://openpacksduel.vercel.app';
-    process.env.OPENPACKSDUEL_AUTH_DOMAIN = 'example.com';
+    process.env.DAILYDRAFT_APP_URL = 'https://dailydraft.fun';
+    process.env.DAILYDRAFT_AUTH_DOMAIN = 'example.com';
     const service = new WalletAuthService(new FakeWalletAuthRepository());
 
     const error = await captureFailure(service.issueChallenge(createWallet().address));

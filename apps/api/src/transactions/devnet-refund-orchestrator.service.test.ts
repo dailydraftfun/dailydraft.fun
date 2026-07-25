@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import type { DatabaseClient, Prisma } from '@openpacksduel/db';
+import type { DatabaseClient, Prisma } from '@dailydraft/db';
 import {
   DuelSide,
   DuelStatus,
   DuelTransactionAction,
   DuelTransactionStatus,
   ProviderMode,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
 import { Keypair } from '@solana/web3.js';
 
 import {
@@ -16,7 +16,7 @@ import {
   ESCROW_V2_PROGRAM_ID,
   ESCROW_V4_DUEL_ACCOUNT_DISCRIMINATOR,
   ESCROW_V4_DUEL_ACCOUNT_SIZE,
-} from '../contracts/openpacksduel-escrow-v2.js';
+} from '../contracts/dailydraft-escrow-v2.js';
 import type { DevnetDemoSignerService } from './devnet-demo-signer.service.js';
 import { DevnetRefundOrchestratorService } from './devnet-refund-orchestrator.service.js';
 import { nonceFromDuelId } from './duel-funding.service.js';
@@ -189,7 +189,7 @@ class RefundFixture {
     escrowAddress: '',
     id: 'duel_refund_fixture',
     opponentWallet: OPPONENT.toBase58(),
-    providerMode: ProviderMode.OPENPACKSDUEL_DEVNET,
+    providerMode: ProviderMode.DAILYDRAFT_DEVNET,
     status: DuelStatus.REFUNDING as DuelStatus,
     transactions: [] as Array<
       RefundTransactionFixture & {

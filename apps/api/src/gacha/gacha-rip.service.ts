@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { type DatabaseClient, GachaRipStatus, type Prisma } from '@dailydraft/db';
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { type DatabaseClient, GachaRipStatus, type Prisma } from '@openpacksduel/db';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import { resolveGachaCapability } from './gacha-capability.js';

@@ -1,5 +1,5 @@
+import { DuelProviderOperationStatus } from '@dailydraft/db';
 import { BadGatewayException, ConflictException, Injectable, Optional } from '@nestjs/common';
-import { DuelProviderOperationStatus } from '@openpacksduel/db';
 
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { AdminService } from '../admin/admin.service.js';
@@ -49,7 +49,7 @@ export class DuelOpeningService {
       ['awaiting_assets', 'settling', 'refunding'].includes(duel.status)
     ) {
       if (
-        duel.providerMode === 'openpacksduel-devnet' &&
+        duel.providerMode === 'dailydraft-devnet' &&
         ['awaiting_assets', 'settling', 'refunding'].includes(duel.status)
       ) {
         await this.requireDevnetSettlement().finalizeDuel(duel.id);
@@ -157,7 +157,7 @@ export class DuelOpeningService {
       status: resolved.status,
       tier,
     });
-    if (resolved.providerMode === 'openpacksduel-devnet') {
+    if (resolved.providerMode === 'dailydraft-devnet') {
       await this.requireDevnetSettlement().finalizeDuel(resolved.id);
       return this.duels.findOne(resolved.id);
     }
@@ -248,7 +248,7 @@ export class DuelOpeningService {
 
   private requireDevnetSettlement(): DevnetDemoSettlementService {
     if (!this.devnetSettlement) {
-      throw new ConflictException('OpenPacks devnet settlement is not configured');
+      throw new ConflictException('DailyDraft devnet settlement is not configured');
     }
     return this.devnetSettlement;
   }

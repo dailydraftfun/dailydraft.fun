@@ -9,7 +9,7 @@ import {
   XLogoIcon,
 } from '@phosphor-icons/react/dist/ssr';
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://openpacksduel.vercel.app';
+const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dailydraft.fun';
 
 const steps = [
   {
@@ -73,7 +73,7 @@ export default function LandingPage() {
           <nav aria-label="Main navigation">
             <a href="#how-it-works">How it works</a>
             <a href="#trust">Trust</a>
-            <a href="https://github.com/openpacksduel/escrow">Open escrow</a>
+            <a href="https://github.com/dailydraftfun/escrow">Open escrow</a>
           </nav>
           <a className="nav-cta" href={appUrl}>
             Enter the arena <ArrowRightIcon size={15} weight="bold" />
@@ -193,7 +193,7 @@ export default function LandingPage() {
             Every value-bearing step is designed around explicit wallet approval, public program
             rules, and evidence you can verify independently.
           </p>
-          <a href="https://github.com/openpacksduel/escrow">
+          <a href="https://github.com/dailydraftfun/escrow">
             Inspect the escrow repository <ArrowRightIcon size={16} />
           </a>
         </div>
@@ -256,7 +256,7 @@ export default function LandingPage() {
           value.
         </p>
         <div>
-          <a href="https://github.com/openpacksduel">GitHub</a>
+          <a href="https://github.com/dailydraft">GitHub</a>
           <a href={appUrl}>Demo</a>
         </div>
       </footer>

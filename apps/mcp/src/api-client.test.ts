@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 
-import { OpenPacksApiClient, OpenPacksApiError } from './api-client.js';
+import { DailyDraftApiClient, DailyDraftApiError } from './api-client.js';
 
 const pack = {
   active: true,
@@ -10,10 +10,24 @@ const pack = {
   provider: 'preview',
 };
 
-describe('OpenPacksApiClient', () => {
+const prepareInput = {
+  action: 'fund',
+  duelId: 'duel_123456789abc',
+  idempotencyKey: 'mcp:test:fund:1234',
+  wallet: '11111111111111111111111111111111',
+} as const;
+
+const originalApiUrl = process.env.DAILYDRAFT_API_URL;
+
+afterEach(() => {
+  if (originalApiUrl === undefined) delete process.env.DAILYDRAFT_API_URL;
+  else process.env.DAILYDRAFT_API_URL = originalApiUrl;
+});
+
+describe('DailyDraftApiClient', () => {
   test('encodes filters and authenticates without exposing the key', async () => {
     let request: Request | undefined;
-    const client = new OpenPacksApiClient({
+    const client = new DailyDraftApiClient({
       apiKey: 'opd_test_secret',
       baseUrl: 'https://api.example.test/v1',
       fetch: async (input, init) => {
@@ -30,7 +44,7 @@ describe('OpenPacksApiClient', () => {
   });
 
   test('returns a bounded API error with request correlation', async () => {
-    const client = new OpenPacksApiClient({
+    const client = new DailyDraftApiClient({
       baseUrl: 'https://api.example.test/v1',
       fetch: async () =>
         Response.json(
@@ -41,12 +55,12 @@ describe('OpenPacksApiClient', () => {
 
     const error = await client.getDuel('duel_missing').catch((value: unknown) => value);
 
-    expect(error).toBeInstanceOf(OpenPacksApiError);
+    expect(error).toBeInstanceOf(DailyDraftApiError);
     expect(error).toMatchObject({ requestId: 'req_123', status: 404 });
   });
 
   test('rejects API responses that drift from the contract', async () => {
-    const client = new OpenPacksApiClient({
+    const client = new DailyDraftApiClient({
       baseUrl: 'https://api.example.test/v1',
       fetch: async () => Response.json({ data: [{ ...pack, price: 50 }], hasMore: false }),
     });
@@ -58,7 +72,7 @@ describe('OpenPacksApiClient', () => {
 
   test('prepares an unsigned transaction with an idempotency key', async () => {
     let request: Request | undefined;
-    const client = new OpenPacksApiClient({
+    const client = new DailyDraftApiClient({
       apiKey: 'opd_test_secret',
       baseUrl: 'https://api.example.test/v1',
       fetch: async (input, init) => {
@@ -106,7 +120,7 @@ describe('OpenPacksApiClient', () => {
 
   test('redacts the upstream key from errors and rejects it in successful output', async () => {
     const apiKey = 'opd_server_only_12345678901234567890';
-    const errorClient = new OpenPacksApiClient({
+    const errorClient = new DailyDraftApiClient({
       apiKey,
       baseUrl: 'https://api.example.test/v1',
       fetch: async () => Response.json({ detail: `Do not leak ${apiKey}` }, { status: 502 }),
@@ -116,7 +130,7 @@ describe('OpenPacksApiClient', () => {
 
     expect(String(upstreamError)).not.toContain(apiKey);
 
-    const outputClient = new OpenPacksApiClient({
+    const outputClient = new DailyDraftApiClient({
       apiKey,
       baseUrl: 'https://api.example.test/v1',
       fetch: async () => Response.json({ ...pack, name: apiKey }),
@@ -128,17 +142,112 @@ describe('OpenPacksApiClient', () => {
   });
 
   test('requires an explicit API URL and reports upstream credential availability', () => {
-    expect(() => new OpenPacksApiClient({ baseUrl: '' })).toThrow(
-      'OPENPACKSDUEL_API_URL is required',
+    expect(() => new DailyDraftApiClient({ baseUrl: '' })).toThrow(
+      'DAILYDRAFT_API_URL is required',
     );
     expect(
-      new OpenPacksApiClient({
+      new DailyDraftApiClient({
         apiKey: 'configured',
         baseUrl: 'https://api.example.test/v1',
       }).hasIntegrationCredential,
     ).toBe(true);
     expect(
-      new OpenPacksApiClient({ baseUrl: 'https://api.example.test/v1' }).hasIntegrationCredential,
+      new DailyDraftApiClient({ baseUrl: 'https://api.example.test/v1' }).hasIntegrationCredential,
     ).toBe(false);
+  });
+
+  test('refuses base URLs that are not plain HTTP(S) endpoints', () => {
+    const expected = 'DAILYDRAFT_API_URL must be an HTTP(S) URL without embedded credentials';
+
+    expect(() => new DailyDraftApiClient({ baseUrl: 'ftp://api.example.test/v1' })).toThrow(
+      expected,
+    );
+    expect(
+      () => new DailyDraftApiClient({ baseUrl: 'https://user:secret@api.example.test/v1' }),
+    ).toThrow(expected);
+  });
+
+  test('falls back to the environment when no base URL is supplied', async () => {
+    process.env.DAILYDRAFT_API_URL = 'https://api.env.test/v1';
+    let request: Request | undefined;
+    const client = new DailyDraftApiClient({
+      fetch: async (input, init) => {
+        request = new Request(input, init);
+        return Response.json({ data: [pack], hasMore: false });
+      },
+    });
+
+    await client.listPacks();
+
+    expect(request?.url).toBe('https://api.env.test/v1/packs');
+  });
+
+  test('surfaces transport failures as status-zero errors on reads and writes', async () => {
+    const client = new DailyDraftApiClient({
+      baseUrl: 'https://api.example.test/v1',
+      fetch: async () => {
+        throw new Error('socket hang up');
+      },
+    });
+
+    const readError = await client.listPacks().catch((value: unknown) => value);
+    const writeError = await client
+      .prepareTransaction(prepareInput)
+      .catch((value: unknown) => value);
+
+    expect(readError).toBeInstanceOf(DailyDraftApiError);
+    expect(readError).toMatchObject({ status: 0 });
+    expect(String(readError)).toContain('socket hang up');
+    expect(writeError).toMatchObject({ status: 0 });
+    expect(String(writeError)).toContain('socket hang up');
+  });
+
+  test('falls back to the status line when a problem document carries no text', async () => {
+    const readClient = new DailyDraftApiClient({
+      baseUrl: 'https://api.example.test/v1',
+      fetch: async () => Response.json({}, { status: 500 }),
+    });
+    const writeClient = new DailyDraftApiClient({
+      baseUrl: 'https://api.example.test/v1',
+      fetch: async () => Response.json({}, { status: 409 }),
+    });
+
+    const readError = await readClient.listPacks().catch((value: unknown) => value);
+    const writeError = await writeClient
+      .prepareTransaction(prepareInput)
+      .catch((value: unknown) => value);
+
+    expect(readError).toMatchObject({ status: 500 });
+    expect((readError as DailyDraftApiError).requestId).toBeUndefined();
+    expect(String(readError)).toContain('DailyDraft API returned 500');
+    expect(writeError).toMatchObject({ status: 409 });
+    expect((writeError as DailyDraftApiError).requestId).toBeUndefined();
+    expect(String(writeError)).toContain('DailyDraft API returned 409');
+  });
+
+  test('rejects prepared transactions that leak the key or drift from the contract', async () => {
+    const apiKey = 'opd_server_only_12345678901234567890';
+    const leakingClient = new DailyDraftApiClient({
+      apiKey,
+      baseUrl: 'https://api.example.test/v1',
+      fetch: async () => Response.json({ escrowAddress: apiKey }),
+    });
+    const driftingClient = new DailyDraftApiClient({
+      baseUrl: 'https://api.example.test/v1',
+      fetch: async () => Response.json({ status: 'prepared' }),
+    });
+
+    const leakError = await leakingClient
+      .prepareTransaction(prepareInput)
+      .catch((value: unknown) => value);
+    const driftError = await driftingClient
+      .prepareTransaction(prepareInput)
+      .catch((value: unknown) => value);
+
+    expect(leakError).toMatchObject({ status: 502 });
+    expect(String(leakError)).toContain('server-only credential');
+    expect(String(leakError)).not.toContain(apiKey);
+    expect(driftError).toMatchObject({ status: 502 });
+    expect(String(driftError)).toContain('invalid response');
   });
 });

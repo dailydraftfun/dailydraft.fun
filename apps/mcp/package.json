@@ -1,12 +1,12 @@
 {
-  "name": "@openpacksduel/mcp",
+  "name": "@dailydraft/mcp",
   "version": "0.1.0",
   "private": true,
-  "description": "Authenticated, non-custodial MCP server for OpenPacks Duel",
+  "description": "Authenticated, non-custodial MCP server for DailyDraft",
   "type": "module",
   "packageManager": "bun@1.3.13",
   "bin": {
-    "openpacksduel-mcp": "./src/index.ts"
+    "dailydraft-mcp": "./src/index.ts"
   },
   "scripts": {
     "build": "bun build src/index.ts api/*.ts --target=bun --outdir=dist",
@@ -23,7 +23,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@openpacksduel/contracts": "workspace:*",
+    "@dailydraft/contracts": "workspace:*",
     "@types/bun": "1.3.8",
     "typescript": "6.0.3"
   }

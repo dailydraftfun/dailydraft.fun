@@ -7,16 +7,14 @@ describe('duel metadata', () => {
   test('discovers the canonical per-status social image for an open challenge', () => {
     const metadata = buildDuelMetadata(
       receipt({ status: 'waiting' }),
-      'https://openpacksduel.vercel.app/ignored-path',
+      'https://dailydraft.fun/ignored-path',
     );
-    const imageUrl = new URL('https://openpacksduel.vercel.app/duel/duel_social/social/waiting');
+    const imageUrl = new URL('https://dailydraft.fun/duel/duel_social/social/waiting');
 
     expect(metadata.alternates?.canonical).toEqual(
-      new URL('https://openpacksduel.vercel.app/duel/duel_social'),
+      new URL('https://dailydraft.fun/duel/duel_social'),
     );
-    expect(metadata.openGraph?.url).toEqual(
-      new URL('https://openpacksduel.vercel.app/duel/duel_social'),
-    );
+    expect(metadata.openGraph?.url).toEqual(new URL('https://dailydraft.fun/duel/duel_social'));
     expect(metadata.openGraph?.images).toEqual([
       {
         alt: 'Challenge open for Creator vs open seat on Solana devnet',
@@ -36,14 +34,14 @@ describe('duel metadata', () => {
   test('keeps mock settlement metadata explicit about devnet', () => {
     const metadata = buildDuelMetadata(
       receipt({ mockResult: true, status: 'settled' }),
-      'https://openpacksduel.vercel.app',
+      'https://dailydraft.fun',
     );
 
     expect(metadata.title).toBe('Devnet mock result — Pack Duel');
     expect(metadata.description).toContain('Solana devnet');
     expect(metadata.openGraph?.images).toEqual([
       expect.objectContaining({
-        url: new URL('https://openpacksduel.vercel.app/duel/duel_social/social/settled'),
+        url: new URL('https://dailydraft.fun/duel/duel_social/social/settled'),
       }),
     ]);
     expect(metadata.twitter).toEqual(expect.objectContaining({ card: 'summary_large_image' }));
@@ -60,13 +58,13 @@ describe('duel metadata', () => {
   ] as const)('uses the canonical %s social image and status-aware copy', (status, copy) => {
     const metadata = buildDuelMetadata(
       receipt({ mockResult: status === 'settled', status }),
-      'https://openpacksduel.vercel.app',
+      'https://dailydraft.fun',
     );
 
     expect(metadata.description).toContain(copy);
     expect(metadata.openGraph?.images).toEqual([
       expect.objectContaining({
-        url: new URL(`https://openpacksduel.vercel.app/duel/duel_social/social/${status}`),
+        url: new URL(`https://dailydraft.fun/duel/duel_social/social/${status}`),
       }),
     ]);
   });
@@ -112,7 +110,7 @@ function receipt({
       cards: [],
       reason: mockResult ? 'mock-assets' : 'duel-not-settled',
       receiptHref: '/v1/duels/duel_social/receipt',
-      schemaVersion: 'openpacksduel.card-actions.v1',
+      schemaVersion: 'dailydraft.card-actions.v1',
     },
     custody: {
       cardAssets: { detail: 'Test', status: 'pending' },
@@ -137,8 +135,8 @@ function receipt({
     pack: {
       id: 'pokemon_50',
       name: 'Pokemon $50',
-      provider: 'openpacksduel',
-      providerMode: mockResult ? 'mock' : 'openpacksduel-devnet',
+      provider: 'dailydraft',
+      providerMode: mockResult ? 'mock' : 'dailydraft-devnet',
       providerPackId: null,
       tier: { amount: '50000000', currency: 'USDC', decimals: 6 },
     },
@@ -210,7 +208,7 @@ function receipt({
               scope: 'none',
               status: 'mock-not-applicable',
             },
-            schemaVersion: 'openpacksduel.result-proof.v1',
+            schemaVersion: 'dailydraft.result-proof.v1',
           },
           resultHash: 'result_hash',
           settlementReady: false,
@@ -220,6 +218,6 @@ function receipt({
           winnerSide: 'creator',
         }
       : null,
-    schemaVersion: 'openpacksduel.receipt.v1',
+    schemaVersion: 'dailydraft.receipt.v1',
   };
 }

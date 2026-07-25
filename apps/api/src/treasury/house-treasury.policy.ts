@@ -1,15 +1,15 @@
 import {
+  type DatabaseClient,
+  HouseTreasuryLedgerType,
+  HouseTreasuryReservationStatus,
+  type Prisma,
+} from '@dailydraft/db';
+import {
   ConflictException,
   HttpException,
   HttpStatus,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import {
-  type DatabaseClient,
-  HouseTreasuryLedgerType,
-  HouseTreasuryReservationStatus,
-  type Prisma,
-} from '@openpacksduel/db';
 import { PublicKey } from '@solana/web3.js';
 
 export const HOUSE_TREASURY_SNAPSHOT_ID = 'solana-devnet-usdc';
@@ -405,34 +405,33 @@ export function readHouseTreasuryConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): HouseTreasuryConfig {
   return {
-    allowedDispositions: readDispositions(environment.OPENPACKSDUEL_HOUSE_ALLOWED_DISPOSITIONS),
-    dailyLossLimit: readUnsignedAmount(environment.OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO),
-    enabled: environment.OPENPACKSDUEL_HOUSE_ENABLED === 'true',
-    fundingSigner: trimmed(environment.OPENPACKSDUEL_HOUSE_DEVNET_FUNDING_SIGNER),
-    houseWallet: trimmed(environment.OPENPACKSDUEL_HOUSE_DEVNET_WALLET),
+    allowedDispositions: readDispositions(environment.DAILYDRAFT_HOUSE_ALLOWED_DISPOSITIONS),
+    dailyLossLimit: readUnsignedAmount(environment.DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO),
+    enabled: environment.DAILYDRAFT_HOUSE_ENABLED === 'true',
+    fundingSigner: trimmed(environment.DAILYDRAFT_HOUSE_DEVNET_FUNDING_SIGNER),
+    houseWallet: trimmed(environment.DAILYDRAFT_HOUSE_DEVNET_WALLET),
     maxActivePerWallet: boundedInteger(
-      environment.OPENPACKSDUEL_HOUSE_MAX_ACTIVE_PER_WALLET,
+      environment.DAILYDRAFT_HOUSE_MAX_ACTIVE_PER_WALLET,
       1,
       1,
       20,
     ),
     maxConcurrentPerTier: boundedInteger(
-      environment.OPENPACKSDUEL_HOUSE_MAX_CONCURRENT_PER_TIER,
+      environment.DAILYDRAFT_HOUSE_MAX_CONCURRENT_PER_TIER,
       1,
       1,
       100,
     ),
     maxTotalExposure: readUnsignedAmount(
-      environment.OPENPACKSDUEL_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO,
+      environment.DAILYDRAFT_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO,
     ),
-    minimumLiquidity: readUnsignedAmount(environment.OPENPACKSDUEL_HOUSE_MIN_LIQUIDITY_USDC_MICRO),
-    network: trimmed(environment.OPENPACKSDUEL_NETWORK),
+    minimumLiquidity: readUnsignedAmount(environment.DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO),
+    network: trimmed(environment.DAILYDRAFT_NETWORK),
     snapshotMaxAgeMs:
-      boundedInteger(environment.OPENPACKSDUEL_HOUSE_SNAPSHOT_MAX_AGE_SECONDS, 300, 30, 3_600) *
-      1_000,
-    tokenAccount: trimmed(environment.OPENPACKSDUEL_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT),
-    usdcMint: trimmed(environment.OPENPACKSDUEL_HOUSE_DEVNET_USDC_MINT),
-    withdrawalAuthority: trimmed(environment.OPENPACKSDUEL_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY),
+      boundedInteger(environment.DAILYDRAFT_HOUSE_SNAPSHOT_MAX_AGE_SECONDS, 300, 30, 3_600) * 1_000,
+    tokenAccount: trimmed(environment.DAILYDRAFT_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT),
+    usdcMint: trimmed(environment.DAILYDRAFT_HOUSE_DEVNET_USDC_MINT),
+    withdrawalAuthority: trimmed(environment.DAILYDRAFT_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY),
   };
 }
 

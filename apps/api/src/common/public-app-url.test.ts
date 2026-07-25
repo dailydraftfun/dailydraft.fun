@@ -4,14 +4,14 @@ import { HttpException } from '@nestjs/common';
 import { resolvePublicAppUrl } from './public-app-url.js';
 
 const originalEnvironment = {
-  appUrl: process.env.OPENPACKSDUEL_APP_URL,
+  appUrl: process.env.DAILYDRAFT_APP_URL,
   nodeEnvironment: process.env.NODE_ENV,
   vercel: process.env.VERCEL,
   vercelEnvironment: process.env.VERCEL_ENV,
 };
 
 afterEach(() => {
-  setEnvironment('OPENPACKSDUEL_APP_URL', originalEnvironment.appUrl);
+  setEnvironment('DAILYDRAFT_APP_URL', originalEnvironment.appUrl);
   setEnvironment('NODE_ENV', originalEnvironment.nodeEnvironment);
   setEnvironment('VERCEL', originalEnvironment.vercel);
   setEnvironment('VERCEL_ENV', originalEnvironment.vercelEnvironment);
@@ -19,14 +19,14 @@ afterEach(() => {
 
 describe('resolvePublicAppUrl', () => {
   test('fails closed when deployed app configuration is missing', () => {
-    delete process.env.OPENPACKSDUEL_APP_URL;
+    delete process.env.DAILYDRAFT_APP_URL;
     process.env.NODE_ENV = 'production';
 
     expectConfigurationFailure(() => resolvePublicAppUrl(), 'is not configured');
   });
 
   test('does not let a deployment marker inherit the local fallback', () => {
-    delete process.env.OPENPACKSDUEL_APP_URL;
+    delete process.env.DAILYDRAFT_APP_URL;
     process.env.NODE_ENV = 'development';
     process.env.VERCEL = '1';
 
@@ -35,13 +35,13 @@ describe('resolvePublicAppUrl', () => {
 
   test('returns the canonical origin for valid deployed configuration', () => {
     process.env.NODE_ENV = 'production';
-    process.env.OPENPACKSDUEL_APP_URL = 'https://play.openpacksduel.com/';
+    process.env.DAILYDRAFT_APP_URL = 'https://play.dailydraft.fun/';
 
-    expect(resolvePublicAppUrl().toString()).toBe('https://play.openpacksduel.com/');
+    expect(resolvePublicAppUrl().toString()).toBe('https://play.dailydraft.fun/');
   });
 
   test('preserves the localhost fallback only in explicit local development', () => {
-    delete process.env.OPENPACKSDUEL_APP_URL;
+    delete process.env.DAILYDRAFT_APP_URL;
     process.env.NODE_ENV = 'development';
     delete process.env.VERCEL;
     delete process.env.VERCEL_ENV;
@@ -51,9 +51,23 @@ describe('resolvePublicAppUrl', () => {
 
   test('rejects non-HTTPS public configuration', () => {
     process.env.NODE_ENV = 'production';
-    process.env.OPENPACKSDUEL_APP_URL = 'http://play.openpacksduel.com';
+    process.env.DAILYDRAFT_APP_URL = 'http://play.dailydraft.fun';
 
     expectConfigurationFailure(() => resolvePublicAppUrl(), 'must use HTTPS');
+  });
+
+  test('rejects configuration that is not a parseable absolute URL', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DAILYDRAFT_APP_URL = '::::';
+
+    expectConfigurationFailure(() => resolvePublicAppUrl(), 'must be an absolute URL');
+  });
+
+  test('rejects embedded credentials so they cannot leak into published links', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DAILYDRAFT_APP_URL = 'https://user:pw@play.dailydraft.fun';
+
+    expectConfigurationFailure(() => resolvePublicAppUrl(), 'must not include credentials');
   });
 });
 

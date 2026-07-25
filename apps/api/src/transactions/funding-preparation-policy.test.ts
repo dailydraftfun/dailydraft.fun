@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DuelStatus, DuelTransactionAction, DuelTransactionStatus } from '@openpacksduel/db';
+import { DuelStatus, DuelTransactionAction, DuelTransactionStatus } from '@dailydraft/db';
 import {
   CANONICAL_VALUATION_POLICY_HASH,
   DEVNET_DEMO_VALUATION_POLICY_HASH,

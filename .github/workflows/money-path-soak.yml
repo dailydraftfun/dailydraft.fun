@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      OPENPACKSDUEL_NETWORK: solana-devnet
+      DAILYDRAFT_NETWORK: solana-devnet
       SOAK_FIXTURE_MODE: deterministic
       SOAK_ITERATIONS: ${{ inputs.iterations || (github.event_name == 'pull_request' && '6' || '24') }}
       SOAK_CONCURRENCY: ${{ inputs.concurrency || '3' }}
@@ -49,7 +49,7 @@ jobs:
           bun-version: 1.3.13
       - run: bun install --frozen-lockfile
       - name: Generate the workflow-local database client
-        run: bun --filter @openpacksduel/db db:generate
+        run: bun --filter @dailydraft/db db:generate
       - name: Exercise deterministic money-path invariants
         run: >-
           bun scripts/money-path-soak.ts

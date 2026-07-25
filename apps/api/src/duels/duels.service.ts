@@ -216,7 +216,7 @@ export class DuelsService {
       duelId: duel.id,
       imageUrl: `${appUrl}/duel/${encodedId}/social/${socialStatus}`,
       pageUrl: `${appUrl}/duel/${encodedId}`,
-      shareText: `Watch my ${duel.pack.name} duel on OpenPacks Duel.`,
+      shareText: `Watch my ${duel.pack.name} duel on DailyDraft.`,
       status: duel.status,
     };
   }
@@ -250,17 +250,17 @@ function validateCreation(input: CreateDuelRequest): void {
 }
 
 function resolveProviderMode(): PackProviderMode {
-  const mode = process.env.OPENPACKSDUEL_PROVIDER_MODE ?? 'mock';
-  if (mode === 'mock' || mode === 'openpacksduel-devnet' || mode === 'collector-crypt-sandbox') {
+  const mode = process.env.DAILYDRAFT_PROVIDER_MODE ?? 'mock';
+  if (mode === 'mock' || mode === 'dailydraft-devnet' || mode === 'collector-crypt-sandbox') {
     return mode;
   }
   throw new ConflictException(
-    'OPENPACKSDUEL_PROVIDER_MODE must be mock, openpacksduel-devnet, or collector-crypt-sandbox',
+    'DAILYDRAFT_PROVIDER_MODE must be mock, dailydraft-devnet, or collector-crypt-sandbox',
   );
 }
 
 function resolveHouseWallet(): string {
-  return process.env.OPENPACKSDUEL_HOUSE_DEVNET_WALLET ?? DEFAULT_HOUSE_DEVNET_WALLET;
+  return process.env.DAILYDRAFT_HOUSE_DEVNET_WALLET ?? DEFAULT_HOUSE_DEVNET_WALLET;
 }
 
 function normalizeReason(reason?: string): string {

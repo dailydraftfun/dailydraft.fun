@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
-export const REAL_VALUE_POLICY_SCHEMA_VERSION = 'openpacksduel.real-value-policy.v1';
-export const NON_PRODUCTION_POLICY_VERSION = 'openpacksduel.non-production-policy.v1';
+export const REAL_VALUE_POLICY_SCHEMA_VERSION = 'dailydraft.real-value-policy.v1';
+export const NON_PRODUCTION_POLICY_VERSION = 'dailydraft.non-production-policy.v1';
 
 export const REAL_VALUE_CAPABILITIES = [
   'duel.create.direct',
@@ -115,8 +115,13 @@ const NON_PRODUCTION_POLICY = Object.freeze({
   schemaVersion: REAL_VALUE_POLICY_SCHEMA_VERSION,
 });
 
+// Repinned for the DailyDraft rename. Unlike the valuation policy hash, this
+// one is an audit field on RealValuePolicyDecision that nothing compares
+// against, and the schemaVersion it covers is pinned by a CHECK constraint that
+// the 20260725120000_rebrand_dailydraft migration rewrites, so the constant has
+// to move with the identifiers rather than hold them back.
 export const NON_PRODUCTION_POLICY_HASH =
-  'd47e913535eeec01193a4324b92a6171958dfbf02c1d1fca38f6f26b724a5206';
+  '2a652daea4b85b74f975caf1e5e65257ec2306676922983d8d8f1f6401eb0402';
 
 if (sha256(canonicalJson(NON_PRODUCTION_POLICY)) !== NON_PRODUCTION_POLICY_HASH) {
   throw new Error('Non-production policy changed without an explicit hash/version update');
@@ -127,13 +132,13 @@ export function evaluateRealValuePolicy(
   environment: NodeJS.ProcessEnv = process.env,
 ): RealValuePolicyDecision {
   const runtimeMode = resolveRealValueRuntime(environment);
-  const rawPolicy = environment.OPENPACKSDUEL_REAL_VALUE_POLICY_JSON?.trim();
+  const rawPolicy = environment.DAILYDRAFT_REAL_VALUE_POLICY_JSON?.trim();
   const parsedPolicy = rawPolicy ? parseRealValuePolicy(rawPolicy) : null;
   const baseEvidence = {
     configurationPresent: Boolean(rawPolicy),
-    network: normalized(environment.OPENPACKSDUEL_NETWORK),
-    productionEnabled: environment.OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED === 'true',
-    providerMode: normalized(environment.OPENPACKSDUEL_PROVIDER_MODE),
+    network: normalized(environment.DAILYDRAFT_NETWORK),
+    productionEnabled: environment.DAILYDRAFT_REAL_VALUE_PRODUCTION_ENABLED === 'true',
+    providerMode: normalized(environment.DAILYDRAFT_PROVIDER_MODE),
     runtimeMode,
     schemaVersion: REAL_VALUE_POLICY_SCHEMA_VERSION,
   } as const;
@@ -201,7 +206,7 @@ export function evaluateRealValuePolicy(
       runtimeMode,
     });
   }
-  if (environment.OPENPACKSDUEL_REAL_VALUE_PRODUCTION_ENABLED !== 'true') {
+  if (environment.DAILYDRAFT_REAL_VALUE_PRODUCTION_ENABLED !== 'true') {
     return deniedProductionDecision(
       capability,
       'production_approval_missing',
@@ -232,26 +237,26 @@ export function evaluateRealValuePolicy(
 export function resolveRealValueRuntime(
   environment: NodeJS.ProcessEnv = process.env,
 ): RealValueRuntimeMode {
-  const explicit = environment.OPENPACKSDUEL_REAL_VALUE_MODE?.trim();
+  const explicit = environment.DAILYDRAFT_REAL_VALUE_MODE?.trim();
   if (explicit && explicit !== 'true' && explicit !== 'false') return 'unclassified';
   if (
     explicit === 'true' ||
-    environment.OPENPACKSDUEL_NETWORK === 'solana-mainnet' ||
-    environment.OPENPACKSDUEL_PROVIDER_MODE === 'collector-crypt-production'
+    environment.DAILYDRAFT_NETWORK === 'solana-mainnet' ||
+    environment.DAILYDRAFT_PROVIDER_MODE === 'collector-crypt-production'
   ) {
     return 'production';
   }
   if (
     environment.NODE_ENV === 'test' ||
     environment.NODE_ENV === 'development' ||
-    environment.OPENPACKSDUEL_PROVIDER_MODE === 'mock'
+    environment.DAILYDRAFT_PROVIDER_MODE === 'mock'
   ) {
     return 'fixture';
   }
   if (
-    environment.OPENPACKSDUEL_NETWORK === 'solana-devnet' ||
-    environment.OPENPACKSDUEL_PROVIDER_MODE === 'openpacksduel-devnet' ||
-    environment.OPENPACKSDUEL_PROVIDER_MODE === 'collector-crypt-sandbox'
+    environment.DAILYDRAFT_NETWORK === 'solana-devnet' ||
+    environment.DAILYDRAFT_PROVIDER_MODE === 'dailydraft-devnet' ||
+    environment.DAILYDRAFT_PROVIDER_MODE === 'collector-crypt-sandbox'
   ) {
     return 'devnet';
   }

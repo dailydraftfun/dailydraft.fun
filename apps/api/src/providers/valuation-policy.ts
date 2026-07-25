@@ -1,6 +1,15 @@
 import { createHash } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
 
+// The two identifiers below deliberately keep the pre-rebrand "openpacksduel"
+// prefix. They are hashed into CANONICAL_VALUATION_POLICY_HASH and
+// DEVNET_DEMO_VALUATION_POLICY_HASH, which are written into escrow funding
+// instructions and settlement evidence and stored on every duel row;
+// requireCanonicalValuationPolicyHash rejects any other value. Renaming them
+// moves both hashes and invalidates the policy pinned by every in-flight duel.
+// Like the applied Prisma migrations, a committed hashed identifier is history
+// rather than branding. Neighbouring policyVersion values are already not
+// brand-named, so nothing user-facing depends on the prefix.
 export const CANONICAL_VALUATION_POLICY = Object.freeze({
   authoritativeField: 'collector-crypt.gacha.result.insuredValue',
   comparisonMetric: 'insured-value',
@@ -78,7 +87,7 @@ export function currentValuationPolicy(): {
   policy: SupportedValuationPolicy;
   policyHash: string;
 } {
-  return process.env.OPENPACKSDUEL_PROVIDER_MODE === 'openpacksduel-devnet'
+  return process.env.DAILYDRAFT_PROVIDER_MODE === 'dailydraft-devnet'
     ? {
         policy: DEVNET_DEMO_VALUATION_POLICY,
         policyHash: DEVNET_DEMO_VALUATION_POLICY_HASH,

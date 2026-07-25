@@ -67,7 +67,7 @@ export const duelSchema = z.object({
   matchmakingMode: z.enum(['open', 'direct', 'house']),
   creatorWallet: z.string(),
   environment: z.literal('solana-devnet'),
-  providerMode: z.enum(['mock', 'openpacksduel-devnet', 'collector-crypt-sandbox']),
+  providerMode: z.enum(['mock', 'dailydraft-devnet', 'collector-crypt-sandbox']),
   houseOpponent: z.boolean(),
   opponentWallet: z.string().nullable().optional(),
   pack: packSchema,
@@ -108,7 +108,7 @@ export const duelProofSchema = z.object({
   duelId: z.string(),
   environment: z.literal('solana-devnet'),
   escrowAddress: z.string().nullable(),
-  providerMode: z.enum(['mock', 'openpacksduel-devnet', 'collector-crypt-sandbox']),
+  providerMode: z.enum(['mock', 'dailydraft-devnet', 'collector-crypt-sandbox']),
   poolVersion: z.string().nullable(),
   resultHash: z
     .string()

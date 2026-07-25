@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import type { DatabaseClient, Prisma } from '@openpacksduel/db';
-import { DuelProviderOperationStatus, type DuelSide, DuelStatus } from '@openpacksduel/db';
+import type { DatabaseClient, Prisma } from '@dailydraft/db';
+import { DuelProviderOperationStatus, type DuelSide, DuelStatus } from '@dailydraft/db';
 
 import type { ProviderResponseEvidence } from '../providers/pack-provider.js';
 import { createProviderResponseEvidence } from '../providers/provider-response-evidence.js';

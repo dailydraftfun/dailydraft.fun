@@ -71,7 +71,7 @@ export interface PublicDuelReceipt {
     status: 'attention-required' | 'none' | 'recovered';
   };
   result: PublicDuelResult | null;
-  schemaVersion: 'openpacksduel.receipt.v1';
+  schemaVersion: 'dailydraft.receipt.v1';
 }
 
 export interface PublicPostDuelCardActions {
@@ -79,7 +79,7 @@ export interface PublicPostDuelCardActions {
   cards: PublicPostDuelCardActionState[];
   reason: 'duel-not-settled' | 'mock-assets' | 'ownership-mismatch' | 'ownership-pending' | null;
   receiptHref: string;
-  schemaVersion: 'openpacksduel.card-actions.v1';
+  schemaVersion: 'dailydraft.card-actions.v1';
 }
 
 export interface PublicPostDuelCardActionState {
@@ -193,7 +193,7 @@ export interface PublicDuelResult {
       scope: 'escrow-mints-values-policy' | 'none';
       status: 'mock-not-applicable' | 'not-recorded' | 'on-chain-commitment-finalized';
     };
-    schemaVersion: 'openpacksduel.result-proof.v1';
+    schemaVersion: 'dailydraft.result-proof.v1';
   };
   resultHash: string;
   settlementReady: boolean;
@@ -226,7 +226,7 @@ export interface PublicWalletProfile {
     total: number;
     wins: number;
   };
-  schemaVersion: 'openpacksduel.profile.v1';
+  schemaVersion: 'dailydraft.profile.v1';
   wallet: {
     address: string;
     display: string;
@@ -405,7 +405,7 @@ export function buildPublicDuelReceipt(
             : 'none',
     },
     result,
-    schemaVersion: 'openpacksduel.receipt.v1',
+    schemaVersion: 'dailydraft.receipt.v1',
   };
 }
 
@@ -430,7 +430,7 @@ function buildPostDuelCardActions(input: {
     cards: [],
     reason,
     receiptHref,
-    schemaVersion: 'openpacksduel.card-actions.v1',
+    schemaVersion: 'dailydraft.card-actions.v1',
   });
 
   if (input.duel.status !== 'settled') return hidden('duel-not-settled');
@@ -477,7 +477,7 @@ function buildPostDuelCardActions(input: {
     }),
     reason: null,
     receiptHref,
-    schemaVersion: 'openpacksduel.card-actions.v1',
+    schemaVersion: 'dailydraft.card-actions.v1',
   };
 }
 
@@ -613,7 +613,7 @@ export function buildPublicWalletProfile(
       total: duels.length,
       wins,
     },
-    schemaVersion: 'openpacksduel.profile.v1',
+    schemaVersion: 'dailydraft.profile.v1',
     wallet: { address: wallet, display: pseudonymizeWallet(wallet) },
   };
 }
@@ -727,17 +727,17 @@ function buildResult(
       providerAttestation: {
         required: duel.providerMode === 'collector-crypt-sandbox',
         scope:
-          duel.providerMode === 'openpacksduel-devnet' && providerCommitmentFinalized
+          duel.providerMode === 'dailydraft-devnet' && providerCommitmentFinalized
             ? 'escrow-mints-values-policy'
             : 'none',
         status:
           duel.providerMode === 'mock'
             ? 'mock-not-applicable'
-            : duel.providerMode === 'openpacksduel-devnet' && providerCommitmentFinalized
+            : duel.providerMode === 'dailydraft-devnet' && providerCommitmentFinalized
               ? 'on-chain-commitment-finalized'
               : 'not-recorded',
       },
-      schemaVersion: 'openpacksduel.result-proof.v1',
+      schemaVersion: 'dailydraft.result-proof.v1',
     },
     resultHash: duel.result.resultHash,
     settlementReady: duel.result.settlementReady,
@@ -780,7 +780,7 @@ function receiptMissingFields(input: {
     if (input.duel.providerMode === 'collector-crypt-sandbox') {
       missing.push('provider_result_attestation');
     }
-    if (input.duel.providerMode === 'openpacksduel-devnet' && !input.providerCommitmentFinalized) {
+    if (input.duel.providerMode === 'dailydraft-devnet' && !input.providerCommitmentFinalized) {
       missing.push('on_chain_result_commitment');
     }
     if (!input.settlementReference) missing.push('card_settlement_reference');

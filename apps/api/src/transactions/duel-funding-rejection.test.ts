@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DuelTransactionAction, DuelTransactionStatus } from '@openpacksduel/db';
+import { DuelTransactionAction, DuelTransactionStatus } from '@dailydraft/db';
 
 import { DuelFundingService } from './duel-funding.service.js';
 

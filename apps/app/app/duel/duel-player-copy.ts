@@ -21,7 +21,7 @@ export const duelRules = [
     title: 'What you pay',
   },
   {
-    body: 'The preview selects from a server-provided OpenPacksDuel Pokémon demo pool. Pool contents can change; Collector Crypt production packs and commercial odds are not active.',
+    body: 'The preview selects from a server-provided DailyDraft Pokémon demo pool. Pool contents can change; Collector Crypt production packs and commercial odds are not active.',
     title: 'Pack source and odds',
   },
   {

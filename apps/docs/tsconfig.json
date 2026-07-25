@@ -4,6 +4,7 @@
     "allowJs": true,
     "incremental": true,
     "jsx": "preserve",
+    "types": ["node", "bun"],
     "plugins": [
       {
         "name": "next"

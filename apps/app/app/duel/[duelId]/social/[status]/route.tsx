@@ -138,7 +138,7 @@ export async function GET(
                 boxShadow: `0 0 32px ${duel.accent}55`,
               }}
             />
-            <div style={{ display: 'flex', fontSize: 24, fontWeight: 700 }}>Pack Duel</div>
+            <div style={{ display: 'flex', fontSize: 24, fontWeight: 700 }}>DailyDraft</div>
             <div
               style={{
                 display: 'flex',
@@ -283,7 +283,7 @@ export async function GET(
                 CANONICAL RECEIPT
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <div style={{ display: 'flex', fontSize: 30, fontWeight: 700 }}>PACK DUEL</div>
+                <div style={{ display: 'flex', fontSize: 30, fontWeight: 700 }}>DAILYDRAFT</div>
                 <div style={{ display: 'flex', color: '#9ca7af', fontSize: 18 }}>
                   {duel.tier} pull
                 </div>
@@ -297,7 +297,7 @@ export async function GET(
       ...imageSize,
       headers: {
         'Cache-Control': 'no-store',
-        'X-Openpacksduel-Status': duel.status,
+        'X-Dailydraft-Status': duel.status,
       },
     },
   );
@@ -319,7 +319,7 @@ function unavailableImage(duelId: string) {
       }}
     >
       <div style={{ color: '#d8ff3e', display: 'flex', fontSize: 24, fontWeight: 700 }}>
-        PACK DUEL · DEVNET
+        DAILYDRAFT · DEVNET
       </div>
       <div style={{ display: 'flex', fontSize: 60, fontWeight: 700, marginTop: 28 }}>
         Proof unavailable

@@ -1,12 +1,34 @@
-import { describe, expect, test } from 'bun:test';
-import { OperatorReasonCode } from '@openpacksduel/db';
+import { afterEach, describe, expect, test } from 'bun:test';
+import type { DatabaseClient } from '@dailydraft/db';
+import { OperatorReasonCode } from '@dailydraft/db';
 
+import type { SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
 import {
+  AdminService,
   assertPauseVersionUpdated,
   assertWithinRiskLimits,
   isPauseNoop,
   readRiskLimits,
 } from './admin.service.js';
+
+const PROVIDER_ENVIRONMENT_KEYS = [
+  'COLLECTOR_CRYPT_API_KEY',
+  'DAILYDRAFT_DEVNET_PROVIDER_KEYPAIR_JSON',
+  'DAILYDRAFT_PROVIDER_ASSET_STANDARD',
+  'DAILYDRAFT_PROVIDER_MODE',
+  'ESCROW_PROVIDER_SIGNER',
+] as const;
+
+const originalProviderEnvironment = new Map(
+  PROVIDER_ENVIRONMENT_KEYS.map((key) => [key, process.env[key]]),
+);
+
+afterEach(() => {
+  for (const [key, value] of originalProviderEnvironment) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+});
 
 describe('devnet risk controls', () => {
   test('uses conservative deterministic defaults', () => {
@@ -21,10 +43,10 @@ describe('devnet risk controls', () => {
   test('normalizes allowed tiers and bounds numeric configuration', () => {
     expect(
       readRiskLimits({
-        OPENPACKSDUEL_ALLOWED_TIERS: '100,25,invalid,100',
-        OPENPACKSDUEL_HOUSE_ENABLED: 'true',
-        OPENPACKSDUEL_MAX_ACTIVE_DUELS_PER_WALLET: '0',
-        OPENPACKSDUEL_MAX_CONCURRENT_DUELS_PER_TIER: '5000',
+        DAILYDRAFT_ALLOWED_TIERS: '100,25,invalid,100',
+        DAILYDRAFT_HOUSE_ENABLED: 'true',
+        DAILYDRAFT_MAX_ACTIVE_DUELS_PER_WALLET: '0',
+        DAILYDRAFT_MAX_CONCURRENT_DUELS_PER_TIER: '5000',
       }),
     ).toEqual({
       allowedTiers: [25, 100],
@@ -47,10 +69,8 @@ describe('devnet risk controls', () => {
   });
 
   test('fails closed when an explicit tier configuration is empty or malformed', () => {
-    expect(readRiskLimits({ OPENPACKSDUEL_ALLOWED_TIERS: '' }).allowedTiers).toEqual([]);
-    expect(readRiskLimits({ OPENPACKSDUEL_ALLOWED_TIERS: 'invalid,0,500' }).allowedTiers).toEqual(
-      [],
-    );
+    expect(readRiskLimits({ DAILYDRAFT_ALLOWED_TIERS: '' }).allowedTiers).toEqual([]);
+    expect(readRiskLimits({ DAILYDRAFT_ALLOWED_TIERS: 'invalid,0,500' }).allowedTiers).toEqual([]);
   });
 
   test('makes identical pause retries no-ops and detects a lost version race', () => {
@@ -72,3 +92,40 @@ describe('devnet risk controls', () => {
     expect(() => assertPauseVersionUpdated(1)).not.toThrow();
   });
 });
+
+describe('readiness reporting', () => {
+  test('defaults to the mock provider and reports an unreachable database', async () => {
+    for (const key of PROVIDER_ENVIRONMENT_KEYS) delete process.env[key];
+
+    const readiness = await readinessService().getReadiness();
+
+    expect(readiness.provider).toMatchObject({
+      configured: true,
+      credentialConfigured: false,
+      mode: 'mock',
+      verified: true,
+    });
+    expect(readiness.database.reachable).toBe(false);
+  });
+
+  test('refuses to call the demo provider ready without its devnet credentials', async () => {
+    for (const key of PROVIDER_ENVIRONMENT_KEYS) delete process.env[key];
+    process.env.DAILYDRAFT_PROVIDER_ASSET_STANDARD = 'legacy-spl-nft';
+    process.env.DAILYDRAFT_PROVIDER_MODE = 'dailydraft-devnet';
+
+    const readiness = await readinessService().getReadiness();
+
+    expect(readiness.provider).toMatchObject({
+      configured: false,
+      credentialConfigured: false,
+      mode: 'dailydraft-devnet',
+      verified: false,
+    });
+  });
+});
+
+// Readiness deliberately swallows every dependency failure so the probe still answers, so
+// empty stubs exercise the reporting itself without standing up Prisma or an RPC endpoint.
+function readinessService(): AdminService {
+  return new AdminService({} as unknown as DatabaseClient, {} as unknown as SolanaRpcGateway);
+}

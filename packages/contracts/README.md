@@ -1,4 +1,4 @@
-# OpenPacks Duel contract fixtures
+# DailyDraft contract fixtures
 
 Versioned request and response fixtures shared by the API, product app, and MCP
 client compatibility tests. Changing a documented operation requires updating

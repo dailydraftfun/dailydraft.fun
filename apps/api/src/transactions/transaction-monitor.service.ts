@@ -147,7 +147,7 @@ export class TransactionMonitorService {
   }
 
   private async reconcileRefunds(limit: number, summary: ReconciliationSummary): Promise<void> {
-    if (!this.refunds || process.env.OPENPACKSDUEL_NETWORK !== 'solana-devnet') return;
+    if (!this.refunds || process.env.DAILYDRAFT_NETWORK !== 'solana-devnet') return;
     try {
       await this.refunds.reconcile(limit);
     } catch {

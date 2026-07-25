@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { HttpException } from '@nestjs/common';
 import {
   HouseTreasuryLedgerType,
   HouseTreasuryReservationStatus,
   type Prisma,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
+import { HttpException } from '@nestjs/common';
 
 import { reserveHouseExposure } from './house-treasury.policy.js';
 
@@ -35,7 +35,7 @@ describe('house treasury reservation transactions', () => {
     const database = new ReservationDatabase();
     const input = { ...reservationInput('duel_concurrent_a'), amount: '60000000' };
     const environment = configuredEnvironment();
-    environment.OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO = '200000000';
+    environment.DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO = '200000000';
 
     const results = await Promise.allSettled([
       database.reserve(input, environment),
@@ -57,14 +57,14 @@ describe('house treasury reservation transactions', () => {
     const cases = [
       {
         configure(environment: NodeJS.ProcessEnv) {
-          environment.OPENPACKSDUEL_HOUSE_MAX_ACTIVE_PER_WALLET = '1';
+          environment.DAILYDRAFT_HOUSE_MAX_ACTIVE_PER_WALLET = '1';
         },
         expected: 'player exposure limit',
         second: { playerWallet: WITHDRAWAL, tier: 100 },
       },
       {
         configure(environment: NodeJS.ProcessEnv) {
-          environment.OPENPACKSDUEL_HOUSE_MAX_CONCURRENT_PER_TIER = '1';
+          environment.DAILYDRAFT_HOUSE_MAX_CONCURRENT_PER_TIER = '1';
         },
         expected: 'tier concurrency limit',
         second: { playerWallet: `${WITHDRAWAL}_other`, tier: 50 },
@@ -115,8 +115,8 @@ describe('house treasury reservation transactions', () => {
       database.seedReservation(status, '10000000');
     }
     const environment = configuredEnvironment();
-    environment.OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO = '200000000';
-    environment.OPENPACKSDUEL_HOUSE_MIN_LIQUIDITY_USDC_MICRO = '1000000';
+    environment.DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO = '200000000';
+    environment.DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO = '1000000';
 
     await expect(
       database.reserve(
@@ -179,8 +179,8 @@ describe('house treasury reservation transactions', () => {
 
   test('fails closed when an enabled policy omits a signer or exposure limit', async () => {
     for (const key of [
-      'OPENPACKSDUEL_HOUSE_DEVNET_FUNDING_SIGNER',
-      'OPENPACKSDUEL_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO',
+      'DAILYDRAFT_HOUSE_DEVNET_FUNDING_SIGNER',
+      'DAILYDRAFT_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO',
     ]) {
       const database = new ReservationDatabase();
       const environment = configuredEnvironment();
@@ -376,17 +376,17 @@ function reservationInput(duelId: string) {
 
 function configuredEnvironment(): NodeJS.ProcessEnv {
   return {
-    OPENPACKSDUEL_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: '100000000',
-    OPENPACKSDUEL_HOUSE_DEVNET_FUNDING_SIGNER: HOUSE,
-    OPENPACKSDUEL_HOUSE_DEVNET_USDC_MINT: USDC_MINT,
-    OPENPACKSDUEL_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT: TOKEN_ACCOUNT,
-    OPENPACKSDUEL_HOUSE_DEVNET_WALLET: HOUSE,
-    OPENPACKSDUEL_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY: WITHDRAWAL,
-    OPENPACKSDUEL_HOUSE_ENABLED: 'true',
-    OPENPACKSDUEL_HOUSE_MAX_ACTIVE_PER_WALLET: '10',
-    OPENPACKSDUEL_HOUSE_MAX_CONCURRENT_PER_TIER: '10',
-    OPENPACKSDUEL_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO: '100000000',
-    OPENPACKSDUEL_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '20000000',
-    OPENPACKSDUEL_NETWORK: 'solana-devnet',
+    DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: '100000000',
+    DAILYDRAFT_HOUSE_DEVNET_FUNDING_SIGNER: HOUSE,
+    DAILYDRAFT_HOUSE_DEVNET_USDC_MINT: USDC_MINT,
+    DAILYDRAFT_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT: TOKEN_ACCOUNT,
+    DAILYDRAFT_HOUSE_DEVNET_WALLET: HOUSE,
+    DAILYDRAFT_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY: WITHDRAWAL,
+    DAILYDRAFT_HOUSE_ENABLED: 'true',
+    DAILYDRAFT_HOUSE_MAX_ACTIVE_PER_WALLET: '10',
+    DAILYDRAFT_HOUSE_MAX_CONCURRENT_PER_TIER: '10',
+    DAILYDRAFT_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO: '100000000',
+    DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '20000000',
+    DAILYDRAFT_NETWORK: 'solana-devnet',
   };
 }

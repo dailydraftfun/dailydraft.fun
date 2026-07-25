@@ -41,7 +41,7 @@ describe('API production artifact contract', () => {
   test('reports missing entrypoints, drifted OpenAPI, runtime drift, and a live production server', () => {
     const productionOpenApi = OPENAPI.replace(
       'https://api.CHANGEME/v1',
-      'https://api.openpacksduel.com/v1',
+      'https://api.dailydraft.fun/v1',
     );
     const checks = evaluateStaticArtifact({
       files: new Set(['openapi.yaml']),

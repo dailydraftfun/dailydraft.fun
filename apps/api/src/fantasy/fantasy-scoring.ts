@@ -12,8 +12,8 @@ import {
   isFantasySport,
 } from './fantasy-domain.js';
 
-export const FANTASY_SCORING_VERSION = 'openpacksduel.fantasy-scoring.v1' as const;
-export const FANTASY_SCORING_SCHEMA_VERSION = 'openpacksduel.fantasy-scoring-rules.v1' as const;
+export const FANTASY_SCORING_VERSION = 'dailydraft.fantasy-scoring.v1' as const;
+export const FANTASY_SCORING_SCHEMA_VERSION = 'dailydraft.fantasy-scoring-rules.v1' as const;
 
 // Scores are accumulated in signed milli-points (1 point = 1000 minor units) so
 // fractional per-stat weights stay exact integers. Accumulation is pure BigInt

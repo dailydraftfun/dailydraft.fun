@@ -87,7 +87,7 @@ describe('public duel page contract', () => {
       ],
       reason: null,
       receiptHref: `/v1/duels/${availableReceipt.duel.id}/receipt`,
-      schemaVersion: 'openpacksduel.card-actions.v1',
+      schemaVersion: 'dailydraft.card-actions.v1',
     };
 
     globalThis.fetch = (async (input) => {

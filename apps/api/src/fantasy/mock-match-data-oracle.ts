@@ -10,7 +10,7 @@ import type {
 } from './match-data-oracle.js';
 import { MatchDataOracle } from './match-data-oracle.js';
 
-const MOCK_ORACLE_PROVIDER = 'openpacksduel.mock-match-data.v1';
+const MOCK_ORACLE_PROVIDER = 'dailydraft.mock-match-data.v1';
 const MOCK_LINEUP: readonly { position: FantasyPosition; slots: number }[] = [
   { position: 'GOALKEEPER', slots: 1 },
   { position: 'DEFENDER', slots: 4 },
@@ -103,7 +103,7 @@ function mockStatLine(position: FantasyPosition, seed: string): Readonly<Record<
 }
 
 function assertDevnetMockEnabled(): void {
-  const network = process.env.OPENPACKSDUEL_NETWORK ?? 'solana-devnet';
+  const network = process.env.DAILYDRAFT_NETWORK ?? 'solana-devnet';
   if (network !== 'solana-devnet') {
     throw new ConflictException('The deterministic mock match-data oracle is devnet-only');
   }

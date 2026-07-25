@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
 import {
+  type DatabaseClient,
+  DuelStatus,
+  DuelTransactionAction,
+  DuelTransactionStatus,
+  type Prisma,
+} from '@dailydraft/db';
+import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -8,13 +15,6 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import {
-  type DatabaseClient,
-  DuelStatus,
-  DuelTransactionAction,
-  DuelTransactionStatus,
-  type Prisma,
-} from '@openpacksduel/db';
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
@@ -37,7 +37,7 @@ import {
   ESCROW_V2_SOURCE_SHA,
   FUND_DUEL_DISCRIMINATOR,
   fundDuelAccountConstraints,
-} from '../contracts/openpacksduel-escrow-v2.js';
+} from '../contracts/dailydraft-escrow-v2.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import { requireCanonicalValuationPolicyHash } from '../providers/valuation-policy.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
@@ -452,14 +452,14 @@ interface PersistPreparedInput {
 }
 
 function loadEscrowConfiguration(): EscrowConfiguration {
-  if (process.env.OPENPACKSDUEL_NETWORK !== 'solana-devnet') {
+  if (process.env.DAILYDRAFT_NETWORK !== 'solana-devnet') {
     throw new ServiceUnavailableException('Funding is enabled only for configured Solana devnet');
   }
   const programId = configuredPublicKey('ESCROW_PROGRAM_ID');
   if (!programId.equals(ESCROW_V2_PROGRAM_ID)) {
     throw new ServiceUnavailableException('Configured escrow program does not match escrow v2');
   }
-  const configuredFee = process.env.OPENPACKSDUEL_DEVNET_FEE_LAMPORTS?.trim();
+  const configuredFee = process.env.DAILYDRAFT_DEVNET_FEE_LAMPORTS?.trim();
   if (!configuredFee || !/^\d+$/.test(configuredFee) || BigInt(configuredFee) <= 0n) {
     throw new ServiceUnavailableException('Escrow platform fee is not configured');
   }

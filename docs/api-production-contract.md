@@ -1,10 +1,10 @@
 # API production artifact contract
 
 The API production build is a deterministic Bun artifact. `bun --filter
-@openpacksduel/api build` emits both execution paths under `apps/api/dist`:
+@dailydraft/api build` emits both execution paths under `apps/api/dist`:
 
 - `src/main.js` is the long-running Bun entrypoint used by `bun --filter
-  @openpacksduel/api start`; that command sets `NODE_ENV=production` explicitly.
+  @dailydraft/api start`; that command sets `NODE_ENV=production` explicitly.
 - `api/index.js` is the Vercel serverless handler.
 - `openapi.yaml` is a byte-for-byte copy of the canonical contract in
   `apps/docs/public/openapi.yaml`.
@@ -20,14 +20,14 @@ not add or advertise a live production API server.
 Nest, or the database client. Both preview and production deployments require:
 
 - `DATABASE_URL`
-- `OPENPACKSDUEL_API_KEYS`
-- `OPENPACKSDUEL_APP_URL`
-- `OPENPACKSDUEL_AUTH_DOMAIN`
-- `OPENPACKSDUEL_NETWORK=solana-devnet`
+- `DAILYDRAFT_API_KEYS`
+- `DAILYDRAFT_APP_URL`
+- `DAILYDRAFT_AUTH_DOMAIN`
+- `DAILYDRAFT_NETWORK=solana-devnet`
 - `CORS_ORIGINS`, including the canonical app origin
 
 Production additionally requires `CRON_SECRET` and
-`OPENPACKSDUEL_PROVIDER_MODE=openpacksduel-devnet`. URLs, domains, ports, and
+`DAILYDRAFT_PROVIDER_MODE=dailydraft-devnet`. URLs, domains, ports, and
 secrets are validated without writing their values to the conformance report.
 Every required key has a deterministic missing-value fixture.
 

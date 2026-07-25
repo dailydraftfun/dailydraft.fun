@@ -1,5 +1,5 @@
+import type { DatabaseClient, Prisma } from '@dailydraft/db';
 import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import type { DatabaseClient, Prisma } from '@openpacksduel/db';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import {

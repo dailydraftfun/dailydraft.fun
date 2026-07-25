@@ -1,5 +1,5 @@
 apis:
-  openpacksduel@v1:
+  dailydraft@v1:
     root: ./public/openapi.yaml
 
 extends:

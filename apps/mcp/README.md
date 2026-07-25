@@ -1,8 +1,8 @@
-# OpenPacks Duel MCP
+# DailyDraft MCP
 
-Authenticated Model Context Protocol server for non-custodial OpenPacks Duel
+Authenticated Model Context Protocol server for non-custodial DailyDraft
 integrations. It supports local stdio and stateless Streamable HTTP at `/mcp`.
-The production endpoint is `https://openpacksduel-mcp.vercel.app/mcp`.
+The production endpoint is `https://dailydraft-mcp.vercel.app/mcp`.
 
 The server wraps the public v1 API contract with agent-safe tools for pack
 discovery, duel status, proof references, and canonical social-card URLs. Its
@@ -40,7 +40,7 @@ substitute a mock transaction.
 
 ```bash
 bun install
-OPENPACKSDUEL_API_URL=http://localhost:3003/v1 bun run start
+DAILYDRAFT_API_URL=http://localhost:3003/v1 bun run start
 ```
 
 Example client configuration for a local checkout:
@@ -48,25 +48,25 @@ Example client configuration for a local checkout:
 ```json
 {
   "mcpServers": {
-    "openpacksduel": {
+    "dailydraft": {
       "command": "bun",
-      "args": ["run", "/absolute/path/to/openpacksduel/app/apps/mcp/src/index.ts"],
+      "args": ["run", "/absolute/path/to/dailydraft.fun/apps/mcp/src/index.ts"],
       "env": {
-        "OPENPACKSDUEL_API_URL": "http://localhost:3003/v1"
+        "DAILYDRAFT_API_URL": "http://localhost:3003/v1"
       }
     }
   }
 }
 ```
 
-`OPENPACKSDUEL_API_KEY` is optional for public reads and is never returned or
+`DAILYDRAFT_API_KEY` is optional for public reads and is never returned or
 logged. Local stdio is read-only unless the operator explicitly sets
-`OPENPACKSDUEL_MCP_ENABLE_PREPARE=true`.
+`DAILYDRAFT_MCP_ENABLE_PREPARE=true`.
 
 ## Deploy Streamable HTTP on Vercel
 
 Create a Vercel project with `apps/mcp` as its root, then configure the values
-shown in `.env.example`. `OPENPACKSDUEL_MCP_KEYS` is a JSON array of scoped
+shown in `.env.example`. `DAILYDRAFT_MCP_KEYS` is a JSON array of scoped
 credentials:
 
 ```json
@@ -86,12 +86,12 @@ credentials:
 
 Generate tokens with `openssl rand -base64 32`. Call `POST /mcp` with
 `Authorization: Bearer <token>`. Browser `Origin` values must exactly match the
-comma-separated `OPENPACKSDUEL_MCP_ALLOWED_ORIGINS`; requests without an Origin
+comma-separated `DAILYDRAFT_MCP_ALLOWED_ORIGINS`; requests without an Origin
 remain available to normal server-to-server MCP clients. Missing authentication
 configuration fails closed with `503`.
 
 The function enforces a per-instance, per-credential limit of 60 requests per
-minute by default. Set `OPENPACKSDUEL_MCP_RATE_LIMIT` to change it, and configure
+minute by default. Set `DAILYDRAFT_MCP_RATE_LIMIT` to change it, and configure
 Vercel Firewall rate limiting for a deployment-wide limit across instances. The
 in-memory limiter is best-effort defense in depth only; it does not coordinate
 limits across serverless instances or cold starts.
@@ -101,8 +101,8 @@ JSON responses instead of long-lived SSE. It accepts authenticated `POST` plus
 CORS `OPTIONS`; authenticated `GET` and `DELETE` are explicitly rejected with
 `405`. It validates every supplied Origin before authentication.
 
-`OPENPACKSDUEL_API_URL` has no production default and is required. Prepare scope
-also fails closed unless the server has `OPENPACKSDUEL_API_KEY`; that upstream
+`DAILYDRAFT_API_URL` has no production default and is required. Prepare scope
+also fails closed unless the server has `DAILYDRAFT_API_KEY`; that upstream
 credential is redacted from all tool errors and is never returned to clients.
 
 ## Development
@@ -114,7 +114,7 @@ bun test
 ```
 
 CI owns tests, typechecking, and builds for this repository. See the canonical
-API contract in [`apps/docs`](https://github.com/openpacksduel/app/tree/main/apps/docs).
+API contract in [`apps/docs`](https://github.com/dailydraftfun/dailydraft.fun/tree/main/apps/docs).
 
 ## License
 

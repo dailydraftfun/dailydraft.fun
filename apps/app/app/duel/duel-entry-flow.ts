@@ -1,6 +1,6 @@
 import type { DuelOpponentType, DuelTransactionIntent, DurableDuel } from '../solana/duel-client';
 
-export const DUEL_ENTRY_DRAFT_STORAGE_KEY = 'openpacksduel.duel-entry.v1';
+export const DUEL_ENTRY_DRAFT_STORAGE_KEY = 'dailydraft.duel-entry.v1';
 export const DUEL_ENTRY_DRAFT_MAX_AGE_MS = 30 * 60 * 1_000;
 
 export type DuelEntryDraft = {

@@ -4,7 +4,7 @@ import {
   DuelStatus,
   DuelTransactionAction,
   DuelTransactionStatus,
-} from '@openpacksduel/db';
+} from '@dailydraft/db';
 
 import { assertOperationState } from '../transactions/provider-settlement.service.js';
 import { PrismaDuelRepository } from './prisma-duel.repository.js';

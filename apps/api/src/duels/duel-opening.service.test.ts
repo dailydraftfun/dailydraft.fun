@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { DuelProviderOperationStatus } from '@openpacksduel/db';
+import { DuelProviderOperationStatus } from '@dailydraft/db';
 
 import type { Duel, DuelEvent, DuelTransactionRecord, Page } from '../domain.js';
 import { PacksService } from '../packs/packs.service.js';
@@ -541,7 +541,7 @@ function refundingDevnetDuel(): Duel {
   const duel = fundedDuel('duel_refunding', true);
   return {
     ...duel,
-    providerMode: 'openpacksduel-devnet',
+    providerMode: 'dailydraft-devnet',
     result: {
       comparisonMetric: 'insured-value',
       outcomes: [],

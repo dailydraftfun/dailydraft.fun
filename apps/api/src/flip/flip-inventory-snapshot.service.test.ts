@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import type { DatabaseClient } from '@openpacksduel/db';
-import { FlipInventoryExclusionReason } from '@openpacksduel/db';
+import type { DatabaseClient } from '@dailydraft/db';
+import { FlipInventoryExclusionReason } from '@dailydraft/db';
 
 import {
   type FlipInventoryCandidate,
@@ -14,13 +14,13 @@ import {
 const EVALUATED_AT = new Date('2026-08-03T12:00:00.000Z');
 const FRESH_AT = new Date('2026-08-03T11:59:30.000Z');
 const ORIGINAL_ENV = {
-  fixture: process.env.OPENPACKSDUEL_FLIP_FIXTURE_MODE,
+  fixture: process.env.DAILYDRAFT_FLIP_FIXTURE_MODE,
   node: process.env.NODE_ENV,
   vercel: process.env.VERCEL_ENV,
 };
 
 afterEach(() => {
-  restoreEnvironment('OPENPACKSDUEL_FLIP_FIXTURE_MODE', ORIGINAL_ENV.fixture);
+  restoreEnvironment('DAILYDRAFT_FLIP_FIXTURE_MODE', ORIGINAL_ENV.fixture);
   restoreEnvironment('NODE_ENV', ORIGINAL_ENV.node);
   restoreEnvironment('VERCEL_ENV', ORIGINAL_ENV.vercel);
 });
@@ -319,7 +319,7 @@ describe('FlipInventorySnapshotService', () => {
     const database = new FixtureDatabase();
     const service = new FlipInventorySnapshotService(database as unknown as DatabaseClient);
     process.env.NODE_ENV = 'test';
-    delete process.env.OPENPACKSDUEL_FLIP_FIXTURE_MODE;
+    delete process.env.DAILYDRAFT_FLIP_FIXTURE_MODE;
 
     await expect(
       service.createFixtureSnapshot({
@@ -335,14 +335,14 @@ describe('FlipInventorySnapshotService', () => {
     expect(
       flipInventoryFixtureModeEnabled({
         NODE_ENV: 'production',
-        OPENPACKSDUEL_FLIP_FIXTURE_MODE: 'true',
+        DAILYDRAFT_FLIP_FIXTURE_MODE: 'true',
         VERCEL_ENV: 'production',
       }),
     ).toBe(false);
     expect(
       flipInventoryFixtureModeEnabled({
         NODE_ENV: 'production',
-        OPENPACKSDUEL_FLIP_FIXTURE_MODE: 'true',
+        DAILYDRAFT_FLIP_FIXTURE_MODE: 'true',
         VERCEL_ENV: 'preview',
       }),
     ).toBe(true);
@@ -438,7 +438,7 @@ function money(
 
 function enableFixtureMode(): void {
   process.env.NODE_ENV = 'test';
-  process.env.OPENPACKSDUEL_FLIP_FIXTURE_MODE = 'true';
+  process.env.DAILYDRAFT_FLIP_FIXTURE_MODE = 'true';
   delete process.env.VERCEL_ENV;
 }
 
