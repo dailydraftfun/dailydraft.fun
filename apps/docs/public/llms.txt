@@ -7,7 +7,7 @@
 - Canonical valuation and proof: /guides/valuation-and-proof
 - Webhook verification: /guides/webhooks
 - Escrow protocol: https://github.com/dailydraftfun/escrow/blob/main/docs/protocol.md
-- MCP server: https://dailydraft-mcp.vercel.app
+- MCP server: https://mcp.dailydraft.fun
 - Agent skills: https://github.com/dailydraftfun/skills
 
 The API contract is preview-only until its endpoints are deployed. Never provide

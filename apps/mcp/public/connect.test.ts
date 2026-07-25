@@ -23,7 +23,7 @@ const source = await Bun.file(new URL('./connect.js', import.meta.url)).text();
 
 describe('hosted MCP connect script', () => {
   test('rewrites the canonical endpoint to whichever host is serving the page', () => {
-    expect(source).toContain("const canonicalEndpoint = 'https://dailydraft-mcp.vercel.app/mcp';");
+    expect(source).toContain("const canonicalEndpoint = 'https://mcp.dailydraft.fun/mcp';");
     expect(source).toContain('`${window.location.origin}/mcp`');
   });
 

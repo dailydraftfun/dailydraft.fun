@@ -32,7 +32,7 @@
       </a>
 
       <nav class="header-nav" aria-label="Primary navigation">
-        <a href="https://dailydraft-docs.vercel.app">Docs</a>
+        <a href="https://docs.dailydraft.fun">Docs</a>
         <a href="/config">Config</a>
         <a href="/health">Health</a>
         <a href="https://github.com/dailydraftfun/dailydraft.fun">GitHub</a>
@@ -66,7 +66,7 @@
 
         <div class="hero-actions">
           <a class="primary-button" href="#connect">Connect now</a>
-          <a class="secondary-button" href="https://dailydraft-docs.vercel.app">
+          <a class="secondary-button" href="https://docs.dailydraft.fun">
             Read the API docs
           </a>
         </div>
@@ -94,7 +94,7 @@
         </div>
         <div class="endpoint-control">
           <span class="endpoint-lock" aria-hidden="true">↗</span>
-          <code id="mcp-endpoint" data-endpoint-text>https://dailydraft-mcp.vercel.app/mcp</code>
+          <code id="mcp-endpoint" data-endpoint-text>https://mcp.dailydraft.fun/mcp</code>
           <button class="copy-button" type="button" data-copy-target="mcp-endpoint">
             <span class="copy-default">Copy</span>
             <span class="copy-success">Copied</span>
@@ -171,7 +171,7 @@
             </div>
             <div class="step-label"><span>2</span> Register the hosted MCP server</div>
             <div class="code-block">
-              <pre><code id="claude-command" data-endpoint-code>claude mcp add --transport http dailydraft --scope user https://dailydraft-mcp.vercel.app/mcp --header "Authorization: Bearer $DAILYDRAFT_MCP_TOKEN"</code></pre>
+              <pre><code id="claude-command" data-endpoint-code>claude mcp add --transport http dailydraft --scope user https://mcp.dailydraft.fun/mcp --header "Authorization: Bearer $DAILYDRAFT_MCP_TOKEN"</code></pre>
               <button class="code-copy" type="button" data-copy-target="claude-command" aria-label="Copy Claude Code setup command">
                 Copy
               </button>
@@ -198,7 +198,7 @@
             </div>
             <div class="step-label"><span>2</span> Register the hosted MCP server</div>
             <div class="code-block">
-              <pre><code id="codex-command" data-endpoint-code>codex mcp add dailydraft --url https://dailydraft-mcp.vercel.app/mcp --bearer-token-env-var DAILYDRAFT_MCP_TOKEN</code></pre>
+              <pre><code id="codex-command" data-endpoint-code>codex mcp add dailydraft --url https://mcp.dailydraft.fun/mcp --bearer-token-env-var DAILYDRAFT_MCP_TOKEN</code></pre>
               <button class="code-copy" type="button" data-copy-target="codex-command" aria-label="Copy Codex setup command">
                 Copy
               </button>
@@ -219,7 +219,7 @@
             <div class="step-label"><span>1</span> Add the server to an MCP client config</div>
             <div class="code-block">
               <pre><code id="manual-config" data-endpoint-code>[mcp_servers.dailydraft]
-url = "https://dailydraft-mcp.vercel.app/mcp"
+url = "https://mcp.dailydraft.fun/mcp"
 bearer_token_env_var = "DAILYDRAFT_MCP_TOKEN"</code></pre>
               <button class="code-copy" type="button" data-copy-target="manual-config" aria-label="Copy manual MCP configuration">
                 Copy
@@ -324,7 +324,7 @@ bearer_token_env_var = "DAILYDRAFT_MCP_TOKEN"</code></pre>
       </div>
       <nav class="footer-nav" aria-label="Footer navigation">
         <a href="https://dailydraft.fun">App</a>
-        <a href="https://dailydraft-docs.vercel.app">Docs</a>
+        <a href="https://docs.dailydraft.fun">Docs</a>
         <a href="/config">Machine config</a>
         <a href="/health">Status</a>
       </nav>

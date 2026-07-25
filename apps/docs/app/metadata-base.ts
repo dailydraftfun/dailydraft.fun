@@ -1,4 +1,4 @@
-export const FALLBACK_DOCS_URL = 'https://dailydraft-docs.vercel.app';
+export const FALLBACK_DOCS_URL = 'https://docs.dailydraft.fun';
 
 // Kept out of layout.tsx so both sides of the fallback are reachable from a test.
 // Inlined in the metadata literal it would only ever evaluate once per process,

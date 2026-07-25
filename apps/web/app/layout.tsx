@@ -6,7 +6,7 @@ import '@fontsource/dm-sans/700.css';
 import './globals.css';
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dailydraft-web.vercel.app'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dailydraft.fun'),
   title: 'Grail — Own the cards. Field the squad.',
   description:
     'A sports fantasy casino on Solana. Rip real, vaulted sports cards from Collector Crypt, build a squad, and win tournaments scored by live match data.',
