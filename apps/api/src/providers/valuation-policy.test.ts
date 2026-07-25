@@ -70,4 +70,65 @@ describe('canonical valuation policy', () => {
       policyHash: CANONICAL_VALUATION_POLICY_HASH,
     });
   });
+
+  test('carries no trace of the retired brand in either published policy', () => {
+    const published = `${stableStringify(CANONICAL_VALUATION_POLICY)}${stableStringify(
+      DEVNET_DEMO_VALUATION_POLICY,
+    )}`.toLowerCase();
+
+    expect(published).not.toContain('openpacksduel');
+    expect(published).toContain('dailydraft.valuation-policy.v1');
+    expect(published).toContain('dailydraft-pokemon-tcg-market-usdc-v1');
+  });
+});
+
+// The policy hashes are duplicated into the published OpenAPI document and the
+// documentation fixtures, and nothing previously compared those copies to the
+// constants they mirror. A rename that moved the hashes would have left the
+// published contract advertising values the API rejects, so the whole documents
+// are asserted rather than the fields that happened to be remembered.
+const openapi = await Bun.file(
+  new URL('../../../docs/public/openapi.yaml', import.meta.url),
+).text();
+const guide = await Bun.file(
+  new URL('../../../docs/content/guides/valuation-and-proof.mdx', import.meta.url),
+).text();
+
+describe('published valuation-policy contract copies', () => {
+  test('quotes both live hashes in the published valuation guide', () => {
+    expect(guide).toContain(CANONICAL_VALUATION_POLICY_HASH);
+    expect(guide).toContain(DEVNET_DEMO_VALUATION_POLICY_HASH);
+    expect(guide).toContain(DEVNET_DEMO_VALUATION_POLICY.policyVersion);
+    expect(guide.toLowerCase()).not.toContain('openpacksduel');
+  });
+
+  test('advertises exactly the supported policy hashes and identifiers', () => {
+    expect(openapi).toContain(`            - ${CANONICAL_VALUATION_POLICY_HASH}\n`);
+    expect(openapi).toContain(`            - ${DEVNET_DEMO_VALUATION_POLICY_HASH}\n`);
+    expect(openapi).toContain(`const: ${CANONICAL_VALUATION_POLICY.schemaVersion}\n`);
+    expect(
+      openapi.match(
+        new RegExp(
+          `enum: \\[${CANONICAL_VALUATION_POLICY.policyVersion}, ${DEVNET_DEMO_VALUATION_POLICY.policyVersion}\\]`,
+          'g',
+        ),
+      ),
+    ).toHaveLength(2);
+    expect(openapi.toLowerCase()).not.toContain('openpacksduel');
+  });
+
+  test.each([
+    'equal-value',
+    'provider-correction',
+    'stale-value',
+  ])('pins the %s fixture to a supported policy hash', async (fixture) => {
+    const source = await Bun.file(
+      new URL(`../../../docs/public/fixtures/valuation/${fixture}.json`, import.meta.url),
+    ).text();
+
+    expect(source.toLowerCase()).not.toContain('openpacksduel');
+    expect(requireCanonicalValuationPolicyHash(JSON.parse(source).policyHash)).toBe(
+      CANONICAL_VALUATION_POLICY_HASH,
+    );
+  });
 });
