@@ -20,7 +20,7 @@ fi
 readonly image="dailydraft:${sha}"
 readonly environment_directory="/etc/dailydraft"
 readonly environment_file="${environment_directory}/dailydraft.env"
-readonly cron_file="/etc/cron.d/dailydraft"
+readonly unit_directory="/etc/systemd/system"
 readonly artifact_directory="/var/lib/dailydraft"
 
 install -d -m 700 "$environment_directory" "$artifact_directory"
@@ -182,17 +182,55 @@ if [[ -n "$stale_images" ]]; then
   xargs -r docker rmi >/dev/null 2>&1 <<<"$stale_images" || true
 fi
 
-temporary_cron="$(mktemp /etc/cron.d/dailydraft.XXXXXX)"
-trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_cron"' EXIT
-# docker exec inherits the environment the container was created with, so
-# CRON_SECRET is already present inside it. Re-reading the secret on the host and
-# passing it via -e would expose it in the host process table on every run.
-cat >"$temporary_cron" <<'CRON'
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-0 3 * * * root docker exec dailydraft bun -e "const secret=process.env.CRON_SECRET; if(!secret){console.error('CRON_SECRET is not set inside the container');process.exit(1);} await fetch('http://127.0.0.1:3000/v1/internal/reconciliation/solana',{headers:{Authorization:'Bearer '+secret}}).then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
-0 4 * * * root docker exec dailydraft bun -e "const secret=process.env.CRON_SECRET; if(!secret){console.error('CRON_SECRET is not set inside the container');process.exit(1);} await fetch('http://127.0.0.1:3000/v1/internal/reconciliation/treasury',{headers:{Authorization:'Bearer '+secret}}).then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
-CRON
-install -m 644 "$temporary_cron" "$cron_file"
+# This host runs no cron daemon at all -- /etc/cron.d does not exist and cronie is
+# not installed -- while systemd already drives every other scheduled job on it.
+# Installing a cron daemon would be a host-wide change on a box shared with other
+# tenants; namespaced units are not.
+temporary_unit="$(mktemp)"
+trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_unit"' EXIT
+
+install_reconciliation_timer() {
+  local job="$1" calendar="$2"
+  local unit="dailydraft-reconcile-${job}"
+
+  # docker exec inherits the environment the container was created with, so
+  # CRON_SECRET is already present inside it. Re-reading the secret on the host and
+  # passing it via -e would expose it in the host process table on every run.
+  cat >"$temporary_unit" <<UNIT
+[Unit]
+Description=DailyDraft ${job} reconciliation
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec dailydraft bun -e "const secret=process.env.CRON_SECRET; if(!secret){console.error('CRON_SECRET is not set inside the container');process.exit(1);} await fetch('http://127.0.0.1:3000/v1/internal/reconciliation/${job}',{headers:{Authorization:'Bearer '+secret}}).then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+UNIT
+  install -m 644 "$temporary_unit" "${unit_directory}/${unit}.service"
+
+  cat >"$temporary_unit" <<UNIT
+[Unit]
+Description=DailyDraft ${job} reconciliation schedule
+
+[Timer]
+OnCalendar=${calendar}
+# The host reboots outside the window often enough that a missed run would
+# otherwise wait a full day; catch up on boot instead.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+  install -m 644 "$temporary_unit" "${unit_directory}/${unit}.timer"
+}
+
+install_reconciliation_timer solana '*-*-* 03:00:00'
+install_reconciliation_timer treasury '*-*-* 04:00:00'
+systemctl daemon-reload
+systemctl enable --now dailydraft-reconcile-solana.timer dailydraft-reconcile-treasury.timer >/dev/null
+
+# The cron drop-in this replaced is inert without a cron daemon, but leaving it
+# behind would silently double-fire if anyone ever installs one.
+rm -f /etc/cron.d/dailydraft
 
 echo "DailyDraft API deployed: ${image}"
