@@ -8,9 +8,42 @@ import { DuelUnavailableProof } from '../duel-unavailable-proof';
 mock.module('server-only', () => ({}));
 mock.module('../duel-proof-refresh', () => ({ DuelProofRefresh: () => null }));
 
-const { default: DuelPage } = await import('./page');
+const { default: DuelPage, generateMetadata } = await import('./page');
 
 describe('public duel page contract', () => {
+  test('publishes rebranded metadata for a settled duel receipt', async () => {
+    const originalFetch = globalThis.fetch;
+    const receipt = createPublicSurfaceReceipt('duel_public_settled');
+    if (!receipt) throw new Error('Missing public duel fixture');
+    globalThis.fetch = (async () => Response.json(receipt)) as typeof fetch;
+
+    try {
+      const metadata = await generateMetadata({
+        params: Promise.resolve({ duelId: receipt.duel.id }),
+      });
+
+      expect(metadata.title).toBe('Duel settled — DailyDraft');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('falls back to unavailable metadata when no duel receipt exists', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(null, { status: 404 })) as typeof fetch;
+
+    try {
+      const metadata = await generateMetadata({
+        params: Promise.resolve({ duelId: 'duel_public_missing' }),
+      });
+
+      expect(metadata.title).toBe('Duel proof unavailable — DailyDraft');
+      expect(metadata.robots).toEqual({ follow: false, index: false, nocache: true });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('renders exactly one canonical dominant receipt action', () => {
     const markup = renderToStaticMarkup(
       createElement(DuelPrimaryAction, {
@@ -40,6 +73,7 @@ describe('public duel page contract', () => {
     if (!availableReceipt?.result || !hiddenReceipt) throw new Error('Missing public duel fixture');
 
     const creatorOutcome = availableReceipt.result.outcomes[0];
+    creatorOutcome.imageUrl = '/fixtures/charizard.png';
     availableReceipt.cardActions = {
       availability: 'available',
       cards: [
@@ -107,7 +141,10 @@ describe('public duel page contract', () => {
       expect(availableMarkup).toContain('Charizard fixture pull supported actions');
       expect(availableMarkup).toContain('Keep card');
       expect(availableMarkup).toContain('List card unavailable for Charizard fixture pull');
+      expect(availableMarkup).toContain('receipt-pull-image');
       expect(hiddenMarkup).toContain('finalized settlement reference reconciles ownership');
+      expect(hiddenMarkup).toContain('receipt-pull-placeholder');
+      expect(hiddenMarkup).toContain('DAILYDRAFT');
     } finally {
       globalThis.fetch = originalFetch;
     }

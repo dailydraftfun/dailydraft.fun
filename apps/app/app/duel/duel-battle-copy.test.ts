@@ -11,8 +11,8 @@ describe('duel battle copy', () => {
   });
 
   test('labels the battle eyebrow with the tier and Card Duel', () => {
-    expect(battleEyebrowLabel(50)).toBe('50 Card Duel');
-    expect(battleEyebrowLabel(100)).toBe('100 Card Duel');
+    expect(battleEyebrowLabel('50')).toBe('50 Card Duel');
+    expect(battleEyebrowLabel('100')).toBe('100 Card Duel');
   });
 
   test('labels a house opponent as the DailyDraft house regardless of wallet fields', () => {

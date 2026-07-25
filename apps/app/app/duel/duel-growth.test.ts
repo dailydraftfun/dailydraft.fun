@@ -43,4 +43,13 @@ describe('duel growth actions', () => {
       'My $50 Card Duel ended in a tie. Run it back with me.',
     );
   });
+
+  test('shares a win or loss without a winning pull on record', () => {
+    expect(resultShareText({ result: viewerResult('you'), tier: '$50', winningPull: null })).toBe(
+      'I won a $50 Card Duel. See the verified result.',
+    );
+    expect(
+      resultShareText({ result: viewerResult('opponent'), tier: '$50', winningPull: null }),
+    ).toBe('I lost a $50 Card Duel. Run it back with me.');
+  });
 });

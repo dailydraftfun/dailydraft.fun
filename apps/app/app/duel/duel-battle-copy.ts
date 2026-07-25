@@ -8,7 +8,7 @@
 
 export const DUEL_SHARE_RESULT_TITLE = 'Card Duel result';
 
-export function battleEyebrowLabel(tier: number): string {
+export function battleEyebrowLabel(tier: string): string {
   return `${tier} Card Duel`;
 }
 
