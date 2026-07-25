@@ -323,7 +323,7 @@ ADD CONSTRAINT "FantasyTournamentEntry_contract_check" CHECK (
 ALTER TABLE "FantasyKickoffSnapshot"
 ADD CONSTRAINT "FantasyKickoffSnapshot_contract_check" CHECK (
   "revision" > 0
-  AND "schemaVersion" = 'dailydraft.fantasy-kickoff.v1'
+  AND "schemaVersion" = 'openpacksduel.fantasy-kickoff.v1'
   AND "policyHash" ~ '^[a-f0-9]{64}$'
   AND "contentHash" ~ '^[a-f0-9]{64}$'
   AND "eligibleShareTotal" ~ '^[0-9]+$'

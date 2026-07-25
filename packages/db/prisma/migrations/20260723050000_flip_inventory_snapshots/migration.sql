@@ -114,7 +114,7 @@ ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "FlipInventorySnapshot"
 ADD CONSTRAINT "FlipInventorySnapshot_contract_check" CHECK (
   "revision" > 0
-  AND "schemaVersion" = 'dailydraft.flip-inventory.v1'
+  AND "schemaVersion" = 'openpacksduel.flip-inventory.v1'
   AND "policyHash" ~ '^[a-f0-9]{64}$'
   AND "contentHash" ~ '^[a-f0-9]{64}$'
   AND "stakeAmount" ~ '^[0-9]+$'

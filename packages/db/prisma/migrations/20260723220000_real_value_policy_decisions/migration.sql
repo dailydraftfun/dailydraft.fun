@@ -26,7 +26,7 @@ ON "RealValuePolicyDecision"("policyVersion", "evaluatedAt");
 ALTER TABLE "RealValuePolicyDecision"
 ADD CONSTRAINT "RealValuePolicyDecision_contract_check" CHECK (
   "runtimeMode" IN ('fixture', 'devnet', 'production', 'unclassified')
-  AND "schemaVersion" = 'dailydraft.real-value-policy.v1'
+  AND "schemaVersion" = 'openpacksduel.real-value-policy.v1'
   AND char_length("policyVersion") BETWEEN 3 AND 128
   AND "policyHash" ~ '^[a-f0-9]{64}$'
   AND jsonb_typeof("evidence") = 'object'
