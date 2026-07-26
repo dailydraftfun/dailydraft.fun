@@ -3,9 +3,9 @@ import { PublicKey, SystemProgram, TransactionInstruction } from '@solana/web3.j
 
 // The historical filename is retained to keep imports stable. These vectors are
 // checked against the public Duel v4 release artifact built from this source SHA.
-export const ESCROW_V2_SOURCE_SHA = '5268637d961672588c70a1c3b1ccbf6d6ab5f5cb';
+export const ESCROW_V2_SOURCE_SHA = 'db8d0eec1d0ed856a58e3a40b34e24b62023bb49';
 export const ESCROW_V2_IDL_SHA256 =
-  'f16eda95787367db629051203dac8a5db61794f1c048528ecfecd868245e070d';
+  'dbd27bbc7b3c5b52b5d7a839c7c53daef09eb7228be99525873ffe2b4d6058d8';
 export const ESCROW_DUEL_VERSION = 4;
 export const ESCROW_V4_DUEL_ACCOUNT_SIZE = 560;
 export const ESCROW_V4_DUEL_ACCOUNT_DISCRIMINATOR = Uint8Array.from([
