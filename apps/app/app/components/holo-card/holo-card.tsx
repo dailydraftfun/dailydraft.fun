@@ -44,7 +44,7 @@ export function HoloCard({
   const currentMotionRef = useRef<HoloCardMotionState>({ ...neutralHoloCardMotion });
   const reducedMotionRef = useRef(false);
   const rarityProfile = holoCardRarityProfiles[rarity];
-  const accessibleName = imageAlt ?? name;
+  const accessibleName = imageAlt ? `${name}, ${imageAlt}` : name;
 
   useEffect(() => {
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -54,6 +54,7 @@ export function HoloCard({
       if (motionQuery.matches) {
         cancelFrameRef(pointerFrameRef);
         cancelFrameRef(springFrameRef);
+        cardRef.current?.removeAttribute('data-settling');
         applyMotion(cardRef.current, neutralHoloCardMotion);
         currentMotionRef.current = { ...neutralHoloCardMotion };
       }
@@ -75,6 +76,7 @@ export function HoloCard({
     const bounds = event.currentTarget.getBoundingClientRect();
     pendingMotionRef.current = pointerToHoloCardMotion(event.clientX, event.clientY, bounds);
     cancelFrameRef(springFrameRef);
+    cardRef.current?.removeAttribute('data-settling');
     if (pointerFrameRef.current !== null) return;
 
     pointerFrameRef.current = window.requestAnimationFrame(() => {
@@ -109,11 +111,13 @@ export function HoloCard({
     cancelFrameRef(springFrameRef);
 
     if (holoCardMotionPolicy(reducedMotionRef.current).release === 'immediate') {
+      cardRef.current?.removeAttribute('data-settling');
       currentMotionRef.current = { ...neutralHoloCardMotion };
       applyMotion(cardRef.current, neutralHoloCardMotion);
       return;
     }
 
+    cardRef.current?.setAttribute('data-settling', 'true');
     let spring = createHoloCardSpringState(currentMotionRef.current);
     let previousTime: number | null = null;
 
@@ -125,6 +129,7 @@ export function HoloCard({
       if (isHoloCardSpringSettled(spring)) {
         currentMotionRef.current = { ...neutralHoloCardMotion };
         applyMotion(cardRef.current, neutralHoloCardMotion);
+        cardRef.current?.removeAttribute('data-settling');
         springFrameRef.current = null;
         return;
       }
@@ -177,7 +182,7 @@ export function HoloCard({
         <div aria-hidden="true" className={styles.foil} />
         <div aria-hidden="true" className={styles.sparkles} />
         <div aria-hidden="true" className={styles.glare} />
-        <div className={styles.edge} />
+        <div aria-hidden="true" className={styles.edge} />
         <footer className={styles.caption}>
           <div>
             <span className={styles.rarity}>{rarityProfile.label}</span>

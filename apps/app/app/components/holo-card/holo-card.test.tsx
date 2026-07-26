@@ -30,12 +30,28 @@ describe('holo card', () => {
     const css = readFileSync(new URL('./holo-card.module.css', import.meta.url), 'utf8');
 
     expect(css).toContain('.card:focus-visible');
-    expect(css).toContain('outline: 3px solid #b8ff5a');
+    expect(css).toContain('outline: 3px solid var(--opd-accent)');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
     expect(css).toMatch(/\.card,\s+\.card:focus-visible\s*\{[^}]*transform: none;/s);
     expect(css).toMatch(/prefers-reduced-motion:[\s\S]*--holo-glare: 0\.42;/);
     expect(css).toContain('--holo-sheen-x: var(--holo-pointer-sheen-x)');
+    expect(css).toContain('.card[data-settling="true"]');
     expect(css).toMatch(/\.stage\[data-rarity=["']chase["']\]/);
+  });
+
+  test('keeps the card identity in its accessible name when artwork detail is supplied', () => {
+    const markup = renderToStaticMarkup(
+      <HoloCard
+        imageAlt="Rainbow holofoil artwork"
+        imageUrl="/fixtures/card.png"
+        name="Charizard · Base Set"
+        rarity="chase"
+      />,
+    );
+
+    expect(markup).toContain(
+      'aria-label="Charizard · Base Set, Rainbow holofoil artwork, Chase foil holographic card"',
+    );
   });
 
   test('keeps the card width fluid below the 390px viewport boundary', () => {

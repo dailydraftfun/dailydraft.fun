@@ -1,4 +1,10 @@
+import type { Metadata } from 'next';
 import { HoloCard, type HoloCardRarity } from '../../components/holo-card';
+
+export const metadata: Metadata = {
+  robots: { follow: false, index: false, nocache: true },
+  title: 'Holographic card component lab — DailyDraft',
+};
 
 const previews: Array<{
   imageUrl: string;

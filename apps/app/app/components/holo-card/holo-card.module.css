@@ -1,8 +1,10 @@
 .stage {
-  --holo-accent: 184, 255, 90;
+  --holo-accent-color: var(--opd-accent);
   --holo-foil-opacity: 0.12;
   --holo-sparkle-opacity: 0.06;
-  --holo-spectrum: rgba(184, 255, 90, 0.42), rgba(98, 216, 255, 0.24), rgba(246, 248, 243, 0.3);
+  --holo-spectrum:
+    rgb(from var(--opd-accent) r g b / 0.42), rgb(from var(--opd-agent) r g b / 0.24),
+    rgb(from var(--opd-text-primary) r g b / 0.3);
 
   display: block;
   inline-size: min(100%, 20rem);
@@ -14,28 +16,31 @@
 }
 
 .stage[data-rarity="uncommon"] {
-  --holo-accent: 72, 224, 138;
+  --holo-accent-color: var(--opd-success);
   --holo-foil-opacity: 0.22;
   --holo-sparkle-opacity: 0.12;
-  --holo-spectrum: rgba(72, 224, 138, 0.52), rgba(98, 216, 255, 0.34), rgba(246, 248, 243, 0.36);
+  --holo-spectrum:
+    rgb(from var(--opd-success) r g b / 0.52), rgb(from var(--opd-agent) r g b / 0.34),
+    rgb(from var(--opd-text-primary) r g b / 0.36);
 }
 
 .stage[data-rarity="rare"] {
-  --holo-accent: 98, 216, 255;
+  --holo-accent-color: var(--opd-agent);
   --holo-foil-opacity: 0.38;
   --holo-sparkle-opacity: 0.22;
   --holo-spectrum:
-    rgba(98, 216, 255, 0.68), rgba(167, 139, 250, 0.5), rgba(247, 201, 72, 0.4),
-    rgba(184, 255, 90, 0.5);
+    rgb(from var(--opd-agent) r g b / 0.68), rgb(from var(--opd-done) r g b / 0.5),
+    rgb(from var(--opd-warning) r g b / 0.4), rgb(from var(--opd-accent) r g b / 0.5);
 }
 
 .stage[data-rarity="chase"] {
-  --holo-accent: 247, 201, 72;
+  --holo-accent-color: var(--opd-warning);
   --holo-foil-opacity: 0.58;
   --holo-sparkle-opacity: 0.34;
   --holo-spectrum:
-    rgba(255, 100, 100, 0.65), rgba(247, 201, 72, 0.64), rgba(184, 255, 90, 0.58),
-    rgba(98, 216, 255, 0.68), rgba(167, 139, 250, 0.7), rgba(255, 100, 100, 0.65);
+    rgb(from var(--opd-danger) r g b / 0.65), rgb(from var(--opd-warning) r g b / 0.64),
+    rgb(from var(--opd-accent) r g b / 0.58), rgb(from var(--opd-agent) r g b / 0.68),
+    rgb(from var(--opd-done) r g b / 0.7), rgb(from var(--opd-danger) r g b / 0.65);
 }
 
 .card {
@@ -55,9 +60,9 @@
   aspect-ratio: 5 / 7;
   inline-size: 100%;
   overflow: hidden;
-  border: 1px solid rgba(var(--holo-accent), 0.36);
-  border-radius: 16px;
-  background: #131714;
+  border: 1px solid rgb(from var(--holo-accent-color) r g b / 0.36);
+  border-radius: var(--opd-radius-xl);
+  background: var(--opd-bg-tertiary);
   outline: none;
   transform: rotateX(var(--holo-tilt-x)) rotateY(var(--holo-tilt-y)) translateZ(0);
   transform-style: preserve-3d;
@@ -69,11 +74,11 @@
   position: absolute;
   z-index: 7;
   inset: 0;
-  border: 1px solid rgba(246, 248, 243, 0.18);
+  border: 1px solid rgb(from var(--opd-text-primary) r g b / 0.18);
   border-radius: inherit;
   box-shadow:
-    inset 0 0 0 1px rgba(7, 8, 7, 0.74),
-    inset 0 0 28px rgba(var(--holo-accent), 0.12);
+    inset 0 0 0 1px rgb(from var(--opd-bg-primary) r g b / 0.74),
+    inset 0 0 28px rgb(from var(--holo-accent-color) r g b / 0.12);
   content: "";
   pointer-events: none;
 }
@@ -84,7 +89,7 @@
   inset: 0;
   overflow: hidden;
   border-radius: inherit;
-  background: #0d100f;
+  background: var(--opd-bg-secondary);
 }
 
 .image {
@@ -108,10 +113,15 @@
   background:
     radial-gradient(
       circle at var(--holo-sheen-x) var(--holo-sheen-y),
-      rgba(var(--holo-accent), 0.28),
+      rgb(from var(--holo-accent-color) r g b / 0.28),
       transparent 46%
     ),
-    linear-gradient(142deg, transparent 15%, rgba(var(--holo-accent), 0.16) 52%, transparent 84%);
+    linear-gradient(
+      142deg,
+      transparent 15%,
+      rgb(from var(--holo-accent-color) r g b / 0.16) 52%,
+      transparent 84%
+    );
   mix-blend-mode: color;
   opacity: calc(0.38 + var(--holo-glare) * 0.38);
 }
@@ -122,7 +132,7 @@
     repeating-linear-gradient(
       118deg,
       transparent 0%,
-      rgba(246, 248, 243, 0.17) 2%,
+      rgb(from var(--opd-text-primary) r g b / 0.17) 2%,
       transparent 4.5%,
       transparent 9%
     ),
@@ -141,10 +151,26 @@
 .sparkles {
   z-index: 3;
   background-image:
-    radial-gradient(circle at 18% 22%, rgba(246, 248, 243, 0.9) 0 0.7px, transparent 1.5px),
-    radial-gradient(circle at 76% 18%, rgba(246, 248, 243, 0.8) 0 0.9px, transparent 1.8px),
-    radial-gradient(circle at 31% 68%, rgba(246, 248, 243, 0.86) 0 0.6px, transparent 1.5px),
-    radial-gradient(circle at 82% 78%, rgba(246, 248, 243, 0.82) 0 0.8px, transparent 1.7px);
+    radial-gradient(
+      circle at 18% 22%,
+      rgb(from var(--opd-text-primary) r g b / 0.9) 0 0.7px,
+      transparent 1.5px
+    ),
+    radial-gradient(
+      circle at 76% 18%,
+      rgb(from var(--opd-text-primary) r g b / 0.8) 0 0.9px,
+      transparent 1.8px
+    ),
+    radial-gradient(
+      circle at 31% 68%,
+      rgb(from var(--opd-text-primary) r g b / 0.86) 0 0.6px,
+      transparent 1.5px
+    ),
+    radial-gradient(
+      circle at 82% 78%,
+      rgb(from var(--opd-text-primary) r g b / 0.82) 0 0.8px,
+      transparent 1.7px
+    );
   background-position:
     calc(var(--holo-sheen-x) * 0.08) calc(var(--holo-sheen-y) * 0.08),
     calc(var(--holo-sheen-x) * -0.06) calc(var(--holo-sheen-y) * 0.1),
@@ -163,8 +189,8 @@
   z-index: 4;
   background: radial-gradient(
     circle at var(--holo-sheen-x) var(--holo-sheen-y),
-    rgba(246, 248, 243, calc(0.28 + var(--holo-glare) * 0.46)) 0%,
-    rgba(246, 248, 243, calc(0.08 + var(--holo-glare) * 0.16)) 14%,
+    rgb(from var(--opd-text-primary) r g b / calc(0.28 + var(--holo-glare) * 0.46)) 0%,
+    rgb(from var(--opd-text-primary) r g b / calc(0.08 + var(--holo-glare) * 0.16)) 14%,
     transparent 42%
   );
   mix-blend-mode: soft-light;
@@ -173,8 +199,18 @@
 .edge {
   z-index: 5;
   background:
-    linear-gradient(90deg, rgba(7, 8, 7, 0.5), transparent 8% 92%, rgba(7, 8, 7, 0.5)),
-    linear-gradient(180deg, rgba(246, 248, 243, 0.14), transparent 14% 78%, rgba(7, 8, 7, 0.84));
+    linear-gradient(
+      90deg,
+      rgb(from var(--opd-bg-primary) r g b / 0.5),
+      transparent 8% 92%,
+      rgb(from var(--opd-bg-primary) r g b / 0.5)
+    ),
+    linear-gradient(
+      180deg,
+      rgb(from var(--opd-text-primary) r g b / 0.14),
+      transparent 14% 78%,
+      rgb(from var(--opd-bg-primary) r g b / 0.84)
+    );
 }
 
 .caption {
@@ -188,9 +224,13 @@
   gap: 12px;
   min-inline-size: 0;
   padding: 48px 16px 16px;
-  color: #f6f8f3;
-  background: linear-gradient(transparent, rgba(7, 8, 7, 0.88) 62%, rgba(7, 8, 7, 0.96));
-  text-shadow: 0 1px 2px rgba(7, 8, 7, 0.9);
+  color: var(--opd-text-primary);
+  background: linear-gradient(
+    transparent,
+    rgb(from var(--opd-bg-primary) r g b / 0.88) 62%,
+    rgb(from var(--opd-bg-primary) r g b / 0.96)
+  );
+  text-shadow: 0 1px 2px rgb(from var(--opd-bg-primary) r g b / 0.9);
 }
 
 .caption > div {
@@ -211,7 +251,7 @@
 
 .rarity,
 .value {
-  font-family: "JetBrains Mono", monospace;
+  font-family: var(--opd-font-mono);
   font-size: 11px;
   font-weight: 600;
   line-height: 1.2;
@@ -220,16 +260,16 @@
 }
 
 .rarity {
-  color: rgb(var(--holo-accent));
+  color: var(--holo-accent-color);
 }
 
 .value {
   flex: none;
   padding: 5px 7px;
-  border: 1px solid rgba(var(--holo-accent), 0.36);
-  border-radius: 6px;
-  background: rgba(7, 8, 7, 0.72);
-  color: #f6f8f3;
+  border: 1px solid rgb(from var(--holo-accent-color) r g b / 0.36);
+  border-radius: var(--opd-radius-md);
+  background: rgb(from var(--opd-bg-primary) r g b / 0.72);
+  color: var(--opd-text-primary);
 }
 
 .card:focus-visible {
@@ -237,14 +277,15 @@
   --holo-sheen-y: 28%;
   --holo-glare: 0.72;
 
-  outline: 3px solid #b8ff5a;
+  outline: 3px solid var(--opd-accent);
   outline-offset: 4px;
   transform: rotateX(-2deg) rotateY(3deg) translateZ(0) scale(1.012);
 }
 
 .card:hover,
 .card:focus-visible,
-.card:active {
+.card:active,
+.card[data-settling="true"] {
   will-change: transform;
 }
 
@@ -266,7 +307,8 @@
   }
 
   .card:hover,
-  .card:active {
+  .card:active,
+  .card[data-settling="true"] {
     will-change: auto;
   }
 
