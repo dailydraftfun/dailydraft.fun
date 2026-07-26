@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { BalanceStatus, WalletBalances } from './balance';
-import { readWalletBalances, refreshWalletBalances } from './read-balances';
+import {
+  createWalletBalanceRefresher,
+  readWalletBalances,
+  refreshWalletBalances,
+} from './read-balances';
 
 const wallet = '4Nd1mB1TrE9gJ2vQ8mHc1oQ5m8y1Y7xZoK3rWpTf6xTk';
 const nextWallet = '7YttLkHDoNj9wyDur5GTUxMZV72rS8qS9AEo7Yx5TLVQ';
@@ -195,40 +199,92 @@ describe('refreshWalletBalances', () => {
     expect(state.balances).toEqual([null]);
   });
 
-  test('rejects a stale wallet callback invoked after another wallet reconnects', async () => {
+  test('a stale wallet callback cannot cancel the current wallet read when invoked last', async () => {
     const state = sink();
+    const currentRead = deferred<WalletBalances | null>();
     const reads: string[] = [];
-    let currentAddress: string | null = wallet;
-    let generation = 0;
-    const bindRefresh = (address: string | null) => {
-      return (next: WalletBalances | null) => {
-        const requestGeneration = ++generation;
-        return refreshWalletBalances(
-          address,
-          null,
-          state,
-          async (readAddress) => {
-            reads.push(readAddress);
-            return next;
-          },
-          {
-            getCurrentAddress: () => currentAddress,
-            isCurrent: () => generation === requestGeneration,
-          },
-        );
-      };
-    };
-    const staleWalletRefresh = bindRefresh(wallet);
+    const generation = { current: 0 };
+    const staleSession = {};
+    const currentSession = {};
+    let connectedSession = staleSession;
+    const staleWalletRefresh = createWalletBalanceRefresher({
+      address: wallet,
+      generation,
+      getCurrentSessionToken: () => connectedSession,
+      read: async (address) => {
+        reads.push(address);
+        return { lamports: 9_000_000_000n, token: null };
+      },
+      sessionToken: staleSession,
+      sink: state,
+    });
 
-    currentAddress = null;
-    await bindRefresh(null)(null);
-    currentAddress = nextWallet;
-    await bindRefresh(nextWallet)({ lamports: 2_000_000_000n, token: null });
-    expect(await staleWalletRefresh({ lamports: 9_000_000_000n, token: null })).toBeNull();
+    connectedSession = currentSession;
+    const currentWalletRefresh = createWalletBalanceRefresher({
+      address: nextWallet,
+      generation,
+      getCurrentSessionToken: () => connectedSession,
+      read: async (address) => {
+        reads.push(address);
+        return currentRead.promise;
+      },
+      sessionToken: currentSession,
+      sink: state,
+    });
+    const current = currentWalletRefresh();
+    expect(generation.current).toBe(1);
+    expect(await staleWalletRefresh()).toBeNull();
+    expect(generation.current).toBe(1);
+    currentRead.resolve({ lamports: 2_000_000_000n, token: null });
+    expect(await current).toEqual({ lamports: 2_000_000_000n, token: null });
 
     expect(reads).toEqual([nextWallet]);
+    expect(state.statuses).toEqual(['loading', 'ready']);
+    expect(state.balances).toEqual([{ lamports: 2_000_000_000n, token: null }]);
+  });
+
+  test('a stale callback stays invalid after the same address disconnects and reconnects', async () => {
+    const state = sink();
+    const reconnectedRead = deferred<WalletBalances | null>();
+    const generation = { current: 0 };
+    const originalSession = {};
+    const disconnectedSession = {};
+    const reconnectedSession = {};
+    let connectedSession = originalSession;
+    const staleWalletRefresh = createWalletBalanceRefresher({
+      address: wallet,
+      generation,
+      getCurrentSessionToken: () => connectedSession,
+      read: async () => ({ lamports: 9_000_000_000n, token: null }),
+      sessionToken: originalSession,
+      sink: state,
+    });
+
+    connectedSession = disconnectedSession;
+    await createWalletBalanceRefresher({
+      address: null,
+      generation,
+      getCurrentSessionToken: () => connectedSession,
+      sessionToken: disconnectedSession,
+      sink: state,
+    })();
+    connectedSession = reconnectedSession;
+    const reconnected = createWalletBalanceRefresher({
+      address: wallet,
+      generation,
+      getCurrentSessionToken: () => connectedSession,
+      read: async () => reconnectedRead.promise,
+      sessionToken: reconnectedSession,
+      sink: state,
+    })();
+    const currentGeneration = generation.current;
+    expect(await staleWalletRefresh()).toBeNull();
+    expect(generation.current).toBe(currentGeneration);
+    reconnectedRead.resolve({ lamports: 3_000_000_000n, token: null });
+    expect(await reconnected).toEqual({ lamports: 3_000_000_000n, token: null });
+
     expect(state.statuses).toEqual(['idle', 'loading', 'ready']);
-    expect(state.balances).toEqual([null, { lamports: 2_000_000_000n, token: null }]);
+    expect(state.balances).toEqual([null, { lamports: 3_000_000_000n, token: null }]);
   });
 
   test('defaults to the real read when none is injected', async () => {

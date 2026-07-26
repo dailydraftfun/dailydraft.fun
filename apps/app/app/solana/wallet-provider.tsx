@@ -25,6 +25,7 @@ import {
   useContext,
   useEffect,
   useEffectEvent,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -32,7 +33,7 @@ import { trackProductEvent } from '../analytics-client';
 import { createJourneyFixtureWallet, readJourneyFixtureBootstrap } from '../e2e/journey-wallet';
 import type { BalanceStatus, WalletBalances } from './balance';
 import { SOLANA_CHAIN, SOLANA_CLUSTER, SOLANA_RPC_URL, shortenAddress } from './config';
-import { refreshWalletBalances } from './read-balances';
+import { createWalletBalanceRefresher } from './read-balances';
 import {
   isExplicitWalletRejection,
   WalletTransactionNotBroadcastError,
@@ -101,24 +102,32 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   const [error, setError] = useState<string | null>(null);
   const balanceRequestGeneration = useRef(0);
   const address = account?.address ?? null;
-  const currentAddressRef = useRef(address);
-  currentAddressRef.current = address;
+  const balanceSession = useRef<{ account: WalletAccount | null; token: object }>({
+    account,
+    token: {},
+  });
+  if (balanceSession.current.account !== account) {
+    balanceSession.current = { account, token: {} };
+  }
+  const balanceSessionToken = balanceSession.current.token;
 
   /**
    * Binds the balance read to the connected address. Both the read policy and
    * the status it resolves to live in read-balances.ts, which is reachable from
-   * a test. Each call advances a generation so a slower request for an older
-   * wallet cannot overwrite the current wallet's balance.
+   * a test. The immutable session token changes across disconnects even when the
+   * same account reconnects; only a current-session callback may advance the
+   * request generation.
    */
-  const refreshBalances = useCallback(
-    (mint?: string | null): Promise<WalletBalances | null> => {
-      const requestGeneration = ++balanceRequestGeneration.current;
-      return refreshWalletBalances(address, mint, { setBalanceStatus, setBalances }, undefined, {
-        getCurrentAddress: () => currentAddressRef.current,
-        isCurrent: () => balanceRequestGeneration.current === requestGeneration,
-      });
-    },
-    [address],
+  const refreshBalances = useMemo(
+    () =>
+      createWalletBalanceRefresher({
+        address,
+        generation: balanceRequestGeneration,
+        getCurrentSessionToken: () => balanceSession.current.token,
+        sessionToken: balanceSessionToken,
+        sink: { setBalanceStatus, setBalances },
+      }),
+    [address, balanceSessionToken],
   );
 
   const checkNetwork = useCallback(async (signal?: AbortSignal): Promise<boolean> => {

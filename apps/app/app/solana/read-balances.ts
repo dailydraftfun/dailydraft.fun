@@ -47,9 +47,40 @@ type BalanceSink = {
 };
 
 type BalanceRefreshGuard = {
-  getCurrentAddress?: () => string | null;
   isCurrent?: () => boolean;
 };
+
+type WalletBalanceRefresherOptions = {
+  address: string | null;
+  generation: { current: number };
+  getCurrentSessionToken: () => object;
+  read?: typeof readWalletBalances;
+  sessionToken: object;
+  sink: BalanceSink;
+};
+
+/**
+ * Binds balance refreshes to one immutable provider session. Session validity is
+ * checked before the shared request generation advances, so a callback retained
+ * by an older render cannot cancel an in-flight read for the current wallet.
+ */
+export function createWalletBalanceRefresher({
+  address,
+  generation,
+  getCurrentSessionToken,
+  read,
+  sessionToken,
+  sink,
+}: WalletBalanceRefresherOptions): (mint?: string | null) => Promise<WalletBalances | null> {
+  return (mint?: string | null) => {
+    if (getCurrentSessionToken() !== sessionToken) return Promise.resolve(null);
+    const requestGeneration = ++generation.current;
+    return refreshWalletBalances(address, mint, sink, read, {
+      isCurrent: () =>
+        getCurrentSessionToken() === sessionToken && generation.current === requestGeneration,
+    });
+  };
+}
 
 /**
  * Runs one balance read for the connected address and mirrors the outcome into
@@ -61,8 +92,7 @@ type BalanceRefreshGuard = {
  * read leaves the last known figure on screen behind an `error` status — a read
  * that could not complete is not evidence the wallet emptied, and blanking the
  * number would read as exactly that. The optional guard lets the provider reject
- * an out-of-order completion or a callback captured for a previously connected
- * wallet.
+ * an out-of-order completion.
  */
 export async function refreshWalletBalances(
   address: string | null,
@@ -71,9 +101,7 @@ export async function refreshWalletBalances(
   read: typeof readWalletBalances = readWalletBalances,
   guard: BalanceRefreshGuard = {},
 ): Promise<WalletBalances | null> {
-  const isCurrent = () =>
-    (guard.isCurrent?.() ?? true) &&
-    (guard.getCurrentAddress ? guard.getCurrentAddress() === address : true);
+  const isCurrent = guard.isCurrent ?? (() => true);
   if (!isCurrent()) return null;
   if (!address) {
     sink.setBalances(null);
