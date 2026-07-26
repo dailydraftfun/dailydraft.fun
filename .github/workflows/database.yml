@@ -60,6 +60,8 @@ jobs:
           psql "$database_url" \
             --set ON_ERROR_STOP=1 \
             --file packages/db/prisma/verify-flip-inventory.sql
+      - name: Generate Prisma client
+        run: bun --filter @dailydraft/db db:generate
       - name: Exercise raw SQL against the real driver
         working-directory: apps/api
         env:
