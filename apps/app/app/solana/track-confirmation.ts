@@ -21,23 +21,18 @@ export type TrackConfirmationOptions = {
   signal?: AbortSignal;
 };
 
-function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+export function sleepForConfirmation(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms));
+  if (signal.aborted) return Promise.resolve();
+
   return new Promise((resolve) => {
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     const settle = () => {
-      if (timeout !== undefined) clearTimeout(timeout);
-      signal?.removeEventListener('abort', settle);
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', settle);
       resolve();
     };
-
-    if (signal?.aborted) {
-      settle();
-      return;
-    }
-
-    signal?.addEventListener('abort', settle, { once: true });
-    timeout = setTimeout(settle, ms);
-    if (signal?.aborted) settle();
+    const timeout = setTimeout(settle, ms);
+    signal.addEventListener('abort', settle, { once: true });
   });
 }
 
@@ -67,7 +62,6 @@ function sleepUntilAborted(
 
     signal.addEventListener('abort', settle, { once: true });
     void sleep(ms, signal).then(settle, (error: unknown) => finish(() => reject(error)));
-    if (signal.aborted) settle();
   });
 }
 
@@ -90,7 +84,7 @@ export async function trackConfirmation(
 ): Promise<ConfirmationPhase> {
   const poll = options.poll ?? ((value: string) => fetchSignatureCommitment(value));
   const now = options.now ?? (() => Date.now());
-  const sleep = options.sleep ?? defaultSleep;
+  const sleep = options.sleep ?? sleepForConfirmation;
 
   const startedAt = now();
   let phase: ConfirmationPhase = 'submitted';

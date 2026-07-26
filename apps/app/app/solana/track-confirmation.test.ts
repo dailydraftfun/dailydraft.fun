@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { CONFIRMATION_POLL_INTERVAL_MS, type ConfirmationPhase } from './confirmation';
-import { type ConfirmationPoll, trackConfirmation } from './track-confirmation';
+import {
+  type ConfirmationPoll,
+  sleepForConfirmation,
+  trackConfirmation,
+} from './track-confirmation';
 
 const pending: ConfirmationPoll = { commitment: null, failed: false };
 
@@ -35,6 +39,19 @@ function harness(polls: Array<ConfirmationPoll | Error>) {
 }
 
 describe('trackConfirmation', () => {
+  test('the default sleep handles timers and both abort timings', async () => {
+    await sleepForConfirmation(0);
+
+    const alreadyAborted = new AbortController();
+    alreadyAborted.abort();
+    await sleepForConfirmation(10_000, alreadyAborted.signal);
+
+    const inFlight = new AbortController();
+    const waiting = sleepForConfirmation(10_000, inFlight.signal);
+    inFlight.abort();
+    await waiting;
+  });
+
   test('polls the live RPC endpoint when no dependencies are injected', async () => {
     // Every other case here injects poll/now/sleep, which would leave the real
     // wiring — the defaults an actual funding flow runs on — untested.
