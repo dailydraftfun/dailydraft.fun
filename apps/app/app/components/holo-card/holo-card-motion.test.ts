@@ -31,6 +31,12 @@ describe('holo card motion', () => {
 
   test('fails safely to the neutral state for collapsed card bounds', () => {
     expect(pointerToHoloCardMotion(40, 80, { ...bounds, width: 0 })).toEqual(neutralHoloCardMotion);
+    expect(pointerToHoloCardMotion(40, 80, { ...bounds, height: 0 })).toEqual(
+      neutralHoloCardMotion,
+    );
+    expect(pointerToHoloCardMotion(40, 80, { ...bounds, width: -1 })).toEqual(
+      neutralHoloCardMotion,
+    );
   });
 
   test('spring-settles every visual channel back to neutral', () => {
@@ -46,6 +52,38 @@ describe('holo card motion', () => {
     expect(spring.motion.sheenX).toBeCloseTo(50, 1);
     expect(spring.motion.sheenY).toBeCloseTo(50, 1);
     expect(spring.motion.glare).toBeCloseTo(0, 1);
+  });
+
+  test('clamps invalid frame deltas and can settle toward a non-neutral target', () => {
+    const initial = pointerToHoloCardMotion(20, 10, bounds, 6);
+    const spring = createHoloCardSpringState(initial);
+    const negativeDelta = stepHoloCardSpring(spring, -1);
+    const clampedDelta = stepHoloCardSpring(spring, 1);
+    const maximumDelta = stepHoloCardSpring(spring, 1 / 30);
+
+    expect(negativeDelta).toEqual(spring);
+    expect(clampedDelta).toEqual(maximumDelta);
+
+    const target = {
+      glare: 0.25,
+      sheenX: 25,
+      sheenY: 75,
+      tiltX: 2,
+      tiltY: -2,
+    };
+    let targetedSpring = createHoloCardSpringState(neutralHoloCardMotion);
+
+    expect(isHoloCardSpringSettled(targetedSpring, target)).toBe(false);
+    targetedSpring = {
+      motion: { ...target },
+      velocity: { ...targetedSpring.velocity, glare: 1 },
+    };
+    expect(isHoloCardSpringSettled(targetedSpring, target)).toBe(false);
+    targetedSpring = {
+      motion: { ...target },
+      velocity: { ...targetedSpring.velocity, glare: 0 },
+    };
+    expect(isHoloCardSpringSettled(targetedSpring, target)).toBe(true);
   });
 
   test('reduced motion disables tilt and replaces spring release with an immediate reset', () => {
