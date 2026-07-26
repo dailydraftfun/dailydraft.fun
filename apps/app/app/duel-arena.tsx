@@ -119,7 +119,7 @@ import { WalletTransactionNotBroadcastError } from './solana/wallet-transaction-
 
 type Mode = DuelOpponentType;
 type Phase = LiveDuelPhase;
-type DuelCardStage = 'opening' | 'revealed' | 'sealed';
+export type DuelCardStage = 'opening' | 'revealed' | 'sealed';
 
 type DuelLobbyEntryBase = {
   duelId: string;
@@ -157,7 +157,11 @@ function Avatar({ color, label }: { color: string; label: string }) {
   );
 }
 
-function DuelCard({
+// Exported for contract tests only. Driving the sealed/opening/revealed stages
+// through <DuelArena /> would mean standing up the whole live duel state machine
+// and its API polling; the card is a pure function of its props, so it is tested
+// the same way GameModePreview is — rendered directly with each state.
+export function DuelCard({
   pull,
   side,
   stage,
