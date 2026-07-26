@@ -1,6 +1,8 @@
 export {
+  ChoreographyCelebration,
   type ChoreographyController,
   ChoreographyDriver,
+  ChoreographySkipControl,
   type UseRevealChoreographyOptions,
   useRevealChoreography,
 } from './choreography';

@@ -1,8 +1,24 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { GameModePreview } from './game-mode-preview';
 
 describe('game mode preview', () => {
+  test('resolves the pull-rarity runtime from source in fresh app installs', () => {
+    const source = readFileSync(new URL('./game-mode-preview.tsx', import.meta.url), 'utf8');
+    const nextConfig = readFileSync(new URL('../../next.config.ts', import.meta.url), 'utf8');
+    const contractsPackage = JSON.parse(
+      readFileSync(new URL('../../../../packages/contracts/package.json', import.meta.url), 'utf8'),
+    ) as {
+      exports: Record<string, Record<string, string>>;
+    };
+
+    expect(source).toContain("from '@dailydraft/contracts/pull-rarity'");
+    expect(source).not.toMatch(/from '@dailydraft\/contracts';/);
+    expect(nextConfig).toContain("transpilePackages: ['@dailydraft/contracts']");
+    expect(contractsPackage.exports['./pull-rarity']?.import).toBe('./src/pull-rarity.ts');
+  });
+
   test('renders the complete Flip fixture journey', () => {
     const configure = renderToStaticMarkup(<GameModePreview mode="flip" />);
     const committed = renderToStaticMarkup(
@@ -42,6 +58,10 @@ describe('game mode preview', () => {
     expect(active).toContain('data-choreography-rarity="uncommon"');
     expect(active).toContain('data-choreography-settled="true"');
     expect(active).toContain('aria-hidden="true"');
+    expect(active).toContain('Skip animation');
+    expect(active).toContain('disabled=""');
+    expect(active).toContain('min-h-12');
+    expect(active).toContain('text-xs');
     expect(cashed).toContain('Fixture pot cashed out');
     expect(cashed).toContain('Player cash-out');
     expect(busted).toContain('committed stage busted');

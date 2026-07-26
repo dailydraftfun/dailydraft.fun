@@ -104,3 +104,44 @@ export function ChoreographyDriver({
     />
   );
 }
+
+export function ChoreographyCelebration({
+  className,
+  controller,
+}: {
+  className: string;
+  controller: ChoreographyController;
+}) {
+  if (controller.beat !== 'celebrate') return null;
+
+  return (
+    <motion.div
+      animate={{ opacity: [0, 1, 0], scale: [0.92, 1, 1.06] }}
+      aria-hidden="true"
+      className={className}
+      initial={{ opacity: 0, scale: 0.92 }}
+      transition={controller.transition}
+    />
+  );
+}
+
+export function ChoreographySkipControl({
+  className,
+  controller,
+  label,
+}: {
+  className: string;
+  controller: ChoreographyController;
+  label: string;
+}) {
+  return (
+    <button
+      className={className}
+      disabled={controller.settled}
+      onClick={controller.fastForward}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}

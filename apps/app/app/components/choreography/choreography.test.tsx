@@ -3,8 +3,10 @@ import { readFileSync } from 'node:fs';
 import React, { type ReactElement, type RefObject } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
+  ChoreographyCelebration,
   type ChoreographyController,
   ChoreographyDriver,
+  ChoreographySkipControl,
   useRevealChoreography as renderRevealChoreography,
   type UseRevealChoreographyOptions,
   useRevealChoreography,
@@ -54,6 +56,51 @@ describe('reveal choreography React binding', () => {
     driver.props.onAnimationComplete();
     expect(completed).toEqual(['anticipation']);
     expect(ChoreographyDriver({ controller: controllerFor('settled') })).toBeNull();
+  });
+
+  test('starts the celebration overlay from an explicit mounted state', () => {
+    const controller = controllerFor('celebrate');
+    const celebration = ChoreographyCelebration({
+      className: 'celebration',
+      controller,
+    }) as ReactElement;
+
+    expect(celebration.props).toMatchObject({
+      animate: { opacity: [0, 1, 0], scale: [0.92, 1, 1.06] },
+      'aria-hidden': 'true',
+      className: 'celebration',
+      initial: { opacity: 0, scale: 0.92 },
+      transition: controller.transition,
+    });
+    expect(
+      ChoreographyCelebration({
+        className: 'celebration',
+        controller: controllerFor('reveal'),
+      }),
+    ).toBeNull();
+  });
+
+  test('keeps skip controls mounted and disables them after settlement', () => {
+    const fastForwarded: string[] = [];
+    const active = controllerFor('reveal', undefined, () => fastForwarded.push('active'));
+    const settled = controllerFor('settled', undefined, () => fastForwarded.push('settled'));
+    const activeControl = ChoreographySkipControl({
+      className: 'skip',
+      controller: active,
+      label: 'Skip animation',
+    }) as ReactElement<{ onClick(): void }>;
+    const activeMarkup = renderToStaticMarkup(activeControl);
+    const settledMarkup = renderToStaticMarkup(
+      <ChoreographySkipControl className="skip" controller={settled} label="Skip animation" />,
+    );
+
+    expect(activeMarkup).toContain('Skip animation');
+    expect(activeMarkup).not.toContain('disabled=""');
+    expect(settledMarkup).toContain('Skip animation');
+    expect(settledMarkup).toContain('disabled=""');
+
+    activeControl.props.onClick();
+    expect(fastForwarded).toEqual(['active']);
   });
 
   test('keeps the server-rendered binding inspectable before client effects begin', () => {
@@ -109,6 +156,8 @@ describe('reveal choreography React binding', () => {
     expect(css).toMatch(/prefers-reduced-motion:[\s\S]*animation: none;/);
     expect(css).toMatch(/prefers-reduced-motion:[\s\S]*transition: none;/);
     expect(css).toMatch(/prefers-reduced-motion:[\s\S]*\.driver\s*\{[^}]*display: none;/s);
+    expect(css).toMatch(/\.skip\s*\{[^}]*min-block-size: 3rem;/s);
+    expect(css).toMatch(/\.skip:disabled\s*\{[^}]*opacity: 0\.55;/s);
   });
 });
 
@@ -133,12 +182,13 @@ function BindingContract() {
 function controllerFor(
   beat: ChoreographyController['beat'],
   advance: ChoreographyController['advance'] = () => undefined,
+  fastForward: ChoreographyController['fastForward'] = () => undefined,
 ): ChoreographyController {
   const settled = beat === 'settled';
   return {
     advance,
     beat,
-    fastForward: () => undefined,
+    fastForward,
     intensity: 0.5,
     rarity: 'common',
     revealed: beat === 'reveal' || beat === 'celebrate' || settled,

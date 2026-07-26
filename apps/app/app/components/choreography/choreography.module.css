@@ -108,7 +108,11 @@
 }
 
 .skip {
-  min-block-size: 2.5rem;
+  min-block-size: 3rem;
+}
+
+.skip:disabled {
+  opacity: 0.55;
 }
 
 .stageArtwork {

@@ -1,6 +1,6 @@
 'use client';
 
-import { type PullRarity, pullRarityFor } from '@dailydraft/contracts';
+import { type PullRarity, pullRarityFor } from '@dailydraft/contracts/pull-rarity';
 import {
   ArrowCounterClockwiseIcon,
   ArrowRightIcon,
@@ -23,8 +23,10 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { type CSSProperties, type ReactNode, useState } from 'react';
 import {
+  ChoreographyCelebration,
   type ChoreographyController,
   ChoreographyDriver,
+  ChoreographySkipControl,
   useRevealChoreography,
 } from '../components/choreography';
 import choreographyStyles from '../components/choreography/choreography.module.css';
@@ -615,26 +617,17 @@ function FlipReveal({ card }: { card: PreviewCard }) {
             <span>Committed fixture pack</span>
           </div>
         </motion.div>
-        {celebrating ? (
-          <motion.div
-            animate={{ opacity: [0, 1, 0], scale: [0.92, 1, 1.06] }}
-            aria-hidden="true"
-            className={choreographyStyles.celebration}
-            initial={false}
-            transition={choreography.transition}
-          />
-        ) : null}
+        <ChoreographyCelebration
+          className={choreographyStyles.celebration}
+          controller={choreography}
+        />
         <ChoreographyDriver controller={choreography} sequenceKey={card.name} />
       </figure>
-      {!choreography.settled ? (
-        <button
-          className={`proof-secondary-action mt-3 w-full ${choreographyStyles.skip}`}
-          onClick={choreography.fastForward}
-          type="button"
-        >
-          Skip reveal animation
-        </button>
-      ) : null}
+      <ChoreographySkipControl
+        className={`proof-secondary-action mt-3 w-full ${choreographyStyles.skip}`}
+        controller={choreography}
+        label="Skip reveal animation"
+      />
     </div>
   );
 }
@@ -707,14 +700,12 @@ function StageCard({
       <p className="mt-1 font-mono text-xs text-secondary">
         {revealed ? `$${card.value.toFixed(2)}` : 'Hidden'}
       </p>
-      {revealed && !choreography.settled ? (
-        <button
-          className={`mt-2 w-full rounded-md border border-border px-2 py-1.5 text-[0.65rem] font-semibold text-secondary ${choreographyStyles.skip}`}
-          onClick={choreography.fastForward}
-          type="button"
-        >
-          Skip animation
-        </button>
+      {revealed ? (
+        <ChoreographySkipControl
+          className={`mt-2 min-h-12 w-full rounded-md border border-border px-2 py-2 text-xs font-semibold text-secondary ${choreographyStyles.skip}`}
+          controller={choreography}
+          label="Skip animation"
+        />
       ) : null}
     </motion.article>
   );
