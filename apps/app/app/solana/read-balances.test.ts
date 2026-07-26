@@ -195,6 +195,42 @@ describe('refreshWalletBalances', () => {
     expect(state.balances).toEqual([null]);
   });
 
+  test('rejects a stale wallet callback invoked after another wallet reconnects', async () => {
+    const state = sink();
+    const reads: string[] = [];
+    let currentAddress: string | null = wallet;
+    let generation = 0;
+    const bindRefresh = (address: string | null) => {
+      return (next: WalletBalances | null) => {
+        const requestGeneration = ++generation;
+        return refreshWalletBalances(
+          address,
+          null,
+          state,
+          async (readAddress) => {
+            reads.push(readAddress);
+            return next;
+          },
+          {
+            getCurrentAddress: () => currentAddress,
+            isCurrent: () => generation === requestGeneration,
+          },
+        );
+      };
+    };
+    const staleWalletRefresh = bindRefresh(wallet);
+
+    currentAddress = null;
+    await bindRefresh(null)(null);
+    currentAddress = nextWallet;
+    await bindRefresh(nextWallet)({ lamports: 2_000_000_000n, token: null });
+    expect(await staleWalletRefresh({ lamports: 9_000_000_000n, token: null })).toBeNull();
+
+    expect(reads).toEqual([nextWallet]);
+    expect(state.statuses).toEqual(['idle', 'loading', 'ready']);
+    expect(state.balances).toEqual([null, { lamports: 2_000_000_000n, token: null }]);
+  });
+
   test('defaults to the real read when none is injected', async () => {
     // Guards the wiring the provider actually runs on, which every other case
     // here substitutes away.

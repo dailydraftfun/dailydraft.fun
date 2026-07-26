@@ -47,6 +47,7 @@ type BalanceSink = {
 };
 
 type BalanceRefreshGuard = {
+  getCurrentAddress?: () => string | null;
   isCurrent?: () => boolean;
 };
 
@@ -60,7 +61,8 @@ type BalanceRefreshGuard = {
  * read leaves the last known figure on screen behind an `error` status — a read
  * that could not complete is not evidence the wallet emptied, and blanking the
  * number would read as exactly that. The optional guard lets the provider reject
- * an out-of-order completion after the connected wallet changes.
+ * an out-of-order completion or a callback captured for a previously connected
+ * wallet.
  */
 export async function refreshWalletBalances(
   address: string | null,
@@ -69,7 +71,9 @@ export async function refreshWalletBalances(
   read: typeof readWalletBalances = readWalletBalances,
   guard: BalanceRefreshGuard = {},
 ): Promise<WalletBalances | null> {
-  const isCurrent = guard.isCurrent ?? (() => true);
+  const isCurrent = () =>
+    (guard.isCurrent?.() ?? true) &&
+    (guard.getCurrentAddress ? guard.getCurrentAddress() === address : true);
   if (!isCurrent()) return null;
   if (!address) {
     sink.setBalances(null);

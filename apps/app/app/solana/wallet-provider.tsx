@@ -101,6 +101,8 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   const [error, setError] = useState<string | null>(null);
   const balanceRequestGeneration = useRef(0);
   const address = account?.address ?? null;
+  const currentAddressRef = useRef(address);
+  currentAddressRef.current = address;
 
   /**
    * Binds the balance read to the connected address. Both the read policy and
@@ -112,6 +114,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     (mint?: string | null): Promise<WalletBalances | null> => {
       const requestGeneration = ++balanceRequestGeneration.current;
       return refreshWalletBalances(address, mint, { setBalanceStatus, setBalances }, undefined, {
+        getCurrentAddress: () => currentAddressRef.current,
         isCurrent: () => balanceRequestGeneration.current === requestGeneration,
       });
     },
