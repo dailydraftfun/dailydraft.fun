@@ -767,6 +767,9 @@ describe('GachaRipService', () => {
       status: GachaRipStatus.REVEALED,
     });
     const retainedAssetReference = database.rip?.selectedAssetReference;
+    if (!retainedAssetReference) {
+      throw new Error('expected the transient rip to retain its selected asset');
+    }
     expect(retainedAssetReference).toMatch(/^devnet:fixture:asset:/);
     expect(database.rip?.failedAssetReference).toBeUndefined();
 
