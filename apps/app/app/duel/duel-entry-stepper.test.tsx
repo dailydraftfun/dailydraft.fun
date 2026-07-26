@@ -44,10 +44,10 @@ describe('duel entry stepper', () => {
       challenge: {
         chain: 'solana:devnet',
         challengeId: 'challenge',
-        domain: 'dailydraft.fun',
+        domain: 'app.dailydraft.fun',
         expiresAt: '2026-07-17T09:15:00.000Z',
         message: 'Sign in to DailyDraft',
-        uri: 'https://dailydraft.fun',
+        uri: 'https://app.dailydraft.fun',
         wallet: 'wallet',
       },
     });

@@ -250,16 +250,20 @@ class ReservationDatabase {
 
   async $transaction<T>(operation: (transaction: Prisma.TransactionClient) => Promise<T>) {
     let releaseLock: (() => void) | undefined;
-    let rawCalls = 0;
     const transaction = {
       $executeRaw: async (
-        _query: TemplateStringsArray,
+        query: TemplateStringsArray,
         tier: number,
         disabled: boolean,
         reason: string | null,
         reenableBoundary: string | null,
         evaluatedAt: Date,
       ) => {
+        if (query.join('').includes('pg_advisory_xact_lock')) {
+          releaseLock = await this.acquireLock();
+          this.lockAcquisitions += 1;
+          return 1;
+        }
         const row = this.tierAdmissionStates.find((candidate) => candidate.tier === tier);
         if (!row) {
           this.tierAdmissionStates.push({
@@ -277,13 +281,7 @@ class ReservationDatabase {
         row.version += 1;
         return 1;
       },
-      $queryRaw: async () => {
-        rawCalls += 1;
-        if (rawCalls > 1) return [{ paused: false }];
-        releaseLock = await this.acquireLock();
-        this.lockAcquisitions += 1;
-        return [{ pg_advisory_xact_lock: '' }];
-      },
+      $queryRaw: async () => [{ paused: false }],
       houseTreasuryLedgerEntry: {
         create: async ({ data }: { data: LedgerRow }) => {
           this.ledger.push(data);

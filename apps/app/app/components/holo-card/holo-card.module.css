@@ -1,0 +1,322 @@
+.stage {
+  --holo-accent-color: var(--opd-accent);
+  --holo-foil-opacity: 0.12;
+  --holo-sparkle-opacity: 0.06;
+  --holo-spectrum:
+    rgb(from var(--opd-accent) r g b / 0.42), rgb(from var(--opd-agent) r g b / 0.24),
+    rgb(from var(--opd-text-primary) r g b / 0.3);
+
+  display: block;
+  inline-size: min(100%, 20rem);
+  max-inline-size: calc(100vw - 2rem);
+  margin: 0;
+  perspective: 900px;
+  perspective-origin: 50% 42%;
+  contain: layout style;
+}
+
+.stage[data-rarity="uncommon"] {
+  --holo-accent-color: var(--opd-success);
+  --holo-foil-opacity: 0.22;
+  --holo-sparkle-opacity: 0.12;
+  --holo-spectrum:
+    rgb(from var(--opd-success) r g b / 0.52), rgb(from var(--opd-agent) r g b / 0.34),
+    rgb(from var(--opd-text-primary) r g b / 0.36);
+}
+
+.stage[data-rarity="rare"] {
+  --holo-accent-color: var(--opd-agent);
+  --holo-foil-opacity: 0.38;
+  --holo-sparkle-opacity: 0.22;
+  --holo-spectrum:
+    rgb(from var(--opd-agent) r g b / 0.68), rgb(from var(--opd-done) r g b / 0.5),
+    rgb(from var(--opd-warning) r g b / 0.4), rgb(from var(--opd-accent) r g b / 0.5);
+}
+
+.stage[data-rarity="chase"] {
+  --holo-accent-color: var(--opd-warning);
+  --holo-foil-opacity: 0.58;
+  --holo-sparkle-opacity: 0.34;
+  --holo-spectrum:
+    rgb(from var(--opd-danger) r g b / 0.65), rgb(from var(--opd-warning) r g b / 0.64),
+    rgb(from var(--opd-accent) r g b / 0.58), rgb(from var(--opd-agent) r g b / 0.68),
+    rgb(from var(--opd-done) r g b / 0.7), rgb(from var(--opd-danger) r g b / 0.65);
+}
+
+.card {
+  --holo-pointer-tilt-x: 0deg;
+  --holo-pointer-tilt-y: 0deg;
+  --holo-pointer-sheen-x: 50%;
+  --holo-pointer-sheen-y: 50%;
+  --holo-pointer-glare: 0;
+  --holo-tilt-x: var(--holo-pointer-tilt-x);
+  --holo-tilt-y: var(--holo-pointer-tilt-y);
+  --holo-sheen-x: var(--holo-pointer-sheen-x);
+  --holo-sheen-y: var(--holo-pointer-sheen-y);
+  --holo-glare: var(--holo-pointer-glare);
+
+  position: relative;
+  isolation: isolate;
+  aspect-ratio: 5 / 7;
+  inline-size: 100%;
+  overflow: hidden;
+  border: 1px solid rgb(from var(--holo-accent-color) r g b / 0.36);
+  border-radius: var(--opd-radius-xl);
+  background: var(--opd-bg-tertiary);
+  outline: none;
+  transform: rotateX(var(--holo-tilt-x)) rotateY(var(--holo-tilt-y)) translateZ(0);
+  transform-style: preserve-3d;
+  transform-origin: center;
+  touch-action: pan-y;
+}
+
+.card::before {
+  position: absolute;
+  z-index: 7;
+  inset: 0;
+  border: 1px solid rgb(from var(--opd-text-primary) r g b / 0.18);
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px rgb(from var(--opd-bg-primary) r g b / 0.74),
+    inset 0 0 28px rgb(from var(--holo-accent-color) r g b / 0.12);
+  content: "";
+  pointer-events: none;
+}
+
+.art {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--opd-bg-secondary);
+}
+
+.image {
+  object-fit: cover;
+  transform: scale(1.012);
+}
+
+.rarityWash,
+.foil,
+.sparkles,
+.glare,
+.edge {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.rarityWash {
+  z-index: 1;
+  background:
+    radial-gradient(
+      circle at var(--holo-sheen-x) var(--holo-sheen-y),
+      rgb(from var(--holo-accent-color) r g b / 0.28),
+      transparent 46%
+    ),
+    linear-gradient(
+      142deg,
+      transparent 15%,
+      rgb(from var(--holo-accent-color) r g b / 0.16) 52%,
+      transparent 84%
+    );
+  mix-blend-mode: color;
+  opacity: calc(0.38 + var(--holo-glare) * 0.38);
+}
+
+.foil {
+  z-index: 2;
+  background:
+    repeating-linear-gradient(
+      118deg,
+      transparent 0%,
+      rgb(from var(--opd-text-primary) r g b / 0.17) 2%,
+      transparent 4.5%,
+      transparent 9%
+    ),
+    conic-gradient(from 205deg at var(--holo-sheen-x) var(--holo-sheen-y), var(--holo-spectrum));
+  background-position:
+    calc(var(--holo-sheen-x) * -0.18) calc(var(--holo-sheen-y) * -0.18),
+    center;
+  background-size:
+    155% 155%,
+    145% 145%;
+  filter: saturate(1.35) contrast(1.08);
+  mix-blend-mode: color-dodge;
+  opacity: calc(var(--holo-foil-opacity) + var(--holo-glare) * 0.26);
+}
+
+.sparkles {
+  z-index: 3;
+  background-image:
+    radial-gradient(
+      circle at 18% 22%,
+      rgb(from var(--opd-text-primary) r g b / 0.9) 0 0.7px,
+      transparent 1.5px
+    ),
+    radial-gradient(
+      circle at 76% 18%,
+      rgb(from var(--opd-text-primary) r g b / 0.8) 0 0.9px,
+      transparent 1.8px
+    ),
+    radial-gradient(
+      circle at 31% 68%,
+      rgb(from var(--opd-text-primary) r g b / 0.86) 0 0.6px,
+      transparent 1.5px
+    ),
+    radial-gradient(
+      circle at 82% 78%,
+      rgb(from var(--opd-text-primary) r g b / 0.82) 0 0.8px,
+      transparent 1.7px
+    );
+  background-position:
+    calc(var(--holo-sheen-x) * 0.08) calc(var(--holo-sheen-y) * 0.08),
+    calc(var(--holo-sheen-x) * -0.06) calc(var(--holo-sheen-y) * 0.1),
+    calc(var(--holo-sheen-x) * 0.05) calc(var(--holo-sheen-y) * -0.08),
+    calc(var(--holo-sheen-x) * -0.09) calc(var(--holo-sheen-y) * -0.05);
+  background-size:
+    38px 43px,
+    53px 47px,
+    61px 57px,
+    73px 69px;
+  mix-blend-mode: screen;
+  opacity: calc(var(--holo-sparkle-opacity) + var(--holo-glare) * 0.34);
+}
+
+.glare {
+  z-index: 4;
+  background: radial-gradient(
+    circle at var(--holo-sheen-x) var(--holo-sheen-y),
+    rgb(from var(--opd-text-primary) r g b / calc(0.28 + var(--holo-glare) * 0.46)) 0%,
+    rgb(from var(--opd-text-primary) r g b / calc(0.08 + var(--holo-glare) * 0.16)) 14%,
+    transparent 42%
+  );
+  mix-blend-mode: soft-light;
+}
+
+.edge {
+  z-index: 5;
+  background:
+    linear-gradient(
+      90deg,
+      rgb(from var(--opd-bg-primary) r g b / 0.5),
+      transparent 8% 92%,
+      rgb(from var(--opd-bg-primary) r g b / 0.5)
+    ),
+    linear-gradient(
+      180deg,
+      rgb(from var(--opd-text-primary) r g b / 0.14),
+      transparent 14% 78%,
+      rgb(from var(--opd-bg-primary) r g b / 0.84)
+    );
+}
+
+.caption {
+  position: absolute;
+  z-index: 6;
+  inset-inline: 0;
+  inset-block-end: 0;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  min-inline-size: 0;
+  padding: 48px 16px 16px;
+  color: var(--opd-text-primary);
+  background: linear-gradient(
+    transparent,
+    rgb(from var(--opd-bg-primary) r g b / 0.88) 62%,
+    rgb(from var(--opd-bg-primary) r g b / 0.96)
+  );
+  text-shadow: 0 1px 2px rgb(from var(--opd-bg-primary) r g b / 0.9);
+}
+
+.caption > div {
+  display: grid;
+  min-inline-size: 0;
+  gap: 4px;
+}
+
+.caption strong {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rarity,
+.value {
+  font-family: var(--opd-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rarity {
+  color: var(--holo-accent-color);
+}
+
+.value {
+  flex: none;
+  padding: 5px 7px;
+  border: 1px solid rgb(from var(--holo-accent-color) r g b / 0.36);
+  border-radius: var(--opd-radius-md);
+  background: rgb(from var(--opd-bg-primary) r g b / 0.72);
+  color: var(--opd-text-primary);
+}
+
+.card:focus-visible {
+  --holo-sheen-x: 68%;
+  --holo-sheen-y: 28%;
+  --holo-glare: 0.72;
+
+  outline: 3px solid var(--opd-accent);
+  outline-offset: 4px;
+  transform: rotateX(-2deg) rotateY(3deg) translateZ(0) scale(1.012);
+}
+
+.card:hover,
+.card:focus-visible,
+.card:active,
+.card[data-settling="true"] {
+  will-change: transform;
+}
+
+.card:focus-visible .foil,
+.card:focus-visible .sparkles {
+  opacity: calc(var(--holo-foil-opacity) + 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .card:focus-visible {
+    --holo-sheen-x: 64%;
+    --holo-sheen-y: 30%;
+    --holo-glare: 0.42;
+
+    transform: none;
+    transition: none;
+    will-change: auto;
+  }
+
+  .card:hover,
+  .card:active,
+  .card[data-settling="true"] {
+    will-change: auto;
+  }
+
+  .rarityWash,
+  .foil,
+  .sparkles,
+  .glare {
+    background-position: center;
+    transition: none;
+  }
+}

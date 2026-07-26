@@ -19,6 +19,7 @@ import {
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { PublicKey } from '@solana/web3.js';
 
+import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from '../transactions/solana-rpc.client.js';
@@ -723,11 +724,11 @@ export async function acquireHouseInventoryAsset(
   transaction: Prisma.TransactionClient,
   input: HouseInventoryAcquisitionInput,
 ): Promise<{ created: boolean; inventoryId: string }> {
-  await transaction.$queryRaw`
-    SELECT pg_advisory_xact_lock(
-      hashtextextended(${input.outcome.assetReference}, ${HOUSE_INVENTORY_LOCK_NAMESPACE})
-    )
-  `;
+  await acquireNamespacedAdvisoryTransactionLock(
+    transaction,
+    input.outcome.assetReference,
+    HOUSE_INVENTORY_LOCK_NAMESPACE,
+  );
   const [byOutcome, byAsset] = await Promise.all([
     transaction.houseInventoryAsset.findUnique({ where: { outcomeId: input.outcome.id } }),
     transaction.houseInventoryAsset.findFirst({
