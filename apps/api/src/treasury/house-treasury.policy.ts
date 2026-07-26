@@ -11,6 +11,9 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { PublicKey } from '@solana/web3.js';
+import { acquireAdvisoryTransactionLock } from '../database/advisory-lock.js';
+
+const HOUSE_TREASURY_EXPOSURE_LOCK_KEY = 770_392_114;
 
 export const HOUSE_TREASURY_SNAPSHOT_ID = 'solana-devnet-usdc';
 export const ACTIVE_HOUSE_RESERVATION_STATUSES: HouseTreasuryReservationStatus[] = [
@@ -187,7 +190,7 @@ export async function reserveHouseExposure(
     });
   }
 
-  await transaction.$queryRaw`SELECT pg_advisory_xact_lock(770392114)`;
+  await acquireAdvisoryTransactionLock(transaction, HOUSE_TREASURY_EXPOSURE_LOCK_KEY);
   const serializedReplay = await transaction.houseTreasuryReservation.findUnique({
     where: { duelId: input.duelId },
   });

@@ -20,6 +20,7 @@ import {
 } from '@nestjs/common';
 import { Keypair } from '@solana/web3.js';
 
+import { rarityForSerializedValue } from '../common/pull-rarity.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type { MatchmakingMode } from '../domain.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
@@ -308,6 +309,7 @@ export class AdminService {
         openedAt: outcome.openedAt.toISOString(),
         poolVersion: outcome.poolVersion,
         providerReference: outcome.providerReference,
+        rarity: rarityForSerializedValue(outcome.insuredValueAmount, outcome.insuredValueDecimals),
         resultHash: outcome.resultHash,
         side: outcome.side.toLowerCase(),
         sourceTimestamp: outcome.sourceTimestamp?.toISOString() ?? null,

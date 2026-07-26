@@ -4,11 +4,12 @@ import '@fontsource/dm-sans/500.css';
 import '@fontsource/dm-sans/600.css';
 import '@fontsource/dm-sans/700.css';
 import './globals.css';
+import { resolveAppOrigin } from './app-origin';
 import { Providers } from './providers';
 import { WorkspaceShell } from './workspace-shell';
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://dailydraft.fun'),
+  metadataBase: new URL(resolveAppOrigin()),
   title: 'DailyDraft Devnet — Own the cards. Field the squad.',
   description:
     'Devnet preview: rip real, vaulted sports cards from Collector Crypt and play sports fantasy loops on Solana using test SOL and test assets.',

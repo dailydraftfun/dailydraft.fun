@@ -6,7 +6,7 @@ on:
       app_url:
         description: Product app origin
         required: true
-        default: https://dailydraft.fun
+        default: https://app.dailydraft.fun
         type: string
       api_url:
         description: API origin; leave empty until the API is deployed

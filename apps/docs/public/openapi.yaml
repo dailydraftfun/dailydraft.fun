@@ -2388,6 +2388,7 @@ components:
         - insuredValueMinor
         - insuredValueCurrency
         - insuredValueDecimals
+        - rarity
         - idempotencyKey
         - selectedAt
         - revealedAt
@@ -2441,6 +2442,8 @@ components:
         insuredValueDecimals:
           type: integer
           const: 6
+        rarity:
+          $ref: '#/components/schemas/PullRarity'
         idempotencyKey:
           type: [string, 'null']
           minLength: 1
@@ -2572,6 +2575,10 @@ components:
         decimals:
           type: integer
           const: 6
+    PullRarity:
+      type: string
+      enum: [common, uncommon, rare, chase]
+      description: Presentation-only rarity derived from committed insured value; it is never part of the canonical result hash.
     ValuationPolicyDocument:
       type: object
       additionalProperties: false
@@ -2583,8 +2590,8 @@ components:
         policyHash:
           type: string
           enum:
-            - 406b8f93087ba9910d74006cef30fb7872dcabd763e99215488f06f119b8d66b
-            - 39186a3c3b133d001d3c17dd3832b45c2286e3df81ba13494e3cef638a48baf8
+            - b1334fcec0e89380bc0b32b2210a9ca99fb72d64bfd75e4c2c2d64cbe40b43ba
+            - 0d8f1654c4d5c86622e207622bea835d029ecc78ed2ca1a24ba739a2c356c9fd
         policy:
           $ref: '#/components/schemas/ValuationPolicy'
     ValuationPolicy:
@@ -2607,10 +2614,10 @@ components:
       properties:
         schemaVersion:
           type: string
-          const: openpacksduel.valuation-policy.v1
+          const: dailydraft.valuation-policy.v1
         policyVersion:
           type: string
-          enum: [collector-crypt-insured-value-usdc-v1, openpacksduel-pokemon-tcg-market-usdc-v1]
+          enum: [collector-crypt-insured-value-usdc-v1, dailydraft-pokemon-tcg-market-usdc-v1]
         authoritativeField:
           type: string
           enum: [collector-crypt.gacha.result.insuredValue, pokemon-tcg.tcgplayer.prices.<first-supported-variant>.market]
@@ -2925,7 +2932,7 @@ components:
     DuelPackOutcome:
       type: object
       additionalProperties: false
-      required: [side, assetReference, displayName, insuredValue, openedAt, poolVersion, sourceTimestamp, resultHash, isMock, provider, providerReference]
+      required: [side, assetReference, displayName, insuredValue, rarity, openedAt, poolVersion, sourceTimestamp, resultHash, isMock, provider, providerReference]
       properties:
         side:
           type: string
@@ -2942,6 +2949,8 @@ components:
         insuredValue:
           $ref: '#/components/schemas/Money'
           description: Backward-compatible result field. Its authoritative meaning comes from valuationPolicyHash; hosted demo outcomes contain the snapshotted TCGPlayer market value, not Collector Crypt insured value.
+        rarity:
+          $ref: '#/components/schemas/PullRarity'
         openedAt:
           type: string
           format: date-time
@@ -3177,13 +3186,14 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [side, assetReference, displayName, insuredValue, isMock, openedAt, poolVersion, sourceTimestamp, valuationSourceReference, resultHash]
+            required: [side, assetReference, displayName, insuredValue, rarity, isMock, openedAt, poolVersion, sourceTimestamp, valuationSourceReference, resultHash]
             properties:
               side: { type: string, enum: [creator, opponent] }
               assetReference: { type: string }
               displayName: { type: string }
               imageUrl: { type: [string, 'null'], format: uri }
               insuredValue: { $ref: '#/components/schemas/Money' }
+              rarity: { $ref: '#/components/schemas/PullRarity' }
               isMock: { type: boolean }
               openedAt: { type: string, format: date-time }
               poolVersion: { type: string }
@@ -3202,7 +3212,7 @@ components:
             hashAlgorithm: { type: string, const: sha256 }
             maxSourceAgeSeconds: { type: integer, enum: [300, 604800] }
             maxValueMinorUnits: { type: string, const: '18446744073709551615' }
-            policyVersion: { type: string, enum: [collector-crypt-insured-value-usdc-v1, openpacksduel-pokemon-tcg-market-usdc-v1] }
+            policyVersion: { type: string, enum: [collector-crypt-insured-value-usdc-v1, dailydraft-pokemon-tcg-market-usdc-v1] }
             rounding: { type: string, const: none }
             tieRule: { type: string, const: return-original-assets-and-refund-platform-fees }
         proof:
@@ -3271,7 +3281,7 @@ components:
     PublicPostDuelCardActionState:
       type: object
       additionalProperties: false
-      required: [actionStateId, duelId, side, assetReference, providerReference, displayName, insuredValue, owner, ownership, receiptHref, actions]
+      required: [actionStateId, duelId, side, assetReference, providerReference, displayName, insuredValue, rarity, owner, ownership, receiptHref, actions]
       properties:
         actionStateId:
           type: string
@@ -3283,6 +3293,7 @@ components:
         displayName: { type: string }
         imageUrl: { type: [string, 'null'], format: uri }
         insuredValue: { $ref: '#/components/schemas/Money' }
+        rarity: { $ref: '#/components/schemas/PullRarity' }
         owner: { $ref: '#/components/schemas/PublicParticipant' }
         ownership:
           type: object

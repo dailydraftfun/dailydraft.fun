@@ -678,7 +678,7 @@ function lifecycleDatabase(reservations: ReservationFixture[]) {
   const inventory: InventoryWrite[] = [];
   const ledger: LedgerWrite[] = [];
   const transaction = {
-    $queryRaw: () => Promise.resolve([{ pg_advisory_xact_lock: '' }]),
+    $executeRaw: () => Promise.resolve(1),
     houseInventoryAsset: {
       create: ({ data }: { data: InventoryWrite }) => {
         inventory.push(data);
