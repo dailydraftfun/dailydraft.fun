@@ -3,6 +3,7 @@ import { DuelSide as DatabaseDuelSide } from '@dailydraft/db';
 import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
+import { rarityForSerializedValue } from '../common/pull-rarity.js';
 import type { Duel, DuelTransactionRecord } from '../domain.js';
 import { toDuelResult } from '../duels/prisma-duel.repository.js';
 import { buildPublicDuelReceipt } from '../duels/public-duel-proof.js';
@@ -103,13 +104,15 @@ describe('API response schema gate', () => {
     }
   });
 
-  test('binds the GachaRip fixture to every persisted column', async () => {
-    // GachaRip is serialized straight from the Prisma row, so a new column silently widens
-    // the response body. Fail here first, then against `additionalProperties: false` above.
+  test('binds the GachaRip fixture to every persisted column and its derived rarity', async () => {
+    // The service serializes every Prisma scalar plus one value-derived rarity.
+    // Fail here first when either the row or that derived response contract drifts.
     const fixture = cases.find((responseCase) => responseCase.schema === 'GachaRip');
-    expect(Object.keys(fixture?.payload as object).sort()).toEqual(
+    const fields = Object.keys(fixture?.payload as object);
+    expect(fields.filter((field) => field !== 'rarity').sort()).toEqual(
       prismaScalarFields(await Bun.file(PRISMA_SCHEMA_PATH).text(), 'GachaRip'),
     );
+    expect(fields).toContain('rarity');
   });
 });
 
@@ -167,9 +170,9 @@ function buildResponsePayloadCases(): ResponsePayloadCase[] {
       source: 'buildPublicDuelReceipt(duel).cardActions.cards[0]',
     },
     {
-      payload: gachaRipRow(),
+      payload: gachaRipPayload(),
       schema: 'GachaRip',
-      source: 'gachaRip.findUnique(...) row',
+      source: 'GachaRipService.loadRipResult(...).rip',
     },
   ];
 }
@@ -281,6 +284,14 @@ function gachaRipRow() {
   };
 }
 
+function gachaRipPayload() {
+  const rip = gachaRipRow();
+  return {
+    ...rip,
+    rarity: rarityForSerializedValue(rip.insuredValueMinor, rip.insuredValueDecimals),
+  };
+}
+
 function settledDuel(): Duel {
   const sourceTimestamp = '2026-07-15T20:03:30.000Z';
   const observedAt = new Date('2026-07-15T20:04:00.000Z');
@@ -375,6 +386,7 @@ function toDuelOutcome(
     poolVersion: outcome.poolVersion,
     provider: 'collector-crypt',
     providerReference: outcome.providerReference,
+    rarity: rarityForSerializedValue(outcome.insuredValue.amount, outcome.insuredValue.decimals),
     resultHash: outcome.resultHash,
     side: outcome.side,
     sourceTimestamp: outcome.sourceTimestamp,
