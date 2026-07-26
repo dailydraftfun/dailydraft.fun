@@ -24,8 +24,10 @@ const [creatorToken, opponentToken] = await Promise.all([
   authenticate(opponent),
 ]);
 
+// `GET /duels/:duelId` is participant-scoped behind DuelMutationGuard, so every read of a duel
+// has to carry a wallet session token even though the receipt and social card stay public.
 let duel = existingDuelId
-  ? await requestJson<Duel>(`/duels/${existingDuelId}`)
+  ? await requestJson<Duel>(`/duels/${existingDuelId}`, { token: creatorToken })
   : await requestJson<Duel>('/duels', {
       body: {
         creatorWallet,
@@ -58,11 +60,11 @@ if (duel.status === 'waiting') {
 
 if (duel.status === 'matched') {
   await fundSide(duel.id, creator, creatorToken, 'creator', 'committing');
-  duel = await requestJson<Duel>(`/duels/${duel.id}`);
+  duel = await requestJson<Duel>(`/duels/${duel.id}`, { token: creatorToken });
 }
 if (duel.status === 'committing') {
   await fundSide(duel.id, opponent, opponentToken, 'opponent', 'funded');
-  duel = await requestJson<Duel>(`/duels/${duel.id}`);
+  duel = await requestJson<Duel>(`/duels/${duel.id}`, { token: creatorToken });
 }
 
 const openKey = uniqueKey('open');
@@ -85,7 +87,7 @@ if (duel.status === 'settled') {
   } catch (error) {
     console.error(String(error));
     await Bun.sleep(5_000);
-    const current = await requestJson<Duel>(`/duels/${duel.id}`);
+    const current = await requestJson<Duel>(`/duels/${duel.id}`, { token: creatorToken });
     if (current.status === 'settled') {
       opened = current;
     } else {

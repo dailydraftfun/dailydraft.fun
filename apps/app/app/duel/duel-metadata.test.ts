@@ -7,14 +7,14 @@ describe('duel metadata', () => {
   test('discovers the canonical per-status social image for an open challenge', () => {
     const metadata = buildDuelMetadata(
       receipt({ status: 'waiting' }),
-      'https://dailydraft.fun/ignored-path',
+      'https://app.dailydraft.fun/ignored-path',
     );
-    const imageUrl = new URL('https://dailydraft.fun/duel/duel_social/social/waiting');
+    const imageUrl = new URL('https://app.dailydraft.fun/duel/duel_social/social/waiting');
 
     expect(metadata.alternates?.canonical).toEqual(
-      new URL('https://dailydraft.fun/duel/duel_social'),
+      new URL('https://app.dailydraft.fun/duel/duel_social'),
     );
-    expect(metadata.openGraph?.url).toEqual(new URL('https://dailydraft.fun/duel/duel_social'));
+    expect(metadata.openGraph?.url).toEqual(new URL('https://app.dailydraft.fun/duel/duel_social'));
     expect(metadata.openGraph?.images).toEqual([
       {
         alt: 'Challenge open for Creator vs open seat on Solana devnet',
@@ -31,17 +31,32 @@ describe('duel metadata', () => {
     ]);
   });
 
+  test('falls back to the product app origin rather than the marketing apex', () => {
+    // Every other case passes `appUrl` explicitly, so only this one covers the fallback. The apex
+    // serves `apps/web` and has no rewrite into this app: apex share URLs 404 for every crawler.
+    const metadata = buildDuelMetadata(receipt({ status: 'waiting' }));
+
+    expect(metadata.alternates?.canonical).toEqual(
+      new URL('https://app.dailydraft.fun/duel/duel_social'),
+    );
+    expect(metadata.openGraph?.images).toEqual([
+      expect.objectContaining({
+        url: new URL('https://app.dailydraft.fun/duel/duel_social/social/waiting'),
+      }),
+    ]);
+  });
+
   test('keeps mock settlement metadata explicit about devnet', () => {
     const metadata = buildDuelMetadata(
       receipt({ mockResult: true, status: 'settled' }),
-      'https://dailydraft.fun',
+      'https://app.dailydraft.fun',
     );
 
     expect(metadata.title).toBe('Devnet mock result — DailyDraft');
     expect(metadata.description).toContain('Solana devnet');
     expect(metadata.openGraph?.images).toEqual([
       expect.objectContaining({
-        url: new URL('https://dailydraft.fun/duel/duel_social/social/settled'),
+        url: new URL('https://app.dailydraft.fun/duel/duel_social/social/settled'),
       }),
     ]);
     expect(metadata.twitter).toEqual(expect.objectContaining({ card: 'summary_large_image' }));
@@ -58,13 +73,13 @@ describe('duel metadata', () => {
   ] as const)('uses the canonical %s social image and status-aware copy', (status, copy) => {
     const metadata = buildDuelMetadata(
       receipt({ mockResult: status === 'settled', status }),
-      'https://dailydraft.fun',
+      'https://app.dailydraft.fun',
     );
 
     expect(metadata.description).toContain(copy);
     expect(metadata.openGraph?.images).toEqual([
       expect.objectContaining({
-        url: new URL(`https://dailydraft.fun/duel/duel_social/social/${status}`),
+        url: new URL(`https://app.dailydraft.fun/duel/duel_social/social/${status}`),
       }),
     ]);
   });
