@@ -9,7 +9,8 @@ Source epics: #205 (reveal choreography), #206 (PixiJS SDK), #207 (DailyDraft En
 ## Rarity (canonical)
 
 - `PullRarity = 'common' | 'uncommon' | 'rare' | 'chase'`, derived from committed `insuredValue` (minor units + decimals) at floors $10 / $50 / $150; missing or non-positive value fails closed to `common`.
-- **Presentation-only invariant**: rarity never participates in the result hash, odds, valuation, or settlement. Canonical module lives in `packages/contracts` (PR #223); `apps/app/app/duel/pull-rarity.ts` should re-export from contracts once PR #203 is merged.
+- **Presentation-only invariant**: rarity never participates in the result hash, odds, valuation, or settlement. The single canonical module is `packages/contracts/src/pull-rarity.ts` (PR #223). PR #203 deleted the branch-local `apps/app/app/duel/pull-rarity.ts` rather than turning it into a re-export — there is no app-side copy, and call sites import from contracts directly.
+- **Import path matters.** Client components must import from the `@dailydraft/contracts/pull-rarity` subpath, never the package root: the root barrel imports `node:crypto`, which must not reach a browser bundle. `pull-rarity.ts` deliberately has zero imports so the subpath stays leaf-clean.
 
 ## Repo placement
 
