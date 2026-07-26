@@ -19,6 +19,10 @@ describe('game mode preview', () => {
     expect(configure).toContain('Commit fixture draw');
     expect(committed).toContain('Fixture pool committed');
     expect(revealed).toContain('Charizard · Base Set');
+    expect(revealed).toContain('data-choreography-beat="idle"');
+    expect(revealed).toContain('data-choreography-rarity="rare"');
+    expect(revealed).toContain('Skip reveal animation');
+    expect(revealed).toContain('Review fixture receipt');
     expect(receipt).toContain('Flip acquisition receipt');
     expect(receipt).toContain('Not transferred');
   });
@@ -34,6 +38,10 @@ describe('game mode preview', () => {
 
     expect(active).toContain('Continue fixture run');
     expect(active).toContain('Cash out fixture pot');
+    expect(active).toContain('data-choreography-beat="settled"');
+    expect(active).toContain('data-choreography-rarity="uncommon"');
+    expect(active).toContain('data-choreography-settled="true"');
+    expect(active).toContain('aria-hidden="true"');
     expect(cashed).toContain('Fixture pot cashed out');
     expect(cashed).toContain('Player cash-out');
     expect(busted).toContain('committed stage busted');
