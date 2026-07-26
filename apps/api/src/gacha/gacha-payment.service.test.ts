@@ -92,6 +92,11 @@ describe('gachaDepositConfigurationErrors', () => {
 
     expect(enumMigration).toContain("ADD VALUE 'FAILED'");
     expect(migration).not.toContain("ADD VALUE 'FAILED'");
+    expect(migration).toContain(`WHEN "status" IN ('PENDING', 'VERIFIED') THEN "payerWallet"`);
+    expect(migration).toContain(`WHEN "status" IN ('PENDING', 'VERIFIED') THEN "machineKey"`);
+    expect(migration).toContain('DROP CONSTRAINT "GachaRipPayment_contract_check",');
+    expect(migration).toContain(`"status" = 'FAILED'`);
+    expect(migration).not.toContain(`"status" = 'PENDING'\n      AND "signature" IS NULL`);
     expect(migration).toContain(
       'CREATE UNIQUE INDEX "GachaRipPayment_activePayerWallet_activeMachineKey_key"',
     );

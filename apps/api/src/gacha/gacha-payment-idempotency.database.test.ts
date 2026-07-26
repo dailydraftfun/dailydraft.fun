@@ -113,6 +113,48 @@ describeDatabase('Gacha payment idempotency against a real Postgres', () => {
       resumed: true,
       signature: stored.signature,
     });
+
+    const terminalAt = new Date();
+    await database.gachaRipPayment.update({
+      data: {
+        activeMachineKey: null,
+        activePayerWallet: null,
+        status: GachaRipPaymentStatus.FAILED,
+        terminalAt,
+        terminalReason: 'DATABASE_TEST_FINALIZED_REJECTION',
+      },
+      where: { id: intentId },
+    });
+    const replacement = await service.createIntent({ machineKey, payerWallet: PAYER });
+    expect(replacement.intentId).not.toBe(intentId);
+
+    // Historical terminal rows deliberately share the same payer+machine. Their
+    // nullable active slot must not collide with each other or with the new
+    // unresolved replacement.
+    const expiredAt = new Date();
+    const createExpiredHistory = () => {
+      const id = `gachapay_${crypto.randomUUID().replaceAll('-', '')}`;
+      return database.gachaRipPayment.create({
+        data: {
+          amountCurrency: 'USDC',
+          amountDecimals: 6,
+          amountMinor: '50000000',
+          destinationTokenAccount: HOUSE_TOKEN_ACCOUNT,
+          expiresAt: new Date(expiredAt.getTime() + 60_000),
+          id,
+          machineKey,
+          memoNonce: id,
+          mint: USDC_MINT,
+          payerWallet: PAYER,
+          status: GachaRipPaymentStatus.EXPIRED,
+          terminalAt: expiredAt,
+          terminalReason: 'SEEDED_TERMINAL_HISTORY',
+        },
+      });
+    };
+    await expect(
+      Promise.all([createExpiredHistory(), createExpiredHistory()]),
+    ).resolves.toHaveLength(2);
   });
 });
 

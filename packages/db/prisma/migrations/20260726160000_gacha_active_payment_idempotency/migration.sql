@@ -25,8 +25,14 @@ $$;
 
 UPDATE "GachaRipPayment"
 SET
-  "activePayerWallet" = "payerWallet",
-  "activeMachineKey" = "machineKey",
+  "activePayerWallet" = CASE
+    WHEN "status" IN ('PENDING', 'VERIFIED') THEN "payerWallet"
+    ELSE NULL
+  END,
+  "activeMachineKey" = CASE
+    WHEN "status" IN ('PENDING', 'VERIFIED') THEN "machineKey"
+    ELSE NULL
+  END,
   "signatureClaimedAt" = CASE
     WHEN "signature" IS NOT NULL THEN COALESCE("verifiedAt", "updatedAt")
     ELSE NULL
@@ -44,6 +50,57 @@ SET
 
 CREATE UNIQUE INDEX "GachaRipPayment_activePayerWallet_activeMachineKey_key"
 ON "GachaRipPayment"("activePayerWallet", "activeMachineKey");
+
+ALTER TABLE "GachaRipPayment"
+DROP CONSTRAINT "GachaRipPayment_contract_check",
+ADD CONSTRAINT "GachaRipPayment_contract_check" CHECK (
+  "machineKey" ~ '^[a-z0-9][a-z0-9._:-]{0,127}$'
+  AND "memoNonce" ~ '^gachapay_[a-f0-9]{32}$'
+  AND "payerWallet" ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
+  AND "destinationTokenAccount" ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
+  AND "mint" ~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
+  AND "amountMinor" ~ '^[0-9]+$'
+  AND "amountCurrency" = 'USDC'
+  AND "amountDecimals" = 6
+  AND "expiresAt" > "createdAt"
+  AND (
+    (
+      "status" = 'PENDING'
+      AND "verifiedAt" IS NULL
+      AND "consumedByRipId" IS NULL
+      AND "consumedAt" IS NULL
+    )
+    OR (
+      "status" = 'VERIFIED'
+      AND "signature" IS NOT NULL
+      AND "verifiedAt" IS NOT NULL
+      AND "consumedByRipId" IS NULL
+      AND "consumedAt" IS NULL
+    )
+    OR (
+      "status" = 'CONSUMED'
+      AND "signature" IS NOT NULL
+      AND "verifiedAt" IS NOT NULL
+      AND "consumedByRipId" IS NOT NULL
+      AND "consumedAt" IS NOT NULL
+    )
+    OR (
+      "status" = 'EXPIRED'
+      AND "signature" IS NULL
+      AND "verifiedAt" IS NULL
+      AND "consumedByRipId" IS NULL
+      AND "consumedAt" IS NULL
+    )
+    OR (
+      "status" = 'FAILED'
+      AND "signature" IS NOT NULL
+      AND "verifiedAt" IS NULL
+      AND "consumedByRipId" IS NULL
+      AND "consumedAt" IS NULL
+    )
+  )
+  AND ("signature" IS NULL OR "signature" ~ '^[1-9A-HJ-NP-Za-km-z]{64,96}$')
+);
 
 ALTER TABLE "GachaRipPayment"
 ADD CONSTRAINT "GachaRipPayment_active_slot_check" CHECK (
