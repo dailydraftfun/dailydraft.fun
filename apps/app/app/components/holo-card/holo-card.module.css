@@ -39,11 +39,16 @@
 }
 
 .card {
-  --holo-tilt-x: 0deg;
-  --holo-tilt-y: 0deg;
-  --holo-sheen-x: 50%;
-  --holo-sheen-y: 50%;
-  --holo-glare: 0;
+  --holo-pointer-tilt-x: 0deg;
+  --holo-pointer-tilt-y: 0deg;
+  --holo-pointer-sheen-x: 50%;
+  --holo-pointer-sheen-y: 50%;
+  --holo-pointer-glare: 0;
+  --holo-tilt-x: var(--holo-pointer-tilt-x);
+  --holo-tilt-y: var(--holo-pointer-tilt-y);
+  --holo-sheen-x: var(--holo-pointer-sheen-x);
+  --holo-sheen-y: var(--holo-pointer-sheen-y);
+  --holo-glare: var(--holo-pointer-glare);
 
   position: relative;
   isolation: isolate;
@@ -57,8 +62,7 @@
   transform: rotateX(var(--holo-tilt-x)) rotateY(var(--holo-tilt-y)) translateZ(0);
   transform-style: preserve-3d;
   transform-origin: center;
-  touch-action: none;
-  will-change: transform;
+  touch-action: pan-y;
 }
 
 .card::before {
@@ -71,19 +75,6 @@
     inset 0 0 0 1px rgba(7, 8, 7, 0.74),
     inset 0 0 28px rgba(var(--holo-accent), 0.12);
   content: "";
-  pointer-events: none;
-}
-
-.card::after {
-  position: absolute;
-  z-index: -1;
-  inset: 8%;
-  border-radius: inherit;
-  background: rgba(var(--holo-accent), 0.22);
-  content: "";
-  filter: blur(28px);
-  opacity: calc(0.16 + var(--holo-glare) * 0.5);
-  transform: translateZ(-24px);
   pointer-events: none;
 }
 
@@ -251,6 +242,12 @@
   transform: rotateX(-2deg) rotateY(3deg) translateZ(0) scale(1.012);
 }
 
+.card:hover,
+.card:focus-visible,
+.card:active {
+  will-change: transform;
+}
+
 .card:focus-visible .foil,
 .card:focus-visible .sparkles {
   opacity: calc(var(--holo-foil-opacity) + 0.28);
@@ -265,6 +262,11 @@
 
     transform: none;
     transition: none;
+    will-change: auto;
+  }
+
+  .card:hover,
+  .card:active {
     will-change: auto;
   }
 

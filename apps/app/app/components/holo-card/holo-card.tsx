@@ -1,10 +1,10 @@
 // biome-ignore-all lint/a11y/noNoninteractiveTabindex: The visual card needs a keyboard focus target for its equivalent foil highlight.
-// biome-ignore-all lint/a11y/useSemanticElements: A fieldset is not an appropriate semantic container for this composite card artwork.
+// biome-ignore-all lint/a11y/useSemanticElements: This layered composite artwork cannot use a native img element as its focusable container.
 
 'use client';
 
 import Image from 'next/image';
-import { type ReactNode, type PointerEvent as ReactPointerEvent, useEffect, useRef } from 'react';
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from 'react';
 import styles from './holo-card.module.css';
 import {
   createHoloCardSpringState,
@@ -18,7 +18,6 @@ import {
 import { type HoloCardRarity, holoCardRarityProfiles } from './holo-card-rarity';
 
 export type HoloCardProps = {
-  children?: ReactNode;
   className?: string;
   imageAlt?: string;
   imageUrl: string;
@@ -29,7 +28,6 @@ export type HoloCardProps = {
 };
 
 export function HoloCard({
-  children,
   className,
   imageAlt,
   imageUrl,
@@ -46,16 +44,16 @@ export function HoloCard({
   const currentMotionRef = useRef<HoloCardMotionState>({ ...neutralHoloCardMotion });
   const reducedMotionRef = useRef(false);
   const rarityProfile = holoCardRarityProfiles[rarity];
+  const accessibleName = imageAlt ?? name;
 
   useEffect(() => {
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const updatePreference = () => {
       reducedMotionRef.current = motionQuery.matches;
-      cardRef.current?.setAttribute('data-motion', motionQuery.matches ? 'reduced' : 'interactive');
 
       if (motionQuery.matches) {
-        cancelAnimationFrame(pointerFrameRef);
-        cancelAnimationFrame(springFrameRef);
+        cancelFrameRef(pointerFrameRef);
+        cancelFrameRef(springFrameRef);
         applyMotion(cardRef.current, neutralHoloCardMotion);
         currentMotionRef.current = { ...neutralHoloCardMotion };
       }
@@ -65,8 +63,8 @@ export function HoloCard({
     motionQuery.addEventListener('change', updatePreference);
     return () => {
       motionQuery.removeEventListener('change', updatePreference);
-      cancelAnimationFrame(pointerFrameRef);
-      cancelAnimationFrame(springFrameRef);
+      cancelFrameRef(pointerFrameRef);
+      cancelFrameRef(springFrameRef);
     };
   }, []);
 
@@ -76,7 +74,7 @@ export function HoloCard({
 
     const bounds = event.currentTarget.getBoundingClientRect();
     pendingMotionRef.current = pointerToHoloCardMotion(event.clientX, event.clientY, bounds);
-    cancelAnimationFrame(springFrameRef);
+    cancelFrameRef(springFrameRef);
     if (pointerFrameRef.current !== null) return;
 
     pointerFrameRef.current = window.requestAnimationFrame(() => {
@@ -107,8 +105,8 @@ export function HoloCard({
 
   function settleCard() {
     pendingMotionRef.current = null;
-    cancelAnimationFrame(pointerFrameRef);
-    cancelAnimationFrame(springFrameRef);
+    cancelFrameRef(pointerFrameRef);
+    cancelFrameRef(springFrameRef);
 
     if (holoCardMotionPolicy(reducedMotionRef.current).release === 'immediate') {
       currentMotionRef.current = { ...neutralHoloCardMotion };
@@ -144,10 +142,9 @@ export function HoloCard({
   return (
     <article className={cardClassName} data-rarity={rarity}>
       <div
-        aria-label={`${name}, ${rarityProfile.label} holographic card${value ? `, ${value}` : ''}`}
+        aria-label={`${accessibleName}, ${rarityProfile.label} holographic card${value ? `, ${value}` : ''}`}
         className={styles.card}
         data-foil-layers={rarityProfile.foilLayers}
-        data-motion="pending"
         data-rarity={rarity}
         data-treatment={rarityProfile.treatment}
         onBlur={settleCard}
@@ -162,12 +159,13 @@ export function HoloCard({
         onPointerMove={queuePointerMotion}
         onPointerUp={endDrag}
         ref={cardRef}
-        role="group"
+        role="img"
         tabIndex={0}
       >
         <div className={styles.art}>
           <Image
-            alt={imageAlt ?? name}
+            alt=""
+            aria-hidden="true"
             className={styles.image}
             fill
             priority={priority}
@@ -186,7 +184,6 @@ export function HoloCard({
             <strong>{name}</strong>
           </div>
           {value ? <span className={styles.value}>{value}</span> : null}
-          {children}
         </footer>
       </div>
     </article>
@@ -195,14 +192,14 @@ export function HoloCard({
 
 function applyMotion(element: HTMLDivElement | null, motion: HoloCardMotionState) {
   if (!element) return;
-  element.style.setProperty('--holo-tilt-x', `${motion.tiltX.toFixed(3)}deg`);
-  element.style.setProperty('--holo-tilt-y', `${motion.tiltY.toFixed(3)}deg`);
-  element.style.setProperty('--holo-sheen-x', `${motion.sheenX.toFixed(3)}%`);
-  element.style.setProperty('--holo-sheen-y', `${motion.sheenY.toFixed(3)}%`);
-  element.style.setProperty('--holo-glare', motion.glare.toFixed(3));
+  element.style.setProperty('--holo-pointer-tilt-x', `${motion.tiltX.toFixed(3)}deg`);
+  element.style.setProperty('--holo-pointer-tilt-y', `${motion.tiltY.toFixed(3)}deg`);
+  element.style.setProperty('--holo-pointer-sheen-x', `${motion.sheenX.toFixed(3)}%`);
+  element.style.setProperty('--holo-pointer-sheen-y', `${motion.sheenY.toFixed(3)}%`);
+  element.style.setProperty('--holo-pointer-glare', motion.glare.toFixed(3));
 }
 
-function cancelAnimationFrame(reference: { current: number | null }) {
+function cancelFrameRef(reference: { current: number | null }) {
   if (reference.current === null) return;
   window.cancelAnimationFrame(reference.current);
   reference.current = null;

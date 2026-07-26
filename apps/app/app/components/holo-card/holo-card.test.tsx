@@ -22,7 +22,7 @@ describe('holo card', () => {
       expect(markup).toContain(holoCardRarityProfiles[rarity].label);
       expect(markup).toContain(`${rarity} card`);
       expect(markup).toContain('tabindex="0"');
-      expect(markup).toContain('role="group"');
+      expect(markup).toContain('role="img"');
     }
   });
 
@@ -34,6 +34,7 @@ describe('holo card', () => {
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
     expect(css).toMatch(/\.card,\s+\.card:focus-visible\s*\{[^}]*transform: none;/s);
     expect(css).toMatch(/prefers-reduced-motion:[\s\S]*--holo-glare: 0\.42;/);
+    expect(css).toContain('--holo-sheen-x: var(--holo-pointer-sheen-x)');
     expect(css).toMatch(/\.stage\[data-rarity=["']chase["']\]/);
   });
 
@@ -43,5 +44,6 @@ describe('holo card', () => {
     expect(css).toContain('inline-size: min(100%, 20rem)');
     expect(css).toContain('max-inline-size: calc(100vw - 2rem)');
     expect(css).toContain('aspect-ratio: 5 / 7');
+    expect(css).toContain('touch-action: pan-y');
   });
 });
