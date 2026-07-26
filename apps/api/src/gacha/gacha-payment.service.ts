@@ -408,7 +408,7 @@ export class GachaPaymentService {
       }));
     } catch (error) {
       if (error instanceof GachaPaymentError) {
-        if (error.code === 'TRANSACTION_EXECUTION_ERROR' || error.code === 'TRANSFER_MISSING') {
+        if (error.code === 'TRANSACTION_EXECUTION_ERROR') {
           await this.failClaimedPayment(payment, error.code);
         } else {
           await this.recordReconciliationEvidence(payment, error.code);

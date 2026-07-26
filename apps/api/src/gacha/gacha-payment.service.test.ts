@@ -694,6 +694,34 @@ describe('GachaPaymentService.verifyIntent', () => {
     });
   });
 
+  test('keeps a successful envelope with missing transfer evidence fail-closed', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    const { signature } = await claimSignedPayment(service, intent.intentId);
+    const verifier = new GachaPaymentService(
+      asClient(database),
+      new PaymentRpc({
+        envelope: paidEnvelope(intent.memoNonce, { omitDestinationTransfer: true }),
+      }),
+    );
+
+    await expect(verifier.verifyIntent({ intentId: intent.intentId, signature })).rejects.toThrow(
+      'TRANSFER_MISSING',
+    );
+    expect(database.payments[0]).toMatchObject({
+      activeMachineKey: MACHINE_KEY,
+      activePayerWallet: PAYER,
+      reconciliationReason: 'TRANSFER_MISSING',
+      status: GachaRipPaymentStatus.PENDING,
+      terminalReason: null,
+    });
+
+    const resumed = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    expect(resumed).toMatchObject({ intentId: intent.intentId, resumed: true, signature });
+  });
+
   test('releases the active slot only when finalized execution proves no credit occurred', async () => {
     configureDevnet();
     const database = new PaymentDatabase();
@@ -972,6 +1000,7 @@ function paidEnvelope(
   options: {
     amountMinor?: bigint;
     duplicateDestinationTransfer?: boolean;
+    omitDestinationTransfer?: boolean;
     transactionError?: unknown;
   } = {},
 ): SolanaTransactionEnvelope {
@@ -1004,7 +1033,7 @@ function paidEnvelope(
           numRequiredSignatures: 1,
         },
         instructions: [
-          transferInstruction,
+          ...(options.omitDestinationTransfer ? [] : [transferInstruction]),
           ...(options.duplicateDestinationTransfer ? [transferInstruction] : []),
           { accounts: [], data: bs58.encode(Buffer.from(intentId, 'utf8')), programIdIndex: 5 },
         ],
