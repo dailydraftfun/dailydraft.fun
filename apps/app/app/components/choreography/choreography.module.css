@@ -111,7 +111,7 @@
   min-block-size: 3rem;
 }
 
-.skip:disabled {
+.skip[aria-disabled="true"] {
   opacity: 0.55;
 }
 
@@ -124,12 +124,19 @@
   will-change: transform, opacity, filter;
 }
 
+[data-choreography-settled="true"] .flipCard,
+[data-choreography-settled="true"] .pack,
+[data-choreography-settled="true"] .stageArtwork {
+  will-change: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .driver {
     display: none;
   }
 
   .flipCard,
+  .pack,
   .stageArtwork {
     will-change: auto;
   }

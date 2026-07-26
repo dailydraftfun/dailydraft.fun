@@ -80,7 +80,7 @@ describe('reveal choreography React binding', () => {
     ).toBeNull();
   });
 
-  test('keeps skip controls mounted and disables them after settlement', () => {
+  test('keeps settled skip controls focusable while guarding repeated activation', () => {
     const fastForwarded: string[] = [];
     const active = controllerFor('reveal', undefined, () => fastForwarded.push('active'));
     const settled = controllerFor('settled', undefined, () => fastForwarded.push('settled'));
@@ -89,17 +89,22 @@ describe('reveal choreography React binding', () => {
       controller: active,
       label: 'Skip animation',
     }) as ReactElement<{ onClick(): void }>;
+    const settledControl = ChoreographySkipControl({
+      className: 'skip',
+      controller: settled,
+      label: 'Skip animation',
+    }) as ReactElement<{ onClick(): void }>;
     const activeMarkup = renderToStaticMarkup(activeControl);
-    const settledMarkup = renderToStaticMarkup(
-      <ChoreographySkipControl className="skip" controller={settled} label="Skip animation" />,
-    );
+    const settledMarkup = renderToStaticMarkup(settledControl);
 
     expect(activeMarkup).toContain('Skip animation');
-    expect(activeMarkup).not.toContain('disabled=""');
+    expect(activeMarkup).toContain('aria-disabled="false"');
     expect(settledMarkup).toContain('Skip animation');
-    expect(settledMarkup).toContain('disabled=""');
+    expect(settledMarkup).toContain('aria-disabled="true"');
+    expect(settledMarkup).not.toContain(' disabled');
 
     activeControl.props.onClick();
+    settledControl.props.onClick();
     expect(fastForwarded).toEqual(['active']);
   });
 
@@ -157,7 +162,13 @@ describe('reveal choreography React binding', () => {
     expect(css).toMatch(/prefers-reduced-motion:[\s\S]*transition: none;/);
     expect(css).toMatch(/prefers-reduced-motion:[\s\S]*\.driver\s*\{[^}]*display: none;/s);
     expect(css).toMatch(/\.skip\s*\{[^}]*min-block-size: 3rem;/s);
-    expect(css).toMatch(/\.skip:disabled\s*\{[^}]*opacity: 0\.55;/s);
+    expect(css).toMatch(/\.skip\[aria-disabled="true"\]\s*\{[^}]*opacity: 0\.55;/s);
+    expect(css).toMatch(
+      /\[data-choreography-settled="true"\] \.flipCard,[\s\S]*\[data-choreography-settled="true"\] \.pack,[\s\S]*\[data-choreography-settled="true"\] \.stageArtwork\s*\{[^}]*will-change: auto;/s,
+    );
+    expect(css).toMatch(
+      /prefers-reduced-motion:[\s\S]*\.flipCard,[\s\S]*\.pack,[\s\S]*\.stageArtwork\s*\{[^}]*will-change: auto;/s,
+    );
   });
 });
 

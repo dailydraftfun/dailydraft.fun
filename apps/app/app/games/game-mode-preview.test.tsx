@@ -59,7 +59,8 @@ describe('game mode preview', () => {
     expect(active).toContain('data-choreography-settled="true"');
     expect(active).toContain('aria-hidden="true"');
     expect(active).toContain('Skip animation');
-    expect(active).toContain('disabled=""');
+    expect(active).toContain('aria-disabled="true"');
+    expect(active).not.toMatch(/<button[^>]*\sdisabled(?:=|>)/);
     expect(active).toContain('min-h-12');
     expect(active).toContain('text-xs');
     expect(cashed).toContain('Fixture pot cashed out');

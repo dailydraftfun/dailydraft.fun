@@ -136,9 +136,12 @@ export function ChoreographySkipControl({
 }) {
   return (
     <button
+      aria-disabled={controller.settled}
       className={className}
-      disabled={controller.settled}
-      onClick={controller.fastForward}
+      onClick={() => {
+        if (controller.settled) return;
+        controller.fastForward();
+      }}
       type="button"
     >
       {label}
