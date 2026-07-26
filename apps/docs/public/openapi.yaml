@@ -26,7 +26,7 @@ tags:
   - name: Packs
     description: Duel-eligible pack definitions and current inventory metadata.
   - name: Gacha
-    description: Inspectable Sports Pack Gacha capabilities, inventory, odds, and fixture-only rips.
+    description: Inspectable Sports Pack Gacha capabilities, inventory, odds, deposit intents, and rips.
   - name: Valuation
     description: Immutable winner-comparison policies committed before either player funds.
   - name: Duels
@@ -194,19 +194,107 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /gacha/machines/{machineKey}/payment-intents:
+    post:
+      operationId: createGachaPaymentIntent
+      tags: [Gacha]
+      summary: Open a payment intent for one funded Gacha rip
+      description: |
+        Issues the exact deposit terms for a single rip: mint, destination
+        token account, amount, and a memoNonce the payer must echo in an SPL
+        Memo instruction. The nonce is what binds an on-chain transfer to this
+        intent, so a transfer that omits it can never be claimed as payment for
+        a rip. Intents expire, and each one funds at most one rip.
+      x-dailydraft-availability: devnet-preview
+      parameters:
+        - $ref: '#/components/parameters/GachaMachineKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGachaPaymentIntentRequest'
+      responses:
+        '201':
+          description: Deposit terms the payer must satisfy on chain
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GachaPaymentIntent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /gacha/payment-intents/{intentId}/verify:
+    post:
+      operationId: verifyGachaPayment
+      tags: [Gacha]
+      summary: Verify the on-chain transfer that funds a Gacha payment intent
+      description: |
+        Re-reads the submitted signature from the chain and checks the transfer
+        against the intent it claims to fund: mint, destination token account,
+        amount, payer, and the memoNonce. Nothing the client asserts is trusted.
+        A verified intent is spendable by exactly one subsequent POST
+        /gacha/rips call; replaying the same signature is rejected.
+      x-dailydraft-availability: devnet-preview
+      parameters:
+        - $ref: '#/components/parameters/GachaPaymentIntentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyGachaPaymentRequest'
+      responses:
+        '200':
+          description: The verified deposit, now spendable on one rip
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifiedGachaPayment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /gacha/rips:
     post:
       operationId: createFixtureGachaRip
       tags: [Gacha]
-      summary: Execute one explicitly enabled fixture-mode Gacha rip
+      summary: Execute one Gacha rip against sealed inventory and odds
       description: |
         Selects against sealed inventory and odds evidence, consuming a
         previously issued rip-commitments seed commitment under the same
         advisory lock, then records reveal, acquisition, and settlement as
         separate lifecycle transitions. This route fails closed unless
-        fixture or preview mode is explicitly enabled. An Idempotency-Key
+        fixture or devnet preview mode is explicitly enabled. An Idempotency-Key
         header (or idempotencyKey body field) replays the original rip
         instead of creating a second one.
+
+        In devnet preview mode the rip must be funded: paymentIntentId is
+        required and names a verified payment intent, which is spent inside the
+        same transaction that consumes the seed. In fixture mode rips stay
+        unfunded so deterministic previews need no chain access, and
+        paymentIntentId is ignored.
       x-dailydraft-availability: devnet-preview
       parameters:
         - name: Idempotency-Key
@@ -1641,6 +1729,12 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/GachaMachineKey'
+    GachaPaymentIntentId:
+      name: intentId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/GachaPaymentIntentId'
     DuelId:
       name: duelId
       in: path
@@ -2342,6 +2436,93 @@ components:
         expiresAt:
           type: string
           format: date-time
+    GachaPaymentIntentId:
+      type: string
+      pattern: '^gachapay_[a-f0-9]{32}$'
+      examples: [gachapay_7f3c1d9e4b2a48c6a0e5f81b2c3d4e5f]
+    CreateGachaPaymentIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [payerWallet]
+      properties:
+        payerWallet:
+          $ref: '#/components/schemas/SolanaAddress'
+    GachaPaymentIntent:
+      type: object
+      additionalProperties: false
+      required:
+        - intentId
+        - machineKey
+        - payerWallet
+        - mint
+        - destinationTokenAccount
+        - amountMinor
+        - amountDecimals
+        - amountCurrency
+        - memoNonce
+        - expiresAt
+      properties:
+        intentId:
+          $ref: '#/components/schemas/GachaPaymentIntentId'
+        machineKey:
+          $ref: '#/components/schemas/GachaMachineKey'
+        payerWallet:
+          $ref: '#/components/schemas/SolanaAddress'
+        mint:
+          $ref: '#/components/schemas/SolanaAddress'
+        destinationTokenAccount:
+          $ref: '#/components/schemas/SolanaAddress'
+        amountMinor:
+          type: string
+          pattern: '^[0-9]{1,20}$'
+          description: Exact deposit amount in minor units; a string so u64 survives JSON.
+        amountDecimals:
+          type: integer
+          minimum: 0
+          maximum: 18
+        amountCurrency:
+          type: string
+          minLength: 1
+          maxLength: 16
+        memoNonce:
+          allOf:
+            - $ref: '#/components/schemas/GachaPaymentIntentId'
+          description: |
+            Must be the entire payload of an SPL Memo instruction in the funding
+            transaction. This is the only thing binding a transfer to this intent.
+        expiresAt:
+          type: string
+          format: date-time
+    VerifyGachaPaymentRequest:
+      type: object
+      additionalProperties: false
+      required: [signature]
+      properties:
+        signature:
+          type: string
+          pattern: '^[1-9A-HJ-NP-Za-km-z]{64,96}$'
+    VerifiedGachaPayment:
+      type: object
+      additionalProperties: false
+      required: [intentId, signature, amountMinor, mintVerifiedOnChain, verifiedAt]
+      properties:
+        intentId:
+          $ref: '#/components/schemas/GachaPaymentIntentId'
+        signature:
+          type: string
+          pattern: '^[1-9A-HJ-NP-Za-km-z]{64,96}$'
+        amountMinor:
+          type: string
+          pattern: '^[0-9]{1,20}$'
+        mintVerifiedOnChain:
+          type: boolean
+          description: |
+            False when the transfer used the unchecked SPL `transfer` instruction,
+            which carries no mint account: the deposit is still bound to the
+            destination token account, but the mint was not asserted by the chain.
+        verifiedAt:
+          type: string
+          format: date-time
     CreateFixtureGachaRipRequest:
       type: object
       additionalProperties: false
@@ -2365,6 +2546,13 @@ components:
           type: string
           minLength: 1
           maxLength: 240
+        paymentIntentId:
+          allOf:
+            - $ref: '#/components/schemas/GachaPaymentIntentId'
+          description: |
+            A verified payment intent to spend on this rip. Required in devnet
+            preview mode and rejected as missing there; ignored in fixture mode,
+            where rips are unfunded.
         oddsVersion:
           type: integer
           minimum: 1

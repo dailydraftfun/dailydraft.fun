@@ -16,6 +16,7 @@ export {
   FantasyTournamentStatus,
   FlipInventoryExclusionReason,
   GachaInventoryExclusionReason,
+  GachaRipPaymentStatus,
   GachaRipStatus,
   GachaSport,
   HouseInventoryDisposition,

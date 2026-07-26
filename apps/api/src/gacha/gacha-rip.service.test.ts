@@ -6,6 +6,7 @@ import type { DatabaseClient } from '@dailydraft/db';
 import { GachaRipStatus } from '@dailydraft/db';
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { GachaInventorySnapshotService } from './gacha-inventory-snapshot.service.js';
+import type { ConsumeGachaPaymentInput, GachaPaymentService } from './gacha-payment.service.js';
 import {
   createFixtureGachaPullOddsRuleSet,
   type GachaPullOddsRuleSet,
@@ -30,12 +31,14 @@ const WALLET = 'devnet-fixture-recipient-wallet';
 const ORIGINAL_ENV = {
   fixture: process.env.DAILYDRAFT_GACHA_FIXTURE_MODE,
   node: process.env.NODE_ENV,
+  providerMode: process.env.DAILYDRAFT_PROVIDER_MODE,
   vercel: process.env.VERCEL_ENV,
 };
 
 afterEach(() => {
   restoreEnvironment('DAILYDRAFT_GACHA_FIXTURE_MODE', ORIGINAL_ENV.fixture);
   restoreEnvironment('NODE_ENV', ORIGINAL_ENV.node);
+  restoreEnvironment('DAILYDRAFT_PROVIDER_MODE', ORIGINAL_ENV.providerMode);
   restoreEnvironment('VERCEL_ENV', ORIGINAL_ENV.vercel);
 });
 
@@ -445,9 +448,10 @@ describe('GachaRipService', () => {
     expect(replay.serverSeedHash).toBeNull();
   });
 
-  test('fails closed before reading snapshots when fixture mode is disabled', async () => {
+  test('fails closed before reading snapshots when fixture and devnet modes are disabled', async () => {
     process.env.NODE_ENV = 'test';
     delete process.env.DAILYDRAFT_GACHA_FIXTURE_MODE;
+    delete process.env.DAILYDRAFT_PROVIDER_MODE;
     const database = new RipDatabase();
     let snapshotReads = 0;
     const snapshots = {
@@ -460,6 +464,7 @@ describe('GachaRipService', () => {
       database as unknown as DatabaseClient,
       snapshots,
       new RecordingProvider(),
+      new RecordingPayments() as unknown as GachaPaymentService,
     );
 
     await expect(
@@ -469,9 +474,101 @@ describe('GachaRipService', () => {
         recipientWallet: WALLET,
         seed: FIXED_SEED,
       }),
-    ).rejects.toThrow('disabled outside explicit fixture or preview mode');
+    ).rejects.toThrow('disabled outside explicit fixture, preview, or devnet mode');
     expect(snapshotReads).toBe(0);
     expect(database.transitions).toEqual([]);
+  });
+
+  test('spends the verified payment intent on the rip when devnet mode requires funding', async () => {
+    enableDevnetMode();
+    const database = new RipDatabase();
+    const payments = new RecordingPayments();
+    const service = serviceWith(database, new RecordingProvider(), snapshot(), payments);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    const result = await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      machineKey: MACHINE_KEY,
+      paymentIntentId: `gachapay_${'c'.repeat(32)}`,
+      recipientWallet: WALLET,
+      seed: FIXED_SEED,
+    });
+
+    expect(result.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(payments.consumed).toHaveLength(1);
+    expect(payments.consumed[0]).toMatchObject({
+      intentId: `gachapay_${'c'.repeat(32)}`,
+      machineKey: MACHINE_KEY,
+      // Single-player: the payer and the recipient are the same wallet.
+      payerWallet: WALLET,
+      ripId: result.rip.id,
+    });
+  });
+
+  test('refuses a funded rip that names no payment intent', async () => {
+    enableDevnetMode();
+    const database = new RipDatabase();
+    const payments = new RecordingPayments();
+    const service = serviceWith(database, new RecordingProvider(), snapshot(), payments);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: commitment.commitmentId,
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('requires a verified payment intent');
+    expect(payments.consumed).toEqual([]);
+    expect(database.transitions).toEqual([]);
+  });
+
+  test('keeps the rip and the payment consistent when the intent cannot be spent', async () => {
+    enableDevnetMode();
+    const database = new RipDatabase();
+    const payments = new RecordingPayments();
+    payments.failure = new Error('Gacha rip payment is not verified or was already consumed');
+    const service = serviceWith(database, new RecordingProvider(), snapshot(), payments);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: commitment.commitmentId,
+        machineKey: MACHINE_KEY,
+        paymentIntentId: `gachapay_${'d'.repeat(32)}`,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('is not verified or was already consumed');
+    // The throw happens inside the rip transaction, before the reveal, so the rip
+    // never advances past SELECTED. Postgres rolls the row back too; this in-memory
+    // fake has no rollback, which is why the insert is still visible here.
+    expect(database.transitions).toEqual([GachaRipStatus.SELECTED]);
+    // The load-bearing assertion: an unspendable payment must not burn the seed.
+    const stored = await database.gachaRipSeedCommitment.findUnique({
+      where: { id: commitment.commitmentId },
+    });
+    expect(stored?.consumedByRipId).toBeNull();
+  });
+
+  test('leaves fixture rips unfunded even when devnet credentials are present', async () => {
+    enableFixtureMode();
+    process.env.DAILYDRAFT_PROVIDER_MODE = 'dailydraft-devnet';
+    const database = new RipDatabase();
+    const payments = new RecordingPayments();
+    const service = serviceWith(database, new RecordingProvider(), snapshot(), payments);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    const result = await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: FIXED_SEED,
+    });
+
+    expect(result.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(payments.consumed).toEqual([]);
   });
 
   test('reports provider capabilities and exposes only sealed committed odds', async () => {
@@ -607,11 +704,17 @@ function serviceWith(
   database: RipDatabase,
   provider: RecordingProvider,
   snapshotOverride: ReturnType<typeof snapshot> = snapshot(),
+  payments: RecordingPayments = new RecordingPayments(),
 ): GachaRipService {
   const snapshots = {
     findLatestSealed: async () => snapshotOverride,
   } as unknown as GachaInventorySnapshotService;
-  return new GachaRipService(database as unknown as DatabaseClient, snapshots, provider);
+  return new GachaRipService(
+    database as unknown as DatabaseClient,
+    snapshots,
+    provider,
+    payments as unknown as GachaPaymentService,
+  );
 }
 
 function snapshot() {
@@ -915,9 +1018,30 @@ class RipDatabase {
   }
 }
 
+class RecordingPayments {
+  readonly consumed: ConsumeGachaPaymentInput[] = [];
+  failure: Error | null = null;
+
+  async consumeVerifiedPayment(
+    _transaction: unknown,
+    input: ConsumeGachaPaymentInput,
+  ): Promise<void> {
+    if (this.failure) throw this.failure;
+    this.consumed.push(input);
+  }
+}
+
 function enableFixtureMode(): void {
   process.env.NODE_ENV = 'test';
   process.env.DAILYDRAFT_GACHA_FIXTURE_MODE = 'true';
+  delete process.env.VERCEL_ENV;
+}
+
+/** Devnet without fixtures is the only mode in which a rip must be funded. */
+function enableDevnetMode(): void {
+  process.env.NODE_ENV = 'test';
+  delete process.env.DAILYDRAFT_GACHA_FIXTURE_MODE;
+  process.env.DAILYDRAFT_PROVIDER_MODE = 'dailydraft-devnet';
   delete process.env.VERCEL_ENV;
 }
 

@@ -56,7 +56,7 @@ export interface SettledGachaRip {
 
 export abstract class SportsPackGachaProvider {
   abstract readonly capabilities: Readonly<GachaCapabilityGates>;
-  abstract readonly mode: 'collector-crypt' | 'fixture';
+  abstract readonly mode: 'collector-crypt' | 'dailydraft-devnet' | 'fixture';
 
   abstract acquireCard(input: AcquireGachaCardInput): Promise<AcquiredGachaCard>;
   abstract getEligibleCards(machineKey: string): Promise<readonly SportsPackGachaCard[]>;

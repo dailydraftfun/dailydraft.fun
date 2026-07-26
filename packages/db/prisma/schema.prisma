@@ -203,6 +203,13 @@ enum GachaRipStatus {
   FAILED
 }
 
+enum GachaRipPaymentStatus {
+  PENDING
+  VERIFIED
+  CONSUMED
+  EXPIRED
+}
+
 enum GachaInventoryExclusionReason {
   MISSING_INSURED_VALUE
   MISSING_ASSET_REFERENCE
@@ -780,6 +787,7 @@ model GachaMachine {
   updatedAt          DateTime                  @updatedAt
   inventorySnapshots GachaInventorySnapshot[]
   oddsCommitments    GachaPullOddsCommitment[]
+  payments           GachaRipPayment[]
   rips               GachaRip[]
 
   @@index([sport, tierPriceMinor, active])
@@ -929,6 +937,7 @@ model GachaRip {
   updatedAt              DateTime                @updatedAt
   machine                GachaMachine            @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
   oddsCommitment         GachaPullOddsCommitment @relation(fields: [oddsCommitmentId], references: [id], onDelete: Restrict)
+  payment                GachaRipPayment?
   seedCommitment         GachaRipSeedCommitment?
 
   @@unique([snapshotContentHash, selectedAssetReference])
@@ -937,6 +946,45 @@ model GachaRip {
   @@index([status, updatedAt])
   @@index([snapshotContentHash])
   @@index([oddsRulesHash])
+}
+
+/// A player-funded SPL transfer that pays for exactly one Gacha rip.
+///
+/// A rip is single-player, so unlike a duel there is no escrow instruction the
+/// payment can be bound to. Instead the intent is issued first with a memoNonce
+/// the payer must echo inside the signed transaction; verification then binds
+/// the landed signature to this row. Both the signature and consumedByRipId are
+/// unique, so the database itself refuses to let one payment fund two rips or
+/// one transfer satisfy two intents, even under concurrent requests.
+model GachaRipPayment {
+  id                      String                @id
+  machineKey              String
+  status                  GachaRipPaymentStatus @default(PENDING)
+  network                 SolanaNetwork         @default(DEVNET)
+  payerWallet             String
+  destinationTokenAccount String
+  mint                    String
+  amountMinor             String
+  amountCurrency          String                @default("USDC")
+  amountDecimals          Int                   @default(6)
+  memoNonce               String                @unique
+  signature               String?               @unique
+  /// False when the payer used plain SPL `transfer`, which omits the mint. The
+  /// destination token account's mint is resolved out of band before the intent
+  /// is issued, so the transfer is still bound to one mint either way.
+  mintVerifiedOnChain     Boolean               @default(false)
+  consumedByRipId         String?               @unique
+  verifiedAt              DateTime?
+  consumedAt              DateTime?
+  expiresAt               DateTime
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  consumedByRip           GachaRip?             @relation(fields: [consumedByRipId], references: [id], onDelete: Restrict)
+  machine                 GachaMachine          @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
+
+  @@index([machineKey, createdAt])
+  @@index([status, expiresAt])
+  @@index([payerWallet, createdAt])
 }
 
 // Fantasy Tournaments foundation (sport.fun model on Solana, sourced from

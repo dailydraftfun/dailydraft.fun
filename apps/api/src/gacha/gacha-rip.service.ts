@@ -3,12 +3,14 @@ import { type DatabaseClient, GachaRipStatus, type Prisma } from '@dailydraft/db
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
-import { resolveGachaCapability } from './gacha-capability.js';
+import { gachaDevnetModeEnabled, resolveGachaCapability } from './gacha-capability.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import {
-  fixtureSnapshotInput,
   GachaInventorySnapshotService,
+  snapshotInputForMode,
 } from './gacha-inventory-snapshot.service.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { GachaPaymentService } from './gacha-payment.service.js';
 import {
   createFixtureGachaPullOddsRuleSet,
   type GachaPullOddsBand,
@@ -29,8 +31,23 @@ export interface CreateFixtureGachaRipInput {
   idempotencyKey?: string;
   machineKey: string;
   oddsVersion?: number;
+  /**
+   * Verified `GachaRipPayment` intent funding this rip. Required whenever
+   * {@link gachaRipRequiresPayment} is true; ignored in fixture mode, where rips
+   * stay free so deterministic previews and tests need no chain access.
+   */
+  paymentIntentId?: string;
   recipientWallet: string;
   seed: string;
+}
+
+/**
+ * Fixture wins over devnet, matching `GachaModule`'s provider factory and
+ * `snapshotInputForMode`: a deployment that turns fixtures on is asking for
+ * deterministic, unfunded rips even when devnet credentials are present.
+ */
+export function gachaRipRequiresPayment(): boolean {
+  return !gachaFixtureModeEnabled() && gachaDevnetModeEnabled();
 }
 
 interface SelectableEntry {
@@ -58,6 +75,7 @@ export class GachaRipService {
     @Inject(DATABASE_CLIENT) private readonly database: DatabaseClient,
     private readonly snapshots: GachaInventorySnapshotService,
     private readonly provider: SportsPackGachaProvider,
+    private readonly payments: GachaPaymentService,
   ) {}
 
   capability() {
@@ -83,9 +101,9 @@ export class GachaRipService {
   }
 
   async createSeedCommitment(machineKeyInput: string) {
-    if (!gachaFixtureModeEnabled()) {
+    if (!gachaFixtureModeEnabled() && !gachaDevnetModeEnabled()) {
       throw new ServiceUnavailableException(
-        'Sports Pack Gacha rip commitments are disabled outside explicit fixture or preview mode',
+        'Sports Pack Gacha rip commitments are disabled outside explicit fixture, preview, or devnet mode',
       );
     }
     const machineKey = requireKey(machineKeyInput, 'machineKey');
@@ -110,9 +128,9 @@ export class GachaRipService {
   }
 
   async createFixtureRip(input: CreateFixtureGachaRipInput) {
-    if (!gachaFixtureModeEnabled()) {
+    if (!gachaFixtureModeEnabled() && !gachaDevnetModeEnabled()) {
       throw new ServiceUnavailableException(
-        'Sports Pack Gacha rips are disabled outside explicit fixture or preview mode',
+        'Sports Pack Gacha rips are disabled outside explicit fixture, preview, or devnet mode',
       );
     }
     const machineKey = requireKey(input.machineKey, 'machineKey');
@@ -120,6 +138,10 @@ export class GachaRipService {
     const clientSeed = requireSeed(input.seed);
     const commitmentId = requireReference(input.commitmentId, 'commitmentId');
     const idempotencyKey = optionalReference(input.idempotencyKey, 'idempotencyKey');
+    const paymentIntentId = optionalReference(input.paymentIntentId, 'paymentIntentId');
+    if (gachaRipRequiresPayment() && !paymentIntentId) {
+      throw new ConflictException('Gacha rip requires a verified payment intent');
+    }
     const oddsVersion = requirePositiveInteger(input.oddsVersion ?? 1, 'oddsVersion');
     const snapshot = await this.ensureFixtureSnapshot(machineKey);
     if (!snapshot.sealedAt) {
@@ -208,6 +230,22 @@ export class GachaRipService {
           },
         });
 
+        // Consumed after the rip row exists because `GachaRipPayment.consumedByRipId`
+        // is a real foreign key to `GachaRip`, and inside this advisory-locked
+        // transaction so a single verified intent can never fund two rips. Note the
+        // payment stays CONSUMED if the provider fails after commit and the asset
+        // returns to the pool — refunding that is an operator action, not a rollback.
+        if (paymentIntentId) {
+          await this.payments.consumeVerifiedPayment(transaction, {
+            intentId: paymentIntentId,
+            machineKey,
+            now: selectedAt,
+            // Single-player: whoever paid is whoever receives the card.
+            payerWallet: recipientWallet,
+            ripId,
+          });
+        }
+
         const consumed = await transaction.gachaRipSeedCommitment.updateMany({
           data: { consumedByRipId: ripId },
           where: { consumedByRipId: null, expiresAt: { gt: selectedAt }, id: commitmentId },
@@ -277,7 +315,7 @@ export class GachaRipService {
     const machine = machines.find((candidate) => candidate.machineKey === machineKey);
     if (!machine) throw new ConflictException('Gacha fixture machine is not configured');
     const candidates = await this.provider.getEligibleCards(machineKey);
-    await this.snapshots.createFixtureSnapshot(fixtureSnapshotInput(machine, candidates));
+    await this.snapshots.createFixtureSnapshot(snapshotInputForMode(machine, candidates));
     return this.snapshots.findLatestSealed(machineKey);
   }
 

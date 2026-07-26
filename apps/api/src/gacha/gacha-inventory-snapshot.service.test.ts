@@ -23,12 +23,14 @@ const MACHINE: SportsPackGachaMachine = {
 const ORIGINAL_ENV = {
   fixture: process.env.DAILYDRAFT_GACHA_FIXTURE_MODE,
   node: process.env.NODE_ENV,
+  providerMode: process.env.DAILYDRAFT_PROVIDER_MODE,
   vercel: process.env.VERCEL_ENV,
 };
 
 afterEach(() => {
   restoreEnvironment('DAILYDRAFT_GACHA_FIXTURE_MODE', ORIGINAL_ENV.fixture);
   restoreEnvironment('NODE_ENV', ORIGINAL_ENV.node);
+  restoreEnvironment('DAILYDRAFT_PROVIDER_MODE', ORIGINAL_ENV.providerMode);
   restoreEnvironment('VERCEL_ENV', ORIGINAL_ENV.vercel);
 });
 
@@ -335,9 +337,10 @@ describe('GachaInventorySnapshotService', () => {
     expect(database.advisoryLocks).toBe(3);
   });
 
-  test('fails closed before database access when fixture mode is disabled', async () => {
+  test('fails closed before database access when fixture and devnet modes are disabled', async () => {
     process.env.NODE_ENV = 'test';
     delete process.env.DAILYDRAFT_GACHA_FIXTURE_MODE;
+    delete process.env.DAILYDRAFT_PROVIDER_MODE;
     const database = new FixtureDatabase();
     const service = new GachaInventorySnapshotService(database as unknown as DatabaseClient);
 
@@ -350,7 +353,7 @@ describe('GachaInventorySnapshotService', () => {
         evaluatedAt: EVALUATED_AT,
         policy: policy(),
       }),
-    ).rejects.toThrow('disabled outside explicit fixture or preview mode');
+    ).rejects.toThrow('disabled outside explicit fixture, preview, or devnet mode');
     expect(database.advisoryLocks).toBe(0);
   });
 

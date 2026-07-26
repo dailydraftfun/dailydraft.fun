@@ -15,6 +15,21 @@ export class GachaMachineParams {
   machineKey!: string;
 }
 
+export class GachaPaymentIntentParams {
+  @Matches(/^gachapay_[a-f0-9]{32}$/)
+  intentId!: string;
+}
+
+export class CreateGachaPaymentIntentRequest {
+  @Matches(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/)
+  payerWallet!: string;
+}
+
+export class VerifyGachaPaymentRequest {
+  @Matches(/^[1-9A-HJ-NP-Za-km-z]{64,96}$/)
+  signature!: string;
+}
+
 export class CreateFixtureGachaRipRequest {
   @Matches(/^[a-z0-9][a-z0-9._:-]{0,127}$/)
   machineKey!: string;
@@ -39,6 +54,12 @@ export class CreateFixtureGachaRipRequest {
   @MinLength(1)
   @MaxLength(240)
   idempotencyKey?: string;
+
+  // Optional at the edge because fixture-mode rips are unfunded; the service
+  // rejects a missing intent whenever the deployment requires payment.
+  @IsOptional()
+  @Matches(/^gachapay_[a-f0-9]{32}$/)
+  paymentIntentId?: string;
 
   @IsOptional()
   @Type(() => Number)
