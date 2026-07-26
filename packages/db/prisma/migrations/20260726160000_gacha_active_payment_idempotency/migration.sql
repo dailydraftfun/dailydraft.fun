@@ -1,5 +1,3 @@
-ALTER TYPE "GachaRipPaymentStatus" ADD VALUE 'FAILED';
-
 ALTER TABLE "GachaRipPayment"
 ADD COLUMN "activePayerWallet" TEXT,
 ADD COLUMN "activeMachineKey" TEXT,

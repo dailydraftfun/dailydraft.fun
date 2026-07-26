@@ -80,7 +80,18 @@ describe('gachaDepositConfigurationErrors', () => {
       ),
     );
     const migration = readFileSync(migrationPath, 'utf8');
+    const enumMigration = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../../../../packages/db/prisma/migrations/20260726155000_gacha_payment_failed_status/migration.sql',
+          import.meta.url,
+        ),
+      ),
+      'utf8',
+    );
 
+    expect(enumMigration).toContain("ADD VALUE 'FAILED'");
+    expect(migration).not.toContain("ADD VALUE 'FAILED'");
     expect(migration).toContain(
       'CREATE UNIQUE INDEX "GachaRipPayment_activePayerWallet_activeMachineKey_key"',
     );
