@@ -90,7 +90,8 @@ export function describeConfirmation(phase: ConfirmationPhase): ConfirmationDesc
       };
     case 'failed':
       return {
-        detail: 'The network rejected the transaction. No funds left the wallet.',
+        detail:
+          'The transaction failed on-chain. The transfer did not complete, but Solana transaction fees may still have been charged.',
         label: 'Failed on-chain',
         tone: 'danger',
       };

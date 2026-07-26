@@ -119,7 +119,10 @@ describe('describeConfirmation', () => {
     expect(describeConfirmation('expired').tone).toBe('danger');
   });
 
-  test('the failure copy states that no funds moved', () => {
-    expect(describeConfirmation('failed').detail).toContain('No funds left the wallet');
+  test('the failure copy distinguishes an incomplete transfer from a charged network fee', () => {
+    const detail = describeConfirmation('failed').detail;
+
+    expect(detail).toContain('The transfer did not complete');
+    expect(detail).toContain('transaction fees may still have been charged');
   });
 });

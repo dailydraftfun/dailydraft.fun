@@ -4,6 +4,7 @@ import type { BalanceStatus, WalletBalances } from './balance';
 import { readWalletBalances, refreshWalletBalances } from './read-balances';
 
 const wallet = '4Nd1mB1TrE9gJ2vQ8mHc1oQ5m8y1Y7xZoK3rWpTf6xTk';
+const nextWallet = '7YttLkHDoNj9wyDur5GTUxMZV72rS8qS9AEo7Yx5TLVQ';
 const usdc = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 
 describe('readWalletBalances', () => {
@@ -86,6 +87,14 @@ function sink() {
   };
 }
 
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 describe('refreshWalletBalances', () => {
   test('moves through loading to ready with the read figures', async () => {
     const state = sink();
@@ -138,6 +147,52 @@ describe('refreshWalletBalances', () => {
     // No setBalances call at all: a failed read is not evidence the wallet
     // emptied, and blanking the number would read as exactly that.
     expect(state.balances).toEqual([]);
+  });
+
+  test('ignores an older wallet read that resolves after the current wallet', async () => {
+    const state = sink();
+    const first = deferred<WalletBalances | null>();
+    const second = deferred<WalletBalances | null>();
+    let generation = 0;
+    const refresh = (address: string, pending: Promise<WalletBalances | null>) => {
+      const requestGeneration = ++generation;
+      return refreshWalletBalances(address, null, state, async () => pending, {
+        isCurrent: () => generation === requestGeneration,
+      });
+    };
+
+    const older = refresh(wallet, first.promise);
+    const current = refresh(nextWallet, second.promise);
+    second.resolve({ lamports: 2_000_000_000n, token: null });
+    expect(await current).toEqual({ lamports: 2_000_000_000n, token: null });
+    first.resolve({ lamports: 9_000_000_000n, token: null });
+    expect(await older).toBeNull();
+
+    expect(state.statuses).toEqual(['loading', 'loading', 'ready']);
+    expect(state.balances).toEqual([{ lamports: 2_000_000_000n, token: null }]);
+  });
+
+  test('does not restore a pending wallet read after disconnect clears it', async () => {
+    const state = sink();
+    const pending = deferred<WalletBalances | null>();
+    let generation = 0;
+    const guardedRefresh = (
+      address: string | null,
+      read: typeof readWalletBalances = async () => pending.promise,
+    ) => {
+      const requestGeneration = ++generation;
+      return refreshWalletBalances(address, null, state, read, {
+        isCurrent: () => generation === requestGeneration,
+      });
+    };
+
+    const connected = guardedRefresh(wallet);
+    await guardedRefresh(null);
+    pending.resolve({ lamports: 9_000_000_000n, token: null });
+    expect(await connected).toBeNull();
+
+    expect(state.statuses).toEqual(['loading', 'idle']);
+    expect(state.balances).toEqual([null]);
   });
 
   test('defaults to the real read when none is injected', async () => {

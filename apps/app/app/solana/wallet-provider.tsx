@@ -19,7 +19,15 @@ import {
   type StandardEventsFeature,
 } from '@wallet-standard/features';
 import bs58 from 'bs58';
-import { createContext, useCallback, useContext, useEffect, useEffectEvent, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from 'react';
 import { trackProductEvent } from '../analytics-client';
 import { createJourneyFixtureWallet, readJourneyFixtureBootstrap } from '../e2e/journey-wallet';
 import type { BalanceStatus, WalletBalances } from './balance';
@@ -91,16 +99,22 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   const [balances, setBalances] = useState<WalletBalances | null>(null);
   const [balanceStatus, setBalanceStatus] = useState<BalanceStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  const balanceRequestGeneration = useRef(0);
   const address = account?.address ?? null;
 
   /**
    * Binds the balance read to the connected address. Both the read policy and
    * the status it resolves to live in read-balances.ts, which is reachable from
-   * a test; this only supplies the address and the two state setters.
+   * a test. Each call advances a generation so a slower request for an older
+   * wallet cannot overwrite the current wallet's balance.
    */
   const refreshBalances = useCallback(
-    (mint?: string | null): Promise<WalletBalances | null> =>
-      refreshWalletBalances(address, mint, { setBalanceStatus, setBalances }),
+    (mint?: string | null): Promise<WalletBalances | null> => {
+      const requestGeneration = ++balanceRequestGeneration.current;
+      return refreshWalletBalances(address, mint, { setBalanceStatus, setBalances }, undefined, {
+        isCurrent: () => balanceRequestGeneration.current === requestGeneration,
+      });
+    },
     [address],
   );
 
@@ -167,6 +181,9 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     void refreshBalances();
+    return () => {
+      balanceRequestGeneration.current += 1;
+    };
   }, [refreshBalances]);
 
   useEffect(() => {

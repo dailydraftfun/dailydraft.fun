@@ -46,6 +46,10 @@ type BalanceSink = {
   setBalanceStatus: (status: BalanceStatus) => void;
 };
 
+type BalanceRefreshGuard = {
+  isCurrent?: () => boolean;
+};
+
 /**
  * Runs one balance read for the connected address and mirrors the outcome into
  * whatever holds the UI state. Split out of the provider's useCallback so the
@@ -55,14 +59,18 @@ type BalanceSink = {
  * A disconnected wallet clears to `idle` without touching the network. A failed
  * read leaves the last known figure on screen behind an `error` status — a read
  * that could not complete is not evidence the wallet emptied, and blanking the
- * number would read as exactly that.
+ * number would read as exactly that. The optional guard lets the provider reject
+ * an out-of-order completion after the connected wallet changes.
  */
 export async function refreshWalletBalances(
   address: string | null,
   mint: string | null | undefined,
   sink: BalanceSink,
   read: typeof readWalletBalances = readWalletBalances,
+  guard: BalanceRefreshGuard = {},
 ): Promise<WalletBalances | null> {
+  const isCurrent = guard.isCurrent ?? (() => true);
+  if (!isCurrent()) return null;
   if (!address) {
     sink.setBalances(null);
     sink.setBalanceStatus('idle');
@@ -70,6 +78,7 @@ export async function refreshWalletBalances(
   }
   sink.setBalanceStatus('loading');
   const next = await read(address, mint);
+  if (!isCurrent()) return null;
   if (!next) {
     sink.setBalanceStatus('error');
     return null;
