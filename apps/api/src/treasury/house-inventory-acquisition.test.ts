@@ -88,10 +88,10 @@ class InventoryDatabase {
   async $transaction<T>(operation: (transaction: Prisma.TransactionClient) => Promise<T>) {
     let releaseLock: (() => void) | undefined;
     const transaction = {
-      $queryRaw: async () => {
+      $executeRaw: async () => {
         releaseLock = await this.acquireLock();
         this.lockAcquisitions += 1;
-        return [{ pg_advisory_xact_lock: '' }];
+        return 1;
       },
       houseInventoryAsset: {
         create: async ({ data }: { data: InventoryRow }) => {

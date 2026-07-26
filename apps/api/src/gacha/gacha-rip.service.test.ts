@@ -912,7 +912,7 @@ class RipDatabase {
     },
   };
 
-  readonly $queryRaw = async () => [{ pg_advisory_xact_lock: '' }];
+  readonly $executeRaw = async () => 1;
 
   async $transaction<T>(operation: (transaction: this) => Promise<T>): Promise<T> {
     return operation(this);

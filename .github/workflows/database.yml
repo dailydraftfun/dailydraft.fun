@@ -3,11 +3,13 @@ name: Database migrations
 on:
   pull_request:
     paths:
+      - apps/api/**
       - packages/db/**
       - .github/workflows/database.yml
   push:
     branches: [main]
     paths:
+      - apps/api/**
       - packages/db/**
       - .github/workflows/database.yml
 
@@ -58,6 +60,11 @@ jobs:
           psql "$database_url" \
             --set ON_ERROR_STOP=1 \
             --file packages/db/prisma/verify-flip-inventory.sql
+      - name: Exercise raw SQL against the real driver
+        working-directory: apps/api
+        env:
+          REQUIRE_DB_INTEGRATION: '1'
+        run: bun test src/database/advisory-lock.database.test.ts
       - name: Validate Prisma schema
         run: bun --filter @dailydraft/db db:validate
       - name: Prove schema-only drift is rejected
