@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 
+import { pullRarityFixtures } from './pull-rarity.js';
+
+export * from './pull-rarity.js';
+
 export type ContractAuth = 'none' | 'wallet-or-integration';
 
 export type ContractOperation = {
@@ -287,7 +291,7 @@ export const contractOperations = [
   },
 ] as const satisfies readonly ContractOperation[];
 
-export const CONTRACT_FIXTURE_VERSION = '2026-07-20.v2+5013526b6a26';
+export const CONTRACT_FIXTURE_VERSION = '2026-07-26.v3+78f614a12009';
 
 export function contractFixtureFingerprint(): string {
   return createHash('sha256')
@@ -296,6 +300,7 @@ export function contractFixtureFingerprint(): string {
         contractFixtures,
         contractOperations,
         openApiVersion: OPENAPI_CONTRACT_VERSION,
+        pullRarity: pullRarityFixtures,
       }),
     )
     .digest('hex')

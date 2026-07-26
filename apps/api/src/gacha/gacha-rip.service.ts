@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { type DatabaseClient, GachaRipStatus, type Prisma } from '@dailydraft/db';
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
+import { rarityForSerializedValue } from '../common/pull-rarity.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import { resolveGachaCapability } from './gacha-capability.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
@@ -322,7 +323,10 @@ export class GachaRipService {
         snapshotContentHash: oddsCommitment.snapshotContentHash,
         version: oddsCommitment.version,
       },
-      rip,
+      rip: {
+        ...rip,
+        rarity: rarityForSerializedValue(rip.insuredValueMinor, rip.insuredValueDecimals),
+      },
       serverSeed: revealed.serverSeed,
       serverSeedHash: revealed.serverSeedHash,
     };

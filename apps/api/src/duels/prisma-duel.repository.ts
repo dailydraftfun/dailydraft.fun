@@ -16,6 +16,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { rarityForSerializedValue } from '../common/pull-rarity.js';
 import {
   ESCROW_V2_MAX_OPENING_FUTURE_SKEW_SECONDS,
   toEscrowV2UnixSeconds,
@@ -903,20 +904,22 @@ export function toDuelResult(row: {
     if (!outcome.poolVersion || !outcome.sourceTimestamp) {
       throw new Error('Canonical duel result lost required provider snapshot data');
     }
+    const insuredValue = toMoney(
+      outcome.insuredValueAmount,
+      outcome.insuredValueCurrency,
+      outcome.insuredValueDecimals,
+    );
     return {
       assetReference: outcome.assetReference,
       displayName: outcome.displayName,
       ...(outcome.imageUrl ? { imageUrl: outcome.imageUrl } : {}),
-      insuredValue: toMoney(
-        outcome.insuredValueAmount,
-        outcome.insuredValueCurrency,
-        outcome.insuredValueDecimals,
-      ),
+      insuredValue,
       isMock: outcome.isMock,
       openedAt: outcome.openedAt.toISOString(),
       provider: outcome.provider,
       providerReference: outcome.providerReference,
       poolVersion: outcome.poolVersion,
+      rarity: rarityForSerializedValue(insuredValue.amount, insuredValue.decimals),
       resultHash: outcome.resultHash,
       side:
         outcome.side === DatabaseDuelSide.CREATOR ? ('creator' as const) : ('opponent' as const),

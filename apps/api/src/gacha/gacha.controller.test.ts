@@ -134,6 +134,7 @@ describe('GachaController', () => {
         machineKey: 'fixture-machine',
         oddsCommitmentId: odds.id,
         oddsRulesHash: odds.rulesHash,
+        rarity: 'uncommon',
         revealedAt: now,
         seedCommitmentHash: 'd'.repeat(64),
         selectedAssetReference: 'devnet:fixture:asset:base',

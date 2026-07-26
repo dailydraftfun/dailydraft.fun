@@ -16,6 +16,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@dailydraft/contracts": "workspace:*",
     "@dailydraft/db": "workspace:*",
     "@nestjs/common": "11.1.28",
     "@nestjs/core": "11.1.28",
@@ -30,7 +31,6 @@
     "rxjs": "7.8.2"
   },
   "devDependencies": {
-    "@dailydraft/contracts": "workspace:*",
     "@types/bun": "1.3.8",
     "typescript": "6.0.3"
   }
