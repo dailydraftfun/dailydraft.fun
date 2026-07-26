@@ -44,6 +44,7 @@ export const journeyTestIds = {
   tier: (value: number) => `journey-tier-${value}`,
   walletAuthenticationPrepare: 'journey-wallet-auth-prepare',
   walletAuthenticationSign: 'journey-wallet-auth-sign',
+  walletBalance: 'journey-wallet-balance',
   walletDialog: 'journey-wallet-dialog',
   walletDisconnect: 'journey-wallet-disconnect',
   walletMenu: 'journey-wallet-menu',

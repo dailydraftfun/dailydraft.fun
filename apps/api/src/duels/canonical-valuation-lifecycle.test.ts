@@ -33,6 +33,8 @@ describe('canonical valuation lifecycle', () => {
       winnerWallet: null,
     });
     expect(result).toEqual(expect.objectContaining({ settlementReady: true, winnerSide: null }));
+    expect(result?.resultHash).toBe('b'.repeat(64));
+    expect(result?.outcomes.map((outcome) => outcome.rarity)).toEqual(['rare', 'rare']);
   });
 
   test('degrades legacy outcomes without fabricating provider snapshot proof', () => {

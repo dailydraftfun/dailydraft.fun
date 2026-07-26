@@ -97,6 +97,7 @@ export interface PublicPostDuelCardActionState {
     status: 'reconciled';
   };
   providerReference: string;
+  rarity: NonNullable<Duel['result']>['outcomes'][number]['rarity'];
   receiptHref: string;
   side: 'creator' | 'opponent';
 }
@@ -159,6 +160,7 @@ export interface PublicDuelResult {
     isMock: boolean;
     openedAt: string;
     poolVersion: string;
+    rarity: NonNullable<Duel['result']>['outcomes'][number]['rarity'];
     resultHash: string;
     side: 'creator' | 'opponent';
     sourceTimestamp: string;
@@ -471,6 +473,7 @@ function buildPostDuelCardActions(input: {
           status: 'reconciled',
         },
         providerReference: outcome.providerReference,
+        rarity: outcome.rarity,
         receiptHref,
         side: outcome.side,
       };
@@ -695,6 +698,7 @@ function buildResult(
       isMock: outcome.isMock,
       openedAt: outcome.openedAt,
       poolVersion: outcome.poolVersion,
+      rarity: outcome.rarity,
       resultHash: outcome.resultHash,
       side: outcome.side,
       sourceTimestamp: outcome.sourceTimestamp,

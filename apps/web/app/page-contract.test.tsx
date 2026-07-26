@@ -37,13 +37,16 @@ describe('landing page contract', () => {
     expect(markup).not.toContain('Pack Duel');
   });
 
-  test('routes both primary calls to action at the app', () => {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://dailydraft.fun';
+  test('routes both primary calls to action at the product app, never back at this apex', () => {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.dailydraft.fun';
 
     expect(markup).toContain('Start playing');
     expect(markup).toContain('Play DailyDraft');
     expect(markup).toContain('Enter the arena');
     expect(markup).toContain(`href="${appUrl}"`);
+    // The apex serves this marketing page and has no rewrite into the product app, so a CTA
+    // pointing at it loops the visitor straight back here.
+    expect(markup).not.toContain('href="https://dailydraft.fun"');
     expect(markup).toContain('href="#how-it-works"');
   });
 });

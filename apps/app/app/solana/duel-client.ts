@@ -1,3 +1,4 @@
+import type { PullRarity } from '@dailydraft/contracts';
 import { getAnalyticsSessionId } from '../analytics-client';
 import type { SOLANA_CHAIN, SOLANA_CLUSTER } from './config';
 
@@ -52,10 +53,14 @@ export type DurableDuel = {
     outcomes: Array<{
       assetReference: string;
       displayName: string;
+      imageUrl?: string | null;
       insuredValue: { amount: string; currency: 'USDC'; decimals: 6 };
       isMock: boolean;
       provider: string;
       providerReference: string;
+      // Served by the API since `dailydraft.pull-rarity.v1`; required whenever a
+      // result exists, so the client never re-derives it from insured value.
+      rarity: PullRarity;
       side: 'creator' | 'opponent';
     }>;
     resultHash: string;

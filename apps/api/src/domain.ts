@@ -1,3 +1,5 @@
+import type { PullRarity } from '@dailydraft/contracts';
+
 export interface Money {
   amount: string;
   currency: 'USDC';
@@ -68,6 +70,7 @@ export interface DuelPackOutcome {
   provider: string;
   providerReference: string;
   poolVersion: string;
+  rarity: PullRarity;
   resultHash: string;
   side: 'creator' | 'opponent';
   sourceTimestamp: string;

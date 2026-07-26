@@ -107,6 +107,13 @@ async function completeVisualJourney(
     'Blastoise fixture pull',
   );
   await expect(loser.getByTestId(journeyTestIds.pullValue.opponent)).toHaveText('$41');
+  // The card art is masked out of the screenshots, so the reveal is asserted
+  // structurally: real art in place of the text fallback, and a tier badge
+  // derived from the value the API already committed ($72.50 rare, $41 uncommon).
+  await expect(winner.locator('.pull-image')).toHaveAttribute('alt', 'Charizard fixture pull');
+  await expect(loser.locator('.pull-image')).toHaveAttribute('alt', 'Blastoise fixture pull');
+  await expect(winner.locator('.pull-rarity')).toHaveText('Rare pull');
+  await expect(loser.locator('.pull-rarity')).toHaveText('Uncommon pull');
   await expect(page.getByTestId(journeyTestIds.resultMargin)).toHaveText('$31.5');
   await expect(page.getByTestId(journeyTestIds.resultTotalValue)).toHaveText('$113.5');
   await expect(page.getByTestId(journeyTestIds.resultShare)).toBeVisible();
