@@ -6,7 +6,8 @@ import '@fontsource/dm-sans/700.css';
 import './globals.css';
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://dailydraft.fun'),
+  // A cleared Vercel variable arrives as an empty string, not as absent, and `new URL('')` throws.
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'https://dailydraft.fun'),
   title: 'DailyDraft — Own the cards. Field the squad.',
   description:
     'A sports fantasy casino on Solana. Rip real, vaulted sports cards from Collector Crypt, build a squad, and win tournaments scored by live match data.',

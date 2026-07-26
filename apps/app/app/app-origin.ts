@@ -6,5 +6,7 @@
 export const DEFAULT_APP_ORIGIN = 'https://app.dailydraft.fun';
 
 export function resolveAppOrigin(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? DEFAULT_APP_ORIGIN;
+  // Vercel stores a cleared variable as an empty string, not as absent, so `??` never fires and the
+  // caller ends up building `new URL('')`. Treat blank as unset, matching `solana/config.ts`.
+  return process.env.NEXT_PUBLIC_APP_URL?.trim() || DEFAULT_APP_ORIGIN;
 }

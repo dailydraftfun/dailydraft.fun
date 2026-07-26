@@ -10,8 +10,9 @@ import {
 } from '@phosphor-icons/react/dist/ssr';
 
 // This marketing page IS the apex, so every call to action has to leave it for the product app on
-// `app.dailydraft.fun`. Defaulting to the apex would point the CTAs back at this same page.
-const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.dailydraft.fun';
+// `app.dailydraft.fun`. Defaulting to the apex would point the CTAs back at this same page. Vercel
+// stores a cleared variable as an empty string rather than as absent, so `??` would not fire.
+const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || 'https://app.dailydraft.fun';
 
 const steps = [
   {

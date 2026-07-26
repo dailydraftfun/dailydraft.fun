@@ -246,10 +246,12 @@ export type PublicDuelLeaderboard = {
   schemaVersion: 'dailydraft.leaderboard.v1';
 };
 
-const apiBaseUrl = (process.env.NEXT_PUBLIC_DUEL_API_URL ?? 'http://localhost:3003/v1').replace(
-  /\/$/,
-  '',
-);
+// Vercel stores a cleared variable as an empty string rather than as absent, so `??` never fires
+// and every proof fetch would target the origin root. Treat blank as unset, matching
+// `solana/config.ts`.
+const apiBaseUrl = (
+  process.env.NEXT_PUBLIC_DUEL_API_URL?.trim() || 'http://localhost:3003/v1'
+).replace(/\/$/, '');
 
 export async function fetchPublicDuelReceipt(duelId: string): Promise<PublicDuelReceipt | null> {
   return fetchPublicJson<PublicDuelReceipt>(
