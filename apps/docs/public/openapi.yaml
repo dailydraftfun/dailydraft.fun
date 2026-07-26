@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: DailyDraft API
-  version: 0.2.0-devnet
+  version: 0.3.0-devnet
   summary: Build pack-opening duels on Solana
   description: |
     Preview contract for pack discovery, duel matchmaking, wallet-signed Solana
@@ -165,6 +165,8 @@ paths:
     post:
       operationId: createGachaRipSeedCommitment
       tags: [Gacha]
+      security:
+        - walletSession: []
       summary: Commit to a secret server seed before a fixture-mode Gacha rip
       description: |
         Generates and stores a secret serverSeed and publishes only its SHA-256
@@ -190,6 +192,8 @@ paths:
                 $ref: '#/components/schemas/GachaRipSeedCommitment'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -198,6 +202,8 @@ paths:
     post:
       operationId: createGachaPaymentIntent
       tags: [Gacha]
+      security:
+        - walletSession: []
       summary: Open a payment intent for one funded Gacha rip
       description: |
         Issues the exact deposit terms for a single rip: mint, destination
@@ -230,6 +236,8 @@ paths:
                 $ref: '#/components/schemas/GachaPaymentIntent'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '409':
           $ref: '#/components/responses/Conflict'
         '429':
@@ -240,6 +248,8 @@ paths:
     post:
       operationId: prepareGachaPaymentTransaction
       tags: [Gacha]
+      security:
+        - walletSession: []
       summary: Build the unsigned transfer that funds a Gacha payment intent
       description: |
         Returns the exact unsigned transaction the payer should sign: a
@@ -270,6 +280,8 @@ paths:
                 $ref: '#/components/schemas/PreparedGachaPaymentTransaction'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '409':
           $ref: '#/components/responses/Conflict'
         '429':
@@ -280,6 +292,8 @@ paths:
     post:
       operationId: claimGachaPaymentSignature
       tags: [Gacha]
+      security:
+        - walletSession: []
       summary: Prove and atomically bind the signed transaction before broadcast
       description: |
         Accepts the fully signed bytes returned by the payer wallet. The server
@@ -315,6 +329,8 @@ paths:
                 $ref: '#/components/schemas/GachaPaymentIntent'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -327,6 +343,8 @@ paths:
     post:
       operationId: verifyGachaPayment
       tags: [Gacha]
+      security:
+        - walletSession: []
       summary: Verify the on-chain transfer that funds a Gacha payment intent
       description: |
         Requires the signature to have been claimed before broadcast, then
@@ -360,6 +378,8 @@ paths:
                 $ref: '#/components/schemas/VerifiedGachaPayment'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -372,6 +392,8 @@ paths:
     post:
       operationId: createFixtureGachaRip
       tags: [Gacha]
+      security:
+        - walletSession: []
       summary: Execute one Gacha rip against sealed inventory and odds
       description: |
         Selects against sealed inventory and odds evidence, consuming a
@@ -416,6 +438,8 @@ paths:
                 $ref: '#/components/schemas/GachaRipResult'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '409':
           $ref: '#/components/responses/Conflict'
         '429':
@@ -2121,7 +2145,7 @@ components:
           const: ok
         version:
           type: string
-          const: 0.2.0-devnet
+          const: 0.3.0-devnet
         dependencies:
           type: object
           additionalProperties: false
