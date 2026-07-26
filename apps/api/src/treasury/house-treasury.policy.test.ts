@@ -497,7 +497,6 @@ function fakeTransaction(input: {
   walletActive?: number;
 }): Prisma.TransactionClient {
   const admissionStates = input.admissionStates ?? [];
-  let advisoryLocks = 0;
   return {
     $executeRaw: (
       query: TemplateStringsArray,
@@ -508,7 +507,6 @@ function fakeTransaction(input: {
       evaluatedAt: Date,
     ) => {
       if (query.join('').includes('pg_advisory_xact_lock')) {
-        advisoryLocks += 1;
         return Promise.resolve(1);
       }
       const row = admissionStates.find((candidate) => candidate.tier === tier);
