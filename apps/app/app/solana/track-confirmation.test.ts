@@ -147,6 +147,46 @@ describe('trackConfirmation', () => {
     releaseSleep();
   });
 
+  test('stops before sleeping when the caller aborts during an in-flight poll', async () => {
+    const controller = new AbortController();
+    let releasePoll = (_result: ConfirmationPoll) => {};
+    let sleepCalled = false;
+    const tracked = trackConfirmation('sig', {
+      now: () => 0,
+      poll: () =>
+        new Promise<ConfirmationPoll>((resolve) => {
+          releasePoll = resolve;
+        }),
+      sleep: () => {
+        sleepCalled = true;
+        return new Promise<void>(() => {});
+      },
+      signal: controller.signal,
+    });
+
+    await Promise.resolve();
+    controller.abort();
+    releasePoll(pending);
+
+    expect(await tracked).toBe('submitted');
+    expect(sleepCalled).toBe(false);
+  });
+
+  test('propagates a rejected injected sleep instead of hanging', async () => {
+    const controller = new AbortController();
+
+    expect(
+      trackConfirmation('sig', {
+        now: () => 0,
+        poll: async () => pending,
+        sleep: async () => {
+          throw new Error('sleep failed');
+        },
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow('sleep failed');
+  });
+
   test('runs without callbacks when only the resolved phase is wanted', async () => {
     const { options } = harness([{ commitment: 'confirmed', failed: false }]);
 

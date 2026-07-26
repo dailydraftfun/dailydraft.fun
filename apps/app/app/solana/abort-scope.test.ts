@@ -65,4 +65,15 @@ describe('createAbortScope', () => {
     expect(controllers).toHaveLength(2);
     expect(controllers[0]?.signal.aborted).toBe(true);
   });
+
+  test('an older attempt cannot cancel the active replacement', () => {
+    const scope = createAbortScope();
+    const first = scope.begin();
+    const second = scope.begin();
+
+    expect(scope.cancelIf(first)).toBe(false);
+    expect(second.aborted).toBe(false);
+    expect(scope.cancelIf(second)).toBe(true);
+    expect(second.aborted).toBe(true);
+  });
 });

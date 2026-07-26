@@ -1247,6 +1247,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     );
     let transactionMayHaveBeenSubmitted = false;
     let transactionWasSubmitted = false;
+    let confirmationSignal: AbortSignal | null = null;
     try {
       const binary = window.atob(intent.serializedTransactionBase64);
       const transaction = Uint8Array.from(binary, (character) => character.charCodeAt(0));
@@ -1258,9 +1259,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       // Started before the server round-trip and awaited after it, so the
       // stepper shows live cluster progress during a call it would otherwise
       // sit blank through, without adding any latency of its own.
+      confirmationSignal = confirmationScope.current.begin();
       const confirmation = trackConfirmation(signature, {
         onPhase: setConfirmationPhase,
-        signal: confirmationScope.current.begin(),
+        signal: confirmationSignal,
       });
       await submitSignedDuelIntent(
         intent.duelId,
@@ -1330,7 +1332,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       // cluster for the rest of its 90-second budget against a signature this
       // attempt has already given up on. Cancelling here is a no-op on the
       // happy path, where the poll has already settled.
-      confirmationScope.current.cancel();
+      if (confirmationSignal) confirmationScope.current.cancelIf(confirmationSignal);
       setIntentPending(false);
     }
   }

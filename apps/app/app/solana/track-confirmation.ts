@@ -17,13 +17,27 @@ export type TrackConfirmationOptions = {
   poll?: (signature: string) => Promise<ConfirmationPoll>;
   /** Injected in tests so the deadline is reachable without real time passing. */
   now?: () => number;
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
 };
 
-function defaultSleep(ms: number): Promise<void> {
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const settle = () => {
+      if (timeout !== undefined) clearTimeout(timeout);
+      signal?.removeEventListener('abort', settle);
+      resolve();
+    };
+
+    if (signal?.aborted) {
+      settle();
+      return;
+    }
+
+    signal?.addEventListener('abort', settle, { once: true });
+    timeout = setTimeout(settle, ms);
+    if (signal?.aborted) settle();
   });
 }
 
@@ -31,22 +45,29 @@ function defaultSleep(ms: number): Promise<void> {
  * Wait out the poll interval, but stop waiting the moment the caller aborts.
  *
  * Without this the loop only notices cancellation at the top of its next
- * iteration, so an unmount or a retry left a live timer holding the previous
- * attempt's closure for up to a full interval.
+ * iteration. The default sleep also clears its timer when cancellation wins.
  */
 function sleepUntilAborted(
-  sleep: (ms: number) => Promise<void>,
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>,
   ms: number,
   signal: AbortSignal | undefined,
 ): Promise<void> {
   if (!signal) return sleep(ms);
-  return new Promise<void>((resolve) => {
-    const settle = () => {
+  if (signal.aborted) return Promise.resolve();
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (complete: () => void) => {
+      if (settled) return;
+      settled = true;
       signal.removeEventListener('abort', settle);
-      resolve();
+      complete();
     };
+    const settle = () => finish(resolve);
+
     signal.addEventListener('abort', settle, { once: true });
-    void sleep(ms).then(settle);
+    void sleep(ms, signal).then(settle, (error: unknown) => finish(() => reject(error)));
+    if (signal.aborted) settle();
   });
 }
 
