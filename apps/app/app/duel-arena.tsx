@@ -1226,6 +1226,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   async function approveIntent() {
     if (!intent || !authentication.sessionToken) return;
+    const confirmationSignal = confirmationScope.current.begin();
     setIntentPending(true);
     setFundingPhase('signing');
     setRejectedIntentId(null);
@@ -1260,7 +1261,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       // sit blank through, without adding any latency of its own.
       const confirmation = trackConfirmation(signature, {
         onPhase: setConfirmationPhase,
-        signal: confirmationScope.current.begin(),
+        signal: confirmationSignal,
       });
       await submitSignedDuelIntent(
         intent.duelId,

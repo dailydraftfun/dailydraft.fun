@@ -62,6 +62,8 @@ export async function trackConfirmation(
       result = { commitment: null, failed: false };
     }
 
+    if (options.signal?.aborted) return phase;
+
     const next = resolveConfirmationTimeout(advanceConfirmation(phase, result), now() - startedAt);
     if (next !== phase) {
       phase = next;
