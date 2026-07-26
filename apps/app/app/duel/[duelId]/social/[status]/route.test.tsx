@@ -76,7 +76,7 @@ function readCapture(): CapturedCard | null {
 
 async function renderCard(status = 'settled'): Promise<string> {
   captured = null;
-  await GET(new Request(`https://dailydraft.fun/duel/duel-1/social/${status}`), {
+  await GET(new Request(`https://app.dailydraft.fun/duel/duel-1/social/${status}`), {
     params: Promise.resolve({ duelId: 'duel-1', status }),
   });
   const rendered = readCapture();

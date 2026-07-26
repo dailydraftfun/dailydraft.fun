@@ -1,6 +1,7 @@
 import type { DatabaseClient, Prisma } from '@dailydraft/db';
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 
+import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import {
   type CreateWalletAuthChallengeRecord,
@@ -26,11 +27,11 @@ export class PrismaWalletAuthRepository extends WalletAuthRepository {
     policy: WalletChallengeIssuancePolicy,
   ): Promise<WalletAuthChallengeRecord> {
     const challenge = await this.database.$transaction(async (transaction) => {
-      await transaction.$queryRaw`
-        SELECT pg_advisory_xact_lock(
-          hashtextextended(${input.wallet}, ${WALLET_AUTH_LOCK_NAMESPACE})
-        )
-      `;
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        input.wallet,
+        WALLET_AUTH_LOCK_NAMESPACE,
+      );
       await cleanupExpiredAuthRows(transaction, policy);
       const recent = await transaction.walletAuthChallenge.count({
         where: {

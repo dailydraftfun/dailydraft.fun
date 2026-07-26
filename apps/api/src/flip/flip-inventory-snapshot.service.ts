@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { type DatabaseClient, FlipInventoryExclusionReason, type Prisma } from '@dailydraft/db';
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
+import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import { stableStringify } from '../providers/valuation-policy.js';
 
@@ -141,11 +142,11 @@ export class FlipInventorySnapshotService {
     }
     const prepared = prepareFlipInventorySnapshot(input);
     return this.database.$transaction(async (transaction) => {
-      await transaction.$queryRaw`
-        SELECT pg_advisory_xact_lock(
-          hashtextextended(${prepared.policy.poolKey}, ${FLIP_INVENTORY_LOCK_NAMESPACE})
-        )
-      `;
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        prepared.policy.poolKey,
+        FLIP_INVENTORY_LOCK_NAMESPACE,
+      );
       const existing = await transaction.flipInventorySnapshot.findUnique({
         select: { contentHash: true, id: true, poolKey: true, revision: true, sealedAt: true },
         where: {

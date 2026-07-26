@@ -5,6 +5,7 @@ import {
   ProviderMode,
 } from '@dailydraft/db';
 
+import { rarityForSerializedValue } from '../common/pull-rarity.js';
 import type { Duel } from '../domain.js';
 import { PrismaDuelRepository } from './prisma-duel.repository.js';
 import {
@@ -312,6 +313,7 @@ function outcome(side: 'creator' | 'opponent', amount: string) {
     provider: 'dailydraft',
     providerReference: `${side}_provider`,
     poolVersion: 'pool-v1',
+    rarity: rarityForSerializedValue(amount, 6),
     resultHash: `${side}_hash`,
     side,
     sourceTimestamp: '2026-07-20T00:00:00.000Z',

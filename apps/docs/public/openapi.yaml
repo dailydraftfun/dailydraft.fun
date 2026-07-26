@@ -2578,6 +2578,7 @@ components:
         - insuredValueMinor
         - insuredValueCurrency
         - insuredValueDecimals
+        - rarity
         - idempotencyKey
         - selectedAt
         - revealedAt
@@ -2631,6 +2632,8 @@ components:
         insuredValueDecimals:
           type: integer
           const: 6
+        rarity:
+          $ref: '#/components/schemas/PullRarity'
         idempotencyKey:
           type: [string, 'null']
           minLength: 1
@@ -2762,6 +2765,10 @@ components:
         decimals:
           type: integer
           const: 6
+    PullRarity:
+      type: string
+      enum: [common, uncommon, rare, chase]
+      description: Presentation-only rarity derived from committed insured value; it is never part of the canonical result hash.
     ValuationPolicyDocument:
       type: object
       additionalProperties: false
@@ -3115,7 +3122,7 @@ components:
     DuelPackOutcome:
       type: object
       additionalProperties: false
-      required: [side, assetReference, displayName, insuredValue, openedAt, poolVersion, sourceTimestamp, resultHash, isMock, provider, providerReference]
+      required: [side, assetReference, displayName, insuredValue, rarity, openedAt, poolVersion, sourceTimestamp, resultHash, isMock, provider, providerReference]
       properties:
         side:
           type: string
@@ -3132,6 +3139,8 @@ components:
         insuredValue:
           $ref: '#/components/schemas/Money'
           description: Backward-compatible result field. Its authoritative meaning comes from valuationPolicyHash; hosted demo outcomes contain the snapshotted TCGPlayer market value, not Collector Crypt insured value.
+        rarity:
+          $ref: '#/components/schemas/PullRarity'
         openedAt:
           type: string
           format: date-time
@@ -3367,13 +3376,14 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [side, assetReference, displayName, insuredValue, isMock, openedAt, poolVersion, sourceTimestamp, valuationSourceReference, resultHash]
+            required: [side, assetReference, displayName, insuredValue, rarity, isMock, openedAt, poolVersion, sourceTimestamp, valuationSourceReference, resultHash]
             properties:
               side: { type: string, enum: [creator, opponent] }
               assetReference: { type: string }
               displayName: { type: string }
               imageUrl: { type: [string, 'null'], format: uri }
               insuredValue: { $ref: '#/components/schemas/Money' }
+              rarity: { $ref: '#/components/schemas/PullRarity' }
               isMock: { type: boolean }
               openedAt: { type: string, format: date-time }
               poolVersion: { type: string }
@@ -3461,7 +3471,7 @@ components:
     PublicPostDuelCardActionState:
       type: object
       additionalProperties: false
-      required: [actionStateId, duelId, side, assetReference, providerReference, displayName, insuredValue, owner, ownership, receiptHref, actions]
+      required: [actionStateId, duelId, side, assetReference, providerReference, displayName, insuredValue, rarity, owner, ownership, receiptHref, actions]
       properties:
         actionStateId:
           type: string
@@ -3473,6 +3483,7 @@ components:
         displayName: { type: string }
         imageUrl: { type: [string, 'null'], format: uri }
         insuredValue: { $ref: '#/components/schemas/Money' }
+        rarity: { $ref: '#/components/schemas/PullRarity' }
         owner: { $ref: '#/components/schemas/PublicParticipant' }
         ownership:
           type: object

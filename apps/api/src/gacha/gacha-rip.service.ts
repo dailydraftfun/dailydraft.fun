@@ -2,6 +2,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { type DatabaseClient, GachaRipStatus, type Prisma } from '@dailydraft/db';
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
+import { rarityForSerializedValue } from '../common/pull-rarity.js';
+import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import { gachaDevnetModeEnabled, resolveGachaCapability } from './gacha-capability.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
@@ -167,11 +169,11 @@ export class GachaRipService {
 
     const outcome = await this.database.$transaction(
       async (transaction): Promise<CreateFixtureRipOutcome> => {
-        await transaction.$queryRaw`
-        SELECT pg_advisory_xact_lock(
-          hashtextextended(${oddsKey}, ${GACHA_ODDS_LOCK_NAMESPACE})
-        )
-      `;
+        await acquireNamespacedAdvisoryTransactionLock(
+          transaction,
+          oddsKey,
+          GACHA_ODDS_LOCK_NAMESPACE,
+        );
 
         if (paymentIntentId) {
           const fundedRipId = await this.payments.findConsumedRip(transaction, {
@@ -533,6 +535,7 @@ function publicRip(rip: GachaRipRow) {
     machineKey: rip.machineKey,
     oddsCommitmentId: rip.oddsCommitmentId,
     oddsRulesHash: rip.oddsRulesHash,
+    rarity: rarityForSerializedValue(rip.insuredValueMinor, rip.insuredValueDecimals),
     revealedAt: rip.revealedAt,
     seedCommitmentHash: rip.seedCommitmentHash,
     selectedAssetReference: rip.selectedAssetReference,

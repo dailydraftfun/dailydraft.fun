@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { DuelProviderOperationStatus } from '@dailydraft/db';
 
+import { rarityForSerializedValue } from '../common/pull-rarity.js';
 import type { Duel, DuelEvent, DuelTransactionRecord, Page } from '../domain.js';
 import { PacksService } from '../packs/packs.service.js';
 import { CollectorCryptPackProvider } from '../providers/collector-crypt-pack.provider.js';
@@ -442,6 +443,10 @@ class OpeningRepository extends DuelRepository {
           provider: input.provider,
           providerReference: outcome.providerReference,
           poolVersion: outcome.poolVersion,
+          rarity: rarityForSerializedValue(
+            outcome.insuredValue.amount,
+            outcome.insuredValue.decimals,
+          ),
           resultHash: outcome.resultHash,
           side: outcome.side,
           sourceTimestamp: outcome.sourceTimestamp,

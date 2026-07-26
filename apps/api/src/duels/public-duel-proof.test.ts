@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { rarityForSerializedValue } from '../common/pull-rarity.js';
 import type { Duel, DuelTransactionRecord } from '../domain.js';
 import type { ProviderCardResult } from '../providers/pack-provider.js';
 import { compareInsuredValues, normalizeProviderResult } from '../providers/provider-result.js';
@@ -21,6 +22,7 @@ describe('public duel proof', () => {
     expect(receipt.result?.winner?.address).toBe(CREATOR);
     expect(receipt.result?.totalValue.amount).toBe('115000000');
     expect(receipt.result?.margin.amount).toBe('85000000');
+    expect(receipt.result?.outcomes.map((outcome) => outcome.rarity)).toEqual(['rare', 'uncommon']);
     expect(receipt.result?.policy).toEqual(
       expect.objectContaining({
         authoritativeField: 'collector-crypt.gacha.result.insuredValue',
@@ -303,6 +305,9 @@ describe('public duel proof', () => {
     );
     expect(first.cardActions.cards).toHaveLength(2);
     expect(first.cardActions.cards.map((card) => card.owner.address)).toEqual([...expectedOwners]);
+    expect(first.cardActions.cards.map((card) => card.rarity)).toEqual(
+      requireResult(duel).outcomes.map((outcome) => outcome.rarity),
+    );
     expect(new Set(first.cardActions.cards.map((card) => card.actionStateId)).size).toBe(2);
     for (const card of first.cardActions.cards) {
       expect(card).toEqual(
@@ -571,6 +576,7 @@ function toDuelOutcome(
     poolVersion: outcome.poolVersion,
     provider: 'collector-crypt',
     providerReference: outcome.providerReference,
+    rarity: rarityForSerializedValue(outcome.insuredValue.amount, outcome.insuredValue.decimals),
     resultHash: outcome.resultHash,
     side: outcome.side,
     sourceTimestamp: outcome.sourceTimestamp,

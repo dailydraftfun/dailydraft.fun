@@ -25,6 +25,7 @@ COPY --from=builder --chown=bun:bun /app/apps/api/package.json ./apps/api/packag
 # Without it the API resolves none of its runtime deps and dies on reflect-metadata.
 COPY --from=builder --chown=bun:bun /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=builder --chown=bun:bun /app/apps/api/dist ./apps/api/dist
+COPY --from=builder --chown=bun:bun /app/packages/contracts ./packages/contracts
 COPY --from=builder --chown=bun:bun /app/packages/db ./packages/db
 
 USER bun

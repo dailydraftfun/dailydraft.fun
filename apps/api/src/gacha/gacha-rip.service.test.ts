@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { DatabaseClient } from '@dailydraft/db';
 import { GachaRipStatus } from '@dailydraft/db';
 import { ServiceUnavailableException } from '@nestjs/common';
+import { rarityForSerializedValue } from '../common/pull-rarity.js';
 import type { GachaInventorySnapshotService } from './gacha-inventory-snapshot.service.js';
 import type {
   ConsumeGachaPaymentInput,
@@ -73,6 +74,9 @@ describe('GachaRipService', () => {
       settlementReference: 'devnet-settlement-reference',
       status: GachaRipStatus.SETTLED,
     });
+    expect(result.rip.rarity).toBe(
+      rarityForSerializedValue(result.rip.insuredValueMinor, result.rip.insuredValueDecimals),
+    );
     expect(result.rip.revealedAt).toBeInstanceOf(Date);
     expect(result.rip.acquiredAt).toBeInstanceOf(Date);
     expect(result.rip.settledAt).toBeInstanceOf(Date);
@@ -1132,7 +1136,7 @@ class RipDatabase {
     },
   };
 
-  readonly $queryRaw = async () => [{ pg_advisory_xact_lock: '' }];
+  readonly $executeRaw = async () => 1;
 
   async $transaction<T>(operation: (transaction: this) => Promise<T>): Promise<T> {
     return operation(this);

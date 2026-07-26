@@ -7,6 +7,7 @@ import {
 } from '@dailydraft/db';
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
+import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import { DEVNET_DEMO_VALUATION_POLICY, stableStringify } from '../providers/valuation-policy.js';
 import { gachaDevnetModeEnabled } from './gacha-capability.js';
@@ -121,11 +122,11 @@ export class GachaInventorySnapshotService {
     }
     const prepared = prepareGachaInventorySnapshot(input);
     return this.database.$transaction(async (transaction) => {
-      await transaction.$queryRaw`
-        SELECT pg_advisory_xact_lock(
-          hashtextextended(${prepared.policy.poolKey}, ${GACHA_INVENTORY_LOCK_NAMESPACE})
-        )
-      `;
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        prepared.policy.poolKey,
+        GACHA_INVENTORY_LOCK_NAMESPACE,
+      );
       await transaction.gachaMachine.upsert({
         create: machineCreateInput(prepared.policy.machine),
         update: {
