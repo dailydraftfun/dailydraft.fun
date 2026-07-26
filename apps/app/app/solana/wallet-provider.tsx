@@ -24,7 +24,7 @@ import { trackProductEvent } from '../analytics-client';
 import { createJourneyFixtureWallet, readJourneyFixtureBootstrap } from '../e2e/journey-wallet';
 import type { BalanceStatus, WalletBalances } from './balance';
 import { SOLANA_CHAIN, SOLANA_CLUSTER, SOLANA_RPC_URL, shortenAddress } from './config';
-import { fetchLamportBalance, fetchTokenBalance } from './rpc-client';
+import { refreshWalletBalances } from './read-balances';
 import {
   isExplicitWalletRejection,
   WalletTransactionNotBroadcastError,
@@ -94,38 +94,13 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   const address = account?.address ?? null;
 
   /**
-   * Reads the connected wallet's spendable balance off the same client-side RPC
-   * endpoint the genesis-hash check uses. `mint` is optional because most
-   * callers only care about SOL; passing one additionally resolves that SPL
-   * balance, and omitting it clears any previously read token amount rather
-   * than leaving a stale figure from another mint on screen.
-   *
-   * A failed read resolves to null instead of throwing: balance is advisory
-   * everywhere it is consumed, and an RPC hiccup must never be able to block a
-   * funding flow that would otherwise succeed.
+   * Binds the balance read to the connected address. Both the read policy and
+   * the status it resolves to live in read-balances.ts, which is reachable from
+   * a test; this only supplies the address and the two state setters.
    */
   const refreshBalances = useCallback(
-    async (mint?: string | null): Promise<WalletBalances | null> => {
-      if (!address) {
-        setBalances(null);
-        setBalanceStatus('idle');
-        return null;
-      }
-      setBalanceStatus('loading');
-      try {
-        const [lamports, token] = await Promise.all([
-          fetchLamportBalance(address),
-          mint ? fetchTokenBalance(address, mint) : Promise.resolve(null),
-        ]);
-        const next: WalletBalances = { lamports, token };
-        setBalances(next);
-        setBalanceStatus('ready');
-        return next;
-      } catch {
-        setBalanceStatus('error');
-        return null;
-      }
-    },
+    (mint?: string | null): Promise<WalletBalances | null> =>
+      refreshWalletBalances(address, mint, { setBalanceStatus, setBalances }),
     [address],
   );
 

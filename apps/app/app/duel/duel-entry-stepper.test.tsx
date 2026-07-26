@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import type { BalanceStatus, WalletBalances } from '../solana/balance';
 import type { DuelTransactionIntent } from '../solana/duel-client';
 
 // Bun's module registry is process-wide, so this override reaches every later test file.
@@ -88,6 +89,66 @@ describe('duel entry stepper', () => {
 
     expect(html).toContain('Wallet rejected the transaction.');
     expect(html).toContain('Approve 0.015 SOL in wallet');
+  });
+
+  test('confirms up front that a read balance covers the fee', () => {
+    walletState = wallet({
+      balanceStatus: 'ready',
+      balances: { lamports: 2_000_000_000n, token: null },
+    });
+    authenticationState = authentication({
+      sessionToken: 'session',
+      status: 'authenticated',
+    });
+
+    const html = renderStepper({ intent: fundingIntent() });
+
+    expect(html).toContain('Wallet balance covers the stake and the network fee.');
+    expect(html).toContain('data-testid="duel-entry-preflight"');
+    expect(html).toContain('Approve 0.015 SOL in wallet');
+    expect(html).not.toContain('duel-preflight-short');
+  });
+
+  test('blocks the wallet prompt when the read balance cannot cover the fee', () => {
+    walletState = wallet({
+      balanceStatus: 'ready',
+      balances: { lamports: 5_000_000n, token: null },
+    });
+    authenticationState = authentication({
+      sessionToken: 'session',
+      status: 'authenticated',
+    });
+
+    const html = renderStepper({ intent: fundingIntent() });
+
+    // 0.015 SOL fee plus the 15_000-lamport signature buffer against 0.005 SOL held.
+    expect(html).toContain('Add 0.010015 SOL to this wallet before funding.');
+    expect(html).toContain('duel-preflight-short');
+    expect(html).toContain('Insufficient devnet SOL');
+    expect(html).not.toContain('Approve 0.015 SOL in wallet');
+    expect(html).toContain('disabled=""');
+  });
+
+  test('names the live cluster phase and links the broadcast signature', () => {
+    walletState = wallet();
+    authenticationState = authentication({
+      sessionToken: 'session',
+      status: 'authenticated',
+    });
+
+    const html = renderStepper({
+      confirmationPhase: 'processed',
+      fundingPhase: 'confirming',
+      fundingSignature: 'signature123',
+      intent: fundingIntent(),
+      pending: true,
+    });
+
+    expect(html).toContain('Processing on devnet');
+    expect(html).toContain('A validator has processed the transaction.');
+    expect(html).toContain('DailyDraft will advance automatically.');
+    expect(html).toContain('data-testid="duel-entry-explorer-link"');
+    expect(html).toContain('https://explorer.solana.com/tx/signature123?cluster=devnet');
   });
 
   test('distinguishes broadcast confirmation from wallet signing', () => {
@@ -187,6 +248,8 @@ function renderStepper(
 function wallet(
   overrides: Partial<{
     address: string | null;
+    balanceStatus: BalanceStatus;
+    balances: WalletBalances | null;
     networkStatus: 'checking' | 'online' | 'offline';
     status: 'discovering' | 'disconnected' | 'connecting' | 'connected' | 'error';
   }> = {},
@@ -194,6 +257,8 @@ function wallet(
   return {
     account: null,
     address: 'wallet',
+    balanceStatus: 'idle' as BalanceStatus,
+    balances: null as WalletBalances | null,
     canSignMessage: true,
     clearError: () => undefined,
     cluster: 'devnet' as const,
@@ -201,6 +266,7 @@ function wallet(
     disconnect: async () => undefined,
     error: null,
     networkStatus: 'online' as const,
+    refreshBalances: async () => null,
     retryNetwork: async () => true,
     rpcUrl: 'https://api.devnet.solana.com',
     selectedWallet: null,

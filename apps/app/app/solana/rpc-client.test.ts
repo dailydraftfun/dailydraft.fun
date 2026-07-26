@@ -91,6 +91,18 @@ describe('fetchTokenBalance', () => {
 
     expect(result).toBeNull();
   });
+
+  test('treats a result with no value key as no token account', async () => {
+    // Some RPC providers omit `value` entirely rather than sending an empty
+    // array; reading `.length` off that would throw inside a balance read that
+    // is contractually non-throwing.
+    const { result } = await withRpc(
+      () => Response.json({ id: '1', jsonrpc: '2.0', result: {} }),
+      () => fetchTokenBalance(wallet, mint),
+    );
+
+    expect(result).toBeNull();
+  });
 });
 
 describe('fetchSignatureCommitment', () => {
@@ -166,6 +178,31 @@ describe('rpc failures', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  test('a bare error body still names the method it came from', async () => {
+    // Not every provider returns message/code. The fallbacks are what keep the
+    // surfaced error attributable instead of an empty string.
+    const attempt = withRpc(
+      () => Response.json({ error: {}, id: '1', jsonrpc: '2.0' }),
+      () => fetchLamportBalance(wallet),
+    );
+
+    await expect(attempt).rejects.toThrow('Solana RPC getBalance failed.');
+
+    const { result: code } = await withRpc(
+      () => Response.json({ error: {}, id: '1', jsonrpc: '2.0' }),
+      async () => {
+        try {
+          await fetchLamportBalance(wallet);
+          return 'did-not-throw' as const;
+        } catch (error) {
+          return (error as SolanaRpcError).code;
+        }
+      },
+    );
+
+    expect(code).toBeNull();
   });
 
   test('a 200 with no result is an error, not a silent zero', async () => {

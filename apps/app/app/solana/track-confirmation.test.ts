@@ -35,6 +35,32 @@ function harness(polls: Array<ConfirmationPoll | Error>) {
 }
 
 describe('trackConfirmation', () => {
+  test('polls the live RPC endpoint when no dependencies are injected', async () => {
+    // Every other case here injects poll/now/sleep, which would leave the real
+    // wiring — the defaults an actual funding flow runs on — untested.
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return Response.json({
+        id: '1',
+        jsonrpc: '2.0',
+        result: { value: [{ confirmationStatus: 'finalized', err: null }] },
+      });
+    }) as unknown as typeof fetch;
+
+    try {
+      // Finalized on the first poll, so no sleep elapses and the test stays
+      // wall-clock free despite using the real interval.
+      const phase = await trackConfirmation('sig');
+
+      expect(phase).toBe('finalized');
+      expect(calls).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('reports every phase change from broadcast to confirmed', async () => {
     const { options, phases } = harness([
       pending,

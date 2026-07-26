@@ -5,18 +5,23 @@ mock.module('next/navigation', () => ({
   usePathname: () => '/games',
 }));
 
-mock.module('./solana/wallet-control', () => ({
-  WalletControl: () => <span>Wallet control</span>,
-}));
-
+// Rendered against the real providers rather than a wallet-control stub: a
+// mock.module override is process-wide and would suppress the real component in
+// every other test file too. See app/workspace-shell.test.tsx.
+const { SolanaWalletProvider } = await import('./solana/wallet-provider');
+const { WalletAuthProvider } = await import('./solana/wallet-auth-provider');
 const { WorkspaceShell } = await import('./workspace-shell');
 
 describe('workspace shell contract', () => {
   test('publishes the DailyDraft brand in the header chrome', () => {
     const markup = renderToStaticMarkup(
-      <WorkspaceShell>
-        <main>Route content</main>
-      </WorkspaceShell>,
+      <SolanaWalletProvider>
+        <WalletAuthProvider>
+          <WorkspaceShell>
+            <main>Route content</main>
+          </WorkspaceShell>
+        </WalletAuthProvider>
+      </SolanaWalletProvider>,
     );
 
     expect(markup).toContain('aria-label="DailyDraft home"');
