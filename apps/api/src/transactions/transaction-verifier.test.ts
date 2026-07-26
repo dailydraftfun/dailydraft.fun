@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { monitoredTransaction, transactionEnvelope } from './transaction-monitor.test-fixtures.js';
+import type { MonitoredTransaction } from './transaction-monitor.types.js';
 import {
   hashTransactionMessage,
   TransactionVerificationError,
@@ -93,7 +94,80 @@ describe('verifyTransactionEnvelope', () => {
 
     expectVerificationCode(envelope, 'MESSAGE_MISMATCH', false);
   });
+
+  test('accepts a writable account supplied by an address lookup table', () => {
+    const envelope = transactionEnvelope();
+    envelope.meta = { err: null, loadedAddresses: { readonly: [], writable: [LOOKUP_ACCOUNT] } };
+
+    expect(() =>
+      verifyTransactionEnvelope(
+        withExtraAccount({ address: LOOKUP_ACCOUNT, isWritable: true }),
+        envelope,
+      ),
+    ).not.toThrow();
+  });
+
+  test('rejects a lookup-table account the message only loaded read-only', () => {
+    const envelope = transactionEnvelope();
+    envelope.meta = { err: null, loadedAddresses: { readonly: [LOOKUP_ACCOUNT], writable: [] } };
+
+    expectAccountFailure(
+      withExtraAccount({ address: LOOKUP_ACCOUNT, isWritable: true }),
+      envelope,
+      'ACCOUNT_ACCESS_MISMATCH',
+    );
+  });
+
+  test('rejects a lookup-table account on a message that loaded no addresses', () => {
+    const envelope = transactionEnvelope();
+    envelope.meta = { err: null };
+
+    // A versioned message whose lookup tables the RPC could not resolve must
+    // fail shut rather than let an unresolved account satisfy a constraint.
+    expectAccountFailure(
+      withExtraAccount({ address: LOOKUP_ACCOUNT, isWritable: true }),
+      envelope,
+      'ACCOUNT_MISSING',
+    );
+  });
+
+  test('does not let a lookup-table entry restate a static account', () => {
+    const envelope = transactionEnvelope();
+    // Lookup-table entries are never signers, so an entry duplicating the fee
+    // payer would strip its signer privilege if it could shadow the static
+    // account. Static accounts are resolved first precisely so it cannot.
+    envelope.meta = {
+      err: null,
+      loadedAddresses: { readonly: [monitoredTransaction().expectedSigner], writable: [] },
+    };
+
+    expect(() => verifyTransactionEnvelope(monitoredTransaction(), envelope)).not.toThrow();
+  });
 });
+
+const LOOKUP_ACCOUNT = 'HxhWkVpk5NS4Ltg5nij2G671CKXFRKPK8vy271Ub4uEK';
+
+function withExtraAccount(
+  constraint: MonitoredTransaction['expectedAccounts'][number],
+): MonitoredTransaction {
+  const base = monitoredTransaction();
+  return monitoredTransaction({ expectedAccounts: [...base.expectedAccounts, constraint] });
+}
+
+function expectAccountFailure(
+  transaction: MonitoredTransaction,
+  envelope: ReturnType<typeof transactionEnvelope>,
+  expectedCode: string,
+): void {
+  try {
+    verifyTransactionEnvelope(transaction, envelope);
+    throw new Error('Expected transaction verification to fail');
+  } catch (error) {
+    expect(error).toBeInstanceOf(TransactionVerificationError);
+    if (!(error instanceof TransactionVerificationError)) throw error;
+    expect(error.code).toBe(expectedCode);
+  }
+}
 
 function expectVerificationCode(
   envelope: ReturnType<typeof transactionEnvelope>,

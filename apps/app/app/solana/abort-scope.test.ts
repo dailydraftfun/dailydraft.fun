@@ -38,6 +38,19 @@ describe('createAbortScope', () => {
     expect(() => scope.cancel()).not.toThrow();
   });
 
+  test('begins a live attempt again after a cancel', () => {
+    const scope = createAbortScope();
+
+    const cancelled = scope.begin();
+    scope.cancel();
+    const resumed = scope.begin();
+
+    // A retry after the funding attempt was abandoned has to get a usable
+    // signal, and the abandoned one has to stay abandoned.
+    expect(resumed.aborted).toBe(false);
+    expect(cancelled.aborted).toBe(true);
+  });
+
   test('builds each attempt through the injected controller factory', () => {
     const controllers: AbortController[] = [];
     const scope = createAbortScope(() => {
@@ -51,5 +64,16 @@ describe('createAbortScope', () => {
 
     expect(controllers).toHaveLength(2);
     expect(controllers[0]?.signal.aborted).toBe(true);
+  });
+
+  test('an older attempt cannot cancel the active replacement', () => {
+    const scope = createAbortScope();
+    const first = scope.begin();
+    const second = scope.begin();
+
+    expect(scope.cancelIf(first)).toBe(false);
+    expect(second.aborted).toBe(false);
+    expect(scope.cancelIf(second)).toBe(true);
+    expect(second.aborted).toBe(true);
   });
 });
