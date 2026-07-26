@@ -1,5 +1,8 @@
 'use client';
 
+// Deliberately the `/pull-rarity` subpath, not the package root: the root barrel
+// imports `node:crypto`, which must never reach a client bundle.
+import { pullRarityLabel } from '@dailydraft/contracts/pull-rarity';
 import {
   ArrowCounterClockwiseIcon,
   ArrowsLeftRightIcon,
@@ -120,7 +123,7 @@ import { WalletTransactionNotBroadcastError } from './solana/wallet-transaction-
 
 type Mode = DuelOpponentType;
 type Phase = LiveDuelPhase;
-type DuelCardStage = 'opening' | 'revealed' | 'sealed';
+export type DuelCardStage = 'opening' | 'revealed' | 'sealed';
 
 type DuelLobbyEntryBase = {
   duelId: string;
@@ -158,7 +161,11 @@ function Avatar({ color, label }: { color: string; label: string }) {
   );
 }
 
-function DuelCard({
+// Exported for contract tests only. Driving the sealed/opening/revealed stages
+// through <DuelArena /> would mean standing up the whole live duel state machine
+// and its API polling; the card is a pure function of its props, so it is tested
+// the same way GameModePreview is — rendered directly with each state.
+export function DuelCard({
   pull,
   side,
   stage,
@@ -205,21 +212,20 @@ function DuelCard({
         ) : null}
       </div>
 
-      <div className={`card-stage card-stage-${stage}`}>
+      <div className={`card-stage card-stage-${stage}`} data-rarity={displayPull?.rarity}>
         <div className="pack-shell" aria-hidden={visible}>
           <div className="pack-glint" />
+          <div className="pack-seam" />
           <div className="pack-brand">
             <span>PACK</span>
             <strong>DUEL</strong>
             <small>COMMITTED PACK</small>
           </div>
-          <Image
-            src="https://images.pokemontcg.io/cardback.png"
-            alt=""
-            fill
-            sizes="(max-width: 768px) 42vw, 260px"
-            className="pack-art"
-          />
+          {/* Drawn in CSS rather than fetched: the third-party cardback this used to
+              point at has always 404'd, so the pack you stare at before the reveal
+              rendered as flat colour. A local texture also drops a network round trip
+              from the one screen where latency is most visible. */}
+          <div className="pack-art" aria-hidden="true" />
           <span className="pack-tier">{visible ? '—' : tier}</span>
         </div>
         <div className="pull-shell" aria-hidden={!visible}>
@@ -239,7 +245,12 @@ function DuelCard({
               <small>{displayPull.label}</small>
             </div>
           ) : null}
+          {displayPull ? <span className="pull-sheen" aria-hidden="true" /> : null}
+          {displayPull ? (
+            <span className="pull-rarity">{pullRarityLabel(displayPull.rarity)}</span>
+          ) : null}
         </div>
+        {visible && displayPull ? <span className="pull-burst" aria-hidden="true" /> : null}
         {stage === 'opening' ? (
           <div className="opening-status" role="status">
             <span /> Opening pack

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { PullRarity } from '@dailydraft/contracts';
 
 import type { DurableDuel } from '../solana/duel-client';
 import { prohibitedPrimaryUiTerms } from './duel-player-copy';
@@ -24,6 +25,56 @@ describe('live duel state', () => {
     expect(state.winner).toBe('you');
     expect(state.margin).toBe('$25');
     expect(state.totalValue).toBe('$115');
+  });
+
+  test('carries the committed card art into the reveal instead of dropping it', () => {
+    const state = toLiveDuelState(duel({ status: 'settled' }), 'creator');
+
+    expect(state.left?.image).toBe('https://images.pokemontcg.io/creator_asset_reference.png');
+    expect(state.right?.image).toBe('https://images.pokemontcg.io/opponent_asset_reference.png');
+  });
+
+  test('leaves image unset for an outcome the provider has no art for', () => {
+    const withoutArt = duel({ status: 'settled' });
+    const result = withoutArt.result;
+    if (!result) throw new Error('expected a committed result');
+    const state = toLiveDuelState(
+      {
+        ...withoutArt,
+        result: {
+          ...result,
+          outcomes: result.outcomes.map((entry) => ({ ...entry, imageUrl: null })),
+        },
+      },
+      'creator',
+    );
+
+    expect(state.left?.image).toBeUndefined();
+    expect(state.left?.name).toBe('Creator receipt pull');
+  });
+
+  test('presents the rarity the API committed rather than re-deriving it from value', () => {
+    const settled = duel({ status: 'settled' });
+    const result = settled.result;
+    if (!result) throw new Error('expected a committed result');
+    // Deliberately contradicts what the value alone implies ($45 and $70 would
+    // derive to uncommon and rare): only a wire read can produce these.
+    const state = toLiveDuelState(
+      {
+        ...settled,
+        result: {
+          ...result,
+          outcomes: [
+            { ...result.outcomes[0], rarity: 'chase' },
+            { ...result.outcomes[1], rarity: 'common' },
+          ] as typeof result.outcomes,
+        },
+      },
+      'creator',
+    );
+
+    expect(state.left?.rarity).toBe('chase');
+    expect(state.right?.rarity).toBe('common');
   });
 
   test('keeps a settled duel without proof data out of the result UI', () => {
@@ -94,8 +145,8 @@ function duel({
         : {
             comparisonMetric: 'insured-value',
             outcomes: [
-              outcome('creator', 'Creator receipt pull', '45000000'),
-              outcome('opponent', 'Opponent receipt pull', '70000000'),
+              outcome('creator', 'Creator receipt pull', '45000000', 'uncommon'),
+              outcome('opponent', 'Opponent receipt pull', '70000000', 'rare'),
             ],
             resultHash: 'result_hash',
             settlementReady: true,
@@ -114,14 +165,17 @@ function outcome(
   side: 'creator' | 'opponent',
   displayName: string,
   amount: string,
+  rarity: PullRarity,
 ): NonNullable<DurableDuel['result']>['outcomes'][number] {
   return {
     assetReference: `${side}_asset_reference`,
     displayName,
+    imageUrl: `https://images.pokemontcg.io/${side}_asset_reference.png`,
     insuredValue: { amount, currency: 'USDC', decimals: 6 },
     isMock: false,
     provider: 'dailydraft',
     providerReference: `${side}_provider_reference`,
+    rarity,
     side,
   };
 }
