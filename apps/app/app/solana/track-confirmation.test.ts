@@ -141,6 +141,30 @@ describe('trackConfirmation', () => {
     expect(sleeps).toEqual([]);
   });
 
+  test('discards an in-flight poll when a replacement attempt aborts it', async () => {
+    const controller = new AbortController();
+    const phases: ConfirmationPhase[] = [];
+    let resolvePoll: ((result: ConfirmationPoll) => void) | undefined;
+    const poll = new Promise<ConfirmationPoll>((resolve) => {
+      resolvePoll = resolve;
+    });
+    const tracking = trackConfirmation('sig', {
+      onPhase: (phase) => phases.push(phase),
+      poll: () => poll,
+      signal: controller.signal,
+      sleep: async () => {
+        throw new Error('an aborted in-flight poll must not sleep');
+      },
+    });
+
+    await Promise.resolve();
+    controller.abort();
+    resolvePoll?.({ commitment: 'confirmed', failed: false });
+
+    expect(await tracking).toBe('submitted');
+    expect(phases).toEqual(['submitted']);
+  });
+
   test('stops waiting out the poll interval the moment the caller aborts', async () => {
     const controller = new AbortController();
     let releaseSleep = () => {};

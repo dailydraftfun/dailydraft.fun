@@ -1,5 +1,6 @@
 'use client';
 
+import { type PullRarity, pullRarityFor } from '@dailydraft/contracts/pull-rarity';
 import {
   ArrowCounterClockwiseIcon,
   ArrowRightIcon,
@@ -17,9 +18,18 @@ import {
   TrendUpIcon,
   WarningCircleIcon,
 } from '@phosphor-icons/react';
+import { motion } from 'motion/react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { type ReactNode, useState } from 'react';
+import { type CSSProperties, type ReactNode, useState } from 'react';
+import {
+  ChoreographyCelebration,
+  type ChoreographyController,
+  ChoreographyDriver,
+  ChoreographySkipControl,
+  useRevealChoreography,
+} from '../components/choreography';
+import choreographyStyles from '../components/choreography/choreography.module.css';
 import {
   type PreviewCard,
   type PreviewMode,
@@ -145,6 +155,7 @@ export function GameModePreview({
 function FlipPreview({ initialStep = 0 }: { initialStep?: number }) {
   const [pool, setPool] = useState<'base' | 'electric' | 'graded'>('base');
   const [step, setStep] = useState(initialStep);
+  const selectedCard = previewCards.charizard;
 
   return (
     <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]" aria-label="Flip preview">
@@ -217,14 +228,12 @@ function FlipPreview({ initialStep = 0 }: { initialStep?: number }) {
           </>
         ) : (
           <div className="mt-6 grid gap-6 sm:grid-cols-[15rem_minmax(0,1fr)] sm:items-center">
-            <CardImage card={previewCards.charizard} priority />
+            <FlipReveal card={selectedCard} />
             <div>
               <p className="proof-label">Chase band · selected reproducibly</p>
-              <h3 className="mt-2 text-2xl font-semibold text-primary">
-                {previewCards.charizard.name}
-              </h3>
+              <h3 className="mt-2 text-2xl font-semibold text-primary">{selectedCard.name}</h3>
               <p className="mt-2 font-mono text-lg font-semibold text-lime">
-                ${previewCards.charizard.value.toFixed(2)}
+                ${selectedCard.value.toFixed(2)}
               </p>
               <p className="mt-4 text-sm leading-6 text-secondary">
                 The reveal proves the planned selection UI. Ownership remains pending because no
@@ -558,6 +567,71 @@ function CardImage({ card, priority = false }: { card: PreviewCard; priority?: b
   );
 }
 
+function FlipReveal({ card }: { card: PreviewCard }) {
+  const rarity = rarityForPreviewCard(card);
+  const choreography = useRevealChoreography({
+    active: true,
+    rarity,
+    sequenceKey: card.name,
+  });
+  const cardVisible = choreography.revealed || choreography.settled;
+  const celebrating = choreography.beat === 'celebrate';
+
+  return (
+    <div>
+      <figure
+        aria-label={`Card reveal for ${card.name}`}
+        className={choreographyStyles.flipScene}
+        data-choreography-active="true"
+        data-choreography-beat={choreography.beat}
+        data-choreography-rarity={rarity}
+        data-choreography-settled={choreography.settled}
+        style={
+          {
+            '--choreography-intensity': choreography.intensity,
+          } as CSSProperties
+        }
+      >
+        <motion.div
+          animate={{
+            opacity: cardVisible ? 1 : 0,
+            rotateY: cardVisible ? 0 : -88,
+            scale: celebrating ? 1 + choreography.intensity * 0.035 : 1,
+          }}
+          className={choreographyStyles.flipCard}
+          initial={false}
+          transition={choreography.transition}
+        >
+          <CardImage card={card} priority />
+        </motion.div>
+        <motion.div
+          animate={flipPackTarget(choreography)}
+          aria-hidden="true"
+          className={choreographyStyles.pack}
+          initial={false}
+          transition={choreography.transition}
+        >
+          <div className={choreographyStyles.packLabel}>
+            <SparkleIcon aria-hidden="true" size={34} weight="fill" />
+            <strong>Base Set vault</strong>
+            <span>Committed fixture pack</span>
+          </div>
+        </motion.div>
+        <ChoreographyCelebration
+          className={choreographyStyles.celebration}
+          controller={choreography}
+        />
+        <ChoreographyDriver controller={choreography} sequenceKey={card.name} />
+      </figure>
+      <ChoreographySkipControl
+        className={`proof-secondary-action mt-3 w-full ${choreographyStyles.skip}`}
+        controller={choreography}
+        label="Skip reveal animation"
+      />
+    </div>
+  );
+}
+
 function StageCard({
   card,
   index,
@@ -567,28 +641,57 @@ function StageCard({
   index: number;
   revealed: boolean;
 }) {
+  const rarity = rarityForPreviewCard(card);
+  const choreography = useRevealChoreography({
+    active: revealed,
+    initiallySettled: revealed,
+    rarity,
+    sequenceKey: index,
+  });
+  const visuallyRevealed = revealed && choreography.revealed;
+  const celebrating = choreography.beat === 'celebrate';
+
   return (
-    <article
+    <motion.article
+      animate={{ scale: celebrating ? 1 + choreography.intensity * 0.025 : 1 }}
       className={[
         'rounded-xl border p-2 transition-colors',
         revealed ? 'border-lime/30 bg-lime/5' : 'border-border bg-tertiary',
       ].join(' ')}
+      data-choreography-beat={choreography.beat}
+      data-choreography-rarity={rarity}
+      data-choreography-settled={choreography.settled}
+      initial={false}
+      transition={choreography.transition}
     >
       <div className="relative aspect-[2.5/3.5] overflow-hidden rounded-lg bg-primary">
-        <Image
-          alt={revealed ? card.name : ''}
-          aria-hidden={!revealed}
-          className={revealed ? 'object-cover' : 'object-cover opacity-15 blur-sm'}
-          fill
-          loading={revealed ? 'eager' : 'lazy'}
-          sizes="(min-width: 768px) 160px, 40vw"
-          src={card.imageUrl}
-        />
+        <motion.div
+          animate={{
+            filter: visuallyRevealed ? 'blur(0px)' : 'blur(4px)',
+            opacity: visuallyRevealed ? 1 : 0.15,
+            rotateY: visuallyRevealed ? 0 : -18,
+            scale: visuallyRevealed ? 1 : 0.94,
+          }}
+          className={choreographyStyles.stageArtwork}
+          initial={false}
+          transition={choreography.transition}
+        >
+          <Image
+            alt={revealed ? card.name : ''}
+            aria-hidden={!revealed}
+            className="object-cover"
+            fill
+            loading={revealed ? 'eager' : 'lazy'}
+            sizes="(min-width: 768px) 160px, 40vw"
+            src={card.imageUrl}
+          />
+        </motion.div>
         {!revealed ? (
           <span className="absolute inset-0 grid place-items-center text-secondary">
             <LockKeyIcon size={25} />
           </span>
         ) : null}
+        <ChoreographyDriver controller={choreography} sequenceKey={index} />
       </div>
       <p className="proof-label mt-3">Stage {index + 1}</p>
       <p className="mt-1 truncate text-xs font-semibold text-primary">
@@ -597,8 +700,34 @@ function StageCard({
       <p className="mt-1 font-mono text-xs text-secondary">
         {revealed ? `$${card.value.toFixed(2)}` : 'Hidden'}
       </p>
-    </article>
+      {revealed ? (
+        <ChoreographySkipControl
+          className={`mt-2 min-h-12 w-full rounded-md border border-border px-2 py-2 text-xs font-semibold text-secondary ${choreographyStyles.skip}`}
+          controller={choreography}
+          label="Skip animation"
+        />
+      ) : null}
+    </motion.article>
   );
+}
+
+function flipPackTarget(choreography: ChoreographyController) {
+  switch (choreography.beat) {
+    case 'anticipation':
+      return { opacity: 1, rotateZ: -1.5, scale: 1.035, y: -4 };
+    case 'hold':
+      return { opacity: 1, rotateZ: 1.5, scale: 1.065, y: 0 };
+    case 'reveal':
+    case 'celebrate':
+    case 'settled':
+      return { opacity: 0, rotateZ: 0, scale: 1.12, y: -12 };
+    case 'idle':
+      return { opacity: 1, rotateZ: 0, scale: 0.96, y: 8 };
+  }
+}
+
+function rarityForPreviewCard(card: PreviewCard): PullRarity {
+  return pullRarityFor(BigInt(Math.round(card.value * 100)), 2);
 }
 
 function ReceiptSummary({ facts, title }: { facts: Array<[string, string]>; title: string }) {

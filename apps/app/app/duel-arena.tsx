@@ -1226,6 +1226,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
   async function approveIntent() {
     if (!intent || !authentication.sessionToken) return;
+    const confirmationSignal = confirmationScope.current.begin();
     setIntentPending(true);
     setFundingPhase('signing');
     setRejectedIntentId(null);
@@ -1247,7 +1248,6 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     );
     let transactionMayHaveBeenSubmitted = false;
     let transactionWasSubmitted = false;
-    const confirmationSignal = confirmationScope.current.begin();
     try {
       const binary = window.atob(intent.serializedTransactionBase64);
       const transaction = Uint8Array.from(binary, (character) => character.charCodeAt(0));
