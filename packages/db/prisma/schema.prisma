@@ -983,6 +983,9 @@ model GachaRipPayment {
   memoNonce               String                @unique
   signature               String?               @unique
   signatureClaimedAt      DateTime?
+  claimedRecentBlockhash  String?
+  reconciliationCheckedAt DateTime?
+  reconciliationReason    String?
   /// False when the payer used plain SPL `transfer`, which omits the mint. The
   /// destination token account's mint is resolved out of band before the intent
   /// is issued, so the transfer is still bound to one mint either way.

@@ -81,7 +81,7 @@ export class GachaController {
   ) {
     return this.payments.claimSignature({
       intentId: params.intentId,
-      signature: input.signature,
+      signedTransactionBase64: input.signedTransactionBase64,
     });
   }
 

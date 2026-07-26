@@ -5,6 +5,8 @@ import {
   GachaRipPaymentStatus,
   GachaSport,
 } from '@dailydraft/db';
+import { Keypair, Transaction } from '@solana/web3.js';
+import bs58 from 'bs58';
 
 import { type LegacySplTokenAccount, SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
 import type {
@@ -13,14 +15,14 @@ import type {
   SolanaTransactionEnvelope,
 } from '../transactions/transaction-monitor.types.js';
 import { GachaPaymentService } from './gacha-payment.service.js';
+import { buildGachaPaymentTransaction } from './gacha-transaction.js';
 
-const PAYER = 'BkS1e5Kx8dCVAV4vXHzr4y6bTs2hUcHYD9Y4tzk6Bdub';
+const PAYER_KEYPAIR = Keypair.fromSeed(Uint8Array.from({ length: 32 }, (_, index) => index + 1));
+const PAYER = PAYER_KEYPAIR.publicKey.toBase58();
 const HOUSE_TOKEN_ACCOUNT = 'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW';
 const USDC_MINT = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
-const SIGNATURE =
-  '5HxUXJ2mQm4FL4Y5MpHT9CzGSjeqxCT7QuBRGRcQZgYRC9nBWNe6RcT4tRSMFHRJXFmMSPPKHrjrfLxTX8N9pQzL';
-const OTHER_SIGNATURE =
-  '2VfUX9dqLgYtGZ4L5aVSLpNRBUEWXcCrLMdBGSBs4rMKcHTghMTU4hUGVbcTfaCMBrGxNW1TnBrGjJPzvXNMRTgQ';
+const FIRST_BLOCKHASH = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG';
+const SECOND_BLOCKHASH = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
 const databaseUrl = process.env.DATABASE_URL;
 
 if (process.env.REQUIRE_DB_INTEGRATION === '1' && !databaseUrl) {
@@ -97,17 +99,23 @@ describeDatabase('Gacha payment idempotency against a real Postgres', () => {
       }),
     ).resolves.toBe(1);
 
-    const claims = await Promise.allSettled([
-      service.claimSignature({ intentId: intentId ?? '', signature: SIGNATURE }),
-      service.claimSignature({ intentId: intentId ?? '', signature: OTHER_SIGNATURE }),
-    ]);
+    const firstClaim = signedPayment(intentId, FIRST_BLOCKHASH);
+    const secondClaim = signedPayment(intentId, SECOND_BLOCKHASH);
+    const claims = await Promise.allSettled(
+      [firstClaim, secondClaim].map((claim) =>
+        service.claimSignature({
+          intentId,
+          signedTransactionBase64: claim.signedTransactionBase64,
+        }),
+      ),
+    );
     expect(claims.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(claims.filter((result) => result.status === 'rejected')).toHaveLength(1);
 
     const stored = await database.gachaRipPayment.findUniqueOrThrow({
       where: { id: intentId },
     });
-    expect([SIGNATURE, OTHER_SIGNATURE]).toContain(stored.signature ?? '');
+    expect([firstClaim.signature, secondClaim.signature]).toContain(stored.signature ?? '');
     await expect(service.createIntent({ machineKey, payerWallet: PAYER })).resolves.toMatchObject({
       intentId,
       resumed: true,
@@ -157,6 +165,29 @@ describeDatabase('Gacha payment idempotency against a real Postgres', () => {
     ).resolves.toHaveLength(2);
   });
 });
+
+function signedPayment(
+  intentId: string,
+  recentBlockhash: string,
+): { signature: string; signedTransactionBase64: string } {
+  const built = buildGachaPaymentTransaction({
+    amountMinor: 50_000_000n,
+    decimals: 6,
+    destinationTokenAccount: HOUSE_TOKEN_ACCOUNT,
+    lastValidBlockHeight: 1n,
+    memoNonce: intentId,
+    mint: USDC_MINT,
+    payerWallet: PAYER,
+    recentBlockhash,
+  });
+  const transaction = Transaction.from(Buffer.from(built.serializedTransactionBase64, 'base64'));
+  transaction.partialSign(PAYER_KEYPAIR);
+  if (!transaction.signature) throw new Error('database test transaction was not signed');
+  return {
+    signature: bs58.encode(transaction.signature),
+    signedTransactionBase64: transaction.serialize().toString('base64'),
+  };
+}
 
 class DatabasePaymentRpc extends SolanaRpcGateway {
   async assertDevnet(): Promise<void> {}

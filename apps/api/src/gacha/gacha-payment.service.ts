@@ -7,7 +7,8 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { PublicKey } from '@solana/web3.js';
+import { Message, PublicKey, Transaction } from '@solana/web3.js';
+import bs58 from 'bs58';
 
 import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
@@ -83,7 +84,10 @@ export interface VerifyGachaPaymentInput {
   signature: string;
 }
 
-export type ClaimGachaPaymentSignatureInput = VerifyGachaPaymentInput;
+export interface ClaimGachaPaymentSignatureInput {
+  intentId: string;
+  signedTransactionBase64: string;
+}
 
 export interface VerifiedGachaPayment {
   amountMinor: string;
@@ -118,6 +122,7 @@ interface GachaPaymentIntentRecord {
   amountCurrency: string;
   amountDecimals: number;
   amountMinor: string;
+  claimedRecentBlockhash: string | null;
   destinationTokenAccount: string;
   expiresAt: Date;
   id: string;
@@ -127,6 +132,11 @@ interface GachaPaymentIntentRecord {
   payerWallet: string;
   signature: string | null;
   status: GachaRipPaymentStatus;
+}
+
+interface ValidatedGachaPaymentClaim {
+  recentBlockhash: string;
+  signature: string;
 }
 
 type GachaPaymentTransaction = Prisma.TransactionClient;
@@ -154,16 +164,14 @@ export class GachaPaymentService {
    * mapping stays one-to-one.
    */
   async createIntent(input: CreateGachaPaymentIntentInput): Promise<GachaPaymentIntent> {
-    if (gachaFixtureModeEnabled() || !gachaDevnetModeEnabled()) {
-      throw new ServiceUnavailableException(
-        'Gacha payment intents are disabled outside funded devnet mode',
-      );
-    }
+    requireFundedDevnetMode();
     const machineKey = requireKey(input.machineKey, 'machineKey');
     const payerWallet = requireSignerWallet(input.payerWallet, 'payerWallet');
 
     const resumed = await this.findOrExpireActiveIntent(payerWallet, machineKey);
-    if (resumed) return toPaymentIntent(resumed, true);
+    if (resumed && !(await this.releaseClaimedIfProvenExpired(resumed))) {
+      return toPaymentIntent(resumed, true);
+    }
 
     const config = resolveGachaDepositConfig();
     const machine = await this.database.gachaMachine.findUnique({
@@ -225,9 +233,10 @@ export class GachaPaymentService {
    */
   async claimSignature(input: ClaimGachaPaymentSignatureInput): Promise<GachaPaymentIntent> {
     const intentId = requireMemoNonce(input.intentId);
-    const signature = requireSignature(input.signature);
     const initial = await this.database.gachaRipPayment.findUnique({ where: { id: intentId } });
     if (!initial) throw new NotFoundException('Gacha payment intent was not found');
+    const claim = validateSignedPaymentClaim(input.signedTransactionBase64, initial);
+    const { recentBlockhash, signature } = claim;
 
     const outcome = await this.database.$transaction(async (transaction) => {
       await lockActivePayment(transaction, initial.payerWallet, initial.machineKey);
@@ -251,7 +260,7 @@ export class GachaPaymentService {
 
       const signatureClaimedAt = new Date();
       const claimed = await transaction.gachaRipPayment.updateMany({
-        data: { signature, signatureClaimedAt },
+        data: { claimedRecentBlockhash: recentBlockhash, signature, signatureClaimedAt },
         where: {
           activeMachineKey: payment.machineKey,
           activePayerWallet: payment.payerWallet,
@@ -263,7 +272,12 @@ export class GachaPaymentService {
       if (claimed.count !== 1) return { kind: 'conflict' } as const;
       return {
         kind: 'claimed',
-        payment: { ...payment, signature, signatureClaimedAt },
+        payment: {
+          ...payment,
+          claimedRecentBlockhash: recentBlockhash,
+          signature,
+          signatureClaimedAt,
+        },
       } as const;
     });
 
@@ -293,14 +307,18 @@ export class GachaPaymentService {
    * player who hesitates can simply prepare again against the same intent.
    */
   async prepareTransaction(intentId: string): Promise<PreparedGachaPaymentTransaction> {
+    requireFundedDevnetMode();
     const id = requireMemoNonce(intentId);
     const payment = await this.database.gachaRipPayment.findUnique({ where: { id } });
     if (!payment) throw new ConflictException('Gacha payment intent was not found');
     if (payment.status !== GachaRipPaymentStatus.PENDING) {
       throw new ConflictException('Gacha payment intent is no longer awaiting a transfer');
     }
+    if (payment.signature) {
+      throw new ConflictException('Gacha payment intent already has a claimed transaction');
+    }
     if (payment.expiresAt.getTime() <= Date.now()) {
-      await this.expireIntent(id);
+      await this.expireUnclaimedPayment(payment);
       throw new ConflictException('Gacha payment intent has expired');
     }
 
@@ -390,8 +408,10 @@ export class GachaPaymentService {
       }));
     } catch (error) {
       if (error instanceof GachaPaymentError) {
-        if (error.code !== 'MISSING_TRANSACTION_META') {
+        if (error.code === 'TRANSACTION_EXECUTION_ERROR' || error.code === 'TRANSFER_MISSING') {
           await this.failClaimedPayment(payment, error.code);
+        } else {
+          await this.recordReconciliationEvidence(payment, error.code);
         }
         throw new ConflictException(`Gacha payment transaction was rejected: ${error.code}`);
       }
@@ -400,7 +420,13 @@ export class GachaPaymentService {
 
     const verifiedAt = new Date();
     const verified = await this.database.gachaRipPayment.updateMany({
-      data: { mintVerifiedOnChain, status: GachaRipPaymentStatus.VERIFIED, verifiedAt },
+      data: {
+        mintVerifiedOnChain,
+        reconciliationCheckedAt: null,
+        reconciliationReason: null,
+        status: GachaRipPaymentStatus.VERIFIED,
+        verifiedAt,
+      },
       where: {
         activeMachineKey: payment.machineKey,
         activePayerWallet: payment.payerWallet,
@@ -534,10 +560,81 @@ export class GachaPaymentService {
     });
   }
 
+  /**
+   * Release a signed but unlanded payment only with two independent chain facts:
+   * the signature has no history and its exact blockhash is no longer valid.
+   * Any RPC error or partial answer keeps the slot active.
+   */
+  private async releaseClaimedIfProvenExpired(payment: GachaPaymentIntentRecord): Promise<boolean> {
+    if (
+      payment.status !== GachaRipPaymentStatus.PENDING ||
+      !payment.signature ||
+      !payment.claimedRecentBlockhash ||
+      payment.expiresAt.getTime() > Date.now()
+    ) {
+      return false;
+    }
+
+    try {
+      const statuses = await this.rpc.getSignatureStatuses([payment.signature]);
+      if (statuses.length !== 1 || statuses[0] !== null) return false;
+      if (await this.rpc.isBlockhashValid(payment.claimedRecentBlockhash, 'finalized')) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+
+    return this.database.$transaction(async (transaction) => {
+      await lockActivePayment(transaction, payment.payerWallet, payment.machineKey);
+      const terminalAt = new Date();
+      const released = await transaction.gachaRipPayment.updateMany({
+        data: {
+          activeMachineKey: null,
+          activePayerWallet: null,
+          status: GachaRipPaymentStatus.FAILED,
+          terminalAt,
+          terminalReason: 'BLOCKHASH_EXPIRED_SIGNATURE_ABSENT',
+        },
+        where: {
+          activeMachineKey: payment.machineKey,
+          activePayerWallet: payment.payerWallet,
+          claimedRecentBlockhash: payment.claimedRecentBlockhash,
+          id: payment.id,
+          signature: payment.signature,
+          status: GachaRipPaymentStatus.PENDING,
+        },
+      });
+      return released.count === 1;
+    });
+  }
+
   private async expireUnclaimedPayment(payment: GachaPaymentIntentRecord): Promise<void> {
     await this.database.$transaction(async (transaction) => {
       await lockActivePayment(transaction, payment.payerWallet, payment.machineKey);
       await expireUnclaimedIntent(transaction, payment.id, new Date());
+    });
+  }
+
+  private async recordReconciliationEvidence(
+    payment: GachaPaymentIntentRecord,
+    reason: string,
+  ): Promise<void> {
+    await this.database.$transaction(async (transaction) => {
+      await lockActivePayment(transaction, payment.payerWallet, payment.machineKey);
+      await transaction.gachaRipPayment.updateMany({
+        data: {
+          reconciliationCheckedAt: new Date(),
+          reconciliationReason: reason,
+        },
+        where: {
+          activeMachineKey: payment.machineKey,
+          activePayerWallet: payment.payerWallet,
+          id: payment.id,
+          signature: payment.signature,
+          status: GachaRipPaymentStatus.PENDING,
+        },
+      });
     });
   }
 
@@ -578,6 +675,121 @@ function resolveGachaDepositConfig(): GachaDepositConfig {
     );
   }
   return { destinationTokenAccount: tokenAccount, mint: usdcMint };
+}
+
+function requireFundedDevnetMode(): void {
+  if (gachaFixtureModeEnabled() || !gachaDevnetModeEnabled()) {
+    throw new ServiceUnavailableException(
+      'Gacha payment intents are disabled outside funded devnet mode',
+    );
+  }
+}
+
+/**
+ * Prove that the wallet, not a caller-provided string, authorized the exact
+ * transaction this intent requires. This runs before the advisory lock so
+ * malformed or attacker-signed claims cannot reserve the active slot.
+ */
+function validateSignedPaymentClaim(
+  signedTransactionBase64: string,
+  payment: GachaPaymentIntentRecord,
+): ValidatedGachaPaymentClaim {
+  const serialized = requireSignedTransaction(signedTransactionBase64);
+  let transaction: Transaction;
+  try {
+    transaction = Transaction.from(serialized);
+  } catch {
+    throw new ConflictException('signedTransactionBase64 is not a Solana transaction');
+  }
+
+  let message: Message;
+  try {
+    if (!transaction.verifySignatures()) {
+      throw new ConflictException('Gacha payment transaction signature is invalid');
+    }
+    message = Message.from(transaction.serializeMessage());
+  } catch (error) {
+    if (error instanceof ConflictException) throw error;
+    throw new ConflictException('Gacha payment transaction signature is invalid');
+  }
+
+  const payer = new PublicKey(payment.payerWallet);
+  if (!transaction.feePayer?.equals(payer)) {
+    throw new ConflictException('Gacha payment transaction fee payer changed');
+  }
+  const payerSignature = transaction.signatures.find(({ publicKey }) => publicKey.equals(payer));
+  if (!payerSignature?.signature) {
+    throw new ConflictException('Gacha payment transaction is not signed by the payer');
+  }
+
+  const expected = buildGachaPaymentTransaction({
+    amountMinor: BigInt(payment.amountMinor),
+    decimals: payment.amountDecimals,
+    destinationTokenAccount: payment.destinationTokenAccount,
+    lastValidBlockHeight: 0n,
+    memoNonce: payment.memoNonce,
+    mint: payment.mint,
+    payerWallet: payment.payerWallet,
+    recentBlockhash: message.recentBlockhash,
+  });
+  const expectedMessage = Transaction.from(
+    Buffer.from(expected.serializedTransactionBase64, 'base64'),
+  ).serializeMessage();
+  if (!serializedMessageEquals(transaction.serializeMessage(), expectedMessage)) {
+    throw new ConflictException('Signed transaction does not match the Gacha payment intent');
+  }
+
+  const signature = requireSignature(bs58.encode(payerSignature.signature));
+  const envelope = {
+    meta: { err: null },
+    transaction: {
+      message: {
+        accountKeys: message.accountKeys.map((key) => key.toBase58()),
+        header: message.header,
+        instructions: message.instructions.map((instruction) => ({
+          accounts: instruction.accounts,
+          data: instruction.data,
+          programIdIndex: instruction.programIdIndex,
+        })),
+        recentBlockhash: message.recentBlockhash,
+      },
+      signatures: [signature],
+    },
+  };
+  const evidence = verifyGachaPaymentTransaction(envelope, {
+    destinationTokenAccount: payment.destinationTokenAccount,
+    intentId: payment.memoNonce,
+    minimumAmountMinor: BigInt(payment.amountMinor),
+    mint: payment.mint,
+    payerWallet: payment.payerWallet,
+  });
+  if (evidence.amountMinor !== BigInt(payment.amountMinor)) {
+    throw new ConflictException('Signed transaction changed the exact Gacha payment amount');
+  }
+  return { recentBlockhash: message.recentBlockhash, signature };
+}
+
+function requireSignedTransaction(value: string): Buffer {
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 4_096 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(value)
+  ) {
+    throw new ConflictException('signedTransactionBase64 is invalid');
+  }
+  const decoded = Buffer.from(value, 'base64');
+  if (
+    decoded.length < 1 ||
+    decoded.toString('base64').replaceAll('=', '') !== value.replaceAll('=', '')
+  ) {
+    throw new ConflictException('signedTransactionBase64 is invalid');
+  }
+  return decoded;
+}
+
+function serializedMessageEquals(actual: Buffer, expected: Buffer): boolean {
+  return actual.length === expected.length && actual.equals(expected);
 }
 
 async function lockActivePayment(

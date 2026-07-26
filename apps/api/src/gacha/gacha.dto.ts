@@ -26,8 +26,10 @@ export class CreateGachaPaymentIntentRequest {
 }
 
 export class ClaimGachaPaymentSignatureRequest {
-  @Matches(/^[1-9A-HJ-NP-Za-km-z]{64,96}$/)
-  signature!: string;
+  @IsString()
+  @MaxLength(4096)
+  @Matches(/^[A-Za-z0-9+/]+={0,2}$/)
+  signedTransactionBase64!: string;
 }
 
 export class VerifyGachaPaymentRequest {

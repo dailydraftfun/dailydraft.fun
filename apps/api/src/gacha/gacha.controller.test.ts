@@ -172,6 +172,17 @@ describe('GachaController', () => {
       signature: 'sig-fixture',
       verifiedAt: now,
     } satisfies Awaited<ReturnType<GachaPaymentService['verifyIntent']>>;
+    const preparedPayment = {
+      amountMinor: paymentIntent.amountMinor,
+      expectedMessageHash: 'a'.repeat(64),
+      expiresAt: now,
+      intentId,
+      lastValidBlockHeight: '123',
+      memoNonce: intentId,
+      recentBlockhash: 'blockhash-fixture',
+      serializedTransactionBase64: 'c2lnbmVk',
+      sourceTokenAccount: 'DevnetSourceTokenAccount111111111111111111',
+    } satisfies Awaited<ReturnType<GachaPaymentService['prepareTransaction']>>;
     const snapshots = {
       findLatestSealed: async (machineKey: string) => {
         calls.push(`inventory:${machineKey}`);
@@ -197,17 +208,21 @@ describe('GachaController', () => {
       },
     } as unknown as GachaRipService;
     const payments = {
-      claimSignature: async (input: { intentId: string; signature: string }) => {
-        calls.push(`payment-signature:${input.intentId}:${input.signature}`);
+      claimSignature: async (input: { intentId: string; signedTransactionBase64: string }) => {
+        calls.push(`payment-signature:${input.intentId}:${input.signedTransactionBase64}`);
         return {
           ...paymentIntent,
           resumed: true,
-          signature: input.signature,
+          signature: 'sig-fixture',
         };
       },
       createIntent: async (input: { machineKey: string; payerWallet: string }) => {
         calls.push(`payment-intent:${input.machineKey}:${input.payerWallet}`);
         return paymentIntent;
+      },
+      prepareTransaction: async (requestedIntentId: string) => {
+        calls.push(`payment-transaction:${requestedIntentId}`);
+        return preparedPayment;
       },
       verifyIntent: async (input: { intentId: string; signature: string }) => {
         calls.push(`payment-verify:${input.intentId}:${input.signature}`);
@@ -231,8 +246,9 @@ describe('GachaController', () => {
     await expect(
       controller.createPaymentIntent(params, { payerWallet: paymentIntent.payerWallet }),
     ).resolves.toEqual(paymentIntent);
+    await expect(controller.prepareTransaction({ intentId })).resolves.toEqual(preparedPayment);
     await expect(
-      controller.claimPaymentSignature({ intentId }, { signature: 'sig-fixture' }),
+      controller.claimPaymentSignature({ intentId }, { signedTransactionBase64: 'c2lnbmVk' }),
     ).resolves.toEqual({
       ...paymentIntent,
       resumed: true,
@@ -250,7 +266,8 @@ describe('GachaController', () => {
       'odds:fixture-machine',
       'rip-commitment:fixture-machine',
       `payment-intent:fixture-machine:${paymentIntent.payerWallet}`,
-      `payment-signature:${intentId}:sig-fixture`,
+      `payment-transaction:${intentId}`,
+      `payment-signature:${intentId}:c2lnbmVk`,
       `payment-verify:${intentId}:sig-fixture`,
       'rip:fixture-machine:idem-fixture-key',
     ]);

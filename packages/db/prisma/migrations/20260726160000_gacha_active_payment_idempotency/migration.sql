@@ -2,6 +2,9 @@ ALTER TABLE "GachaRipPayment"
 ADD COLUMN "activePayerWallet" TEXT,
 ADD COLUMN "activeMachineKey" TEXT,
 ADD COLUMN "signatureClaimedAt" TIMESTAMP(3),
+ADD COLUMN "claimedRecentBlockhash" TEXT,
+ADD COLUMN "reconciliationCheckedAt" TIMESTAMP(3),
+ADD COLUMN "reconciliationReason" TEXT,
 ADD COLUMN "terminalAt" TIMESTAMP(3),
 ADD COLUMN "terminalReason" TEXT;
 
@@ -116,8 +119,29 @@ ADD CONSTRAINT "GachaRipPayment_active_slot_check" CHECK (
   )
 ),
 ADD CONSTRAINT "GachaRipPayment_signature_claim_check" CHECK (
-  ("signature" IS NULL AND "signatureClaimedAt" IS NULL)
-  OR ("signature" IS NOT NULL AND "signatureClaimedAt" IS NOT NULL)
+  (
+    "signature" IS NULL
+    AND "signatureClaimedAt" IS NULL
+    AND "claimedRecentBlockhash" IS NULL
+  )
+  OR (
+    "signature" IS NOT NULL
+    AND "signatureClaimedAt" IS NOT NULL
+    AND (
+      "claimedRecentBlockhash" IS NOT NULL
+      OR "status" IN ('VERIFIED', 'CONSUMED')
+    )
+  )
+),
+ADD CONSTRAINT "GachaRipPayment_reconciliation_evidence_check" CHECK (
+  (
+    "reconciliationCheckedAt" IS NULL
+    AND "reconciliationReason" IS NULL
+  )
+  OR (
+    "reconciliationCheckedAt" IS NOT NULL
+    AND "reconciliationReason" IS NOT NULL
+  )
 ),
 ADD CONSTRAINT "GachaRipPayment_terminal_evidence_check" CHECK (
   (
