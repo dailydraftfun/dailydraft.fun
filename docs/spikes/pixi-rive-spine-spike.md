@@ -37,8 +37,8 @@ obligations for the planned externally consumable SDK.
 
 ## Scope and evidence
 
-The spike built one responsive, looping pack-open scene at a design size of
-390×620:
+The spike built one fixed-design-size, looping pack-open scene at 390×620
+inside a responsive host:
 
 - a foil pack with a shake/charge phase;
 - an 18-ray burst and 96 vector sparks;
@@ -173,6 +173,19 @@ import {
 } from 'pixi.js';
 import { useEffect, useRef, useState } from 'react';
 
+type SpikeMetrics = {
+  frameTimes: number[];
+  renderer: string;
+  samples: number[];
+  startedAt: number;
+};
+
+declare global {
+  interface Window {
+    __pixiSpikeMetrics?: SpikeMetrics;
+  }
+}
+
 const WIDTH = 390;
 const HEIGHT = 620;
 const LOOP_MS = 4_800;
@@ -216,6 +229,10 @@ export function PixiPackScene() {
             ? 'WebGL'
             : `renderer-${String(app.renderer.type)}`;
       setRenderer(rendererName);
+      app.canvas.style.display = 'block';
+      app.canvas.style.height = 'auto';
+      app.canvas.style.maxWidth = '100%';
+      app.canvas.style.width = '100%';
       sceneHost.appendChild(app.canvas);
 
       const background = new Graphics()
@@ -225,6 +242,18 @@ export function PixiPackScene() {
         .circle(WIDTH / 2, 300, 190)
         .fill({ alpha: 0.16, color: 0x7338ff });
       app.stage.addChild(background, halo);
+
+      const rays = new Container();
+      for (let index = 0; index < 18; index += 1) {
+        const ray = new Graphics()
+          .poly([0, -8, 185, -1.5, 185, 1.5, 0, 8])
+          .fill({ alpha: index % 2 === 0 ? 0.22 : 0.1, color: 0xb983ff });
+        ray.position.set(WIDTH / 2, 304);
+        ray.rotation = (Math.PI * 2 * index) / 18;
+        rays.addChild(ray);
+      }
+      rays.alpha = 0;
+      app.stage.addChild(rays);
 
       const pack = new Container();
       const packBody = new Graphics()
@@ -271,10 +300,19 @@ export function PixiPackScene() {
       sparks.position.set(WIDTH / 2, 304);
       app.stage.addChild(sparks);
 
-      const startedAt = performance.now();
+      const metrics: SpikeMetrics = {
+        frameTimes: [],
+        renderer: rendererName,
+        samples: [],
+        startedAt: performance.now(),
+      };
+      window.__pixiSpikeMetrics = metrics;
+
+      let fpsElapsed = 0;
+      let fpsFrames = 0;
       app.ticker.add((ticker) => {
         const now = performance.now();
-        const progress = ((now - startedAt) % LOOP_MS) / LOOP_MS;
+        const progress = ((now - metrics.startedAt) % LOOP_MS) / LOOP_MS;
         const burst = clamp((progress - 0.3) / 0.18);
         const settle = clamp((progress - 0.48) / 0.22);
         const fade = progress > 0.88 ? clamp((1 - progress) / 0.12) : 1;
@@ -306,15 +344,30 @@ export function PixiPackScene() {
           particle.spark.alpha = 1 - travel * 0.72;
         }
 
-        // `ticker.deltaMS` was sampled here for frame-time evidence.
-        void ticker.deltaMS;
+        rays.alpha = Math.sin(burst * Math.PI) * 0.72 * fade;
+        rays.rotation += ticker.deltaMS * 0.00024;
+
+        metrics.frameTimes.push(ticker.deltaMS);
+        if (metrics.frameTimes.length > 1_800) metrics.frameTimes.shift();
+        fpsElapsed += ticker.deltaMS;
+        fpsFrames += 1;
+        if (fpsElapsed >= 500) {
+          metrics.samples.push((fpsFrames * 1_000) / fpsElapsed);
+          if (metrics.samples.length > 120) metrics.samples.shift();
+          fpsElapsed = 0;
+          fpsFrames = 0;
+        }
       });
 
-      destroyApp = () =>
+      destroyApp = () => {
+        if (window.__pixiSpikeMetrics === metrics) {
+          delete window.__pixiSpikeMetrics;
+        }
         app.destroy(
           { removeView: true },
           { children: true, texture: true, textureSource: true },
         );
+      };
     }
 
     void mountScene();
@@ -326,7 +379,10 @@ export function PixiPackScene() {
 
   return (
     <section aria-label="Pixi pack reveal benchmark">
-      <div ref={hostRef} />
+      <div
+        className="mx-auto aspect-[39/62] w-full max-w-[390px] overflow-hidden"
+        ref={hostRef}
+      />
       <output>{renderer}</output>
     </section>
   );
@@ -343,6 +399,49 @@ function easeOutBack(value: number) {
 }
 ```
 
+The benchmark harness used Brave through Playwright and the Chromium debugging
+protocol. The relevant measurement path was:
+
+```ts
+const context = await browser.newContext({
+  deviceScaleFactor: 2,
+  hasTouch: true,
+  isMobile: true,
+  viewport: { height: 844, width: 390 },
+});
+const page = await context.newPage();
+const cdp = await context.newCDPSession(page);
+await cdp.send('Emulation.setCPUThrottlingRate', { rate: 6 });
+await page.goto(`${baseUrl}/dev/pixi-spike`, { waitUntil: 'networkidle' });
+await page.waitForFunction(
+  () => window.__pixiSpikeMetrics?.samples.length >= 2,
+  undefined,
+  { timeout: 30_000 },
+);
+await page.waitForTimeout(15_000);
+
+const profile = await page.evaluate(() => {
+  const metrics = window.__pixiSpikeMetrics;
+  if (!metrics) throw new Error('Pixi metrics were not available');
+  return {
+    fpsSamples: metrics.samples.slice(2),
+    frameTimes: metrics.frameTimes.slice(60),
+    renderer: metrics.renderer,
+  };
+});
+
+await cdp.send('HeapProfiler.enable');
+await cdp.send('HeapProfiler.collectGarbage');
+const heap = await cdp.send('Runtime.getHeapUsage');
+```
+
+The reported percentiles sort `profile.fpsSamples` and `profile.frameTimes`
+independently, then select `floor(sampleCount * percentile)`. The memory run
+used the same context and collected heap after the tier-1 route, after the
+15-second scene profile, and after navigating back to tier 1. The forced-WebGL
+branch used a fresh context whose init script replaced `navigator.gpu` with
+`undefined` before application code and ran without CPU throttling.
+
 ## Renderer behavior
 
 Pixi v8 initializes asynchronously because renderer selection may involve
@@ -352,8 +451,9 @@ an ordered array:
 - a string tries that renderer first and then Pixi's remaining defaults;
 - an array tries only the listed renderers, in order.
 
-The spike used `['webgpu', 'webgl']`, deliberately excluding Pixi's Canvas
-renderer. Pixi calls its WebGPU support check, dynamically loads
+The spike used `['webgpu', 'webgl']`, deliberately restricting the candidates
+to Pixi's bundled WebGPU and WebGL renderers. Pixi calls its WebGPU support
+check, dynamically loads
 `WebGPURenderer` if that succeeds, then moves to its WebGL support check and
 `WebGLRenderer` if it does not. The implementation is documented in Pixi's
 [Application guide](https://pixijs.com/8.x/guides/components/application) and
@@ -363,6 +463,11 @@ Note that this WebGPU-first order is the spike's explicit choice, **not** Pixi's
 default. With no `preference` supplied, `autoDetectRenderer` falls back to
 `renderPriority = ['webgl', 'webgpu', 'canvas']` — WebGL-first (verified in the
 shipped `pixi.js@8.19.0` source, `lib/rendering/renderers/autoDetectRenderer.js`).
+The literal `'canvas'` entry remains in that default priority array, but the
+pinned Pixi v8 package does not bundle or register a Canvas renderer
+implementation. It therefore does not provide a usable Canvas fallback: if
+neither WebGL nor WebGPU initializes, the application must fall back outside
+Pixi to the existing DOM/CSS treatment.
 Any future integration that wants WebGPU attempted first must pass the array
 explicitly; omitting it silently yields WebGL. This matters because the
 recommendation in this memo is to ship WebGL-first anyway, so the default and
@@ -425,8 +530,8 @@ Method:
 
 For a sanity check, the installed package's complete
 `dist/pixi.min.js` was 797,792 raw bytes and 224,741 gzip bytes. That is not a
-Next route delta, but its proximity to the namespace-import result confirms
-that the full import defeated useful tree shaking.
+Next route delta, but its proximity to the namespace-import result is
+consistent with the full import defeating useful tree shaking.
 
 The profiled production route loaded 362,884 encoded bytes of JavaScript in
 total, including Next/React/shared application chunks. That network number
@@ -456,12 +561,14 @@ Method:
 | 99th-percentile ticker frame time | **34.4 ms** |
 | Page exceptions | **0** |
 
-Interpretation: the simple vector reveal remained visually fluid under a
-synthetic low-end CPU profile, but it did not hold a perfect 16.7 ms frame
-budget. A physical low-end GPU could be materially worse once texture uploads,
-filters, authored animation, audio, and browser UI are present. This is enough
-to de-risk framework integration, not enough to set a production minimum-device
-claim.
+Interpretation: the simple vector reveal showed no CPU-bound regression within
+the 60-fps cap under a synthetic 6× CPU profile, but this run does not establish
+uncapped throughput or low-end-device performance. The near-cap results at both
+6× and 1× indicate that headless scheduling and the ticker cap materially bound
+the measurement. A physical low-end GPU could be materially worse once texture
+uploads, filters, authored animation, audio, and browser UI are present. This is
+enough to de-risk framework integration, not enough to set a production
+minimum-device claim.
 
 The forced WebGL fallback run was a branch check at 1× CPU, not a comparable
 low-end benchmark: 55.27 mean fps and 53.01 5th-percentile fps under the same
@@ -507,12 +614,12 @@ contractual quotes.
 | Authoring model | Browser-based vector design, timeline animation, state machines, responsive layout, and data binding | Desktop 2D skeletal animation centered on bones, slots, meshes, weights, constraints, mixing, and physics |
 | Best fit | Interactive product motion, UI, logos, pack shells, masks, vector effects, data-driven variants | Character rigs, deformable sprite meshes, secondary motion, attachment/skin swaps, game-studio skeletal pipelines |
 | Designer/developer contract | State machines and data-bound view models are designed as an explicit handoff contract; real-time collaboration is available on team plans | Exported skeleton/atlas data plus named animations, skins, and runtime tracks; disciplined version synchronization between editor and runtime |
-| Pixi integration | Separate Rive JS/WASM renderer; can be driven from a custom loop, but is not a native Pixi display-object plugin | Official `spine-pixi-v8` installs loaders and render pipes directly into Pixi WebGPU, WebGL, and Canvas |
+| Pixi integration | Separate Rive JS/WASM renderer; can be driven from a custom loop, but is not a native Pixi display-object plugin | Official `spine-pixi-v8` installs loaders and render pipes directly into Pixi WebGPU and WebGL |
 | Web runtime | `canvas-lite`, Canvas, or recommended WebGL2 runtime; WASM is a separate fetch unless self-hosted/bundled | TypeScript runtime layered directly on Pixi; atlas and skeleton assets are additional |
 | Runtime size | Vendor-reported Brotli-9 WASM: **222 KB** `canvas-lite`, **567 KB** Canvas, **648 KB** WebGL2; JS and `.riv` assets are additional | Measured official `spine-pixi-v8@4.3.13` minified IIFE: **232,581 B raw, 67,219 B gzip-9, 62,410 B Brotli-9**; Pixi and atlas/skeleton assets are additional |
-| Runtime license | Official runtimes are open source, **MIT**, allowed for personal and commercial applications | Source-available custom Spine Runtimes License; integration requires the applicable editor license, and the notice must travel with the product |
+| Runtime license | Official runtimes are open source, **MIT**, allowed for personal and commercial applications; redistribution must retain the copyright and permission notice | Source-available custom Spine Runtimes License; integration requires the applicable editor license, and the notice must travel with the product |
 | Editor cost | Free for learning, but production `.riv` export requires a paid plan. Cadet is **$9/seat/month billed annually ($108/year)** or **$17 monthly**; Voyager is **$32/seat/month annually ($384/year)** or **$49 monthly** | Current purchase page: Essential **$69** and Professional **$379** promotional one-time prices per named user (listed as $99/$449); businesses at **$500,000+** annual revenue/funding require Enterprise at **$2,499 base + $379/user/year** |
-| SDK/distribution risk | Low runtime-license friction for an external SDK because MIT permits redistribution/modification | High enough to require counsel: third parties modifying a product/SDK containing the runtime may need their own editor license; the runtime is not FOSS |
+| SDK/distribution risk | Low runtime-license friction for an external SDK because MIT permits redistribution/modification when its copyright and permission notice are retained | High enough to require counsel: third parties modifying a product/SDK containing the runtime may need their own editor license; the runtime is not FOSS |
 | Pack/card reveal fit | Strong: vector masks, foil motion, responsive artboards, named reveal states, and designer-owned iteration map directly to the content | Adequate but specialized: excellent if the pack has a rigged mascot or deforming illustrated character; ordinary wrappers/cards underuse the skeletal model |
 
 **Do not compare the two runtime-size figures head to head.** The Rive numbers
@@ -551,23 +658,23 @@ Workflow sources:
   and [data-binding guide](https://rive.app/docs/editor/data-binding/overview)
   describe the designer/developer contract.
 - Spine's [Pixi runtime guide](https://esotericsoftware.com/spine-pixi) confirms
-  maintained Pixi 8 integration across WebGPU/WebGL/Canvas and full Spine
-  feature support.
+  maintained Pixi 8 integration across WebGPU and WebGL and full Spine feature
+  support.
 
-### Why Rive wins this use case despite its larger runtime
+### Why Rive wins this use case
 
 Pack reveal work is primarily authored vector/product motion rather than
 skeletal character animation. Rive lets design own named states and
 data-bound variants, its runtime license does not encumber an eventual public
 SDK, and Cadet is cheap enough for the current team shape.
 
-The size penalty is real: even `canvas-lite`'s vendor-reported 222 KB Brotli
-WASM is larger than this spike's 179.6 KiB gzip Pixi build delta. That is why
-Rive must be theme-scoped and lazy-loaded, not part of the lobby or base app
+Rive still adds a nontrivial JS/WASM runtime and authored-asset cost, so it must
+be theme-scoped and lazy-loaded rather than included in the lobby or base app
 shell. The first production asset should prove that a small Rive canvas can be
-composited with Pixi without loading the 648 KB WebGL2 runtime. If it cannot,
-Spine's 60.9 KiB Brotli add-on and native Pixi pipe become materially more
-attractive.
+composited with Pixi while retaining the `canvas-lite` feature set. If it
+cannot, revisit Spine on composition fit, native Pixi integration, licensing,
+and the expected character-animation pipeline—not by comparing the
+non-equivalent runtime-size figures above.
 
 ## Quality tiers and degradation
 
@@ -589,8 +696,10 @@ Recommended gates:
    immediately with a restrained crossfade.
 2. Treat `navigator.connection.saveData`, `navigator.deviceMemory`, and
    `navigator.hardwareConcurrency` as hints, never as sole allow/deny checks.
-3. Sample the first two seconds. Two consecutive windows below 45 fps or a
-   95th-percentile frame time above 33 ms move down one quality level.
+3. After warm-up, sample at least 120 frames across three consecutive two-second
+   windows. Move down one quality level only if all three windows remain below
+   45 fps or above 40 ms at the 95th percentile. Do not promote again during
+   the same reveal; this hysteresis avoids reacting to one noisy window.
 4. Cap resolution before removing semantic content: 2 → 1.5 → 1 DPR.
 5. Reduce pooled particles and filters next; keep the reveal duration and
    result timing stable.
