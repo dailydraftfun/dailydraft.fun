@@ -1,5 +1,6 @@
 'use client';
 
+import { pullRarityLabel } from '@dailydraft/contracts';
 import {
   ArrowCounterClockwiseIcon,
   ArrowsLeftRightIcon,
@@ -63,7 +64,6 @@ import {
   getPlayerActionError,
 } from './duel/duel-player-copy';
 import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
-import { pullRarityLabel } from './duel/pull-rarity';
 import { shareNativeResult } from './duel/result-sharing';
 import {
   parseStoredRevealTimeline,

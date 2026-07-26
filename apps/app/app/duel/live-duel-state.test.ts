@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { PullRarity } from '@dailydraft/contracts';
 
 import type { DurableDuel } from '../solana/duel-client';
 import { prohibitedPrimaryUiTerms } from './duel-player-copy';
@@ -52,11 +53,28 @@ describe('live duel state', () => {
     expect(state.left?.name).toBe('Creator receipt pull');
   });
 
-  test('derives presentation rarity from the value the API already committed', () => {
-    const state = toLiveDuelState(duel({ status: 'settled' }), 'creator');
+  test('presents the rarity the API committed rather than re-deriving it from value', () => {
+    const settled = duel({ status: 'settled' });
+    const result = settled.result;
+    if (!result) throw new Error('expected a committed result');
+    // Deliberately contradicts what the value alone implies ($45 and $70 would
+    // derive to uncommon and rare): only a wire read can produce these.
+    const state = toLiveDuelState(
+      {
+        ...settled,
+        result: {
+          ...result,
+          outcomes: [
+            { ...result.outcomes[0], rarity: 'chase' },
+            { ...result.outcomes[1], rarity: 'common' },
+          ] as typeof result.outcomes,
+        },
+      },
+      'creator',
+    );
 
-    expect(state.left?.rarity).toBe('uncommon');
-    expect(state.right?.rarity).toBe('rare');
+    expect(state.left?.rarity).toBe('chase');
+    expect(state.right?.rarity).toBe('common');
   });
 
   test('keeps a settled duel without proof data out of the result UI', () => {
@@ -127,8 +145,8 @@ function duel({
         : {
             comparisonMetric: 'insured-value',
             outcomes: [
-              outcome('creator', 'Creator receipt pull', '45000000'),
-              outcome('opponent', 'Opponent receipt pull', '70000000'),
+              outcome('creator', 'Creator receipt pull', '45000000', 'uncommon'),
+              outcome('opponent', 'Opponent receipt pull', '70000000', 'rare'),
             ],
             resultHash: 'result_hash',
             settlementReady: true,
@@ -147,6 +165,7 @@ function outcome(
   side: 'creator' | 'opponent',
   displayName: string,
   amount: string,
+  rarity: PullRarity,
 ): NonNullable<DurableDuel['result']>['outcomes'][number] {
   return {
     assetReference: `${side}_asset_reference`,
@@ -156,6 +175,7 @@ function outcome(
     isMock: false,
     provider: 'dailydraft',
     providerReference: `${side}_provider_reference`,
+    rarity,
     side,
   };
 }

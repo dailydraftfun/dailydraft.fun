@@ -1,6 +1,6 @@
+import type { PullRarity } from '@dailydraft/contracts';
 import type { DurableDuel } from '../solana/duel-client';
 import { getDuelPlayerStatus } from './duel-player-copy';
-import { type PullRarity, pullRarityFor } from './pull-rarity';
 
 export type LiveDuelPhase = 'lobby' | 'matching' | 'opening' | 'result';
 
@@ -117,7 +117,7 @@ function toPull(
     label: shortReference(outcome.assetReference),
     name: outcome.displayName,
     provider: outcome.provider,
-    rarity: pullRarityFor(valueMinor, outcome.insuredValue.decimals),
+    rarity: outcome.rarity,
     side: outcome.side,
     value: formatMinor(valueMinor, outcome.insuredValue.decimals),
     valueMinor,

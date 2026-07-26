@@ -403,6 +403,7 @@ export class DuelJourneyFixture {
             isMock: false,
             provider: 'journey-fixture',
             providerReference: `fixture-provider-creator-${this.seed}`,
+            rarity: 'rare',
             side: 'creator',
           },
           {
@@ -413,6 +414,7 @@ export class DuelJourneyFixture {
             isMock: false,
             provider: 'journey-fixture',
             providerReference: `fixture-provider-opponent-${this.seed}`,
+            rarity: 'uncommon',
             side: 'opponent',
           },
         ],
