@@ -2,7 +2,8 @@ import {
   type HouseTreasuryConfig,
   readHouseTreasuryConfig,
 } from '../treasury/house-treasury.policy.js';
-import { gachaDepositConfigurationErrors } from './gacha-payment.service.js';
+
+const BASE58_ADDRESS_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 export interface GachaCapabilityGates {
   acquisition: boolean;
@@ -25,6 +26,23 @@ export interface GachaCapability {
  */
 export function gachaDevnetModeEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
   return environment.DAILYDRAFT_PROVIDER_MODE === 'dailydraft-devnet';
+}
+
+/**
+ * Validate only the treasury settings a deposit rail actually depends on.
+ *
+ * `houseTreasuryConfigurationErrors` is deliberately not reused here: it also
+ * demands `DAILYDRAFT_HOUSE_ENABLED`, a funding signer, a separated withdrawal
+ * authority, and three positive exposure limits. Those exist because the house
+ * acts as a counterparty in duels and can lose money. A Gacha rip only moves
+ * USDC inward, so those controls do not belong in its capability gate.
+ */
+export function gachaDepositConfigurationErrors(config: HouseTreasuryConfig): string[] {
+  const errors: string[] = [];
+  if (config.network !== 'solana-devnet') errors.push('devnet_required');
+  if (!isBase58Address(config.tokenAccount)) errors.push('usdc_token_account_missing');
+  if (!isBase58Address(config.usdcMint)) errors.push('usdc_mint_missing');
+  return errors;
 }
 
 /**
@@ -85,4 +103,8 @@ export function resolveGachaCapability(gates: GachaCapabilityGates): GachaCapabi
     availability: 'preview',
     reason: `Pending Gacha capability gates: ${missing.join(', ')}`,
   };
+}
+
+function isBase58Address(value: string | null): boolean {
+  return typeof value === 'string' && BASE58_ADDRESS_PATTERN.test(value);
 }

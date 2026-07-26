@@ -10,8 +10,9 @@ import type {
   SolanaSignatureStatus,
   SolanaTransactionEnvelope,
 } from '../transactions/transaction-monitor.types.js';
+import { gachaDepositConfigurationErrors } from './gacha-capability.js';
 import { SPL_MEMO_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID } from './gacha-payment.js';
-import { GachaPaymentService, gachaDepositConfigurationErrors } from './gacha-payment.service.js';
+import { GachaPaymentService } from './gacha-payment.service.js';
 
 const PAYER = 'BkS1e5Kx8dCVAV4vXHzr4y6bTs2hUcHYD9Y4tzk6Bdub';
 const OTHER_PAYER = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
@@ -27,15 +28,23 @@ const MACHINE_KEY = 'collector-crypt-football-50000000-devnet-fixture';
 const TIER_PRICE = 50_000_000n;
 
 const ORIGINAL_ENV = {
+  fixture: process.env.DAILYDRAFT_GACHA_FIXTURE_MODE,
   mint: process.env.DAILYDRAFT_HOUSE_DEVNET_USDC_MINT,
   network: process.env.DAILYDRAFT_NETWORK,
+  node: process.env.NODE_ENV,
+  providerMode: process.env.DAILYDRAFT_PROVIDER_MODE,
   tokenAccount: process.env.DAILYDRAFT_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT,
+  vercel: process.env.VERCEL_ENV,
 };
 
 afterEach(() => {
+  restoreEnvironment('DAILYDRAFT_GACHA_FIXTURE_MODE', ORIGINAL_ENV.fixture);
   restoreEnvironment('DAILYDRAFT_HOUSE_DEVNET_USDC_MINT', ORIGINAL_ENV.mint);
   restoreEnvironment('DAILYDRAFT_NETWORK', ORIGINAL_ENV.network);
+  restoreEnvironment('NODE_ENV', ORIGINAL_ENV.node);
+  restoreEnvironment('DAILYDRAFT_PROVIDER_MODE', ORIGINAL_ENV.providerMode);
   restoreEnvironment('DAILYDRAFT_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT', ORIGINAL_ENV.tokenAccount);
+  restoreEnvironment('VERCEL_ENV', ORIGINAL_ENV.vercel);
 });
 
 describe('gachaDepositConfigurationErrors', () => {
@@ -83,6 +92,36 @@ describe('GachaPaymentService.createIntent', () => {
     });
     expect(intent.expiresAt.getTime()).toBeGreaterThan(Date.now());
     expect(database.payments[0]?.status).toBe(GachaRipPaymentStatus.PENDING);
+  });
+
+  test('refuses to issue deposit terms outside funded devnet mode', async () => {
+    configureDevnet();
+    process.env.DAILYDRAFT_PROVIDER_MODE = 'mock';
+    const database = new PaymentDatabase();
+    const rpc = new PaymentRpc();
+    const service = new GachaPaymentService(asClient(database), rpc);
+
+    await expect(
+      service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER }),
+    ).rejects.toThrow('disabled outside funded devnet mode');
+    expect(database.payments).toHaveLength(0);
+    expect(rpc.tokenAccountReads).toBe(0);
+  });
+
+  test('refuses to issue deposit terms when fixture mode overrides devnet', async () => {
+    configureDevnet();
+    process.env.NODE_ENV = 'test';
+    process.env.DAILYDRAFT_GACHA_FIXTURE_MODE = 'true';
+    delete process.env.VERCEL_ENV;
+    const database = new PaymentDatabase();
+    const rpc = new PaymentRpc();
+    const service = new GachaPaymentService(asClient(database), rpc);
+
+    await expect(
+      service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER }),
+    ).rejects.toThrow('disabled outside funded devnet mode');
+    expect(database.payments).toHaveLength(0);
+    expect(rpc.tokenAccountReads).toBe(0);
   });
 
   test('resolves the destination mint on chain so a plain transfer is still provably USDC', async () => {
@@ -376,9 +415,11 @@ async function verifiedService(database: PaymentDatabase): Promise<GachaPaymentS
 }
 
 function configureDevnet(): void {
+  delete process.env.DAILYDRAFT_GACHA_FIXTURE_MODE;
   process.env.DAILYDRAFT_NETWORK = 'solana-devnet';
   process.env.DAILYDRAFT_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT = HOUSE_TOKEN_ACCOUNT;
   process.env.DAILYDRAFT_HOUSE_DEVNET_USDC_MINT = USDC_MINT;
+  process.env.DAILYDRAFT_PROVIDER_MODE = 'dailydraft-devnet';
 }
 
 function restoreEnvironment(key: string, value: string | undefined): void {

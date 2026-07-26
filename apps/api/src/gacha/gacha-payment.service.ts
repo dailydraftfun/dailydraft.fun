@@ -11,11 +11,10 @@ import {
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
-import {
-  type HouseTreasuryConfig,
-  readHouseTreasuryConfig,
-} from '../treasury/house-treasury.policy.js';
+import { readHouseTreasuryConfig } from '../treasury/house-treasury.policy.js';
+import { gachaDepositConfigurationErrors, gachaDevnetModeEnabled } from './gacha-capability.js';
 import { GachaPaymentError, verifyGachaPaymentTransaction } from './gacha-payment.js';
+import { gachaFixtureModeEnabled } from './sports-pack-gacha.fixture.js';
 
 // A rip is paid for in three moves, each of which has to survive the client
 // disappearing between them:
@@ -88,24 +87,6 @@ interface GachaDepositConfig {
   mint: string;
 }
 
-/**
- * Validate only the treasury settings a deposit rail actually depends on.
- *
- * `houseTreasuryConfigurationErrors` is deliberately not reused here: it also
- * demands `DAILYDRAFT_HOUSE_ENABLED`, a funding signer, a separated withdrawal
- * authority, and three positive exposure limits. Those exist because the house
- * acts as a *counterparty* in duels and can lose money. A gacha rip only ever
- * moves USDC inward, so coupling Flip's availability to the duel risk controls
- * would gate it on settings that have nothing to do with taking a payment.
- */
-export function gachaDepositConfigurationErrors(config: HouseTreasuryConfig): string[] {
-  const errors: string[] = [];
-  if (config.network !== 'solana-devnet') errors.push('devnet_required');
-  if (!isBase58Address(config.tokenAccount)) errors.push('usdc_token_account_missing');
-  if (!isBase58Address(config.usdcMint)) errors.push('usdc_mint_missing');
-  return errors;
-}
-
 @Injectable()
 export class GachaPaymentService {
   /**
@@ -129,6 +110,11 @@ export class GachaPaymentService {
    * mapping stays one-to-one.
    */
   async createIntent(input: CreateGachaPaymentIntentInput): Promise<GachaPaymentIntent> {
+    if (gachaFixtureModeEnabled() || !gachaDevnetModeEnabled()) {
+      throw new ServiceUnavailableException(
+        'Gacha payment intents are disabled outside funded devnet mode',
+      );
+    }
     const machineKey = requireKey(input.machineKey, 'machineKey');
     const payerWallet = requireAddress(input.payerWallet, 'payerWallet');
     const config = resolveGachaDepositConfig();

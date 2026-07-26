@@ -54,6 +54,22 @@ export interface SettledGachaRip {
   status: 'settled';
 }
 
+/**
+ * A provider may throw this only when it can prove that acquisition did not
+ * happen and cannot happen for this attempt. That proof is what makes it safe
+ * for the API to terminally fail the rip and release its selected inventory.
+ *
+ * Timeouts, dependency failures, and unknown provider outcomes must use their
+ * ordinary error types instead: the lifecycle keeps the asset claimed and
+ * retries the rip-keyed idempotent operation after releasing its lease.
+ */
+export class GachaCardDefinitelyNotAcquiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GachaCardDefinitelyNotAcquiredError';
+  }
+}
+
 export abstract class SportsPackGachaProvider {
   abstract readonly capabilities: Readonly<GachaCapabilityGates>;
   abstract readonly mode: 'collector-crypt' | 'dailydraft-devnet' | 'fixture';
@@ -61,7 +77,9 @@ export abstract class SportsPackGachaProvider {
   /**
    * Provider operations are keyed by ripId and must be idempotent. The API
    * persists payment/seed consumption before provider I/O, then may repeat an
-   * operation after a crashed lifecycle lease expires.
+   * operation after a crashed lifecycle lease expires. An acquireCard failure
+   * is treated as an unknown outcome unless the provider throws
+   * GachaCardDefinitelyNotAcquiredError with proof that delivery did not happen.
    */
   abstract acquireCard(input: AcquireGachaCardInput): Promise<AcquiredGachaCard>;
   abstract getEligibleCards(machineKey: string): Promise<readonly SportsPackGachaCard[]>;

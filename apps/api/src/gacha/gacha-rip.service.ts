@@ -21,7 +21,10 @@ import {
 } from './gacha-pull-odds.js';
 import { gachaFixtureModeEnabled } from './sports-pack-gacha.fixture.js';
 // biome-ignore lint/style/useImportType: Nest uses the provider class as a runtime injection token.
-import { SportsPackGachaProvider } from './sports-pack-gacha.provider.js';
+import {
+  GachaCardDefinitelyNotAcquiredError,
+  SportsPackGachaProvider,
+} from './sports-pack-gacha.provider.js';
 
 const GACHA_ODDS_LOCK_NAMESPACE = 1_191_047_330;
 const MAX_SEED_LENGTH = 240;
@@ -361,11 +364,13 @@ export class GachaRipService {
             ripId,
           });
         } catch (error) {
-          // A provider-declared acquisition failure is terminal: no asset was
-          // delivered, so release the selected inventory while retaining an
-          // audit reference. Ambiguous failures after a successful provider
-          // return are handled by the resumable lease instead.
-          await this.failLeasedRip(ripId, leaseOwner, error).catch(() => undefined);
+          // Only an explicit provider proof that delivery did not happen can
+          // release inventory. Ordinary exceptions include timeouts after a
+          // provider-side success, so the outer catch preserves REVEALED and
+          // clears the lease for an idempotent retry/reconciliation instead.
+          if (error instanceof GachaCardDefinitelyNotAcquiredError) {
+            await this.failLeasedRip(ripId, leaseOwner, error).catch(() => undefined);
+          }
           throw error;
         }
         await this.advanceLeasedRip(ripId, leaseOwner, GachaRipStatus.REVEALED, {

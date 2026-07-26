@@ -21,6 +21,7 @@ import { GachaRipService, selectGachaOutcome } from './gacha-rip.service.js';
 import {
   type AcquiredGachaCard,
   type AcquireGachaCardInput,
+  GachaCardDefinitelyNotAcquiredError,
   type SettledGachaRip,
   type SettleGachaRipInput,
   type SportsPackGachaCard,
@@ -743,6 +744,89 @@ describe('GachaRipService', () => {
     expect(database.rip?.failedAssetReference).toBe('devnet:fixture:asset:base');
   });
 
+  test('keeps a transient acquisition failure REVEALED and resumes it idempotently', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    provider.transientAcquisitionFailures = 1;
+    const service = serviceWith(database, provider);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: commitment.commitmentId,
+        idempotencyKey: 'idem-transient-acquisition',
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('Fixture acquisition outcome is unknown');
+    expect(database.rip).toMatchObject({
+      lifecycleLeaseExpiresAt: null,
+      lifecycleLeaseOwner: null,
+      status: GachaRipStatus.REVEALED,
+    });
+    const retainedAssetReference = database.rip?.selectedAssetReference;
+    expect(retainedAssetReference).toMatch(/^devnet:fixture:asset:/);
+    expect(database.rip?.failedAssetReference).toBeUndefined();
+
+    const resumed = await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      idempotencyKey: 'idem-transient-acquisition',
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: 'ignored-on-idempotent-replay',
+    });
+
+    expect(resumed.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(resumed.rip.selectedAssetReference).toBe(retainedAssetReference);
+    expect(provider.operations).toEqual(['acquire', 'acquire', 'settle']);
+  });
+
+  test('does not reallocate an asset after an ambiguous acquisition outcome', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    provider.transientAcquisitionFailures = 1;
+    provider.deliverBeforeTransientFailure = true;
+    const service = serviceWith(database, provider, twoCardBaseSnapshot());
+    const rules = validateGachaPullOddsRuleSet(createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH));
+
+    const first = await service.createSeedCommitment(MACHINE_KEY);
+    const firstServerSeed = requireStoredServerSeed(database, first.commitmentId);
+    const firstClientSeed = findSeedLandingInBand(rules, firstServerSeed, 'base');
+    await expect(
+      service.createFixtureRip({
+        commitmentId: first.commitmentId,
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: firstClientSeed,
+      }),
+    ).rejects.toThrow('Fixture acquisition outcome is unknown');
+
+    const ambiguousRip = database.rip;
+    if (!ambiguousRip?.selectedAssetReference) {
+      throw new Error('expected the ambiguous rip to retain its selected asset');
+    }
+    expect(ambiguousRip.status).toBe(GachaRipStatus.REVEALED);
+    expect(provider.deliveredAssetReferences).toContain(ambiguousRip.selectedAssetReference);
+
+    const second = await service.createSeedCommitment(MACHINE_KEY);
+    const secondServerSeed = requireStoredServerSeed(database, second.commitmentId);
+    const secondClientSeed = findSeedLandingInBand(rules, secondServerSeed, 'base');
+    const settled = await service.createFixtureRip({
+      commitmentId: second.commitmentId,
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: secondClientSeed,
+    });
+
+    expect(settled.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(settled.rip.selectedAssetReference).not.toBe(ambiguousRip.selectedAssetReference);
+    expect(ambiguousRip.selectedAssetReference).not.toBeNull();
+    expect(ambiguousRip.status).toBe(GachaRipStatus.REVEALED);
+  });
+
   test('a rip that fails acquisition releases its asset for a later rip to claim', async () => {
     enableFixtureMode();
     const database = new RipDatabase();
@@ -908,14 +992,25 @@ class RecordingProvider extends SportsPackGachaProvider {
     settlement: true,
   });
   readonly mode = 'fixture' as const;
+  deliverBeforeTransientFailure = false;
+  deliveredAssetReferences: string[] = [];
   failAcquisition = false;
   operations: string[] = [];
+  transientAcquisitionFailures = 0;
 
-  async acquireCard(_input: AcquireGachaCardInput): Promise<AcquiredGachaCard> {
+  async acquireCard(input: AcquireGachaCardInput): Promise<AcquiredGachaCard> {
     this.operations.push('acquire');
     if (this.failAcquisition) {
-      throw new ServiceUnavailableException('Fixture acquisition failed');
+      throw new GachaCardDefinitelyNotAcquiredError('Fixture acquisition failed');
     }
+    if (this.transientAcquisitionFailures > 0) {
+      this.transientAcquisitionFailures -= 1;
+      if (this.deliverBeforeTransientFailure) {
+        this.deliveredAssetReferences.push(input.assetReference);
+      }
+      throw new ServiceUnavailableException('Fixture acquisition outcome is unknown');
+    }
+    this.deliveredAssetReferences.push(input.assetReference);
     return { acquisitionReference: 'devnet-acquisition-reference', status: 'acquired' };
   }
 
