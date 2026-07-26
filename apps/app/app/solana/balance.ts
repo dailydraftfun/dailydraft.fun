@@ -135,7 +135,9 @@ export function checkFundingSufficiency(
     return {
       shortfalls,
       status: 'sufficient',
-      summary: 'Wallet balance covers the stake and the network fee.',
+      summary: tokenRequirement
+        ? 'Wallet balance covers the stake, platform fee, and network fee buffer.'
+        : 'Wallet balance covers the platform fee and network fee buffer.',
     };
   }
 

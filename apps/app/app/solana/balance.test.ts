@@ -53,7 +53,9 @@ describe('checkFundingSufficiency', () => {
 
     expect(result.status).toBe('sufficient');
     expect(result.shortfalls).toHaveLength(0);
-    expect(result.summary).toContain('covers the stake');
+    expect(result.summary).toBe(
+      'Wallet balance covers the stake, platform fee, and network fee buffer.',
+    );
   });
 
   test('rejects a wallet holding exactly the platform fee, because signatures still cost lamports', () => {
@@ -110,6 +112,7 @@ describe('checkFundingSufficiency', () => {
     );
 
     expect(result.status).toBe('sufficient');
+    expect(result.summary).toBe('Wallet balance covers the platform fee and network fee buffer.');
   });
 });
 

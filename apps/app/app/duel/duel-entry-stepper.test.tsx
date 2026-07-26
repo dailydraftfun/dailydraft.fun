@@ -103,7 +103,7 @@ describe('duel entry stepper', () => {
 
     const html = renderStepper({ intent: fundingIntent() });
 
-    expect(html).toContain('Wallet balance covers the stake and the network fee.');
+    expect(html).toContain('Wallet balance covers the platform fee and network fee buffer.');
     expect(html).toContain('data-testid="duel-entry-preflight"');
     expect(html).toContain('Approve 0.015 SOL in wallet');
     expect(html).not.toContain('duel-preflight-short');
