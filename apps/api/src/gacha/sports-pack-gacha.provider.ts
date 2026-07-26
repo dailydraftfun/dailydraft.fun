@@ -58,6 +58,11 @@ export abstract class SportsPackGachaProvider {
   abstract readonly capabilities: Readonly<GachaCapabilityGates>;
   abstract readonly mode: 'collector-crypt' | 'dailydraft-devnet' | 'fixture';
 
+  /**
+   * Provider operations are keyed by ripId and must be idempotent. The API
+   * persists payment/seed consumption before provider I/O, then may repeat an
+   * operation after a crashed lifecycle lease expires.
+   */
   abstract acquireCard(input: AcquireGachaCardInput): Promise<AcquiredGachaCard>;
   abstract getEligibleCards(machineKey: string): Promise<readonly SportsPackGachaCard[]>;
   abstract listMachines(): Promise<readonly SportsPackGachaMachine[]>;

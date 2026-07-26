@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { type DatabaseClient, GachaRipPaymentStatus, type Prisma } from '@dailydraft/db';
-import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
@@ -69,6 +75,12 @@ export interface ConsumeGachaPaymentInput {
    * payment can never fund another player's rip. */
   payerWallet: string;
   ripId: string;
+}
+
+export interface FindConsumedGachaPaymentInput {
+  intentId: string;
+  machineKey: string;
+  payerWallet: string;
 }
 
 interface GachaDepositConfig {
@@ -183,7 +195,7 @@ export class GachaPaymentService {
     const signature = requireSignature(input.signature);
 
     const payment = await this.database.gachaRipPayment.findUnique({ where: { id: intentId } });
-    if (!payment) throw new ConflictException('Gacha payment intent was not found');
+    if (!payment) throw new NotFoundException('Gacha payment intent was not found');
 
     // Re-verifying the same signature is how a client recovers from a dropped
     // response, so replay the recorded evidence instead of re-reading the chain.
@@ -208,9 +220,9 @@ export class GachaPaymentService {
       throw new ConflictException('Gacha payment intent has expired');
     }
 
-    const envelope = await this.rpc.getTransaction(signature, 'confirmed');
+    const envelope = await this.rpc.getTransaction(signature, 'finalized');
     if (!envelope) {
-      throw new ConflictException('Gacha payment transaction has not been confirmed yet');
+      throw new ConflictException('Gacha payment transaction has not been finalized yet');
     }
 
     let mintVerifiedOnChain: boolean;
@@ -274,6 +286,28 @@ export class GachaPaymentService {
     if (consumed.count !== 1) {
       throw new ConflictException('Gacha rip payment is not verified or was already consumed');
     }
+  }
+
+  /**
+   * Resolve the rip already funded by this intent after a dropped response.
+   *
+   * `paymentIntentId` is itself a durable idempotency anchor: once consumed it
+   * points at exactly one rip through a unique foreign key, so a client can
+   * recover even when it omitted the optional HTTP Idempotency-Key.
+   */
+  async findConsumedRip(
+    transaction: Prisma.TransactionClient,
+    input: FindConsumedGachaPaymentInput,
+  ): Promise<string | null> {
+    const payment = await transaction.gachaRipPayment.findUnique({
+      select: { consumedByRipId: true, machineKey: true, payerWallet: true },
+      where: { id: requireMemoNonce(input.intentId) },
+    });
+    if (!payment?.consumedByRipId) return null;
+    if (payment.machineKey !== input.machineKey || payment.payerWallet !== input.payerWallet) {
+      throw new ConflictException('Gacha payment replay changed its committed request');
+    }
+    return payment.consumedByRipId;
   }
 
   /**

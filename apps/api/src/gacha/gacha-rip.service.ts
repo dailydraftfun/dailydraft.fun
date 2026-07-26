@@ -24,7 +24,13 @@ import { SportsPackGachaProvider } from './sports-pack-gacha.provider.js';
 const GACHA_ODDS_LOCK_NAMESPACE = 1_191_047_330;
 const MAX_SEED_LENGTH = 240;
 const GACHA_SEED_COMMITMENT_TTL_MS = 15 * 60 * 1000;
+const GACHA_RIP_LIFECYCLE_LEASE_MS = 2 * 60 * 1000;
 const SERVER_SEED_PATTERN = /^[a-f0-9]{64}$/;
+const INCOMPLETE_RIP_STATUSES = [
+  GachaRipStatus.SELECTED,
+  GachaRipStatus.REVEALED,
+  GachaRipStatus.ACQUIRED,
+] as const;
 
 export interface CreateFixtureGachaRipInput {
   commitmentId: string;
@@ -62,12 +68,10 @@ interface GachaSeeds {
 }
 
 type CreateFixtureRipOutcome =
-  | {
-      kind: 'created';
-      ripId: string;
-      selected: { assetReference: string; insuredValueMinor: string };
-    }
+  | { kind: 'created'; ripId: string }
   | { kind: 'existing'; ripId: string };
+
+type GachaRipRow = NonNullable<Awaited<ReturnType<DatabaseClient['gachaRip']['findUnique']>>>;
 
 @Injectable()
 export class GachaRipService {
@@ -138,8 +142,14 @@ export class GachaRipService {
     const clientSeed = requireSeed(input.seed);
     const commitmentId = requireReference(input.commitmentId, 'commitmentId');
     const idempotencyKey = optionalReference(input.idempotencyKey, 'idempotencyKey');
-    const paymentIntentId = optionalReference(input.paymentIntentId, 'paymentIntentId');
-    if (gachaRipRequiresPayment() && !paymentIntentId) {
+    const requiresPayment = gachaRipRequiresPayment();
+    // Fixture mode is deliberately unfunded. Ignore the field completely there
+    // so a client carrying devnet state across a preview-mode switch cannot
+    // accidentally consume a real verified intent.
+    const paymentIntentId = requiresPayment
+      ? optionalReference(input.paymentIntentId, 'paymentIntentId')
+      : null;
+    if (requiresPayment && !paymentIntentId) {
       throw new ConflictException('Gacha rip requires a verified payment intent');
     }
     const oddsVersion = requirePositiveInteger(input.oddsVersion ?? 1, 'oddsVersion');
@@ -163,11 +173,25 @@ export class GachaRipService {
         )
       `;
 
+        if (paymentIntentId) {
+          const fundedRipId = await this.payments.findConsumedRip(transaction, {
+            intentId: paymentIntentId,
+            machineKey,
+            payerWallet: recipientWallet,
+          });
+          if (fundedRipId) return { kind: 'existing', ripId: fundedRipId };
+        }
+
         if (idempotencyKey) {
           const existing = await transaction.gachaRip.findFirst({
             where: { idempotencyKey, machineKey },
           });
-          if (existing) return { kind: 'existing', ripId: existing.id };
+          if (existing) {
+            if (existing.recipientWallet && existing.recipientWallet !== recipientWallet) {
+              throw new ConflictException('Gacha rip replay changed its recipient wallet');
+            }
+            return { kind: 'existing', ripId: existing.id };
+          }
         }
 
         const seedCommitment = await transaction.gachaRipSeedCommitment.findUnique({
@@ -222,6 +246,7 @@ export class GachaRipService {
             machineKey,
             oddsCommitmentId: commitment.id,
             oddsRulesHash: rules.rulesHash,
+            recipientWallet,
             seedCommitmentHash,
             selectedAssetReference: selected.assetReference,
             selectedAt,
@@ -254,54 +279,11 @@ export class GachaRipService {
           throw new ConflictException('Gacha rip seed commitment could not be consumed');
         }
 
-        return { kind: 'created', ripId, selected };
+        return { kind: 'created', ripId };
       },
     );
 
-    if (outcome.kind === 'created') {
-      try {
-        await this.advanceRip(ripId, GachaRipStatus.SELECTED, {
-          revealedAt: new Date(),
-          status: GachaRipStatus.REVEALED,
-        });
-        const acquired = await this.provider.acquireCard({
-          assetReference: outcome.selected.assetReference,
-          recipientWallet,
-          ripId,
-        });
-        await this.advanceRip(ripId, GachaRipStatus.REVEALED, {
-          acquiredAt: new Date(),
-          acquisitionReference: acquired.acquisitionReference,
-          status: GachaRipStatus.ACQUIRED,
-        });
-        const settled = await this.provider.settleRip({
-          acquisitionReference: acquired.acquisitionReference,
-          ripId,
-        });
-        await this.advanceRip(ripId, GachaRipStatus.ACQUIRED, {
-          settledAt: new Date(),
-          settlementReference: settled.settlementReference,
-          status: GachaRipStatus.SETTLED,
-        });
-      } catch (error) {
-        // The asset was never delivered, so release it back to the eligible pool for
-        // the next rip against this snapshot instead of permanently burning it: clear
-        // selectedAssetReference (which the depletion unique index covers) and keep
-        // failedAssetReference as an audit trail of what this rip had selected.
-        await this.database.gachaRip.update({
-          data: {
-            failedAssetReference: outcome.selected.assetReference,
-            failedAt: new Date(),
-            failureReason: error instanceof Error ? error.message.slice(0, 240) : 'Unknown failure',
-            selectedAssetReference: null,
-            status: GachaRipStatus.FAILED,
-          },
-          where: { id: ripId },
-        });
-        throw error;
-      }
-    }
-
+    await this.resumeRipLifecycle(outcome.ripId);
     return this.loadRipResult(outcome.ripId);
   }
 
@@ -319,12 +301,113 @@ export class GachaRipService {
     return this.snapshots.findLatestSealed(machineKey);
   }
 
-  private async advanceRip(
+  /**
+   * Resume the post-commit provider lifecycle under a renewable database lease.
+   *
+   * The payment and seed commit before provider I/O, so a process may disappear
+   * with the rip still SELECTED/REVEALED/ACQUIRED. Both the HTTP idempotency key
+   * and the consumed payment relation route a retry back here. The lease prevents
+   * ordinary concurrent retries; after a crashed owner expires, the next retry
+   * safely repeats deterministic, rip-keyed provider operations.
+   */
+  private async resumeRipLifecycle(ripId: string): Promise<void> {
+    const leaseOwner = randomUUID();
+    const now = new Date();
+    const claimed = await this.database.gachaRip.updateMany({
+      data: {
+        lifecycleLeaseExpiresAt: leaseExpiry(now),
+        lifecycleLeaseOwner: leaseOwner,
+      },
+      where: {
+        id: ripId,
+        status: { in: [...INCOMPLETE_RIP_STATUSES] },
+        OR: [
+          { lifecycleLeaseOwner: null },
+          { lifecycleLeaseExpiresAt: null },
+          { lifecycleLeaseExpiresAt: { lte: now } },
+        ],
+      },
+    });
+    if (claimed.count !== 1) {
+      const current = await this.requireRip(ripId);
+      if (current.status === GachaRipStatus.SETTLED || current.status === GachaRipStatus.FAILED) {
+        return;
+      }
+      throw new ConflictException('Gacha rip lifecycle recovery is already in progress');
+    }
+
+    try {
+      let current = await this.requireRip(ripId);
+
+      if (current.status === GachaRipStatus.SELECTED) {
+        await this.advanceLeasedRip(ripId, leaseOwner, GachaRipStatus.SELECTED, {
+          revealedAt: new Date(),
+          status: GachaRipStatus.REVEALED,
+        });
+        current = await this.requireRip(ripId);
+      }
+
+      if (current.status === GachaRipStatus.REVEALED) {
+        if (!current.recipientWallet || !current.selectedAssetReference) {
+          throw new ServiceUnavailableException('Gacha rip recovery evidence is incomplete');
+        }
+        let acquired: Awaited<ReturnType<SportsPackGachaProvider['acquireCard']>>;
+        try {
+          acquired = await this.provider.acquireCard({
+            assetReference: current.selectedAssetReference,
+            recipientWallet: current.recipientWallet,
+            ripId,
+          });
+        } catch (error) {
+          // A provider-declared acquisition failure is terminal: no asset was
+          // delivered, so release the selected inventory while retaining an
+          // audit reference. Ambiguous failures after a successful provider
+          // return are handled by the resumable lease instead.
+          await this.failLeasedRip(ripId, leaseOwner, error).catch(() => undefined);
+          throw error;
+        }
+        await this.advanceLeasedRip(ripId, leaseOwner, GachaRipStatus.REVEALED, {
+          acquiredAt: new Date(),
+          acquisitionReference: acquired.acquisitionReference,
+          status: GachaRipStatus.ACQUIRED,
+        });
+        current = await this.requireRip(ripId);
+      }
+
+      if (current.status === GachaRipStatus.ACQUIRED) {
+        if (!current.acquisitionReference) {
+          throw new ServiceUnavailableException('Gacha rip acquisition evidence is incomplete');
+        }
+        const settled = await this.provider.settleRip({
+          acquisitionReference: current.acquisitionReference,
+          ripId,
+        });
+        await this.advanceLeasedRip(ripId, leaseOwner, GachaRipStatus.ACQUIRED, {
+          lifecycleLeaseExpiresAt: null,
+          lifecycleLeaseOwner: null,
+          settledAt: new Date(),
+          settlementReference: settled.settlementReference,
+          status: GachaRipStatus.SETTLED,
+        });
+      }
+    } catch (error) {
+      // Do not terminally fail an ambiguous provider/DB boundary. Clearing the
+      // lease lets the same rip-keyed idempotent operation resume immediately;
+      // if the database is unavailable, the bounded lease expires on its own.
+      await this.releaseLifecycleLease(ripId, leaseOwner).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async advanceLeasedRip(
     ripId: string,
+    leaseOwner: string,
     expectedStatus: GachaRipStatus,
     data: {
       acquiredAt?: Date;
       acquisitionReference?: string;
+      lifecycleLeaseExpiresAt?: Date | null;
+      lifecycleLeaseOwner?: string | null;
       revealedAt?: Date;
       settledAt?: Date;
       settlementReference?: string;
@@ -332,17 +415,66 @@ export class GachaRipService {
     },
   ): Promise<void> {
     const updated = await this.database.gachaRip.updateMany({
-      data,
-      where: { id: ripId, status: expectedStatus },
+      data: {
+        ...data,
+        ...(data.status === GachaRipStatus.SETTLED
+          ? {}
+          : { lifecycleLeaseExpiresAt: leaseExpiry(new Date()) }),
+      },
+      where: { id: ripId, lifecycleLeaseOwner: leaseOwner, status: expectedStatus },
     });
     if (updated.count !== 1) {
-      throw new ConflictException('Gacha rip lifecycle transition was rejected');
+      throw new ConflictException('Gacha rip lifecycle lease was lost');
     }
   }
 
-  private async loadRipResult(ripId: string) {
+  private async failLeasedRip(ripId: string, leaseOwner: string, error: unknown): Promise<void> {
+    const current = await this.requireRip(ripId);
+    if (
+      !INCOMPLETE_RIP_STATUSES.includes(
+        current.status as (typeof INCOMPLETE_RIP_STATUSES)[number],
+      ) ||
+      current.lifecycleLeaseOwner !== leaseOwner
+    ) {
+      return;
+    }
+    await this.database.gachaRip.updateMany({
+      data: {
+        failedAssetReference: current.selectedAssetReference,
+        failedAt: new Date(),
+        failureReason: error instanceof Error ? error.message.slice(0, 240) : 'Unknown failure',
+        lifecycleLeaseExpiresAt: null,
+        lifecycleLeaseOwner: null,
+        selectedAssetReference: null,
+        status: GachaRipStatus.FAILED,
+      },
+      where: {
+        id: ripId,
+        lifecycleLeaseOwner: leaseOwner,
+        status: current.status,
+      },
+    });
+  }
+
+  private async releaseLifecycleLease(ripId: string, leaseOwner: string): Promise<void> {
+    await this.database.gachaRip.updateMany({
+      data: { lifecycleLeaseExpiresAt: null, lifecycleLeaseOwner: null },
+      where: {
+        id: ripId,
+        lifecycleLeaseOwner: leaseOwner,
+        status: { in: [...INCOMPLETE_RIP_STATUSES] },
+      },
+    });
+  }
+
+  private async requireRip(ripId: string) {
     const rip = await this.database.gachaRip.findUnique({ where: { id: ripId } });
     if (!rip) throw new ServiceUnavailableException('Gacha rip could not be reloaded');
+    return rip;
+  }
+
+  private async loadRipResult(ripId: string) {
+    const rip = await this.requireRip(ripId);
     const oddsCommitment = await this.database.gachaPullOddsCommitment.findUnique({
       where: { id: rip.oddsCommitmentId },
     });
@@ -360,7 +492,7 @@ export class GachaRipService {
         snapshotContentHash: oddsCommitment.snapshotContentHash,
         version: oddsCommitment.version,
       },
-      rip,
+      rip: publicRip(rip),
       serverSeed: revealed.serverSeed,
       serverSeedHash: revealed.serverSeedHash,
     };
@@ -379,6 +511,38 @@ export class GachaRipService {
     if (!commitment) return { serverSeed: null, serverSeedHash: null };
     return { serverSeed: commitment.serverSeed, serverSeedHash: commitment.serverSeedHash };
   }
+}
+
+function leaseExpiry(now: Date): Date {
+  return new Date(now.getTime() + GACHA_RIP_LIFECYCLE_LEASE_MS);
+}
+
+function publicRip(rip: GachaRipRow) {
+  return {
+    acquiredAt: rip.acquiredAt,
+    acquisitionReference: rip.acquisitionReference,
+    createdAt: rip.createdAt,
+    failedAssetReference: rip.failedAssetReference,
+    failedAt: rip.failedAt,
+    failureReason: rip.failureReason,
+    id: rip.id,
+    idempotencyKey: rip.idempotencyKey,
+    insuredValueCurrency: rip.insuredValueCurrency,
+    insuredValueDecimals: rip.insuredValueDecimals,
+    insuredValueMinor: rip.insuredValueMinor,
+    machineKey: rip.machineKey,
+    oddsCommitmentId: rip.oddsCommitmentId,
+    oddsRulesHash: rip.oddsRulesHash,
+    revealedAt: rip.revealedAt,
+    seedCommitmentHash: rip.seedCommitmentHash,
+    selectedAssetReference: rip.selectedAssetReference,
+    selectedAt: rip.selectedAt,
+    settledAt: rip.settledAt,
+    settlementReference: rip.settlementReference,
+    snapshotContentHash: rip.snapshotContentHash,
+    status: rip.status,
+    updatedAt: rip.updatedAt,
+  };
 }
 
 export function selectGachaOutcome(

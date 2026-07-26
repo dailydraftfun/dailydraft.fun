@@ -5,6 +5,46 @@ CREATE TYPE "GachaRipPaymentStatus" AS ENUM (
     'EXPIRED'
 );
 
+-- Persist the delivery target and serialize resumable post-commit provider work.
+-- Existing fixture rows predate recovery and remain nullable; every new rip
+-- writes recipientWallet before a payment or seed can be consumed.
+ALTER TABLE "GachaRip"
+ADD COLUMN "recipientWallet" TEXT,
+ADD COLUMN "lifecycleLeaseOwner" TEXT,
+ADD COLUMN "lifecycleLeaseExpiresAt" TIMESTAMP(3);
+
+CREATE INDEX "GachaRip_status_lifecycleLeaseExpiresAt_idx"
+ON "GachaRip"("status", "lifecycleLeaseExpiresAt");
+
+ALTER TABLE "GachaRip"
+ADD CONSTRAINT "GachaRip_lifecycle_recovery_check" CHECK (
+  (
+    "recipientWallet" IS NULL
+    OR (
+      length("recipientWallet") BETWEEN 1 AND 240
+      AND btrim("recipientWallet") = "recipientWallet"
+    )
+  )
+  AND (
+    (
+      "lifecycleLeaseOwner" IS NULL
+      AND "lifecycleLeaseExpiresAt" IS NULL
+    )
+    OR (
+      "lifecycleLeaseOwner" IS NOT NULL
+      AND length("lifecycleLeaseOwner") BETWEEN 1 AND 120
+      AND "lifecycleLeaseExpiresAt" IS NOT NULL
+    )
+  )
+  AND (
+    "status" NOT IN ('SETTLED', 'FAILED')
+    OR (
+      "lifecycleLeaseOwner" IS NULL
+      AND "lifecycleLeaseExpiresAt" IS NULL
+    )
+  )
+);
+
 CREATE TABLE "GachaRipPayment" (
     "id" TEXT NOT NULL,
     "machineKey" TEXT NOT NULL,

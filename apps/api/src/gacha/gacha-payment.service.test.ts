@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { DatabaseClient, Prisma } from '@dailydraft/db';
 import { GachaRipPaymentStatus } from '@dailydraft/db';
-import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import bs58 from 'bs58';
 
 import { type LegacySplTokenAccount, SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
@@ -167,9 +167,10 @@ describe('GachaPaymentService.verifyIntent', () => {
       signature: SIGNATURE,
       status: GachaRipPaymentStatus.VERIFIED,
     });
+    expect(rpc.transactionCommitments).toEqual(['finalized']);
   });
 
-  test('reports an unconfirmed signature as retryable rather than rejecting the intent', async () => {
+  test('reports a non-finalized signature as retryable rather than rejecting the intent', async () => {
     configureDevnet();
     const database = new PaymentDatabase();
     const service = new GachaPaymentService(asClient(database), new PaymentRpc());
@@ -181,7 +182,7 @@ describe('GachaPaymentService.verifyIntent', () => {
 
     await expect(
       verifier.verifyIntent({ intentId: intent.intentId, signature: SIGNATURE }),
-    ).rejects.toThrow('has not been confirmed yet');
+    ).rejects.toThrow('has not been finalized yet');
     // The client polls faster than the cluster confirms far more often than it
     // sends a bad signature, so the intent must stay spendable.
     expect(database.payments[0]?.status).toBe(GachaRipPaymentStatus.PENDING);
@@ -284,7 +285,7 @@ describe('GachaPaymentService.verifyIntent', () => {
         intentId: 'gachapay_4f6c1d90a37b48e2ac5518d0f27b6e34',
         signature: SIGNATURE,
       }),
-    ).rejects.toThrow('was not found');
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 
@@ -307,6 +308,13 @@ describe('GachaPaymentService.consumeVerifiedPayment', () => {
       consumedByRipId: 'gacharip_0123456789abcdef0123456789abcdef',
       status: GachaRipPaymentStatus.CONSUMED,
     });
+    await expect(
+      service.findConsumedRip(asTransaction(database), {
+        intentId,
+        machineKey: MACHINE_KEY,
+        payerWallet: PAYER,
+      }),
+    ).resolves.toBe('gacharip_0123456789abcdef0123456789abcdef');
 
     // The second attempt is the concurrency case: two rips racing for one
     // payment must not both find it spendable.
@@ -496,6 +504,7 @@ class PaymentDatabase {
 
 class PaymentRpc extends SolanaRpcGateway {
   tokenAccountReads = 0;
+  transactionCommitments: Array<'confirmed' | 'finalized'> = [];
   transactionReads = 0;
 
   constructor(
@@ -538,7 +547,11 @@ class PaymentRpc extends SolanaRpcGateway {
     return [];
   }
 
-  async getTransaction(): Promise<SolanaTransactionEnvelope | null> {
+  async getTransaction(
+    _signature: string,
+    commitment: 'confirmed' | 'finalized',
+  ): Promise<SolanaTransactionEnvelope | null> {
+    this.transactionCommitments.push(commitment);
     this.transactionReads += 1;
     return this.options.envelope ?? null;
   }

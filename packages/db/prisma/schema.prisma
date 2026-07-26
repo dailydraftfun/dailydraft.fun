@@ -912,37 +912,44 @@ model GachaRipSeedCommitment {
 /// claimed. failedAssetReference preserves an audit trail of what a FAILED rip had
 /// selected before the asset was released.
 model GachaRip {
-  id                     String                  @id
-  machineKey             String
-  oddsCommitmentId       String
-  status                 GachaRipStatus
-  snapshotContentHash    String
-  oddsRulesHash          String
-  seedCommitmentHash     String
-  selectedAssetReference String?
-  failedAssetReference   String?
-  acquisitionReference   String?
-  settlementReference    String?
-  insuredValueMinor      String
-  insuredValueCurrency   String                  @default("USDC")
-  insuredValueDecimals   Int                     @default(6)
-  selectedAt             DateTime
-  revealedAt             DateTime?
-  acquiredAt             DateTime?
-  settledAt              DateTime?
-  failedAt               DateTime?
-  failureReason          String?
-  idempotencyKey         String?
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  machine                GachaMachine            @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
-  oddsCommitment         GachaPullOddsCommitment @relation(fields: [oddsCommitmentId], references: [id], onDelete: Restrict)
-  payment                GachaRipPayment?
-  seedCommitment         GachaRipSeedCommitment?
+  id                      String                  @id
+  machineKey              String
+  oddsCommitmentId        String
+  status                  GachaRipStatus
+  snapshotContentHash     String
+  oddsRulesHash           String
+  seedCommitmentHash      String
+  selectedAssetReference  String?
+  failedAssetReference    String?
+  acquisitionReference    String?
+  settlementReference     String?
+  insuredValueMinor       String
+  insuredValueCurrency    String                  @default("USDC")
+  insuredValueDecimals    Int                     @default(6)
+  selectedAt              DateTime
+  revealedAt              DateTime?
+  acquiredAt              DateTime?
+  settledAt               DateTime?
+  failedAt                DateTime?
+  failureReason           String?
+  idempotencyKey          String?
+  /// Internal recovery state. recipientWallet is persisted so a retry can
+  /// deterministically resume provider delivery after the payment transaction
+  /// has committed; lease fields serialize concurrent resume attempts.
+  recipientWallet         String?
+  lifecycleLeaseOwner     String?
+  lifecycleLeaseExpiresAt DateTime?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  machine                 GachaMachine            @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
+  oddsCommitment          GachaPullOddsCommitment @relation(fields: [oddsCommitmentId], references: [id], onDelete: Restrict)
+  payment                 GachaRipPayment?
+  seedCommitment          GachaRipSeedCommitment?
 
   @@unique([snapshotContentHash, selectedAssetReference])
   @@unique([machineKey, idempotencyKey])
   @@index([machineKey, createdAt])
+  @@index([status, lifecycleLeaseExpiresAt])
   @@index([status, updatedAt])
   @@index([snapshotContentHash])
   @@index([oddsRulesHash])

@@ -240,11 +240,13 @@ paths:
       tags: [Gacha]
       summary: Verify the on-chain transfer that funds a Gacha payment intent
       description: |
-        Re-reads the submitted signature from the chain and checks the transfer
+        Re-reads the finalized signature from the chain and checks the transfer
         against the intent it claims to fund: mint, destination token account,
         amount, payer, and the memoNonce. Nothing the client asserts is trusted.
         A verified intent is spendable by exactly one subsequent POST
-        /gacha/rips call; replaying the same signature is rejected.
+        /gacha/rips call. Replaying the same signature for the same intent returns
+        the previously recorded verification evidence, allowing safe recovery
+        from a dropped response; a different signature is rejected.
       x-dailydraft-availability: devnet-preview
       parameters:
         - $ref: '#/components/parameters/GachaPaymentIntentId'
