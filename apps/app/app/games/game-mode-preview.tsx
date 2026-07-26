@@ -22,6 +22,7 @@ import { motion } from 'motion/react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { type CSSProperties, type ReactNode, useState } from 'react';
+import { ChoreographyAudioHaptics } from '../components/audio-haptics';
 import { CelebrationOverlay } from '../components/celebration';
 import {
   ChoreographyCelebration,
@@ -628,6 +629,7 @@ function FlipReveal({ card }: { card: PreviewCard }) {
           valueUsd={card.value}
         />
         <ChoreographyDriver controller={choreography} sequenceKey={card.name} />
+        <ChoreographyAudioHaptics beat={choreography.beat} rarity={rarity} />
       </figure>
       <ChoreographySkipControl
         className={`proof-secondary-action mt-3 w-full ${choreographyStyles.skip}`}
@@ -699,6 +701,7 @@ function StageCard({
         ) : null}
         <CelebrationOverlay controller={choreography} sequenceKey={index} valueUsd={card.value} />
         <ChoreographyDriver controller={choreography} sequenceKey={index} />
+        <ChoreographyAudioHaptics beat={choreography.beat} rarity={rarity} />
       </div>
       <p className="proof-label mt-3">Stage {index + 1}</p>
       <p className="mt-1 truncate text-xs font-semibold text-primary">
