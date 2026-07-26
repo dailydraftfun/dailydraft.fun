@@ -1,12 +1,11 @@
 import type { Metadata } from 'next';
+import { resolveAppOrigin } from '../app-origin';
 import type { PublicDuelReceipt, PublicDuelStatus } from './public-proof-client';
 import { getDuelSocialSnapshot, getSocialDescription, isMockDuelResult } from './social-card-data';
 
-const defaultAppUrl = 'https://dailydraft.fun';
-
 export function buildDuelMetadata(
   receipt: PublicDuelReceipt,
-  appUrl = process.env.NEXT_PUBLIC_APP_URL ?? defaultAppUrl,
+  appUrl = resolveAppOrigin(),
 ): Metadata {
   const title = `${receiptTitle(receipt)} — DailyDraft`;
   const participantSummary = `${receipt.participants.creator.display} vs ${receipt.participants.opponent?.display ?? 'open seat'}`;

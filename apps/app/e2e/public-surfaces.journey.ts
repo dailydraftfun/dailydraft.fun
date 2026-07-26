@@ -13,7 +13,7 @@ import { journeyApiOrigin, journeyOpponentWallet, journeyRpcUrl } from './fixtur
 import { expect, test } from './fixtures/playwright';
 
 const appOrigin = 'http://127.0.0.1:3001';
-const canonicalAppOrigin = 'https://dailydraft.fun';
+const canonicalAppOrigin = 'https://app.dailydraft.fun';
 type AxeResults = Awaited<ReturnType<AxeBuilder['analyze']>>;
 
 test.use({ journeySeed: 'public-surfaces' });

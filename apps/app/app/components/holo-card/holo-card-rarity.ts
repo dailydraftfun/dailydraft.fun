@@ -1,5 +1,7 @@
-// TODO(#208): Replace this local model with the shared contracts rarity once it lands.
-export type HoloCardRarity = 'common' | 'uncommon' | 'rare' | 'chase';
+import type { PullRarity } from '@dailydraft/contracts';
+
+/** The card treatment is keyed by the same tiers the API serves on the wire. */
+export type HoloCardRarity = PullRarity;
 
 export const holoCardRarities = [
   'common',

@@ -125,9 +125,9 @@ describe('house treasury policy', () => {
     for (const invalid of invalidInputs) {
       let lockAcquired = false;
       const transaction = {
-        $queryRaw: () => {
+        $executeRaw: () => {
           lockAcquired = true;
-          return Promise.resolve([]);
+          return Promise.resolve(1);
         },
       } as unknown as Prisma.TransactionClient;
 
@@ -497,16 +497,18 @@ function fakeTransaction(input: {
   walletActive?: number;
 }): Prisma.TransactionClient {
   const admissionStates = input.admissionStates ?? [];
-  let rawCalls = 0;
   return {
     $executeRaw: (
-      _query: TemplateStringsArray,
+      query: TemplateStringsArray,
       tier: number,
       disabled: boolean,
       reason: string | null,
       reenableBoundary: string | null,
       evaluatedAt: Date,
     ) => {
+      if (query.join('').includes('pg_advisory_xact_lock')) {
+        return Promise.resolve(1);
+      }
       const row = admissionStates.find((candidate) => candidate.tier === tier);
       if (!row) {
         admissionStates.push({
@@ -524,12 +526,7 @@ function fakeTransaction(input: {
       row.version += 1;
       return Promise.resolve(1);
     },
-    $queryRaw: () => {
-      rawCalls += 1;
-      return Promise.resolve(
-        rawCalls === 1 ? [{ pg_advisory_xact_lock: '' }] : [{ paused: input.paused ?? false }],
-      );
-    },
+    $queryRaw: () => Promise.resolve([{ paused: input.paused ?? false }]),
     houseTreasuryLedgerEntry: {
       create: ({ data }: { data: unknown }) => {
         input.created.push(data);

@@ -8,10 +8,16 @@
       "types": "./src/index.ts",
       "bun": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./pull-rarity": {
+      "types": "./src/pull-rarity.ts",
+      "bun": "./src/pull-rarity.ts",
+      "import": "./src/pull-rarity.ts",
+      "default": "./dist/pull-rarity.js"
     }
   },
   "scripts": {
-    "build": "bun build src/index.ts --target=bun --outdir=dist",
+    "build": "bun build src/index.ts src/pull-rarity.ts --target=bun --outdir=dist",
     "clean": "rm -rf dist",
     "lint": "biome check src/",
     "test": "bun test",

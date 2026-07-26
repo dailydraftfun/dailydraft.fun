@@ -1,5 +1,8 @@
 'use client';
 
+// Deliberately the `/pull-rarity` subpath, not the package root: the root barrel
+// imports `node:crypto`, which must never reach a client bundle.
+import { pullRarityLabel } from '@dailydraft/contracts/pull-rarity';
 import {
   ArrowCounterClockwiseIcon,
   ArrowsLeftRightIcon,
@@ -87,6 +90,8 @@ import {
 } from './duel-lobby-options';
 import { SharedOpponentControl, type SharedOpponentEntry } from './duel-shared-opponent';
 import { journeyTestIds } from './e2e/journey-test-ids';
+import { createAbortScope } from './solana/abort-scope';
+import { type ConfirmationPhase, describeConfirmation } from './solana/confirmation';
 import {
   advanceDuelLifecycle,
   cancelDuel,
@@ -111,6 +116,7 @@ import {
   submitSignedDuelIntent,
   waitForDuelTransactions,
 } from './solana/duel-client';
+import { trackConfirmation } from './solana/track-confirmation';
 import { isDuelApiConfigured } from './solana/wallet-auth-client';
 import { useWalletAuth } from './solana/wallet-auth-provider';
 import { useSolanaWallet } from './solana/wallet-provider';
@@ -118,7 +124,7 @@ import { WalletTransactionNotBroadcastError } from './solana/wallet-transaction-
 
 type Mode = DuelOpponentType;
 type Phase = LiveDuelPhase;
-type DuelCardStage = 'opening' | 'revealed' | 'sealed';
+export type DuelCardStage = 'opening' | 'revealed' | 'sealed';
 
 type DuelLobbyEntryBase = {
   duelId: string;
@@ -156,7 +162,11 @@ function Avatar({ color, label }: { color: string; label: string }) {
   );
 }
 
-function DuelCard({
+// Exported for contract tests only. Driving the sealed/opening/revealed stages
+// through <DuelArena /> would mean standing up the whole live duel state machine
+// and its API polling; the card is a pure function of its props, so it is tested
+// the same way GameModePreview is — rendered directly with each state.
+export function DuelCard({
   pull,
   side,
   stage,
@@ -203,21 +213,20 @@ function DuelCard({
         ) : null}
       </div>
 
-      <div className={`card-stage card-stage-${stage}`}>
+      <div className={`card-stage card-stage-${stage}`} data-rarity={displayPull?.rarity}>
         <div className="pack-shell" aria-hidden={visible}>
           <div className="pack-glint" />
+          <div className="pack-seam" />
           <div className="pack-brand">
             <span>PACK</span>
             <strong>DUEL</strong>
             <small>COMMITTED PACK</small>
           </div>
-          <Image
-            src="https://images.pokemontcg.io/cardback.png"
-            alt=""
-            fill
-            sizes="(max-width: 768px) 42vw, 260px"
-            className="pack-art"
-          />
+          {/* Drawn in CSS rather than fetched: the third-party cardback this used to
+              point at has always 404'd, so the pack you stare at before the reveal
+              rendered as flat colour. A local texture also drops a network round trip
+              from the one screen where latency is most visible. */}
+          <div className="pack-art" aria-hidden="true" />
           <span className="pack-tier">{visible ? '—' : tier}</span>
         </div>
         <div className="pull-shell" aria-hidden={!visible}>
@@ -237,7 +246,12 @@ function DuelCard({
               <small>{displayPull.label}</small>
             </div>
           ) : null}
+          {displayPull ? <span className="pull-sheen" aria-hidden="true" /> : null}
+          {displayPull ? (
+            <span className="pull-rarity">{pullRarityLabel(displayPull.rarity)}</span>
+          ) : null}
         </div>
+        {visible && displayPull ? <span className="pull-burst" aria-hidden="true" /> : null}
         {stage === 'opening' ? (
           <div className="opening-status" role="status">
             <span /> Opening pack
@@ -285,6 +299,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [fundingPhase, setFundingPhase] = useState<
     'idle' | 'signing' | 'confirming' | 'recovering'
   >('idle');
+  const [fundingSignature, setFundingSignature] = useState<string | null>(null);
+  const [confirmationPhase, setConfirmationPhase] = useState<ConfirmationPhase | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
@@ -312,6 +328,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const matchmakingRestoreKey = useRef<string | null>(null);
   const duelRecoveryKey = useRef<string | null>(null);
   const lifecycleAdvanceKey = useRef<string | null>(null);
+  // Confirmation polling outlives the request that starts it, so it needs an
+  // owner that can cancel it on unmount or when a new funding attempt begins.
+  const confirmationScope = useRef(createAbortScope());
   const modeTabRefs = useRef<Partial<Record<Mode, HTMLButtonElement>>>({});
   const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
   const phase: Phase = liveDuel?.phase ?? 'lobby';
@@ -419,6 +438,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   useEffect(() => {
     trackProductEvent({ name: 'lobby_viewed' });
   }, []);
+
+  useEffect(() => confirmationScope.current.cancel, []);
 
   useEffect(() => {
     const storedDraft = window.localStorage.getItem(DUEL_ENTRY_DRAFT_STORAGE_KEY);
@@ -1209,6 +1230,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setFundingPhase('signing');
     setRejectedIntentId(null);
     setActionError(null);
+    setFundingSignature(null);
+    setConfirmationPhase(null);
     window.localStorage.setItem(
       DUEL_ENTRY_DRAFT_STORAGE_KEY,
       JSON.stringify(
@@ -1231,6 +1254,14 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       const signature = await walletConnection.signAndSendTransaction(transaction);
       transactionWasSubmitted = true;
       setFundingPhase('confirming');
+      setFundingSignature(signature);
+      // Started before the server round-trip and awaited after it, so the
+      // stepper shows live cluster progress during a call it would otherwise
+      // sit blank through, without adding any latency of its own.
+      const confirmation = trackConfirmation(signature, {
+        onPhase: setConfirmationPhase,
+        signal: confirmationScope.current.begin(),
+      });
       await submitSignedDuelIntent(
         intent.duelId,
         intent.id,
@@ -1238,6 +1269,14 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         authentication.sessionToken,
       );
       setActionNotice('Payment sent on Solana devnet. Checking that it completed…');
+      const settledPhase = await confirmation;
+      void walletConnection.refreshBalances();
+      if (settledPhase === 'expired' || settledPhase === 'failed') {
+        setFundingPhase('recovering');
+        setActionNotice(null);
+        setActionError(describeConfirmation(settledPhase).detail);
+        return;
+      }
       await reconcileBroadcastFunding(intent.duelId, authentication.sessionToken);
     } catch (error) {
       if (error instanceof WalletTransactionNotBroadcastError) {
@@ -2132,6 +2171,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           intent={intent}
           pending={intentPending || restorePending}
           fundingPhase={fundingPhase}
+          confirmationPhase={confirmationPhase}
+          fundingSignature={fundingSignature}
           error={actionError}
           notice={actionNotice}
           onClose={() => {
