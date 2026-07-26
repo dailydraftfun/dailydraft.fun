@@ -13,3 +13,5 @@ test-results
 artifacts
 .artifacts
 *.tsbuildinfo
+.claude/launch.json
+.claude/worktrees

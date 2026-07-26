@@ -223,6 +223,14 @@
   color: var(--text-primary);
 }
 
+.wallet-button-balance {
+  border-left: 1px solid var(--color-border);
+  padding-left: 7px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 .wallet-spinner {
   animation: wallet-spin 800ms linear infinite;
 }
@@ -549,6 +557,12 @@
   color: var(--text-muted);
   font-size: 12px;
   text-overflow: ellipsis;
+}
+
+.wallet-account-balance {
+  color: var(--lime);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .wallet-account-actions {
@@ -1429,6 +1443,43 @@
   font-family: var(--font-mono);
   font-size: 11px;
   text-overflow: ellipsis;
+}
+
+/* Every on-chain identifier the stepper discloses is a link, so the disclosure
+   is independently checkable rather than merely visible. */
+.duel-explorer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--lime);
+  text-decoration: none;
+}
+
+.duel-explorer-link:hover,
+.duel-explorer-link:focus-visible {
+  text-decoration: underline;
+}
+
+.duel-preflight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.duel-preflight-short {
+  border: 1px solid rgba(255, 100, 100, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 100, 100, 0.07);
+  padding: 9px 11px;
+  color: var(--color-danger);
+}
+
+.duel-preflight-short > svg {
+  flex-shrink: 0;
 }
 
 .duel-stepper-primary {
@@ -2383,6 +2434,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* The chip is already truncating the address at this width; a second figure
+     would squeeze it further. Balance stays available in the wallet dialog. */
+  .wallet-button-balance {
+    display: none;
   }
   .wallet-dialog-backdrop,
   .duel-stepper-backdrop {

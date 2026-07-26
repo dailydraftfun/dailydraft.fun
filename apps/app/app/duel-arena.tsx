@@ -87,6 +87,7 @@ import {
 } from './duel-lobby-options';
 import { SharedOpponentControl, type SharedOpponentEntry } from './duel-shared-opponent';
 import { journeyTestIds } from './e2e/journey-test-ids';
+import { type ConfirmationPhase, describeConfirmation } from './solana/confirmation';
 import {
   advanceDuelLifecycle,
   cancelDuel,
@@ -111,6 +112,7 @@ import {
   submitSignedDuelIntent,
   waitForDuelTransactions,
 } from './solana/duel-client';
+import { trackConfirmation } from './solana/track-confirmation';
 import { isDuelApiConfigured } from './solana/wallet-auth-client';
 import { useWalletAuth } from './solana/wallet-auth-provider';
 import { useSolanaWallet } from './solana/wallet-provider';
@@ -285,6 +287,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [fundingPhase, setFundingPhase] = useState<
     'idle' | 'signing' | 'confirming' | 'recovering'
   >('idle');
+  const [fundingSignature, setFundingSignature] = useState<string | null>(null);
+  const [confirmationPhase, setConfirmationPhase] = useState<ConfirmationPhase | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
@@ -1209,6 +1213,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     setFundingPhase('signing');
     setRejectedIntentId(null);
     setActionError(null);
+    setFundingSignature(null);
+    setConfirmationPhase(null);
     window.localStorage.setItem(
       DUEL_ENTRY_DRAFT_STORAGE_KEY,
       JSON.stringify(
@@ -1231,6 +1237,11 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       const signature = await walletConnection.signAndSendTransaction(transaction);
       transactionWasSubmitted = true;
       setFundingPhase('confirming');
+      setFundingSignature(signature);
+      // Started before the server round-trip and awaited after it, so the
+      // stepper shows live cluster progress during a call it would otherwise
+      // sit blank through, without adding any latency of its own.
+      const confirmation = trackConfirmation(signature, { onPhase: setConfirmationPhase });
       await submitSignedDuelIntent(
         intent.duelId,
         intent.id,
@@ -1238,6 +1249,14 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         authentication.sessionToken,
       );
       setActionNotice('Payment sent on Solana devnet. Checking that it completed…');
+      const settledPhase = await confirmation;
+      void walletConnection.refreshBalances();
+      if (settledPhase === 'expired' || settledPhase === 'failed') {
+        setFundingPhase('recovering');
+        setActionNotice(null);
+        setActionError(describeConfirmation(settledPhase).detail);
+        return;
+      }
       await reconcileBroadcastFunding(intent.duelId, authentication.sessionToken);
     } catch (error) {
       if (error instanceof WalletTransactionNotBroadcastError) {
@@ -2132,6 +2151,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           intent={intent}
           pending={intentPending || restorePending}
           fundingPhase={fundingPhase}
+          confirmationPhase={confirmationPhase}
+          fundingSignature={fundingSignature}
           error={actionError}
           notice={actionNotice}
           onClose={() => {

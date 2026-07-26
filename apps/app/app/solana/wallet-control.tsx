@@ -15,6 +15,7 @@ import Image from 'next/image';
 import { useState } from 'react';
 import { useDialogFocus } from '../accessibility/use-dialog-focus';
 import { journeyTestIds } from '../e2e/journey-test-ids';
+import { describeWalletBalance } from './balance';
 import { getExplorerAddressUrl } from './config';
 import { useWalletAuth } from './wallet-auth-provider';
 import { useSolanaWallet } from './wallet-provider';
@@ -22,6 +23,7 @@ import { useSolanaWallet } from './wallet-provider';
 export function WalletControl() {
   const wallet = useSolanaWallet();
   const authentication = useWalletAuth();
+  const balance = describeWalletBalance(wallet.balanceStatus, wallet.balances);
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const dialogRef = useDialogFocus({
@@ -51,6 +53,11 @@ export function WalletControl() {
           <WalletIcon size={16} weight={wallet.address ? 'fill' : 'bold'} />
         )}
         <span>{wallet.shortAddress ?? 'Connect wallet'}</span>
+        {balance?.ready ? (
+          <span className="wallet-button-balance" data-testid={journeyTestIds.walletBalance}>
+            {balance.label}
+          </span>
+        ) : null}
       </Button>
 
       {open ? (
@@ -105,6 +112,9 @@ export function WalletControl() {
                   <div>
                     <strong>{wallet.selectedWallet?.name}</strong>
                     <code>{wallet.address}</code>
+                    {balance ? (
+                      <small className="wallet-account-balance">{balance.label}</small>
+                    ) : null}
                   </div>
                 </div>
                 <div className="wallet-account-actions">

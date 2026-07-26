@@ -2,6 +2,7 @@
 
 import {
   ArrowClockwiseIcon,
+  ArrowSquareOutIcon,
   CheckCircleIcon,
   LockKeyIcon,
   ShieldCheckIcon,
@@ -13,6 +14,9 @@ import {
 import { Button, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
 import { useDialogFocus } from '../accessibility/use-dialog-focus';
+import { resolveFundingPreflight } from '../solana/balance';
+import { getExplorerAddressUrl, getExplorerTransactionUrl } from '../solana/config';
+import { type ConfirmationPhase, describeConfirmation } from '../solana/confirmation';
 import type { DuelOpponentType, DuelTransactionIntent, DurableDuel } from '../solana/duel-client';
 import { useWalletAuth } from '../solana/wallet-auth-provider';
 import { useSolanaWallet } from '../solana/wallet-provider';
@@ -20,8 +24,10 @@ import { getDuelEntryStage, getPlainMoneySummary } from './duel-entry-flow';
 import { getDuelPaymentReviewCopy } from './duel-player-copy';
 
 type DuelEntryStepperProps = {
+  confirmationPhase: ConfirmationPhase | null;
   error: string | null;
   fundingPhase: 'idle' | 'signing' | 'confirming' | 'recovering';
+  fundingSignature: string | null;
   intent: DuelTransactionIntent | null;
   mode: DuelOpponentType;
   notice: string | null;
@@ -36,8 +42,10 @@ type DuelEntryStepperProps = {
 };
 
 export function DuelEntryStepper({
+  confirmationPhase,
   error,
   fundingPhase,
+  fundingSignature,
   intent,
   mode,
   notice,
@@ -171,8 +179,17 @@ export function DuelEntryStepper({
           ) : null}
           {stage === 'confirming' ? (
             <ProgressStep
-              label="Confirming escrow funding"
-              detail="The transaction was broadcast. DailyDraft is verifying finalized escrow state and will advance automatically."
+              label={
+                confirmationPhase
+                  ? `${describeConfirmation(confirmationPhase).label} on devnet`
+                  : 'Confirming escrow funding'
+              }
+              detail={
+                confirmationPhase
+                  ? `${describeConfirmation(confirmationPhase).detail} DailyDraft will advance automatically.`
+                  : 'The transaction was broadcast. DailyDraft is verifying finalized escrow state and will advance automatically.'
+              }
+              explorerUrl={fundingSignature ? getExplorerTransactionUrl(fundingSignature) : null}
             />
           ) : null}
           {stage === 'waiting' ? (
@@ -407,11 +424,20 @@ function FundingReviewStep({
   pending: boolean;
   tier: number;
 }) {
+  const wallet = useSolanaWallet();
   const summary = getPlainMoneySummary(tier, intent);
   const copy = getDuelPaymentReviewCopy(intent.feeAmountSol);
   const additionalRows = copy.rows.filter(
     (row) => row.label !== 'Platform fee now' && row.label !== 'Pack purchase',
   );
+  // Devnet duel funding is a plain SOL transfer of the platform fee — the USDC
+  // stake is settled by the escrow program, not charged here — so lamports are
+  // the only requirement to preflight.
+  const preflight = resolveFundingPreflight(wallet.balanceStatus, wallet.balances, {
+    lamports: intent.feeAmountLamports,
+    token: null,
+  });
+  const underfunded = preflight?.status === 'insufficient';
   return (
     <div className="duel-step-panel">
       <div className="duel-step-title">
@@ -461,22 +487,10 @@ function FundingReviewStep({
             <dt>Funding side</dt>
             <dd>{intent.fundingSide}</dd>
           </div>
-          <div>
-            <dt>Escrow</dt>
-            <dd>{shorten(intent.escrowAddress)}</dd>
-          </div>
-          <div>
-            <dt>Program</dt>
-            <dd>{shorten(intent.programId)}</dd>
-          </div>
-          <div>
-            <dt>Wallet</dt>
-            <dd>{shorten(intent.wallet)}</dd>
-          </div>
-          <div>
-            <dt>Fee recipient</dt>
-            <dd>{shorten(intent.feeRecipient)}</dd>
-          </div>
+          <AddressRow label="Escrow" address={intent.escrowAddress} />
+          <AddressRow label="Program" address={intent.programId} />
+          <AddressRow label="Wallet" address={intent.wallet} />
+          <AddressRow label="Fee recipient" address={intent.feeRecipient} />
           <div>
             <dt>Expires</dt>
             <dd>
@@ -495,26 +509,60 @@ function FundingReviewStep({
           ))}
         </ul>
       ) : null}
+      {preflight ? (
+        <p
+          className={underfunded ? 'duel-preflight duel-preflight-short' : 'duel-preflight'}
+          data-testid="duel-entry-preflight"
+        >
+          {underfunded ? <WarningCircleIcon size={15} weight="fill" /> : null}
+          {preflight.summary}
+        </p>
+      ) : null}
       <Button
         type="button"
         onClick={onConfirm}
-        disabled={pending}
+        disabled={pending || underfunded}
         className="duel-stepper-primary"
         data-testid="duel-entry-confirm-funding"
       >
         <LockKeyIcon size={17} weight="fill" />
-        Approve {intent.feeAmountSol} SOL in wallet
+        {underfunded ? 'Insufficient devnet SOL' : `Approve ${intent.feeAmountSol} SOL in wallet`}
       </Button>
+    </div>
+  );
+}
+
+/**
+ * One technical-details row whose value is an explorer link. Every address the
+ * review step discloses is independently checkable, so the disclosure is
+ * verifiable rather than merely visible.
+ */
+function AddressRow({ address, label }: { address: string; label: string }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>
+        <a
+          className="duel-explorer-link"
+          href={getExplorerAddressUrl(address)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {shorten(address)} <ArrowSquareOutIcon size={12} />
+        </a>
+      </dd>
     </div>
   );
 }
 
 function ProgressStep({
   detail,
+  explorerUrl,
   label,
   signature,
 }: {
   detail: string;
+  explorerUrl?: string | null;
   label: string;
   signature?: string;
 }) {
@@ -524,6 +572,17 @@ function ProgressStep({
       {signature ? <span className="duel-progress-signature">{signature}</span> : null}
       <h3>{label}</h3>
       <p>{detail}</p>
+      {explorerUrl ? (
+        <a
+          className="duel-explorer-link"
+          href={explorerUrl}
+          target="_blank"
+          rel="noreferrer"
+          data-testid="duel-entry-explorer-link"
+        >
+          Track on Solana Explorer <ArrowSquareOutIcon size={13} />
+        </a>
+      ) : null}
     </div>
   );
 }
