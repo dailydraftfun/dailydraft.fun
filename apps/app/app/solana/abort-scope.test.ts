@@ -38,6 +38,19 @@ describe('createAbortScope', () => {
     expect(() => scope.cancel()).not.toThrow();
   });
 
+  test('begins a live attempt again after a cancel', () => {
+    const scope = createAbortScope();
+
+    const cancelled = scope.begin();
+    scope.cancel();
+    const resumed = scope.begin();
+
+    // A retry after the funding attempt was abandoned has to get a usable
+    // signal, and the abandoned one has to stay abandoned.
+    expect(resumed.aborted).toBe(false);
+    expect(cancelled.aborted).toBe(true);
+  });
+
   test('builds each attempt through the injected controller factory', () => {
     const controllers: AbortController[] = [];
     const scope = createAbortScope(() => {

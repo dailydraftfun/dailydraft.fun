@@ -1325,6 +1325,12 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         );
       }
     } finally {
+      // The tracker is started before the server round-trip, so any throw
+      // between there and the await above would otherwise leave it polling the
+      // cluster for the rest of its 90-second budget against a signature this
+      // attempt has already given up on. Cancelling here is a no-op on the
+      // happy path, where the poll has already settled.
+      confirmationScope.current.cancel();
       setIntentPending(false);
     }
   }

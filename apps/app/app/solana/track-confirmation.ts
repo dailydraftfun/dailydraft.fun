@@ -28,6 +28,29 @@ function defaultSleep(ms: number): Promise<void> {
 }
 
 /**
+ * Wait out the poll interval, but stop waiting the moment the caller aborts.
+ *
+ * Without this the loop only notices cancellation at the top of its next
+ * iteration, so an unmount or a retry left a live timer holding the previous
+ * attempt's closure for up to a full interval.
+ */
+function sleepUntilAborted(
+  sleep: (ms: number) => Promise<void>,
+  ms: number,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  if (!signal) return sleep(ms);
+  return new Promise<void>((resolve) => {
+    const settle = () => {
+      signal.removeEventListener('abort', settle);
+      resolve();
+    };
+    signal.addEventListener('abort', settle, { once: true });
+    void sleep(ms).then(settle);
+  });
+}
+
+/**
  * Polls one broadcast signature until it is settled, failed, or past its
  * deadline, reporting every phase change as it goes.
  *
@@ -69,7 +92,7 @@ export async function trackConfirmation(
     }
     if (isTerminalPhase(phase) || isFundingSettled(phase)) break;
 
-    await sleep(CONFIRMATION_POLL_INTERVAL_MS);
+    await sleepUntilAborted(sleep, CONFIRMATION_POLL_INTERVAL_MS, options.signal);
   }
 
   return phase;

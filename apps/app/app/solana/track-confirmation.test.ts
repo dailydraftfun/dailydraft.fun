@@ -124,6 +124,29 @@ describe('trackConfirmation', () => {
     expect(sleeps).toEqual([]);
   });
 
+  test('stops waiting out the poll interval the moment the caller aborts', async () => {
+    const controller = new AbortController();
+    let releaseSleep = () => {};
+    // A sleep that never settles on its own: if the tracker waited on the timer
+    // rather than on the abort, this test would hang instead of failing.
+    const stalledSleep = () =>
+      new Promise<void>((resolve) => {
+        releaseSleep = resolve;
+      });
+
+    const tracked = trackConfirmation('sig', {
+      now: () => 0,
+      poll: async () => pending,
+      sleep: stalledSleep,
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    controller.abort();
+
+    expect(await tracked).toBe('submitted');
+    releaseSleep();
+  });
+
   test('runs without callbacks when only the resolved phase is wanted', async () => {
     const { options } = harness([{ commitment: 'confirmed', failed: false }]);
 
