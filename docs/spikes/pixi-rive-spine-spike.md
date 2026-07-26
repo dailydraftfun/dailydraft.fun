@@ -359,6 +359,16 @@ renderer. Pixi calls its WebGPU support check, dynamically loads
 [Application guide](https://pixijs.com/8.x/guides/components/application) and
 [renderer guide](https://pixijs.com/8.x/guides/components/renderers).
 
+Note that this WebGPU-first order is the spike's explicit choice, **not** Pixi's
+default. With no `preference` supplied, `autoDetectRenderer` falls back to
+`renderPriority = ['webgl', 'webgpu', 'canvas']` — WebGL-first (verified in the
+shipped `pixi.js@8.19.0` source, `lib/rendering/renderers/autoDetectRenderer.js`).
+Any future integration that wants WebGPU attempted first must pass the array
+explicitly; omitting it silently yields WebGL. This matters because the
+recommendation in this memo is to ship WebGL-first anyway, so the default and
+the recommendation happen to agree — but the agreement is a coincidence, not a
+guarantee to rely on.
+
 ### What happened on this machine
 
 - Normal WebGPU-first run: **WebGPU selected**.
@@ -504,6 +514,12 @@ contractual quotes.
 | Editor cost | Free for learning, but production `.riv` export requires a paid plan. Cadet is **$9/seat/month billed annually ($108/year)** or **$17 monthly**; Voyager is **$32/seat/month annually ($384/year)** or **$49 monthly** | Current purchase page: Essential **$69** and Professional **$379** promotional one-time prices per named user (listed as $99/$449); businesses at **$500,000+** annual revenue/funding require Enterprise at **$2,499 base + $379/user/year** |
 | SDK/distribution risk | Low runtime-license friction for an external SDK because MIT permits redistribution/modification | High enough to require counsel: third parties modifying a product/SDK containing the runtime may need their own editor license; the runtime is not FOSS |
 | Pack/card reveal fit | Strong: vector masks, foil motion, responsive artboards, named reveal states, and designer-owned iteration map directly to the content | Adequate but specialized: excellent if the pack has a rigged mascot or deforming illustrated character; ordinary wrappers/cards underuse the skeletal model |
+
+**Do not compare the two runtime-size figures head to head.** The Rive numbers
+are vendor-reported and cover WASM only, excluding the JS wrapper; the Spine
+number was measured locally and is a JS bundle with no WASM component. They were
+produced by different parties measuring different artifact types. Use each only
+against its own vendor's alternatives, never as a Rive-versus-Spine delta.
 
 Runtime-size sources:
 
