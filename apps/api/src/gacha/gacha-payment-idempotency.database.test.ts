@@ -29,7 +29,8 @@ if (process.env.REQUIRE_DB_INTEGRATION === '1' && !databaseUrl) {
   throw new Error('REQUIRE_DB_INTEGRATION=1 but DATABASE_URL is unset');
 }
 
-const describeDatabase = databaseUrl ? describe : describe.skip;
+const describeDatabase =
+  process.env.REQUIRE_DB_INTEGRATION === '1' && databaseUrl ? describe : describe.skip;
 
 describeDatabase('Gacha payment idempotency against a real Postgres', () => {
   let database: DatabaseClient;
@@ -89,15 +90,14 @@ describeDatabase('Gacha payment idempotency against a real Postgres', () => {
     if (!intentId) throw new Error('concurrent create returned no payment intent');
     expect(new Set(intents.map((intent) => intent.intentId)).size).toBe(1);
     expect(intents.filter((intent) => !intent.resumed)).toHaveLength(1);
-    await expect(
-      database.gachaRipPayment.count({
-        where: {
-          activeMachineKey: machineKey,
-          activePayerWallet: PAYER,
-          status: GachaRipPaymentStatus.PENDING,
-        },
-      }),
-    ).resolves.toBe(1);
+    const pendingPaymentCount = await database.gachaRipPayment.count({
+      where: {
+        activeMachineKey: machineKey,
+        activePayerWallet: PAYER,
+        status: GachaRipPaymentStatus.PENDING,
+      },
+    });
+    expect(pendingPaymentCount).toBe(1);
 
     const firstClaim = signedPayment(intentId, FIRST_BLOCKHASH);
     const secondClaim = signedPayment(intentId, SECOND_BLOCKHASH);
