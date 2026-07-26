@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { GachaRipStatus, GachaSport } from '@dailydraft/db';
+import { GachaRipPaymentStatus, GachaRipStatus, GachaSport } from '@dailydraft/db';
 
 import { GachaController } from './gacha.controller.js';
 import type { GachaInventorySnapshotService } from './gacha-inventory-snapshot.service.js';
@@ -161,6 +161,9 @@ describe('GachaController', () => {
       memoNonce: intentId,
       mint: 'DevnetUsdcMint111111111111111111111111111111',
       payerWallet: 'DevnetPayerWallet11111111111111111111111111',
+      resumed: false,
+      signature: null,
+      status: GachaRipPaymentStatus.PENDING,
     } satisfies Awaited<ReturnType<GachaPaymentService['createIntent']>>;
     const verifiedPayment = {
       amountMinor: '35000000',
@@ -194,6 +197,14 @@ describe('GachaController', () => {
       },
     } as unknown as GachaRipService;
     const payments = {
+      claimSignature: async (input: { intentId: string; signature: string }) => {
+        calls.push(`payment-signature:${input.intentId}:${input.signature}`);
+        return {
+          ...paymentIntent,
+          resumed: true,
+          signature: input.signature,
+        };
+      },
       createIntent: async (input: { machineKey: string; payerWallet: string }) => {
         calls.push(`payment-intent:${input.machineKey}:${input.payerWallet}`);
         return paymentIntent;
@@ -221,6 +232,13 @@ describe('GachaController', () => {
       controller.createPaymentIntent(params, { payerWallet: paymentIntent.payerWallet }),
     ).resolves.toEqual(paymentIntent);
     await expect(
+      controller.claimPaymentSignature({ intentId }, { signature: 'sig-fixture' }),
+    ).resolves.toEqual({
+      ...paymentIntent,
+      resumed: true,
+      signature: 'sig-fixture',
+    });
+    await expect(
       controller.verifyPaymentIntent({ intentId }, { signature: 'sig-fixture' }),
     ).resolves.toEqual(verifiedPayment);
     await expect(
@@ -232,6 +250,7 @@ describe('GachaController', () => {
       'odds:fixture-machine',
       'rip-commitment:fixture-machine',
       `payment-intent:fixture-machine:${paymentIntent.payerWallet}`,
+      `payment-signature:${intentId}:sig-fixture`,
       `payment-verify:${intentId}:sig-fixture`,
       'rip:fixture-machine:idem-fixture-key',
     ]);

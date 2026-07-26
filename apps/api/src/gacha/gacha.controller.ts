@@ -2,6 +2,7 @@ import { Body, Controller, Get, Header, Headers, HttpCode, Param, Post } from '@
 
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
 import {
+  ClaimGachaPaymentSignatureRequest,
   CreateFixtureGachaRipRequest,
   CreateGachaPaymentIntentRequest,
   GachaMachineParams,
@@ -58,6 +59,19 @@ export class GachaController {
     return this.payments.createIntent({
       machineKey: params.machineKey,
       payerWallet: input.payerWallet,
+    });
+  }
+
+  @Post('payment-intents/:intentId/signature')
+  @HttpCode(200)
+  @Header('cache-control', 'no-store')
+  claimPaymentSignature(
+    @Param() params: GachaPaymentIntentParams,
+    @Body() input: ClaimGachaPaymentSignatureRequest,
+  ) {
+    return this.payments.claimSignature({
+      intentId: params.intentId,
+      signature: input.signature,
     });
   }
 

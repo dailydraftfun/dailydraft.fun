@@ -208,6 +208,7 @@ enum GachaRipPaymentStatus {
   VERIFIED
   CONSUMED
   EXPIRED
+  FAILED
 }
 
 enum GachaInventoryExclusionReason {
@@ -969,6 +970,11 @@ model GachaRipPayment {
   status                  GachaRipPaymentStatus @default(PENDING)
   network                 SolanaNetwork         @default(DEVNET)
   payerWallet             String
+  /// Mirrors payerWallet + machineKey only while this intent is unresolved.
+  /// PostgreSQL's nullable composite uniqueness makes terminal rows release the
+  /// slot while preventing concurrent tabs/devices from opening a second one.
+  activePayerWallet       String?
+  activeMachineKey        String?
   destinationTokenAccount String
   mint                    String
   amountMinor             String
@@ -976,6 +982,7 @@ model GachaRipPayment {
   amountDecimals          Int                   @default(6)
   memoNonce               String                @unique
   signature               String?               @unique
+  signatureClaimedAt      DateTime?
   /// False when the payer used plain SPL `transfer`, which omits the mint. The
   /// destination token account's mint is resolved out of band before the intent
   /// is issued, so the transfer is still bound to one mint either way.
@@ -983,12 +990,15 @@ model GachaRipPayment {
   consumedByRipId         String?               @unique
   verifiedAt              DateTime?
   consumedAt              DateTime?
+  terminalAt              DateTime?
+  terminalReason          String?
   expiresAt               DateTime
   createdAt               DateTime              @default(now())
   updatedAt               DateTime              @updatedAt
   consumedByRip           GachaRip?             @relation(fields: [consumedByRipId], references: [id], onDelete: Restrict)
   machine                 GachaMachine          @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
 
+  @@unique([activePayerWallet, activeMachineKey])
   @@index([machineKey, createdAt])
   @@index([status, expiresAt])
   @@index([payerWallet, createdAt])

@@ -25,6 +25,11 @@ export class CreateGachaPaymentIntentRequest {
   payerWallet!: string;
 }
 
+export class ClaimGachaPaymentSignatureRequest {
+  @Matches(/^[1-9A-HJ-NP-Za-km-z]{64,96}$/)
+  signature!: string;
+}
+
 export class VerifyGachaPaymentRequest {
   @Matches(/^[1-9A-HJ-NP-Za-km-z]{64,96}$/)
   signature!: string;

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { DatabaseClient, Prisma } from '@dailydraft/db';
 import { GachaRipPaymentStatus } from '@dailydraft/db';
 import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
@@ -69,6 +71,24 @@ describe('gachaDepositConfigurationErrors', () => {
       } as never),
     ).toEqual(['devnet_required', 'usdc_token_account_missing', 'usdc_mint_missing']);
   });
+
+  test('migration enforces one unresolved payer-machine slot and terminal evidence', () => {
+    const migrationPath = fileURLToPath(
+      new URL(
+        '../../../../packages/db/prisma/migrations/20260726160000_gacha_active_payment_idempotency/migration.sql',
+        import.meta.url,
+      ),
+    );
+    const migration = readFileSync(migrationPath, 'utf8');
+
+    expect(migration).toContain(
+      'CREATE UNIQUE INDEX "GachaRipPayment_activePayerWallet_activeMachineKey_key"',
+    );
+    expect(migration).toContain('"GachaRipPayment_active_slot_check"');
+    expect(migration).toContain('"GachaRipPayment_signature_claim_check"');
+    expect(migration).toContain('"GachaRipPayment_terminal_evidence_check"');
+    expect(migration).toContain('duplicate unresolved Gacha payments require reconciliation');
+  });
 });
 
 describe('GachaPaymentService.createIntent', () => {
@@ -89,9 +109,93 @@ describe('GachaPaymentService.createIntent', () => {
       machineKey: MACHINE_KEY,
       mint: USDC_MINT,
       payerWallet: PAYER,
+      resumed: false,
+      signature: null,
+      status: GachaRipPaymentStatus.PENDING,
     });
     expect(intent.expiresAt.getTime()).toBeGreaterThan(Date.now());
     expect(database.payments[0]?.status).toBe(GachaRipPaymentStatus.PENDING);
+  });
+
+  test('resumes the one active intent for the same payer and machine', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+
+    const first = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    const replay = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+
+    expect(replay).toEqual({ ...first, resumed: true });
+    expect(database.payments).toHaveLength(1);
+  });
+
+  test('resumes persisted terms while deposit configuration is temporarily unavailable', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const first = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    process.env.DAILYDRAFT_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT = '';
+
+    await expect(
+      service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER }),
+    ).resolves.toEqual({ ...first, resumed: true });
+  });
+
+  test('atomically collapses concurrent creates onto one active intent', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+
+    const intents = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER }),
+      ),
+    );
+
+    expect(new Set(intents.map((intent) => intent.intentId)).size).toBe(1);
+    expect(intents.filter((intent) => !intent.resumed)).toHaveLength(1);
+    expect(database.payments).toHaveLength(1);
+  });
+
+  test('releases only an expired unclaimed intent and issues fresh terms', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const first = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    database.expire(first.intentId);
+
+    const replacement = await service.createIntent({
+      machineKey: MACHINE_KEY,
+      payerWallet: PAYER,
+    });
+
+    expect(replacement.intentId).not.toBe(first.intentId);
+    expect(database.payments).toHaveLength(2);
+    expect(database.payments[0]).toMatchObject({
+      activeMachineKey: null,
+      activePayerWallet: null,
+      status: GachaRipPaymentStatus.EXPIRED,
+      terminalReason: 'UNCLAIMED_INTENT_EXPIRED',
+    });
+  });
+
+  test('keeps an expired claimed intent active because broadcast outcome is ambiguous', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const first = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    await service.claimSignature({ intentId: first.intentId, signature: SIGNATURE });
+    database.expire(first.intentId);
+
+    const resumed = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+
+    expect(resumed).toMatchObject({
+      intentId: first.intentId,
+      resumed: true,
+      signature: SIGNATURE,
+      status: GachaRipPaymentStatus.PENDING,
+    });
+    expect(database.payments).toHaveLength(1);
   });
 
   test('refuses to issue deposit terms outside funded devnet mode', async () => {
@@ -182,12 +286,77 @@ describe('GachaPaymentService.createIntent', () => {
   });
 });
 
+describe('GachaPaymentService.claimSignature', () => {
+  test('records the first pre-broadcast signature and replays it idempotently', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+
+    const claimed = await service.claimSignature({
+      intentId: intent.intentId,
+      signature: SIGNATURE,
+    });
+    const replay = await service.claimSignature({
+      intentId: intent.intentId,
+      signature: SIGNATURE,
+    });
+
+    expect(claimed).toMatchObject({ resumed: true, signature: SIGNATURE });
+    expect(replay).toEqual(claimed);
+    expect(database.payments[0]?.signatureClaimedAt).toBeInstanceOf(Date);
+  });
+
+  test('rejects a different signature before broadcast', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    await service.claimSignature({ intentId: intent.intentId, signature: SIGNATURE });
+
+    await expect(
+      service.claimSignature({ intentId: intent.intentId, signature: OTHER_SIGNATURE }),
+    ).rejects.toThrow('already claimed a different signature');
+    expect(database.payments[0]?.signature).toBe(SIGNATURE);
+  });
+
+  test('allows exactly one winner when different signatures race', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+
+    const results = await Promise.allSettled([
+      service.claimSignature({ intentId: intent.intentId, signature: SIGNATURE }),
+      service.claimSignature({ intentId: intent.intentId, signature: OTHER_SIGNATURE }),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect([SIGNATURE, OTHER_SIGNATURE]).toContain(database.payments[0]?.signature ?? '');
+  });
+});
+
 describe('GachaPaymentService.verifyIntent', () => {
+  test('never reads the chain before the signature is claimed', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const rpc = new PaymentRpc();
+    const service = new GachaPaymentService(asClient(database), rpc);
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+
+    await expect(
+      service.verifyIntent({ intentId: intent.intentId, signature: SIGNATURE }),
+    ).rejects.toThrow('must be claimed before verification');
+    expect(rpc.transactionReads).toBe(0);
+  });
+
   test('promotes a pending intent once the memo-bound transfer has landed', async () => {
     configureDevnet();
     const database = new PaymentDatabase();
     const service = new GachaPaymentService(asClient(database), new PaymentRpc());
     const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    await service.claimSignature({ intentId: intent.intentId, signature: SIGNATURE });
     const rpc = new PaymentRpc({ envelope: paidEnvelope(intent.memoNonce) });
     const verifier = new GachaPaymentService(asClient(database), rpc);
 
@@ -214,6 +383,7 @@ describe('GachaPaymentService.verifyIntent', () => {
     const database = new PaymentDatabase();
     const service = new GachaPaymentService(asClient(database), new PaymentRpc());
     const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    await service.claimSignature({ intentId: intent.intentId, signature: SIGNATURE });
     const verifier = new GachaPaymentService(
       asClient(database),
       new PaymentRpc({ envelope: null }),
@@ -232,6 +402,7 @@ describe('GachaPaymentService.verifyIntent', () => {
     const database = new PaymentDatabase();
     const service = new GachaPaymentService(asClient(database), new PaymentRpc());
     const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    await service.claimSignature({ intentId: intent.intentId, signature: SIGNATURE });
     const verifier = new GachaPaymentService(
       asClient(database),
       new PaymentRpc({ envelope: paidEnvelope('gachapay_00000000000000000000000000000000') }),
@@ -240,9 +411,21 @@ describe('GachaPaymentService.verifyIntent', () => {
     await expect(
       verifier.verifyIntent({ intentId: intent.intentId, signature: SIGNATURE }),
     ).rejects.toThrow('MEMO_INTENT_MISMATCH');
+    expect(database.payments[0]).toMatchObject({
+      activeMachineKey: null,
+      activePayerWallet: null,
+      status: GachaRipPaymentStatus.FAILED,
+      terminalReason: 'MEMO_INTENT_MISMATCH',
+    });
+
+    const replacement = await service.createIntent({
+      machineKey: MACHINE_KEY,
+      payerWallet: PAYER,
+    });
+    expect(replacement.intentId).not.toBe(intent.intentId);
   });
 
-  test('expires an intent whose window closed before the transfer landed', async () => {
+  test('expires an unclaimed intent whose window closed before broadcast', async () => {
     configureDevnet();
     const database = new PaymentDatabase();
     const service = new GachaPaymentService(asClient(database), new PaymentRpc());
@@ -253,7 +436,7 @@ describe('GachaPaymentService.verifyIntent', () => {
 
     await expect(
       verifier.verifyIntent({ intentId: intent.intentId, signature: SIGNATURE }),
-    ).rejects.toThrow('has expired');
+    ).rejects.toThrow('expired before broadcast');
     expect(database.payments[0]?.status).toBe(GachaRipPaymentStatus.EXPIRED);
     // The chain is never read for an intent that already timed out.
     expect(rpc.transactionReads).toBe(0);
@@ -264,6 +447,7 @@ describe('GachaPaymentService.verifyIntent', () => {
     const database = new PaymentDatabase();
     const service = new GachaPaymentService(asClient(database), new PaymentRpc());
     const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    await service.claimSignature({ intentId: intent.intentId, signature: SIGNATURE });
     const rpc = new PaymentRpc({ envelope: paidEnvelope(intent.memoNonce) });
     const verifier = new GachaPaymentService(asClient(database), rpc);
 
@@ -281,6 +465,7 @@ describe('GachaPaymentService.verifyIntent', () => {
     const database = new PaymentDatabase();
     const service = new GachaPaymentService(asClient(database), new PaymentRpc());
     const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    await service.claimSignature({ intentId: intent.intentId, signature: SIGNATURE });
     const verifier = new GachaPaymentService(
       asClient(database),
       new PaymentRpc({ envelope: paidEnvelope(intent.memoNonce) }),
@@ -344,8 +529,11 @@ describe('GachaPaymentService.consumeVerifiedPayment', () => {
     });
 
     expect(database.payments[0]).toMatchObject({
+      activeMachineKey: null,
+      activePayerWallet: null,
       consumedByRipId: 'gacharip_0123456789abcdef0123456789abcdef',
       status: GachaRipPaymentStatus.CONSUMED,
+      terminalReason: 'CONSUMED_BY_RIP',
     });
     await expect(
       service.findConsumedRip(asTransaction(database), {
@@ -410,6 +598,7 @@ async function verifiedService(database: PaymentDatabase): Promise<GachaPaymentS
     asClient(database),
     new PaymentRpc({ envelope: paidEnvelope(intent.memoNonce) }),
   );
+  await service.claimSignature({ intentId: intent.intentId, signature: SIGNATURE });
   await service.verifyIntent({ intentId: intent.intentId, signature: SIGNATURE });
   return service;
 }
@@ -467,6 +656,8 @@ function paidEnvelope(intentId: string): SolanaTransactionEnvelope {
 }
 
 interface StoredPayment {
+  activeMachineKey: string | null;
+  activePayerWallet: string | null;
   amountCurrency: string;
   amountDecimals: number;
   amountMinor: string;
@@ -481,12 +672,16 @@ interface StoredPayment {
   mintVerifiedOnChain: boolean;
   payerWallet: string;
   signature: string | null;
+  signatureClaimedAt: Date | null;
   status: GachaRipPaymentStatus;
+  terminalAt: Date | null;
+  terminalReason: string | null;
   verifiedAt: Date | null;
 }
 
 class PaymentDatabase {
   readonly payments: StoredPayment[] = [];
+  private transactionTail: Promise<void> = Promise.resolve();
 
   constructor(private readonly machine: { active: boolean } = { active: true }) {}
 
@@ -510,20 +705,57 @@ class PaymentDatabase {
 
   readonly gachaRipPayment = {
     create: async ({ data }: { data: Partial<StoredPayment> }) => {
+      if (
+        data.activePayerWallet &&
+        data.activeMachineKey &&
+        this.payments.some(
+          (payment) =>
+            payment.activePayerWallet === data.activePayerWallet &&
+            payment.activeMachineKey === data.activeMachineKey,
+        )
+      ) {
+        throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+      }
       const payment: StoredPayment = {
+        activeMachineKey: null,
+        activePayerWallet: null,
         consumedAt: null,
         consumedByRipId: null,
         mintVerifiedOnChain: false,
         signature: null,
+        signatureClaimedAt: null,
         status: GachaRipPaymentStatus.PENDING,
+        terminalAt: null,
+        terminalReason: null,
         verifiedAt: null,
         ...data,
       } as StoredPayment;
       this.payments.push(payment);
       return payment;
     },
-    findUnique: async ({ where }: { where: { id: string } }) => {
-      return this.payments.find((payment) => payment.id === where.id) ?? null;
+    findUnique: async ({
+      where,
+    }: {
+      where:
+        | { id: string }
+        | {
+            activePayerWallet_activeMachineKey: {
+              activeMachineKey: string;
+              activePayerWallet: string;
+            };
+          };
+    }) => {
+      if ('id' in where) {
+        return this.payments.find((payment) => payment.id === where.id) ?? null;
+      }
+      const active = where.activePayerWallet_activeMachineKey;
+      return (
+        this.payments.find(
+          (payment) =>
+            payment.activeMachineKey === active.activeMachineKey &&
+            payment.activePayerWallet === active.activePayerWallet,
+        ) ?? null
+      );
     },
     updateMany: async ({
       data,
@@ -541,6 +773,26 @@ class PaymentDatabase {
       return { count: matched.length };
     },
   };
+
+  async $executeRaw(): Promise<number> {
+    return 1;
+  }
+
+  async $transaction<T>(
+    callback: (transaction: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    let release = () => {};
+    const previous = this.transactionTail;
+    this.transactionTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await callback(asTransaction(this));
+    } finally {
+      release();
+    }
+  }
 }
 
 class PaymentRpc extends SolanaRpcGateway {

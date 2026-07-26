@@ -204,7 +204,9 @@ paths:
         token account, amount, and a memoNonce the payer must echo in an SPL
         Memo instruction. The nonce is what binds an on-chain transfer to this
         intent, so a transfer that omits it can never be claimed as payment for
-        a rip. Intents expire, and each one funds at most one rip.
+        a rip. At most one unresolved intent exists for each payer and machine.
+        Repeating this request resumes that intent, including its claimed
+        signature, instead of creating deposit terms that could fund twice.
       x-dailydraft-availability: devnet-preview
       parameters:
         - $ref: '#/components/parameters/GachaMachineKey'
@@ -216,7 +218,7 @@ paths:
               $ref: '#/components/schemas/CreateGachaPaymentIntentRequest'
       responses:
         '201':
-          description: Deposit terms the payer must satisfy on chain
+          description: New or resumed deposit terms the payer must satisfy on chain
           headers:
             Cache-Control:
               schema:
@@ -234,13 +236,55 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /gacha/payment-intents/{intentId}/signature:
+    post:
+      operationId: claimGachaPaymentSignature
+      tags: [Gacha]
+      summary: Atomically bind the signature before broadcasting a Gacha payment
+      description: |
+        The first valid signature claimed for an active intent wins. Exact replay
+        resumes safely, while a different signature is rejected before broadcast.
+        A client must persist the returned response before broadcasting and use
+        createGachaPaymentIntent to recover the active intent on another tab or device.
+      x-dailydraft-availability: devnet-preview
+      parameters:
+        - $ref: '#/components/parameters/GachaPaymentIntentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimGachaPaymentSignatureRequest'
+      responses:
+        '200':
+          description: Active intent bound to this signature
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GachaPaymentIntent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /gacha/payment-intents/{intentId}/verify:
     post:
       operationId: verifyGachaPayment
       tags: [Gacha]
       summary: Verify the on-chain transfer that funds a Gacha payment intent
       description: |
-        Re-reads the finalized signature from the chain and checks the transfer
+        Requires the signature to have been claimed before broadcast, then
+        re-reads the finalized signature from the chain and checks the transfer
         against the intent it claims to fund: mint, destination token account,
         amount, payer, and the memoNonce. Nothing the client asserts is trusted.
         A verified intent is spendable by exactly one subsequent POST
@@ -2463,6 +2507,9 @@ components:
         - amountCurrency
         - memoNonce
         - expiresAt
+        - resumed
+        - signature
+        - status
       properties:
         intentId:
           $ref: '#/components/schemas/GachaPaymentIntentId'
@@ -2495,6 +2542,24 @@ components:
         expiresAt:
           type: string
           format: date-time
+        resumed:
+          type: boolean
+          description: True when the request returned an existing unresolved intent.
+        signature:
+          type: [string, 'null']
+          pattern: '^[1-9A-HJ-NP-Za-km-z]{64,96}$'
+          description: The first pre-broadcast signature claimed for this intent.
+        status:
+          type: string
+          enum: [PENDING, VERIFIED]
+    ClaimGachaPaymentSignatureRequest:
+      type: object
+      additionalProperties: false
+      required: [signature]
+      properties:
+        signature:
+          type: string
+          pattern: '^[1-9A-HJ-NP-Za-km-z]{64,96}$'
     VerifyGachaPaymentRequest:
       type: object
       additionalProperties: false
