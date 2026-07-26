@@ -1,6 +1,8 @@
 'use client';
 
-import { pullRarityLabel } from '@dailydraft/contracts';
+// Deliberately the `/pull-rarity` subpath, not the package root: the root barrel
+// imports `node:crypto`, which must never reach a client bundle.
+import { pullRarityLabel } from '@dailydraft/contracts/pull-rarity';
 import {
   ArrowCounterClockwiseIcon,
   ArrowsLeftRightIcon,
