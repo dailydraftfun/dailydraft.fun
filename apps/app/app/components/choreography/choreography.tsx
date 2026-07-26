@@ -27,6 +27,7 @@ export type UseRevealChoreographyOptions = {
   active: boolean;
   initiallySettled?: boolean;
   rarity: PullRarity;
+  reducedMotion?: boolean;
   sequenceKey?: number | string;
 };
 
@@ -34,9 +35,11 @@ export function useRevealChoreography({
   active,
   initiallySettled = false,
   rarity,
+  reducedMotion: reducedMotionOverride,
   sequenceKey = 0,
 }: UseRevealChoreographyOptions): ChoreographyController {
-  const reducedMotion = useReducedMotion() ?? false;
+  const motionPreference = useReducedMotion();
+  const reducedMotion = reducedMotionOverride ?? motionPreference ?? false;
   const [state, dispatch] = useReducer(choreographyReducer, undefined, () =>
     createChoreographyState(rarity, active && initiallySettled ? 'settled' : 'idle'),
   );
