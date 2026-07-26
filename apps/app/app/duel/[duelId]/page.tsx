@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import { cache } from 'react';
 import { resolveAppOrigin } from '../../app-origin';
+import { getExplorerAddressUrl } from '../../solana/config';
 import { buildDuelMetadata } from '../duel-metadata';
 import { DuelPrimaryAction } from '../duel-primary-action';
 import { DuelProofRefresh } from '../duel-proof-refresh';
@@ -373,7 +374,7 @@ function VerificationDrawer({ receipt }: { receipt: PublicDuelReceipt }) {
             <div>
               <dt>Fee escrow</dt>
               <dd className="break-all font-mono">
-                {receipt.custody.platformFee.escrowAddress ?? 'Not created'}
+                <ExplorerAddress address={receipt.custody.platformFee.escrowAddress} />
               </dd>
             </div>
             <div>
@@ -447,7 +448,9 @@ function ResultProof({ receipt }: { receipt: PublicDuelReceipt }) {
         </div>
         <div>
           <dt>Escrow</dt>
-          <dd className="break-all font-mono">{result.proof.context.escrowAddress}</dd>
+          <dd className="break-all font-mono">
+            <ExplorerAddress address={result.proof.context.escrowAddress} />
+          </dd>
         </div>
         <div>
           <dt>Creator result hash</dt>
@@ -513,6 +516,26 @@ function ParticipantRow({
         </span>
       </dd>
     </div>
+  );
+}
+
+/**
+ * Renders an on-chain account as an explorer link. Signature references already
+ * arrive with a server-built `explorerUrl`; escrow accounts do not, so the
+ * receipt derives one rather than leaving the address as text a reader would
+ * have to copy into a block explorer by hand.
+ */
+function ExplorerAddress({ address }: { address: string | null }) {
+  if (!address) return <>Not created</>;
+  return (
+    <a
+      className="duel-explorer-link"
+      href={getExplorerAddressUrl(address)}
+      target="_blank"
+      rel="noreferrer"
+    >
+      {address}
+    </a>
   );
 }
 

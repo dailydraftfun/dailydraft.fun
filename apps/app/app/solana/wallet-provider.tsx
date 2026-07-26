@@ -19,10 +19,21 @@ import {
   type StandardEventsFeature,
 } from '@wallet-standard/features';
 import bs58 from 'bs58';
-import { createContext, useCallback, useContext, useEffect, useEffectEvent, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { trackProductEvent } from '../analytics-client';
 import { createJourneyFixtureWallet, readJourneyFixtureBootstrap } from '../e2e/journey-wallet';
+import type { BalanceStatus, WalletBalances } from './balance';
 import { SOLANA_CHAIN, SOLANA_CLUSTER, SOLANA_RPC_URL, shortenAddress } from './config';
+import { createWalletBalanceRefresher } from './read-balances';
 import {
   isExplicitWalletRejection,
   WalletTransactionNotBroadcastError,
@@ -48,6 +59,9 @@ type WalletContextValue = {
   shortAddress: string | null;
   status: WalletStatus;
   networkStatus: NetworkStatus;
+  balances: WalletBalances | null;
+  balanceStatus: BalanceStatus;
+  refreshBalances: (mint?: string | null) => Promise<WalletBalances | null>;
   error: string | null;
   cluster: typeof SOLANA_CLUSTER;
   rpcUrl: string;
@@ -83,7 +97,38 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [status, setStatus] = useState<WalletStatus>('discovering');
   const [networkStatus, setNetworkStatus] = useState<NetworkStatus>('checking');
+  const [balances, setBalances] = useState<WalletBalances | null>(null);
+  const [balanceStatus, setBalanceStatus] = useState<BalanceStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  const balanceRequestGeneration = useRef(0);
+  const address = account?.address ?? null;
+  const balanceSession = useRef<{ account: WalletAccount | null; token: object }>({
+    account,
+    token: {},
+  });
+  if (balanceSession.current.account !== account) {
+    balanceSession.current = { account, token: {} };
+  }
+  const balanceSessionToken = balanceSession.current.token;
+
+  /**
+   * Binds the balance read to the connected address. Both the read policy and
+   * the status it resolves to live in read-balances.ts, which is reachable from
+   * a test. The immutable session token changes across disconnects even when the
+   * same account reconnects; only a current-session callback may advance the
+   * request generation.
+   */
+  const refreshBalances = useMemo(
+    () =>
+      createWalletBalanceRefresher({
+        address,
+        generation: balanceRequestGeneration,
+        getCurrentSessionToken: () => balanceSession.current.token,
+        sessionToken: balanceSessionToken,
+        sink: { setBalanceStatus, setBalances },
+      }),
+    [address, balanceSessionToken],
+  );
 
   const checkNetwork = useCallback(async (signal?: AbortSignal): Promise<boolean> => {
     setNetworkStatus('checking');
@@ -145,6 +190,13 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (account) trackProductEvent({ name: 'wallet_connected' });
   }, [account]);
+
+  useEffect(() => {
+    void refreshBalances();
+    return () => {
+      balanceRequestGeneration.current += 1;
+    };
+  }, [refreshBalances]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -282,10 +334,13 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     wallets,
     selectedWallet,
     account,
-    address: account?.address ?? null,
+    address,
     shortAddress: account ? shortenAddress(account.address) : null,
     status,
     networkStatus,
+    balances,
+    balanceStatus,
+    refreshBalances,
     error,
     canSignMessage: Boolean(selectedWallet?.features[SolanaSignMessage]),
     cluster: SOLANA_CLUSTER,
