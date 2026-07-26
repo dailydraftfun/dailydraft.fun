@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { LivePull } from './duel/live-duel-state';
 import { journeyTestIds } from './e2e/journey-test-ids';
@@ -74,6 +75,29 @@ describe('duel arena contract', () => {
     expect(markup).toContain('Rip together.');
     expect(markup).toContain('Winner takes all.');
     expect(markup).toContain('Solana devnet MVP');
+  });
+
+  test('starts each replacement confirmation scope before opening the wallet prompt', () => {
+    const source = readFileSync(new URL('./duel-arena.tsx', import.meta.url), 'utf8');
+    const approveStart = source.indexOf('async function approveIntent()');
+    const approveEnd = source.indexOf('async function recoverRejectedFundingIntent', approveStart);
+    const approveIntent = source.slice(approveStart, approveEnd);
+    const begin = approveIntent.indexOf(
+      'const confirmationSignal = confirmationScope.current.begin();',
+    );
+    const walletPrompt = approveIntent.indexOf(
+      'await walletConnection.signAndSendTransaction(transaction)',
+    );
+    const tracker = approveIntent.indexOf('signal: confirmationSignal');
+
+    expect(approveStart).toBeGreaterThanOrEqual(0);
+    expect(approveEnd).toBeGreaterThan(approveStart);
+    expect(begin).toBeGreaterThan(
+      approveIntent.indexOf('if (!intent || !authentication.sessionToken)'),
+    );
+    expect(begin).toBeLessThan(walletPrompt);
+    expect(tracker).toBeGreaterThan(walletPrompt);
+    expect(approveIntent.match(/confirmationScope\.current\.begin\(\)/g)).toHaveLength(1);
   });
 });
 

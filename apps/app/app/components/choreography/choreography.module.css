@@ -1,0 +1,155 @@
+.driver {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform-origin: left;
+}
+
+.flipScene {
+  position: relative;
+  display: grid;
+  inline-size: min(100%, 15rem);
+  max-inline-size: calc(100vw - 2rem);
+  aspect-ratio: 2.5 / 3.5;
+  place-items: center;
+  perspective: 900px;
+  contain: layout style;
+}
+
+.flipCard,
+.pack {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+.flipCard {
+  z-index: 1;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+.pack {
+  z-index: 2;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid rgb(from var(--opd-accent) r g b / 0.55);
+  border-radius: var(--opd-radius-xl);
+  background:
+    linear-gradient(145deg, rgb(from var(--opd-accent) r g b / 0.32), transparent 54%),
+    repeating-linear-gradient(
+      118deg,
+      rgb(from var(--opd-text-primary) r g b / 0.08) 0 2px,
+      transparent 2px 12px
+    ),
+    var(--opd-bg-tertiary);
+  box-shadow:
+    inset 0 0 0 1px rgb(from var(--opd-text-primary) r g b / 0.08),
+    0 18px 52px rgb(from var(--opd-bg-primary) r g b / 0.42);
+}
+
+.pack::before,
+.pack::after {
+  position: absolute;
+  inset-inline: 8%;
+  block-size: 9%;
+  border-block: 1px dashed rgb(from var(--opd-text-primary) r g b / 0.24);
+  content: "";
+}
+
+.pack::before {
+  inset-block-start: 4%;
+}
+
+.pack::after {
+  inset-block-end: 4%;
+}
+
+.packLabel {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  color: var(--opd-text-primary);
+  text-align: center;
+}
+
+.packLabel strong {
+  font-size: clamp(1rem, 5vw, 1.35rem);
+  letter-spacing: -0.03em;
+}
+
+.packLabel span {
+  color: var(--opd-accent);
+  font-family: var(--opd-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.celebration {
+  position: absolute;
+  z-index: 3;
+  inset: -4%;
+  border: 2px solid rgb(from var(--opd-accent) r g b / 0.56);
+  border-radius: calc(var(--opd-radius-xl) + 0.5rem);
+  box-shadow:
+    0 0 calc(1.5rem * var(--choreography-intensity))
+    rgb(from var(--opd-accent) r g b / calc(0.24 * var(--choreography-intensity))),
+    inset 0 0 calc(1rem * var(--choreography-intensity))
+    rgb(from var(--opd-warning) r g b / calc(0.16 * var(--choreography-intensity)));
+  pointer-events: none;
+}
+
+.skip {
+  min-block-size: 3rem;
+}
+
+.skip[aria-disabled="true"] {
+  opacity: 0.55;
+}
+
+.stageArtwork {
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+  backface-visibility: hidden;
+  transform-origin: center;
+  will-change: transform, opacity, filter;
+}
+
+[data-choreography-settled="true"] .flipCard,
+[data-choreography-settled="true"] .pack,
+[data-choreography-settled="true"] .stageArtwork {
+  will-change: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .driver {
+    display: none;
+  }
+
+  .flipCard,
+  .pack,
+  .stageArtwork {
+    will-change: auto;
+  }
+
+  .flipCard,
+  .pack,
+  .celebration,
+  .stageArtwork {
+    animation: none;
+    transition: none;
+  }
+
+  .celebration {
+    display: none;
+  }
+}
