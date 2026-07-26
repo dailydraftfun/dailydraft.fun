@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { CONFIRMATION_POLL_INTERVAL_MS, type ConfirmationPhase } from './confirmation';
-import { type ConfirmationPoll, trackConfirmation } from './track-confirmation';
+import {
+  type ConfirmationPoll,
+  sleepForConfirmation,
+  trackConfirmation,
+} from './track-confirmation';
 
 const pending: ConfirmationPoll = { commitment: null, failed: false };
 
@@ -35,6 +39,19 @@ function harness(polls: Array<ConfirmationPoll | Error>) {
 }
 
 describe('trackConfirmation', () => {
+  test('the default sleep handles timers and both abort timings', async () => {
+    await sleepForConfirmation(0);
+
+    const alreadyAborted = new AbortController();
+    alreadyAborted.abort();
+    await sleepForConfirmation(10_000, alreadyAborted.signal);
+
+    const inFlight = new AbortController();
+    const waiting = sleepForConfirmation(10_000, inFlight.signal);
+    inFlight.abort();
+    await waiting;
+  });
+
   test('polls the live RPC endpoint when no dependencies are injected', async () => {
     // Every other case here injects poll/now/sleep, which would leave the real
     // wiring — the defaults an actual funding flow runs on — untested.
@@ -146,6 +163,69 @@ describe('trackConfirmation', () => {
 
     expect(await tracking).toBe('submitted');
     expect(phases).toEqual(['submitted']);
+  });
+
+  test('stops waiting out the poll interval the moment the caller aborts', async () => {
+    const controller = new AbortController();
+    let releaseSleep = () => {};
+    // A sleep that never settles on its own: if the tracker waited on the timer
+    // rather than on the abort, this test would hang instead of failing.
+    const stalledSleep = () =>
+      new Promise<void>((resolve) => {
+        releaseSleep = resolve;
+      });
+
+    const tracked = trackConfirmation('sig', {
+      now: () => 0,
+      poll: async () => pending,
+      sleep: stalledSleep,
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    controller.abort();
+
+    expect(await tracked).toBe('submitted');
+    releaseSleep();
+  });
+
+  test('stops before sleeping when the caller aborts during an in-flight poll', async () => {
+    const controller = new AbortController();
+    let releasePoll = (_result: ConfirmationPoll) => {};
+    let sleepCalled = false;
+    const tracked = trackConfirmation('sig', {
+      now: () => 0,
+      poll: () =>
+        new Promise<ConfirmationPoll>((resolve) => {
+          releasePoll = resolve;
+        }),
+      sleep: () => {
+        sleepCalled = true;
+        return new Promise<void>(() => {});
+      },
+      signal: controller.signal,
+    });
+
+    await Promise.resolve();
+    controller.abort();
+    releasePoll(pending);
+
+    expect(await tracked).toBe('submitted');
+    expect(sleepCalled).toBe(false);
+  });
+
+  test('propagates a rejected injected sleep instead of hanging', async () => {
+    const controller = new AbortController();
+
+    expect(
+      trackConfirmation('sig', {
+        now: () => 0,
+        poll: async () => pending,
+        sleep: async () => {
+          throw new Error('sleep failed');
+        },
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow('sleep failed');
   });
 
   test('runs without callbacks when only the resolved phase is wanted', async () => {

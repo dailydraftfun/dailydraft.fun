@@ -12,6 +12,8 @@ export type AbortScope = {
   readonly begin: () => AbortSignal;
   /** Cancels the in-flight attempt, if any, without starting another. */
   readonly cancel: () => void;
+  /** Cancels only when `signal` still belongs to the active attempt. */
+  readonly cancelIf: (signal: AbortSignal) => boolean;
 };
 
 export function createAbortScope(
@@ -28,6 +30,12 @@ export function createAbortScope(
     cancel() {
       active?.abort();
       active = null;
+    },
+    cancelIf(signal) {
+      if (active?.signal !== signal) return false;
+      active.abort();
+      active = null;
+      return true;
     },
   };
 }

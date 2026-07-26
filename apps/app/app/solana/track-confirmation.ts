@@ -17,13 +17,51 @@ export type TrackConfirmationOptions = {
   poll?: (signature: string) => Promise<ConfirmationPoll>;
   /** Injected in tests so the deadline is reachable without real time passing. */
   now?: () => number;
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   signal?: AbortSignal;
 };
 
-function defaultSleep(ms: number): Promise<void> {
+export function sleepForConfirmation(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms));
+  if (signal.aborted) return Promise.resolve();
+
   return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+    const settle = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', settle);
+      resolve();
+    };
+    const timeout = setTimeout(settle, ms);
+    signal.addEventListener('abort', settle, { once: true });
+  });
+}
+
+/**
+ * Wait out the poll interval, but stop waiting the moment the caller aborts.
+ *
+ * Without this the loop only notices cancellation at the top of its next
+ * iteration. The default sleep also clears its timer when cancellation wins.
+ */
+function sleepUntilAborted(
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>,
+  ms: number,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) return Promise.resolve();
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (complete: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', settle);
+      complete();
+    };
+    const settle = () => finish(resolve);
+
+    signal.addEventListener('abort', settle, { once: true });
+    void sleep(ms, signal).then(settle, (error: unknown) => finish(() => reject(error)));
   });
 }
 
@@ -46,7 +84,7 @@ export async function trackConfirmation(
 ): Promise<ConfirmationPhase> {
   const poll = options.poll ?? ((value: string) => fetchSignatureCommitment(value));
   const now = options.now ?? (() => Date.now());
-  const sleep = options.sleep ?? defaultSleep;
+  const sleep = options.sleep ?? sleepForConfirmation;
 
   const startedAt = now();
   let phase: ConfirmationPhase = 'submitted';
@@ -71,7 +109,7 @@ export async function trackConfirmation(
     }
     if (isTerminalPhase(phase) || isFundingSettled(phase)) break;
 
-    await sleep(CONFIRMATION_POLL_INTERVAL_MS);
+    await sleepUntilAborted(sleep, CONFIRMATION_POLL_INTERVAL_MS, options.signal);
   }
 
   return phase;
