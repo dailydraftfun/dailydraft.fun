@@ -90,6 +90,7 @@ import {
 } from './duel-lobby-options';
 import { SharedOpponentControl, type SharedOpponentEntry } from './duel-shared-opponent';
 import { journeyTestIds } from './e2e/journey-test-ids';
+import { createAbortScope } from './solana/abort-scope';
 import { type ConfirmationPhase, describeConfirmation } from './solana/confirmation';
 import {
   advanceDuelLifecycle,
@@ -327,6 +328,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const matchmakingRestoreKey = useRef<string | null>(null);
   const duelRecoveryKey = useRef<string | null>(null);
   const lifecycleAdvanceKey = useRef<string | null>(null);
+  // Confirmation polling outlives the request that starts it, so it needs an
+  // owner that can cancel it on unmount or when a new funding attempt begins.
+  const confirmationScope = useRef(createAbortScope());
   const modeTabRefs = useRef<Partial<Record<Mode, HTMLButtonElement>>>({});
   const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
   const phase: Phase = liveDuel?.phase ?? 'lobby';
@@ -434,6 +438,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   useEffect(() => {
     trackProductEvent({ name: 'lobby_viewed' });
   }, []);
+
+  useEffect(() => confirmationScope.current.cancel, []);
 
   useEffect(() => {
     const storedDraft = window.localStorage.getItem(DUEL_ENTRY_DRAFT_STORAGE_KEY);
@@ -1252,7 +1258,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       // Started before the server round-trip and awaited after it, so the
       // stepper shows live cluster progress during a call it would otherwise
       // sit blank through, without adding any latency of its own.
-      const confirmation = trackConfirmation(signature, { onPhase: setConfirmationPhase });
+      const confirmation = trackConfirmation(signature, {
+        onPhase: setConfirmationPhase,
+        signal: confirmationScope.current.begin(),
+      });
       await submitSignedDuelIntent(
         intent.duelId,
         intent.id,
