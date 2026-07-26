@@ -164,8 +164,10 @@ function renderStepper(
 ): string {
   return renderToStaticMarkup(
     <DuelEntryStepper
+      confirmationPhase={null}
       error={null}
       fundingPhase="idle"
+      fundingSignature={null}
       intent={null}
       mode="direct"
       notice={null}

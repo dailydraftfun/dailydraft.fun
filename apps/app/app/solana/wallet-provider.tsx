@@ -22,7 +22,9 @@ import bs58 from 'bs58';
 import { createContext, useCallback, useContext, useEffect, useEffectEvent, useState } from 'react';
 import { trackProductEvent } from '../analytics-client';
 import { createJourneyFixtureWallet, readJourneyFixtureBootstrap } from '../e2e/journey-wallet';
+import type { BalanceStatus, WalletBalances } from './balance';
 import { SOLANA_CHAIN, SOLANA_CLUSTER, SOLANA_RPC_URL, shortenAddress } from './config';
+import { fetchLamportBalance, fetchTokenBalance } from './rpc-client';
 import {
   isExplicitWalletRejection,
   WalletTransactionNotBroadcastError,
@@ -48,6 +50,9 @@ type WalletContextValue = {
   shortAddress: string | null;
   status: WalletStatus;
   networkStatus: NetworkStatus;
+  balances: WalletBalances | null;
+  balanceStatus: BalanceStatus;
+  refreshBalances: (mint?: string | null) => Promise<WalletBalances | null>;
   error: string | null;
   cluster: typeof SOLANA_CLUSTER;
   rpcUrl: string;
@@ -83,7 +88,46 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [status, setStatus] = useState<WalletStatus>('discovering');
   const [networkStatus, setNetworkStatus] = useState<NetworkStatus>('checking');
+  const [balances, setBalances] = useState<WalletBalances | null>(null);
+  const [balanceStatus, setBalanceStatus] = useState<BalanceStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  const address = account?.address ?? null;
+
+  /**
+   * Reads the connected wallet's spendable balance off the same client-side RPC
+   * endpoint the genesis-hash check uses. `mint` is optional because most
+   * callers only care about SOL; passing one additionally resolves that SPL
+   * balance, and omitting it clears any previously read token amount rather
+   * than leaving a stale figure from another mint on screen.
+   *
+   * A failed read resolves to null instead of throwing: balance is advisory
+   * everywhere it is consumed, and an RPC hiccup must never be able to block a
+   * funding flow that would otherwise succeed.
+   */
+  const refreshBalances = useCallback(
+    async (mint?: string | null): Promise<WalletBalances | null> => {
+      if (!address) {
+        setBalances(null);
+        setBalanceStatus('idle');
+        return null;
+      }
+      setBalanceStatus('loading');
+      try {
+        const [lamports, token] = await Promise.all([
+          fetchLamportBalance(address),
+          mint ? fetchTokenBalance(address, mint) : Promise.resolve(null),
+        ]);
+        const next: WalletBalances = { lamports, token };
+        setBalances(next);
+        setBalanceStatus('ready');
+        return next;
+      } catch {
+        setBalanceStatus('error');
+        return null;
+      }
+    },
+    [address],
+  );
 
   const checkNetwork = useCallback(async (signal?: AbortSignal): Promise<boolean> => {
     setNetworkStatus('checking');
@@ -145,6 +189,10 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (account) trackProductEvent({ name: 'wallet_connected' });
   }, [account]);
+
+  useEffect(() => {
+    void refreshBalances();
+  }, [refreshBalances]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -282,10 +330,13 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     wallets,
     selectedWallet,
     account,
-    address: account?.address ?? null,
+    address,
     shortAddress: account ? shortenAddress(account.address) : null,
     status,
     networkStatus,
+    balances,
+    balanceStatus,
+    refreshBalances,
     error,
     canSignMessage: Boolean(selectedWallet?.features[SolanaSignMessage]),
     cluster: SOLANA_CLUSTER,
