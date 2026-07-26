@@ -16,8 +16,13 @@ import { gachaDepositConfigurationErrors } from './gacha-capability.js';
 import { SPL_MEMO_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID } from './gacha-payment.js';
 import { GachaPaymentService } from './gacha-payment.service.js';
 
-const PAYER = 'BkS1e5Kx8dCVAV4vXHzr4y6bTs2hUcHYD9Y4tzk6Bdub';
+// Both payers are real on-curve public keys. That is load-bearing rather than
+// cosmetic: preparing the transfer derives the payer's associated token account,
+// which is only defined for a key that lies on the Ed25519 curve.
+const PAYER = '9e5GLpBatYF8Utb9McZUxw96b17f22oJEtG72ZLUYqGV';
 const OTHER_PAYER = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
+/** Base58 and the right length, but no private key behind it. */
+const OFF_CURVE_WALLET = 'BkS1e5Kx8dCVAV4vXHzr4y6bTs2hUcHYD9Y4tzk6Bdub';
 const SOURCE_TOKEN_ACCOUNT = 'GjwcWFQYzemBtpUoN5fMAP2FZviTtMRWCmrppGuTthJS';
 const HOUSE_TOKEN_ACCOUNT = 'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW';
 const USDC_MINT = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
@@ -299,6 +304,111 @@ describe('GachaPaymentService.createIntent', () => {
     await expect(
       service.createIntent({ machineKey: MACHINE_KEY, payerWallet: 'devnet-fixture-wallet' }),
     ).rejects.toThrow('payerWallet is invalid');
+  });
+
+  test('rejects an off-curve wallet that could never sign the transfer', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+
+    // A program-derived address passes the base58 check but owns no associated
+    // token account, so it would fail at preparation instead — three calls later
+    // and as an unmapped 500. Refusing it here keeps the failure explicable.
+    await expect(
+      service.createIntent({ machineKey: MACHINE_KEY, payerWallet: OFF_CURVE_WALLET }),
+    ).rejects.toThrow('payerWallet is invalid');
+    expect(database.payments).toHaveLength(0);
+  });
+});
+
+describe('GachaPaymentService.prepareTransaction', () => {
+  test('answers a pending intent with a signable transfer bound to its nonce', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+
+    const prepared = await service.prepareTransaction(intent.intentId);
+
+    expect(prepared).toMatchObject({
+      amountMinor: TIER_PRICE.toString(),
+      intentId: intent.intentId,
+      lastValidBlockHeight: '1',
+      memoNonce: intent.memoNonce,
+      recentBlockhash: 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG',
+    });
+    expect(prepared.expectedMessageHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(prepared.serializedTransactionBase64.length).toBeGreaterThan(0);
+    // The intent stays spendable: preparing is not paying.
+    expect(database.payments[0]?.status).toBe(GachaRipPaymentStatus.PENDING);
+  });
+
+  test('expires the returned bytes with the blockhash rather than the intent', async () => {
+    configureDevnet();
+    const service = new GachaPaymentService(asClient(new PaymentDatabase()), new PaymentRpc());
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+
+    const prepared = await service.prepareTransaction(intent.intentId);
+
+    // An intent lives fifteen minutes and a blockhash about one, so the shorter
+    // deadline is the honest one to show a player deciding whether to sign.
+    expect(prepared.expiresAt.getTime()).toBeLessThan(intent.expiresAt.getTime());
+    expect(prepared.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 75_000);
+  });
+
+  test('can be called again for the same intent when the player hesitates', async () => {
+    configureDevnet();
+    const rpc = new PaymentRpc();
+    const service = new GachaPaymentService(asClient(new PaymentDatabase()), rpc);
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+
+    const first = await service.prepareTransaction(intent.intentId);
+    const second = await service.prepareTransaction(intent.intentId);
+
+    // Re-preparation is how a stale blockhash is recovered from, so it must not
+    // consume the intent or change what the payer is being asked to send.
+    expect(second.serializedTransactionBase64).toBe(first.serializedTransactionBase64);
+    expect(second.amountMinor).toBe(first.amountMinor);
+  });
+
+  test('reports an unknown intent rather than inventing terms for it', async () => {
+    configureDevnet();
+    const service = new GachaPaymentService(asClient(new PaymentDatabase()), new PaymentRpc());
+
+    await expect(
+      service.prepareTransaction('gachapay_4f6c1d90a37b48e2ac5518d0f27b6e34'),
+    ).rejects.toThrow('was not found');
+  });
+
+  test('rejects an intent id that is not a payment nonce', async () => {
+    configureDevnet();
+    const service = new GachaPaymentService(asClient(new PaymentDatabase()), new PaymentRpc());
+
+    await expect(service.prepareTransaction('gacharip_deadbeef')).rejects.toThrow(
+      'intentId is invalid',
+    );
+  });
+
+  test('refuses to re-issue bytes for an intent that has already been paid', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = await verifiedService(database);
+
+    await expect(service.prepareTransaction(database.payments[0]?.id ?? '')).rejects.toThrow(
+      'no longer awaiting a transfer',
+    );
+  });
+
+  test('expires an intent whose window closed before the player asked to sign', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const rpc = new PaymentRpc();
+    const service = new GachaPaymentService(asClient(database), rpc);
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    database.expire(intent.intentId);
+
+    await expect(service.prepareTransaction(intent.intentId)).rejects.toThrow('has expired');
+    expect(database.payments[0]?.status).toBe(GachaRipPaymentStatus.EXPIRED);
   });
 });
 

@@ -62,6 +62,16 @@ export class GachaController {
     });
   }
 
+  // Preparation is a POST despite reading like a fetch: each call burns a fresh
+  // blockhash and can expire the intent as a side effect, neither of which a
+  // cacheable GET should do.
+  @Post('payment-intents/:intentId/transaction')
+  @HttpCode(201)
+  @Header('cache-control', 'no-store')
+  prepareTransaction(@Param() params: GachaPaymentIntentParams) {
+    return this.payments.prepareTransaction(params.intentId);
+  }
+
   @Post('payment-intents/:intentId/signature')
   @HttpCode(200)
   @Header('cache-control', 'no-store')

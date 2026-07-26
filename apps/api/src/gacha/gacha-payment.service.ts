@@ -7,6 +7,8 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { PublicKey } from '@solana/web3.js';
+
 import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
@@ -14,6 +16,7 @@ import { SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
 import { readHouseTreasuryConfig } from '../treasury/house-treasury.policy.js';
 import { gachaDepositConfigurationErrors, gachaDevnetModeEnabled } from './gacha-capability.js';
 import { GachaPaymentError, verifyGachaPaymentTransaction } from './gacha-payment.js';
+import { buildGachaPaymentTransaction } from './gacha-transaction.js';
 import { gachaFixtureModeEnabled } from './sports-pack-gacha.fixture.js';
 
 // A rip is paid for in four moves, each of which has to survive the client
@@ -29,6 +32,8 @@ import { gachaFixtureModeEnabled } from './sports-pack-gacha.fixture.js';
 // release. Guarded writes keep replay idempotent after the lock is released.
 
 const GACHA_PAYMENT_INTENT_TTL_MS = 15 * 60 * 1000;
+/** Matches `duel-funding.service.ts`: how long a prepared blockhash is worth signing. */
+const BLOCKHASH_REVIEW_WINDOW_MS = 75_000;
 const BASE58_ADDRESS_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const SOLANA_SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,96}$/;
 const MEMO_NONCE_PATTERN = /^gachapay_[a-f0-9]{32}$/;
@@ -57,6 +62,20 @@ export interface GachaPaymentIntent {
   /** The only signature allowed to settle this active intent, once claimed. */
   signature: string | null;
   status: GachaRipPaymentStatus;
+}
+
+export interface PreparedGachaPaymentTransaction {
+  amountMinor: string;
+  /** sha256 of the compiled message, so the wallet can detect tampering. */
+  expectedMessageHash: string;
+  /** The earlier of the intent's own deadline and the blockhash review window. */
+  expiresAt: Date;
+  intentId: string;
+  lastValidBlockHeight: string;
+  memoNonce: string;
+  recentBlockhash: string;
+  serializedTransactionBase64: string;
+  sourceTokenAccount: string;
 }
 
 export interface VerifyGachaPaymentInput {
@@ -141,7 +160,7 @@ export class GachaPaymentService {
       );
     }
     const machineKey = requireKey(input.machineKey, 'machineKey');
-    const payerWallet = requireAddress(input.payerWallet, 'payerWallet');
+    const payerWallet = requireSignerWallet(input.payerWallet, 'payerWallet');
 
     const resumed = await this.findOrExpireActiveIntent(payerWallet, machineKey);
     if (resumed) return toPaymentIntent(resumed, true);
@@ -261,6 +280,55 @@ export class GachaPaymentService {
       throw new ConflictException('Gacha payment intent already claimed a different signature');
     }
     return toPaymentIntent(outcome.payment, true);
+  }
+
+  /**
+   * Build the unsigned transfer that answers one pending intent.
+   *
+   * Preparation is a separate call from `createIntent` rather than part of it
+   * because a blockhash lives about a minute while an intent lives fifteen. A
+   * player who opens the machine, reads the odds, and then decides to rip would
+   * otherwise be handed a transaction the cluster has already forgotten; asking
+   * for the bytes at signing time means the blockhash is always fresh, and a
+   * player who hesitates can simply prepare again against the same intent.
+   */
+  async prepareTransaction(intentId: string): Promise<PreparedGachaPaymentTransaction> {
+    const id = requireMemoNonce(intentId);
+    const payment = await this.database.gachaRipPayment.findUnique({ where: { id } });
+    if (!payment) throw new ConflictException('Gacha payment intent was not found');
+    if (payment.status !== GachaRipPaymentStatus.PENDING) {
+      throw new ConflictException('Gacha payment intent is no longer awaiting a transfer');
+    }
+    if (payment.expiresAt.getTime() <= Date.now()) {
+      await this.expireIntent(id);
+      throw new ConflictException('Gacha payment intent has expired');
+    }
+
+    const latestBlockhash = await this.rpc.getLatestBlockhash();
+    const built = buildGachaPaymentTransaction({
+      amountMinor: BigInt(payment.amountMinor),
+      decimals: payment.amountDecimals,
+      destinationTokenAccount: payment.destinationTokenAccount,
+      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      memoNonce: payment.memoNonce,
+      mint: payment.mint,
+      payerWallet: payment.payerWallet,
+      recentBlockhash: latestBlockhash.blockhash,
+    });
+
+    return {
+      amountMinor: payment.amountMinor,
+      expectedMessageHash: built.expectedMessageHash,
+      expiresAt: new Date(
+        Math.min(payment.expiresAt.getTime(), Date.now() + BLOCKHASH_REVIEW_WINDOW_MS),
+      ),
+      intentId: id,
+      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight.toString(),
+      memoNonce: payment.memoNonce,
+      recentBlockhash: latestBlockhash.blockhash,
+      serializedTransactionBase64: built.serializedTransactionBase64,
+      sourceTokenAccount: built.sourceTokenAccount,
+    };
   }
 
   /**
@@ -602,8 +670,25 @@ function requireKey(value: string, field: string): string {
   return canonical;
 }
 
-function requireAddress(value: string, field: string): string {
+/**
+ * Accept only a wallet that could actually sign the transfer this intent bills.
+ *
+ * Base58 shape is not enough. A program-derived address matches the pattern but
+ * lies off the Ed25519 curve, which means it has no private key, no associated
+ * token account, and no way to authorise a debit. Deriving the payer's ATA in
+ * `buildGachaPaymentTransaction` throws on exactly that case — three calls later
+ * and inside a code path Nest can only report as a 500. Refusing it at intent
+ * creation turns a guaranteed later crash into an immediate, explicable 409.
+ */
+function requireSignerWallet(value: string, field: string): string {
   if (!isBase58Address(value)) throw new ConflictException(`${field} is invalid`);
+  try {
+    if (!PublicKey.isOnCurve(new PublicKey(value).toBytes())) {
+      throw new ConflictException(`${field} is invalid`);
+    }
+  } catch {
+    throw new ConflictException(`${field} is invalid`);
+  }
   return value;
 }
 

@@ -236,6 +236,46 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /gacha/payment-intents/{intentId}/transaction:
+    post:
+      operationId: prepareGachaPaymentTransaction
+      tags: [Gacha]
+      summary: Build the unsigned transfer that funds a Gacha payment intent
+      description: |
+        Returns the exact unsigned transaction the payer should sign: a
+        transferChecked of the intent's amount from the payer's associated token
+        account to the house treasury, plus an SPL Memo carrying the memoNonce.
+        The server builds it so the memo, mint, and amount cannot drift from the
+        intent, and publishes expectedMessageHash so the wallet can prove the
+        bytes it is about to sign are the bytes that were prepared.
+
+        This is a POST rather than a GET because each call spends a fresh
+        blockhash and can expire a lapsed intent as a side effect. It is safe to
+        repeat: preparing does not consume the intent, so a player whose
+        blockhash went stale can simply ask again.
+      x-dailydraft-availability: devnet-preview
+      parameters:
+        - $ref: '#/components/parameters/GachaPaymentIntentId'
+      responses:
+        '201':
+          description: Unsigned transaction ready for wallet inspection and signature
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreparedGachaPaymentTransaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /gacha/payment-intents/{intentId}/signature:
     post:
       operationId: claimGachaPaymentSignature
@@ -2552,6 +2592,56 @@ components:
         status:
           type: string
           enum: [PENDING, VERIFIED]
+    PreparedGachaPaymentTransaction:
+      type: object
+      additionalProperties: false
+      required:
+        - intentId
+        - memoNonce
+        - amountMinor
+        - sourceTokenAccount
+        - recentBlockhash
+        - lastValidBlockHeight
+        - expiresAt
+        - expectedMessageHash
+        - serializedTransactionBase64
+      properties:
+        intentId:
+          $ref: '#/components/schemas/GachaPaymentIntentId'
+        memoNonce:
+          allOf:
+            - $ref: '#/components/schemas/GachaPaymentIntentId'
+          description: Echoed from the intent; already encoded into the memo instruction.
+        amountMinor:
+          type: string
+          pattern: '^[0-9]{1,20}$'
+        sourceTokenAccount:
+          allOf:
+            - $ref: '#/components/schemas/SolanaAddress'
+          description: |
+            The payer's associated token account for the mint, which the transfer
+            debits. No account-creation instruction is included: a payer with no
+            token account has no balance to send.
+        recentBlockhash:
+          type: string
+        lastValidBlockHeight:
+          type: string
+          pattern: '^\d+$'
+        expiresAt:
+          type: string
+          format: date-time
+          description: |
+            The earlier of the intent's own deadline and the blockhash review
+            window, so the deadline shown to a player is the one that binds.
+        expectedMessageHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          description: |
+            sha256 of the compiled message. The wallet recomputes it before
+            signing to prove the bytes were not altered in transit.
+        serializedTransactionBase64:
+          type: string
+          contentEncoding: base64
     ClaimGachaPaymentSignatureRequest:
       type: object
       additionalProperties: false
