@@ -403,6 +403,15 @@ The benchmark harness used Brave through Playwright and the Chromium debugging
 protocol. The relevant measurement path was:
 
 ```ts
+const braveExecutable =
+  '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
+const baseUrl = 'http://127.0.0.1:3001';
+const browser = await chromium.launch({
+  args: ['--enable-unsafe-webgpu'],
+  executablePath: braveExecutable,
+  headless: true,
+});
+
 const context = await browser.newContext({
   deviceScaleFactor: 2,
   hasTouch: true,
@@ -435,6 +444,19 @@ await cdp.send('HeapProfiler.collectGarbage');
 const heap = await cdp.send('Runtime.getHeapUsage');
 ```
 
+The production server was started from `apps/app` with
+`NEXT_TELEMETRY_DISABLED=1 bunx next start -p 3001` after the measured build.
+The forced-WebGL context installed this script before creating its page:
+
+```ts
+await context.addInitScript(() => {
+  Object.defineProperty(Navigator.prototype, 'gpu', {
+    configurable: true,
+    get: () => undefined,
+  });
+});
+```
+
 The reported percentiles sort `profile.fpsSamples` and `profile.frameTimes`
 independently, then select `floor(sampleCount * percentile)`. The memory run
 used the same context and collected heap after the tier-1 route, after the
@@ -463,11 +485,15 @@ Note that this WebGPU-first order is the spike's explicit choice, **not** Pixi's
 default. With no `preference` supplied, `autoDetectRenderer` falls back to
 `renderPriority = ['webgl', 'webgpu', 'canvas']` — WebGL-first (verified in the
 shipped `pixi.js@8.19.0` source, `lib/rendering/renderers/autoDetectRenderer.js`).
-The literal `'canvas'` entry remains in that default priority array, but the
-pinned Pixi v8 package does not bundle or register a Canvas renderer
-implementation. It therefore does not provide a usable Canvas fallback: if
-neither WebGL nor WebGPU initializes, the application must fall back outside
-Pixi to the existing DOM/CSS treatment.
+The literal `'canvas'` entry is reachable: the pinned package bundles, exports,
+and registers `CanvasRenderer`, and `autoDetectRenderer` reaches it without a
+capability check when earlier candidates fail. Pixi's renderer guide still
+labels Canvas as coming soon, so production must not rely on that path. To fail
+closed, pass an explicit array such as `['webgl']` or
+`['webgpu', 'webgl']`; a string or omitted preference appends the unsupported
+Canvas candidate and can prevent initialization from throwing. When every
+explicit candidate fails, destroy any partial renderer state and mount the
+existing DOM/CSS treatment.
 Any future integration that wants WebGPU attempted first must pass the array
 explicitly; omitting it silently yields WebGL. This matters because the
 recommendation in this memo is to ship WebGL-first anyway, so the default and
@@ -573,7 +599,9 @@ minimum-device claim.
 The forced WebGL fallback run was a branch check at 1× CPU, not a comparable
 low-end benchmark: 55.27 mean fps and 53.01 5th-percentile fps under the same
 60-fps cap. Headless scheduling makes the absolute 1× figure unsuitable for a
-WebGPU-versus-WebGL performance conclusion.
+WebGPU-versus-WebGL performance conclusion. The recommended WebGL production
+path therefore remains unmeasured under the 6× profile and requires a matched
+run before rollout.
 
 ### Memory
 
@@ -616,9 +644,9 @@ contractual quotes.
 | Designer/developer contract | State machines and data-bound view models are designed as an explicit handoff contract; real-time collaboration is available on team plans | Exported skeleton/atlas data plus named animations, skins, and runtime tracks; disciplined version synchronization between editor and runtime |
 | Pixi integration | Separate Rive JS/WASM renderer; can be driven from a custom loop, but is not a native Pixi display-object plugin | Official `spine-pixi-v8` installs loaders and render pipes directly into Pixi WebGPU and WebGL |
 | Web runtime | `canvas-lite`, Canvas, or recommended WebGL2 runtime; WASM is a separate fetch unless self-hosted/bundled | TypeScript runtime layered directly on Pixi; atlas and skeleton assets are additional |
-| Runtime size | Vendor-reported Brotli-9 WASM: **222 KB** `canvas-lite`, **567 KB** Canvas, **648 KB** WebGL2; JS and `.riv` assets are additional | Measured official `spine-pixi-v8@4.3.13` minified IIFE: **232,581 B raw, 67,219 B gzip-9, 62,410 B Brotli-9**; Pixi and atlas/skeleton assets are additional |
+| Runtime size | Vendor table: Brotli-9 WASM **222 KB** `canvas-lite`, **567 KB** Canvas, **648 KB** WebGL2. Measured shipping `@rive-app/canvas-lite@2.39.1`: **870,953 B raw / 270,937 B Brotli-9** WASM, plus a **411,947 B raw** JS wrapper and `.riv` assets | Measured official `spine-pixi-v8@4.3.13` minified IIFE: **232,581 B raw, 67,219 B gzip-9, 62,410 B Brotli-9**; Pixi and atlas/skeleton assets are additional |
 | Runtime license | Official runtimes are open source, **MIT**, allowed for personal and commercial applications; redistribution must retain the copyright and permission notice | Source-available custom Spine Runtimes License; integration requires the applicable editor license, and the notice must travel with the product |
-| Editor cost | Free for learning, but production `.riv` export requires a paid plan. Cadet is **$9/seat/month billed annually ($108/year)** or **$17 monthly**; Voyager is **$32/seat/month annually ($384/year)** or **$49 monthly** | Current purchase page: Essential **$69** and Professional **$379** promotional one-time prices per named user (listed as $99/$449); businesses at **$500,000+** annual revenue/funding require Enterprise at **$2,499 base + $379/user/year** |
+| Editor cost | Free for learning, but production `.riv` export requires a paid plan. Cadet is **$9/seat/month billed annually ($108/year)** or **$17 monthly**. Rive's cited sources disagree on Voyager: the account docs list **$39 monthly / $304 annually**, while the marketing page displays **$32/seat/month** without the same billing detail; verify at purchase | Current purchase page: Essential **$69** and Professional **$379** promotional one-time prices per named user (listed as $99/$449); businesses at **$500,000+** annual revenue/funding require Enterprise at **$2,499 base + $379/user/year** |
 | SDK/distribution risk | Low runtime-license friction for an external SDK because MIT permits redistribution/modification when its copyright and permission notice are retained | High enough to require counsel: third parties modifying a product/SDK containing the runtime may need their own editor license; the runtime is not FOSS |
 | Pack/card reveal fit | Strong: vector masks, foil motion, responsive artboards, named reveal states, and designer-owned iteration map directly to the content | Adequate but specialized: excellent if the pack has a rigged mascot or deforming illustrated character; ordinary wrappers/cards underuse the skeletal model |
 
@@ -632,7 +660,9 @@ Runtime-size sources:
 
 - Rive's [runtime-size table](https://rive.app/docs/runtimes/runtime-sizes)
   reports Brotli-9 WASM sizes and identifies WASM as the majority of runtime
-  weight.
+  weight. The measured `@rive-app/canvas-lite@2.39.1` artifact is larger than
+  that table, so the published figures appear to lag shipping releases.
+  Production budgets must measure the exact pinned package at integration time.
 - The Spine figure was measured from the official npm/unpkg artifact linked by
   the [maintained `spine-pixi-v8` documentation](https://esotericsoftware.com/spine-pixi):
   `@esotericsoftware/spine-pixi-v8@4.3.13/dist/iife/spine-pixi-v8.min.js`,
@@ -703,9 +733,11 @@ Recommended gates:
 4. Cap resolution before removing semantic content: 2 → 1.5 → 1 DPR.
 5. Reduce pooled particles and filters next; keep the reveal duration and
    result timing stable.
-6. On renderer initialization error, `webglcontextlost`, WebGPU device loss, or
-   a second failed recovery, destroy the canvas and mount tier 1. Never leave a
-   blank reveal.
+6. Initialize with an explicit supported-renderer array; do not use a string or
+   omit `preference`, because Pixi can otherwise fall through to its
+   not-yet-supported Canvas renderer. On initialization error,
+   `webglcontextlost`, WebGPU device loss, or a second failed recovery, destroy
+   the canvas and mount tier 1. Never leave a blank reveal.
 7. Cache the chosen quality for the session but permit downward movement after
    thermal or frame-pressure evidence. Do not automatically promote mid-reveal.
 8. Lazy-load Pixi/Rive only on entry to the reveal. Lobby cards, history, and
@@ -723,7 +755,8 @@ canvas.
 1. **Physical low-end device profile.** Repeat on at least one Android Go/class
    device and an older supported iPhone, including 60-second thermal soak,
    battery/energy view, Safari/Chrome, background/resume, and orientation
-   changes.
+   changes. Include a WebGL run under the same 6× CPU profile used for WebGPU;
+   the recommended production renderer currently has only a 1× branch check.
 2. **Real assets and GPU memory.** Replace vectors with representative card
    textures, compressed atlases, masks, and filters. Measure upload stalls,
    decoded image memory, GPU allocation, context loss, and post-unmount release.
