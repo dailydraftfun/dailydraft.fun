@@ -20,8 +20,20 @@ Source epics: #205 (reveal choreography), #206 (PixiJS SDK), #207 (DailyDraft En
 ## Tech stack ruling
 
 - Tier 1 (now): DOM-level juice — Motion, CSS holographic cards (pokemon-cards-css technique), canvas-confetti, howler, `navigator.vibrate`. No WebGL.
-- Tier 2: PixiJS v8 rendering SDK (industry standard for HTML5 casino; Stake Engine's web SDK is Pixi). Rive-vs-Spine decided by spike #215. Three.js/R3F only for cinematic set pieces.
+- Tier 2: PixiJS v8 rendering SDK (industry standard for HTML5 casino; Stake Engine's web SDK is Pixi). Three.js/R3F only for cinematic set pieces.
+- **Authored animation: Rive, not Spine** (settled by spike #215, PR #229 — full memo `docs/spikes/pixi-rive-spine-spike.md`). Rive owns the pack shell, logo, masks, and state-driven reveal beats; Pixi/app code keeps scene orchestration, particles, card data, sound, haptics, and degradation policy. Start on Rive `canvas-lite`, keeping text/layout/audio in Pixi or DOM so the smallest runtime stays viable.
+- **Ship Pixi on WebGL first.** WebGPU stays behind a capability/telemetry cohort until the real-device matrix is green — Pixi's own guide still recommends WebGL for production. Note `autoDetectRenderer`'s default is `['webgl','webgpu','canvas']`, so a WebGPU-first attempt requires passing the `preference` array explicitly; omitting it silently yields WebGL.
+- **Lazy-load the renderer** only when a tier-2 reveal is entered: a named Pixi import inside the dynamic scene cost 179.6 KiB gzip in a real `apps/app` build; a full namespace import cost 227.6 KiB.
+- Rive's runtime is **MIT**, which is why it survives the `@dailydraft/engine` extraction trigger above. Spine's runtime is source-available with an editor-license obligation that travels with any redistributed SDK — adopting Spine later means accepting that for anything externally consumable. Reversal conditions for the Rive call are recorded in the memo's Decision section.
 - Tier 3: RGS — one versioned `session → commit → play → reveal → settle` contract that all modes register math configs against; `dailydraft.rgs-proof.v1` envelope (configHash, rulesHash, serverSeedHash/serverSeed, clientSeed, resultHash), Solana anchoring Merkle-batched at commit and settle. Full design memo: `docs/competitor-audit/stake-engine-audit.md`.
+
+## Shared choreography module (tier 1, shipped)
+
+- `apps/app/app/components/choreography/` (PR #228) is the canonical reveal substrate: beats `idle → anticipation → hold → reveal → celebrate → settled`, per-beat cubic-bezier easings, `PullRarity`-keyed celebration timing/intensity.
+- **Structural invariant**: `choreography-motion.ts` is pure — no React, no DOM. Motion binding lives only in `choreography.tsx`. Keep it that way; it is what makes the changed-coverage gate passable (#228 scored 95.3% lines / 86.0% branches).
+- Interrupt, fast-forward, and settle all converge on a deep-equal terminal state; reduced-motion dispatches `fast-forward` at the state-machine level rather than merely zeroing CSS durations, so information is never withheld. Any new beat must preserve both properties.
+- Builds on `holo-card/` (PR #224), the fail-closed tier-1 baseline and the bottom rung of the degradation ladder.
+- Consumers pending: #211 (duel migration onto this module), #212 (rarity-scaled particles — deliberately not implemented here), #213 (audio/haptics), #214 (e2e proof).
 
 ## Gotchas
 
