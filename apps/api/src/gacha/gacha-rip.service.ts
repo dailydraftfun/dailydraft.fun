@@ -3,6 +3,7 @@ import { type DatabaseClient, GachaRipStatus, type Prisma } from '@dailydraft/db
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { rarityForSerializedValue } from '../common/pull-rarity.js';
+import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import { resolveGachaCapability } from './gacha-capability.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
@@ -136,11 +137,11 @@ export class GachaRipService {
 
     const outcome = await this.database.$transaction(
       async (transaction): Promise<CreateFixtureRipOutcome> => {
-        await transaction.$queryRaw`
-        SELECT pg_advisory_xact_lock(
-          hashtextextended(${oddsKey}, ${GACHA_ODDS_LOCK_NAMESPACE})
-        )
-      `;
+        await acquireNamespacedAdvisoryTransactionLock(
+          transaction,
+          oddsKey,
+          GACHA_ODDS_LOCK_NAMESPACE,
+        );
 
         if (idempotencyKey) {
           const existing = await transaction.gachaRip.findFirst({

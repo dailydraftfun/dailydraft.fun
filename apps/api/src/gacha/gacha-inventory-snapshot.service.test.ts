@@ -576,9 +576,9 @@ class FixtureDatabase {
     },
   };
 
-  readonly $queryRaw = async () => {
+  readonly $executeRaw = async () => {
     this.advisoryLocks += 1;
-    return [{ pg_advisory_xact_lock: '' }];
+    return 1;
   };
 
   async $transaction<T>(operation: (transaction: this) => Promise<T>): Promise<T> {
