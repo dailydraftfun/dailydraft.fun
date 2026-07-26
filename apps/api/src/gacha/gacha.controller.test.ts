@@ -231,6 +231,9 @@ describe('GachaController', () => {
     } as unknown as GachaPaymentService;
     const controller = new GachaController(snapshots, rips, payments);
     const params = { machineKey: 'fixture-machine' };
+    // Integration callers are trusted to act for any wallet, so this pass exercises
+    // pure routing; the wallet-session bindings get their own tests below.
+    const integration = { kind: 'integration' } as const;
     const ripInput = {
       commitmentId: 'gachaseed_fixture',
       machineKey: 'fixture-machine',
@@ -244,21 +247,33 @@ describe('GachaController', () => {
     await expect(controller.findOdds(params)).resolves.toEqual(odds);
     await expect(controller.createSeedCommitment(params)).resolves.toEqual(seedCommitment);
     await expect(
-      controller.createPaymentIntent(params, { payerWallet: paymentIntent.payerWallet }),
+      controller.createPaymentIntent(integration, params, {
+        payerWallet: paymentIntent.payerWallet,
+      }),
     ).resolves.toEqual(paymentIntent);
-    await expect(controller.prepareTransaction({ intentId })).resolves.toEqual(preparedPayment);
+    await expect(controller.prepareTransaction(integration, { intentId })).resolves.toEqual(
+      preparedPayment,
+    );
     await expect(
-      controller.claimPaymentSignature({ intentId }, { signedTransactionBase64: 'c2lnbmVk' }),
+      controller.claimPaymentSignature(
+        integration,
+        { intentId },
+        { signedTransactionBase64: 'c2lnbmVk' },
+      ),
     ).resolves.toEqual({
       ...paymentIntent,
       resumed: true,
       signature: 'sig-fixture',
     });
     await expect(
-      controller.verifyPaymentIntent({ intentId }, { signature: 'sig-fixture' }),
+      controller.verifyPaymentIntent(integration, { intentId }, { signature: 'sig-fixture' }),
     ).resolves.toEqual(verifiedPayment);
     await expect(
-      controller.createFixtureRip({ ...ripInput, idempotencyKey: 'body-key' }, 'idem-fixture-key'),
+      controller.createFixtureRip(
+        integration,
+        { ...ripInput, idempotencyKey: 'body-key' },
+        'idem-fixture-key',
+      ),
     ).resolves.toEqual(ripResult);
     expect(calls).toEqual([
       'capability',
@@ -288,6 +303,7 @@ describe('GachaController', () => {
     );
 
     await controller.createFixtureRip(
+      { kind: 'integration' },
       {
         commitmentId: 'gachaseed_fixture',
         idempotencyKey: 'body-key',
@@ -300,5 +316,168 @@ describe('GachaController', () => {
     );
 
     expect(calls).toEqual(['rip:fixture-machine:body-key']);
+  });
+});
+
+describe('GachaController wallet-session authorisation', () => {
+  const INTENT_ID = `gachapay_${'c'.repeat(32)}`;
+  const PAYER = 'DevnetPayerWallet11111111111111111111111111';
+  const ATTACKER = 'AttackerWallet1111111111111111111111111111';
+
+  const session = (wallet: string) =>
+    ({ kind: 'wallet-session', sessionId: 'walletsession_test', wallet }) as const;
+
+  const ripInput = (recipientWallet: string) => ({
+    commitmentId: 'gachaseed_fixture',
+    machineKey: 'fixture-machine',
+    oddsVersion: 1,
+    recipientWallet,
+    seed: 'fixture-seed-0000000001',
+  });
+
+  /** Records every service call so a rejected request can be proven to be a no-op. */
+  const buildController = (calls: string[]) => {
+    const rips = {
+      createFixtureRip: async () => {
+        calls.push('rip');
+        return {} as Awaited<ReturnType<GachaRipService['createFixtureRip']>>;
+      },
+    } as unknown as GachaRipService;
+    const payments = {
+      claimSignature: async () => {
+        calls.push('claim');
+        return {} as Awaited<ReturnType<GachaPaymentService['claimSignature']>>;
+      },
+      createIntent: async () => {
+        calls.push('intent');
+        return {} as Awaited<ReturnType<GachaPaymentService['createIntent']>>;
+      },
+      findIntentPayerWallet: async (intentId: string) => {
+        calls.push(`payer:${intentId}`);
+        return PAYER;
+      },
+      prepareTransaction: async () => {
+        calls.push('prepare');
+        return {} as Awaited<ReturnType<GachaPaymentService['prepareTransaction']>>;
+      },
+      verifyIntent: async () => {
+        calls.push('verify');
+        return {} as Awaited<ReturnType<GachaPaymentService['verifyIntent']>>;
+      },
+    } as unknown as GachaPaymentService;
+    return new GachaController({} as GachaInventorySnapshotService, rips, payments);
+  };
+
+  test('refuses to open a payment intent for another wallet', async () => {
+    const calls: string[] = [];
+    const controller = buildController(calls);
+
+    await expect(
+      controller.createPaymentIntent(
+        session(ATTACKER),
+        { machineKey: 'fixture-machine' },
+        {
+          payerWallet: PAYER,
+        },
+      ),
+    ).rejects.toThrow('Wallet session cannot act for another wallet');
+    expect(calls).toEqual([]);
+  });
+
+  test('opens a payment intent for the session wallet itself', async () => {
+    const calls: string[] = [];
+    const controller = buildController(calls);
+
+    await controller.createPaymentIntent(
+      session(PAYER),
+      { machineKey: 'fixture-machine' },
+      {
+        payerWallet: PAYER,
+      },
+    );
+
+    expect(calls).toEqual(['intent']);
+  });
+
+  test.each([
+    [
+      'prepareTransaction',
+      (c: GachaController, a: ReturnType<typeof session>) =>
+        c.prepareTransaction(a, { intentId: INTENT_ID }),
+    ],
+    [
+      'claimPaymentSignature',
+      (c: GachaController, a: ReturnType<typeof session>) =>
+        c.claimPaymentSignature(
+          a,
+          { intentId: INTENT_ID },
+          { signedTransactionBase64: 'c2lnbmVk' },
+        ),
+    ],
+    [
+      'verifyPaymentIntent',
+      (c: GachaController, a: ReturnType<typeof session>) =>
+        c.verifyPaymentIntent(a, { intentId: INTENT_ID }, { signature: 'sig-fixture' }),
+    ],
+  ])('%s refuses a session that does not own the intent', async (_name, invoke) => {
+    const calls: string[] = [];
+    const controller = buildController(calls);
+
+    await expect(invoke(controller, session(ATTACKER))).rejects.toThrow(
+      'Wallet session cannot act for another wallet',
+    );
+    // The payer lookup runs; the lifecycle transition must not.
+    expect(calls).toEqual([`payer:${INTENT_ID}`]);
+  });
+
+  test.each([
+    [
+      'prepareTransaction',
+      'prepare',
+      (c: GachaController, a: ReturnType<typeof session>) =>
+        c.prepareTransaction(a, { intentId: INTENT_ID }),
+    ],
+    [
+      'claimPaymentSignature',
+      'claim',
+      (c: GachaController, a: ReturnType<typeof session>) =>
+        c.claimPaymentSignature(
+          a,
+          { intentId: INTENT_ID },
+          { signedTransactionBase64: 'c2lnbmVk' },
+        ),
+    ],
+    [
+      'verifyPaymentIntent',
+      'verify',
+      (c: GachaController, a: ReturnType<typeof session>) =>
+        c.verifyPaymentIntent(a, { intentId: INTENT_ID }, { signature: 'sig-fixture' }),
+    ],
+  ])('%s admits the intent payer', async (_name, expected, invoke) => {
+    const calls: string[] = [];
+    const controller = buildController(calls);
+
+    await invoke(controller, session(PAYER));
+
+    expect(calls).toEqual([`payer:${INTENT_ID}`, expected]);
+  });
+
+  test('refuses to rip a pack into another wallet', async () => {
+    const calls: string[] = [];
+    const controller = buildController(calls);
+
+    await expect(
+      controller.createFixtureRip(session(ATTACKER), ripInput(PAYER), undefined),
+    ).rejects.toThrow('Wallet session cannot act for another wallet');
+    expect(calls).toEqual([]);
+  });
+
+  test('rips a pack into the session wallet itself', async () => {
+    const calls: string[] = [];
+    const controller = buildController(calls);
+
+    await controller.createFixtureRip(session(PAYER), ripInput(PAYER), undefined);
+
+    expect(calls).toEqual(['rip']);
   });
 });

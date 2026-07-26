@@ -520,6 +520,23 @@ export class GachaPaymentService {
   }
 
   /**
+   * Name the wallet an intent was opened for, so a route can authorise against it.
+   *
+   * The intent id is the on-chain memo nonce and is therefore public — anyone
+   * watching the cluster can read it off a settled transfer. Routes that act on
+   * an intent must prove the caller is its payer, and this is the read that
+   * lets them do it without widening any existing lifecycle signature.
+   */
+  async findIntentPayerWallet(intentId: string): Promise<string> {
+    const payment = await this.database.gachaRipPayment.findUnique({
+      select: { payerWallet: true },
+      where: { id: requireMemoNonce(intentId) },
+    });
+    if (!payment) throw new ConflictException('Gacha payment intent was not found');
+    return payment.payerWallet;
+  }
+
+  /**
    * Prove the destination token account actually holds the configured mint.
    *
    * A plain SPL `transfer` does not name a mint, so on its own it cannot show

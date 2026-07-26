@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AuthModule } from '../auth/auth.module.js';
 import { PokemonTcgClient } from '../providers/pokemon-tcg.client.js';
 import { DevnetDemoSignerService } from '../transactions/devnet-demo-signer.service.js';
 import { SolanaRpcClient, SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
@@ -20,6 +21,9 @@ import {
 
 @Module({
   controllers: [GachaController],
+  // `WalletSessionGuard` binds every mutating gacha route to the wallet that
+  // owns the presented session.
+  imports: [AuthModule],
   exports: [
     GachaInventorySnapshotService,
     GachaPaymentService,

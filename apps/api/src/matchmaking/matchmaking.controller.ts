@@ -1,8 +1,11 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 
-import { CurrentDuelAuthentication, type DuelAuthentication } from '../auth/authentication.js';
+import {
+  assertWalletActor,
+  CurrentDuelAuthentication,
+  type DuelAuthentication,
+} from '../auth/authentication.js';
 import { DuelMutationGuard } from '../auth/duel-mutation.guard.js';
-import { assertWalletActor } from '../duels/duels.controller.js';
 import { RealValueAdmission, RealValuePolicyGuard } from '../policy/real-value-policy.guard.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
 import { MatchmakingRequest, MatchmakingWalletRequest } from './matchmaking.dto.js';
