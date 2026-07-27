@@ -26,7 +26,7 @@
     }
   },
   "scripts": {
-    "build": "bun build src/index.ts src/pixi.ts --target=browser --outdir=dist --splitting --external pixi.js --external @dailydraft/contracts/pull-rarity && bun build src/react.tsx --target=browser --outdir=dist --splitting --external react --external pixi.js --external @dailydraft/contracts/pull-rarity --banner=\"'use client';\"",
+    "build": "bun build src/index.ts src/pixi.ts --target=browser --outdir=dist --splitting --external pixi.js --external @dailydraft/contracts/pull-rarity --external @dailydraft/contracts/theme-pack && bun build src/react.tsx --target=browser --outdir=dist --splitting --external react --external pixi.js --external @dailydraft/contracts/pull-rarity --external @dailydraft/contracts/theme-pack --banner=\"'use client';\"",
     "clean": "rm -rf dist",
     "lint": "biome check src/",
     "test": "bun test",
@@ -40,6 +40,7 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@dailydraft/themes": "workspace:*",
     "@types/bun": "1.3.8",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",

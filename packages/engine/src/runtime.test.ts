@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import type { ThemePack } from '@dailydraft/contracts/theme-pack';
+import { devnetDemoThemePack } from '@dailydraft/themes';
 import { type Application, type ApplicationOptions, Container, type Ticker } from 'pixi.js';
 import type { QualityBudget, QualityTier } from './quality.js';
 import { definePixiScene, mountPixiScene, type PixiSceneInstance } from './runtime.js';
+import { resolveThemePack, type SceneThemeStyle } from './theme.js';
 import type { SceneViewport } from './types.js';
 
 describe('Pixi scene lifecycle', () => {
@@ -87,6 +90,19 @@ describe('Pixi scene lifecycle', () => {
       inlineSize: '100%',
     });
     expect(observer.observed).toEqual([host.host]);
+
+    const demoTheme = resolveThemePack(devnetDemoThemePack);
+    const alternateTheme = resolveThemePack(alternateDemoThemePack());
+    if (demoTheme.status !== 'ready' || alternateTheme.status !== 'ready') {
+      throw new Error('Expected bundled themes to resolve');
+    }
+    expect(result.mount.applyTheme(demoTheme.theme, 'rare')).toBe(true);
+    expect(result.mount.applyTheme(alternateTheme.theme, 'rare')).toBe(true);
+    expect(scene.themeCalls.map(({ themeId }) => themeId)).toEqual([
+      'dailydraft-demo',
+      'alternate-demo',
+    ]);
+    expect(scene.themeCalls[0]?.art).not.toEqual(scene.themeCalls[1]?.art);
 
     host.bounds = { height: 300, width: 200 };
     observer.trigger();
@@ -299,6 +315,9 @@ describe('Pixi scene lifecycle', () => {
 
     expect(result.status).toBe('mounted');
     if (result.status !== 'mounted') throw new Error('Expected mounted scene');
+    const demoTheme = resolveThemePack(devnetDemoThemePack);
+    if (demoTheme.status !== 'ready') throw new Error('Expected demo theme to resolve');
+    expect(result.mount.applyTheme(demoTheme.theme, 'common')).toBe(false);
     expect(() => result.mount.destroy()).not.toThrow();
     expect(observedErrors).toHaveLength(1);
     expect(application.destroyCount).toBe(1);
@@ -316,8 +335,12 @@ function sceneHarness(
   let destroyCount = 0;
   const resizeCalls: SceneViewport[] = [];
   const qualityCalls: Array<[QualityTier, QualityBudget]> = [];
+  const themeCalls: SceneThemeStyle[] = [];
   let createdWith: unknown;
   const instance: PixiSceneInstance = {
+    applyTheme(style) {
+      themeCalls.push(style);
+    },
     destroy() {
       destroyCount += 1;
     },
@@ -363,6 +386,24 @@ function sceneHarness(
     qualityCalls,
     resizeCalls,
     scene,
+    themeCalls,
+  };
+}
+
+function alternateDemoThemePack(): ThemePack {
+  return {
+    ...devnetDemoThemePack,
+    art: {
+      ...devnetDemoThemePack.art,
+      cardFace: 'theme://alternate-demo/card-face',
+      sceneBackground: 'theme://alternate-demo/scene-background',
+    },
+    id: 'alternate-demo',
+    name: 'Alternate Demo',
+    source: {
+      kind: 'bundled',
+      namespace: 'alternate-demo',
+    },
   };
 }
 

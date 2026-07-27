@@ -317,6 +317,7 @@ function renderBinding({
 
 function sceneMount(destroy: () => void): SceneMount {
   return {
+    applyTheme: () => false,
     destroy,
     quality: 'high',
     resize: () => undefined,
