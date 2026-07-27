@@ -28,6 +28,7 @@ import {
 } from './gacha-client';
 
 const BASE_URL = 'https://api.example.test/v1';
+const SESSION_TOKEN = 'session_secret';
 
 const OPEN_GATES = { acquisition: true, odds: true, provider: true, settlement: true };
 
@@ -57,6 +58,7 @@ describe('gacha capability client', () => {
     });
     expect(requests[0]?.input).toBe(`${BASE_URL}/gacha/capability`);
     expect(requests[0]?.init).toMatchObject({ cache: 'no-store' });
+    expect(requests[0]?.init?.headers).toBeUndefined();
   });
 
   test('forwards the abort signal so an unmounted surface stops polling', async () => {
@@ -146,26 +148,35 @@ describe('gacha machine reads', () => {
 });
 
 describe('gacha payment client', () => {
-  test('opens a seed commitment with no bearer credential', async () => {
+  test('authenticates a seed commitment with the wallet session', async () => {
     const { fetcher, requests } = recordingFetcher({
       commitmentId: 'gachaseed_abc',
       expiresAt: '2026-07-26T00:15:00.000Z',
       serverSeedHash: 'b'.repeat(64),
     });
 
-    await requestGachaSeedCommitment(BASE_URL, 'football', fetcher);
+    await requestGachaSeedCommitment(BASE_URL, 'football', SESSION_TOKEN, fetcher);
 
-    // The gacha controller carries no @UseGuards: a rip is authorised by a
-    // verified payment, so sending a session token would be theatre.
     expect(requests[0]).toMatchObject({
       init: {
         body: '{}',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          authorization: `Bearer ${SESSION_TOKEN}`,
+          'content-type': 'application/json',
+        },
         method: 'POST',
       },
       input: `${BASE_URL}/gacha/machines/football/rip-commitments`,
     });
-    expect(requests[0]?.init?.headers).not.toHaveProperty('authorization');
+  });
+
+  test('refuses every mutation before fetch when the wallet session is missing', async () => {
+    const { fetcher, requests } = recordingFetcher({});
+
+    await expect(requestGachaSeedCommitment(BASE_URL, 'football', null, fetcher)).rejects.toThrow(
+      'Authenticate the connected wallet before opening a Sports Pack.',
+    );
+    expect(requests).toEqual([]);
   });
 
   test('omits the idempotency header on every route that does not read one', async () => {
@@ -174,10 +185,33 @@ describe('gacha payment client', () => {
     const claimed = recordingFetcher({ signature: 'sig' });
     const verified = recordingFetcher({ mintVerifiedOnChain: true });
 
-    await requestGachaPaymentIntent(BASE_URL, 'football', 'PayerWallet', intent.fetcher);
-    await requestPreparedGachaPaymentTransaction(BASE_URL, 'gachapay_1', prepared.fetcher);
-    await requestClaimedGachaPaymentSignature(BASE_URL, 'gachapay_1', 'c2lnbmVk', claimed.fetcher);
-    await requestVerifiedGachaPayment(BASE_URL, 'gachapay_1', 'sig', verified.fetcher);
+    await requestGachaPaymentIntent(
+      BASE_URL,
+      'football',
+      'PayerWallet',
+      SESSION_TOKEN,
+      intent.fetcher,
+    );
+    await requestPreparedGachaPaymentTransaction(
+      BASE_URL,
+      'gachapay_1',
+      SESSION_TOKEN,
+      prepared.fetcher,
+    );
+    await requestClaimedGachaPaymentSignature(
+      BASE_URL,
+      'gachapay_1',
+      'c2lnbmVk',
+      SESSION_TOKEN,
+      claimed.fetcher,
+    );
+    await requestVerifiedGachaPayment(
+      BASE_URL,
+      'gachapay_1',
+      'sig',
+      SESSION_TOKEN,
+      verified.fetcher,
+    );
 
     for (const recorded of [
       intent.requests[0],
@@ -185,7 +219,10 @@ describe('gacha payment client', () => {
       claimed.requests[0],
       verified.requests[0],
     ]) {
-      expect(recorded?.init?.headers).toEqual({ 'content-type': 'application/json' });
+      expect(recorded?.init?.headers).toEqual({
+        authorization: `Bearer ${SESSION_TOKEN}`,
+        'content-type': 'application/json',
+      });
     }
     expect(intent.requests[0]?.init?.body).toBe(JSON.stringify({ payerWallet: 'PayerWallet' }));
     expect(claimed.requests[0]?.init?.body).toBe(
@@ -215,10 +252,12 @@ describe('gacha rip client', () => {
         recipientWallet: 'RecipientWallet',
         seed: 'client-seed-0123456789',
       },
+      SESSION_TOKEN,
       fetcher,
     );
 
     expect(requests[0]?.init?.headers).toMatchObject({
+      authorization: `Bearer ${SESSION_TOKEN}`,
       'idempotency-key': 'opd-rip-gachaseed_abc',
     });
     expect(JSON.parse(String(requests[0]?.init?.body))).toEqual({
@@ -244,6 +283,7 @@ describe('gacha rip client', () => {
         recipientWallet: 'RecipientWallet',
         seed: 'client-seed-0123456789',
       },
+      SESSION_TOKEN,
       fetcher,
     );
 
@@ -263,7 +303,7 @@ describe('gacha request errors', () => {
 
     let thrown: unknown;
     try {
-      await requestGachaSeedCommitment(BASE_URL, 'football', fetcher);
+      await requestGachaSeedCommitment(BASE_URL, 'football', SESSION_TOKEN, fetcher);
     } catch (error) {
       thrown = error;
     }
@@ -280,9 +320,9 @@ describe('gacha request errors', () => {
     const fetcher = (async () =>
       new Response('<html>gateway</html>', { status: 502 })) as unknown as typeof fetch;
 
-    await expect(requestGachaSeedCommitment(BASE_URL, 'football', fetcher)).rejects.toThrow(
-      'The Sports Pack Gacha request failed (502).',
-    );
+    await expect(
+      requestGachaSeedCommitment(BASE_URL, 'football', SESSION_TOKEN, fetcher),
+    ).rejects.toThrow('The Sports Pack Gacha request failed (502).');
   });
 
   test('retries only transient API and network failures', () => {
@@ -317,20 +357,32 @@ describe('configured base URL', () => {
     ['getGachaCapability', () => getGachaCapability()],
     ['getGachaInventory', () => getGachaInventory('football')],
     ['getGachaOdds', () => getGachaOdds('football')],
-    ['createGachaSeedCommitment', () => createGachaSeedCommitment('football')],
-    ['createGachaPaymentIntent', () => createGachaPaymentIntent('football', 'payer')],
-    ['prepareGachaPaymentTransaction', () => prepareGachaPaymentTransaction('gachaintent_1')],
-    ['claimGachaPaymentSignature', () => claimGachaPaymentSignature('gachaintent_1', 'c2lnbmVk')],
-    ['verifyGachaPayment', () => verifyGachaPayment('gachaintent_1', 'signature')],
+    ['createGachaSeedCommitment', () => createGachaSeedCommitment('football', SESSION_TOKEN)],
+    [
+      'createGachaPaymentIntent',
+      () => createGachaPaymentIntent('football', 'payer', SESSION_TOKEN),
+    ],
+    [
+      'prepareGachaPaymentTransaction',
+      () => prepareGachaPaymentTransaction('gachaintent_1', SESSION_TOKEN),
+    ],
+    [
+      'claimGachaPaymentSignature',
+      () => claimGachaPaymentSignature('gachaintent_1', 'c2lnbmVk', SESSION_TOKEN),
+    ],
+    ['verifyGachaPayment', () => verifyGachaPayment('gachaintent_1', 'signature', SESSION_TOKEN)],
     [
       'createGachaRip',
       () =>
-        createGachaRip({
-          commitmentId: 'gachaseed_1',
-          machineKey: 'football',
-          recipientWallet: 'payer',
-          seed: 'f'.repeat(64),
-        }),
+        createGachaRip(
+          {
+            commitmentId: 'gachaseed_1',
+            machineKey: 'football',
+            recipientWallet: 'payer',
+            seed: 'f'.repeat(64),
+          },
+          SESSION_TOKEN,
+        ),
     ],
   ];
 

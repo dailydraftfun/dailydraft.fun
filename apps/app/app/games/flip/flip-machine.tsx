@@ -13,20 +13,21 @@ import {
   getGachaCapability,
   getGachaInventory,
   getGachaOdds,
-  prepareGachaPaymentTransaction,
+  prepareGachaPaymentTransaction as prepareSessionGachaPaymentTransaction,
 } from '../../solana/gacha-client';
+import { useWalletAuth } from '../../solana/wallet-auth-provider';
 import { useSolanaWallet } from '../../solana/wallet-provider';
 import {
   confirmFlipRip,
   createFlipConfirmEvents,
-  createFlipConfirmIo,
   createFlipResumeInput,
+  createFlipConfirmIo as createSessionFlipConfirmIo,
   describeFlipError,
   type FlipConfirmEvents,
   type FlipConfirmOutcome,
   flipConfirmOutcomeAction,
   flipOutcomeClearsRecovery,
-  prepareFlipRip,
+  prepareFlipRip as prepareSessionFlipRip,
   reconcileSignedFlipRip,
   resumeFlipRip,
 } from './flip-machine-actions';
@@ -49,12 +50,19 @@ import {
   storeFlipPaymentRecovery,
 } from './flip-payment-recovery';
 
+export function bindFlipSession(sessionToken: string | null) {
+  return {
+    createFlipConfirmIo: (signTransaction: Parameters<typeof createSessionFlipConfirmIo>[0]) =>
+      createSessionFlipConfirmIo(signTransaction, sessionToken),
+    prepareFlipRip: (input: { address: string; machineKey: string }) =>
+      prepareSessionFlipRip({ ...input, sessionToken }),
+    prepareGachaPaymentTransaction: (intentId: string) =>
+      prepareSessionGachaPaymentTransaction(intentId, sessionToken),
+  };
+}
+
 /**
  * Live Sports Pack Gacha client.
- *
- * Deliberately does not call `useWalletAuth()`: `gacha.controller.ts` carries no
- * `@UseGuards`, so a rip is authorised by a verified on-chain payment rather
- * than a bearer session.
  *
  * This component is wiring only. Every decision lives in `flip-machine-flow.ts`,
  * every transition in `flip-machine-state.ts`, every sequence in
@@ -63,11 +71,23 @@ import {
  * would be unreachable from a test.
  */
 export function FlipMachine() {
-  return <FlipMachineController wallet={useSolanaWallet()} />;
+  const wallet = useSolanaWallet();
+  const { sessionToken } = useWalletAuth();
+  return <FlipMachineController sessionToken={sessionToken} wallet={wallet} />;
 }
 
-export function FlipMachineController({ wallet }: { wallet: ReturnType<typeof useSolanaWallet> }) {
+export function FlipMachineController({
+  sessionToken = null,
+  wallet,
+}: {
+  sessionToken?: string | null;
+  wallet: ReturnType<typeof useSolanaWallet>;
+}) {
   const [state, dispatch] = useReducer(flipMachineReducer, INITIAL_FLIP_MACHINE_STATE);
+  const { createFlipConfirmIo, prepareFlipRip, prepareGachaPaymentTransaction } = useMemo(
+    () => bindFlipSession(sessionToken),
+    [sessionToken],
+  );
   const {
     broadcastUnknown,
     commitmentId,
@@ -211,7 +231,16 @@ export function FlipMachineController({ wallet }: { wallet: ReturnType<typeof us
     void preparation.finally(() => {
       fundingOperationRef.current = false;
     });
-  }, [broadcastUnknown, machineKey, odds, recovery, recoveryInvalid, signature, wallet]);
+  }, [
+    broadcastUnknown,
+    machineKey,
+    odds,
+    recovery,
+    recoveryInvalid,
+    signature,
+    wallet,
+    prepareFlipRip,
+  ]);
 
   const handleConfirm = useCallback(() => {
     const address = wallet.address;
@@ -303,6 +332,7 @@ export function FlipMachineController({ wallet }: { wallet: ReturnType<typeof us
     serverSeedHash,
     signature,
     wallet,
+    createFlipConfirmIo,
   ]);
 
   const handleResume = useCallback(() => {
@@ -409,6 +439,8 @@ export function FlipMachineController({ wallet }: { wallet: ReturnType<typeof us
     serverSeedHash,
     signature,
     wallet,
+    createFlipConfirmIo,
+    prepareGachaPaymentTransaction,
   ]);
 
   useEffect(() => {
