@@ -96,6 +96,40 @@ export async function fetchTokenBalance(
   return { amount, decimals };
 }
 
+type ExactTokenAccountResult = {
+  value?: {
+    data?: {
+      parsed?: {
+        info?: { tokenAmount?: { amount?: string; decimals?: number } };
+      };
+    };
+  } | null;
+};
+
+/**
+ * Reads the balance of the exact token account a prepared transaction debits.
+ *
+ * Funding preflight must use this instead of the owner's aggregate balance:
+ * the server-built transfer names one source account, so tokens held in any
+ * other account cannot satisfy that transaction.
+ */
+export async function fetchTokenAccountBalance(
+  tokenAccount: string,
+  signal?: AbortSignal,
+): Promise<{ amount: bigint; decimals: number } | null> {
+  const result = await callRpc<ExactTokenAccountResult>(
+    'getAccountInfo',
+    [tokenAccount, { commitment: 'confirmed', encoding: 'jsonParsed' }],
+    signal,
+  );
+  if (result.value === null) return null;
+  const { amount, decimals } = result.value?.data?.parsed?.info?.tokenAmount ?? {};
+  if (typeof amount !== 'string' || !/^\d+$/.test(amount) || !Number.isInteger(decimals)) {
+    throw new SolanaRpcError('Solana RPC getAccountInfo returned an invalid token balance.');
+  }
+  return { amount: BigInt(amount), decimals: decimals as number };
+}
+
 export async function fetchSignatureCommitment(
   signature: string,
   signal?: AbortSignal,

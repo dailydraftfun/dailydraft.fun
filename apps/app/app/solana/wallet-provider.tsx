@@ -35,6 +35,12 @@ import type { BalanceStatus, WalletBalances } from './balance';
 import { SOLANA_CHAIN, SOLANA_CLUSTER, SOLANA_RPC_URL, shortenAddress } from './config';
 import { createWalletBalanceRefresher } from './read-balances';
 import {
+  broadcastSignedTransaction,
+  inspectSignedWalletTransaction,
+  type SignedWalletTransaction,
+} from './wallet-transaction';
+import {
+  classifySignOnlyFailure,
   isExplicitWalletRejection,
   WalletTransactionNotBroadcastError,
 } from './wallet-transaction-error';
@@ -61,7 +67,10 @@ type WalletContextValue = {
   networkStatus: NetworkStatus;
   balances: WalletBalances | null;
   balanceStatus: BalanceStatus;
-  refreshBalances: (mint?: string | null) => Promise<WalletBalances | null>;
+  refreshBalances: (
+    mint?: string | null,
+    sourceTokenAccount?: string | null,
+  ) => Promise<WalletBalances | null>;
   error: string | null;
   cluster: typeof SOLANA_CLUSTER;
   rpcUrl: string;
@@ -70,8 +79,13 @@ type WalletContextValue = {
   disconnect: () => Promise<void>;
   clearError: () => void;
   canSignMessage: boolean;
+  canSignTransaction: boolean;
+  signTransaction: (serializedTransaction: Uint8Array) => Promise<SignedWalletTransaction>;
   signMessage: (message: string) => Promise<Uint8Array>;
-  signAndSendTransaction: (serializedTransaction: Uint8Array) => Promise<string>;
+  signAndSendTransaction: (
+    serializedTransaction: Uint8Array,
+    onSignature?: (signature: string) => void,
+  ) => Promise<string>;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -89,6 +103,73 @@ function isCompatibleWallet(wallet: Wallet): wallet is CompatibleWallet {
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) return error.message;
   return 'The wallet request did not complete. Check the wallet and try again.';
+}
+
+/** Sign and inspect bytes without giving a combined-only wallet a chance to broadcast. */
+export async function signWalletTransaction(
+  selectedWallet: CompatibleWallet | null,
+  account: WalletAccount | null,
+  serializedTransaction: Uint8Array,
+): Promise<SignedWalletTransaction> {
+  if (!selectedWallet || !account) throw new Error('Connect a Solana wallet first.');
+  const signFeature = selectedWallet.features[SolanaSignTransaction];
+  if (!signFeature) {
+    throw new WalletTransactionNotBroadcastError(
+      `${selectedWallet.name} cannot safely pre-claim this payment because it only supports combined sign-and-send. Nothing was broadcast.`,
+      'pre-broadcast-failure',
+    );
+  }
+  try {
+    const [signed] = await signFeature.signTransaction({
+      account,
+      chain: SOLANA_CHAIN,
+      options: { preflightCommitment: 'confirmed' },
+      transaction: serializedTransaction,
+    });
+    if (!signed) {
+      throw new WalletTransactionNotBroadcastError(
+        'The wallet returned no signed transaction. Nothing was broadcast.',
+        'pre-broadcast-failure',
+      );
+    }
+    return inspectSignedWalletTransaction(signed.signedTransaction);
+  } catch (transactionError) {
+    throw classifySignOnlyFailure(transactionError);
+  }
+}
+
+/** Prefer a wallet-native broadcast, falling back to sign-only plus the app RPC. */
+export async function sendWalletTransaction(
+  selectedWallet: CompatibleWallet | null,
+  account: WalletAccount | null,
+  serializedTransaction: Uint8Array,
+  onSignature?: (signature: string) => void,
+  broadcast: typeof broadcastSignedTransaction = broadcastSignedTransaction,
+): Promise<string> {
+  if (!selectedWallet || !account) throw new Error('Connect a Solana wallet first.');
+  const sendFeature = selectedWallet.features[SolanaSignAndSendTransaction];
+  if (sendFeature) {
+    try {
+      const [output] = await sendFeature.signAndSendTransaction({
+        account,
+        chain: SOLANA_CHAIN,
+        options: { preflightCommitment: 'confirmed', skipPreflight: false },
+        transaction: serializedTransaction,
+      });
+      if (!output) throw new Error('The wallet did not broadcast the devnet transaction.');
+      const signature = bs58.encode(output.signature);
+      onSignature?.(signature);
+      return signature;
+    } catch (transactionError) {
+      if (isExplicitWalletRejection(transactionError)) {
+        throw new WalletTransactionNotBroadcastError();
+      }
+      throw transactionError;
+    }
+  }
+
+  const signed = await signWalletTransaction(selectedWallet, account, serializedTransaction);
+  return broadcast(signed.serializedTransaction, onSignature);
 }
 
 export function SolanaWalletProvider({ children }: { children: React.ReactNode }) {
@@ -276,43 +357,17 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     }
   }
 
-  async function signAndSendTransaction(serializedTransaction: Uint8Array) {
-    if (!selectedWallet || !account) throw new Error('Connect a Solana wallet first.');
-    const sendFeature = selectedWallet.features[SolanaSignAndSendTransaction];
-    if (sendFeature) {
-      try {
-        const [output] = await sendFeature.signAndSendTransaction({
-          account,
-          chain: SOLANA_CHAIN,
-          options: { preflightCommitment: 'confirmed', skipPreflight: false },
-          transaction: serializedTransaction,
-        });
-        if (!output) throw new Error('The wallet did not broadcast the devnet transaction.');
-        return bs58.encode(output.signature);
-      } catch (transactionError) {
-        if (isExplicitWalletRejection(transactionError)) {
-          throw new WalletTransactionNotBroadcastError();
-        }
-        throw transactionError;
-      }
-    }
+  async function signAndSendTransaction(
+    serializedTransaction: Uint8Array,
+    onSignature?: (signature: string) => void,
+  ) {
+    return sendWalletTransaction(selectedWallet, account, serializedTransaction, onSignature);
+  }
 
-    const signFeature = selectedWallet.features[SolanaSignTransaction];
-    if (!signFeature) throw new Error(`${selectedWallet.name} cannot sign Solana transactions.`);
-    let signedTransaction: Uint8Array;
-    try {
-      const [signed] = await signFeature.signTransaction({
-        account,
-        chain: SOLANA_CHAIN,
-        options: { preflightCommitment: 'confirmed' },
-        transaction: serializedTransaction,
-      });
-      if (!signed) throw new WalletTransactionNotBroadcastError();
-      signedTransaction = signed.signedTransaction;
-    } catch {
-      throw new WalletTransactionNotBroadcastError();
-    }
-    return broadcastSignedTransaction(signedTransaction);
+  async function signTransaction(
+    serializedTransaction: Uint8Array,
+  ): Promise<SignedWalletTransaction> {
+    return signWalletTransaction(selectedWallet, account, serializedTransaction);
   }
 
   async function signMessage(message: string) {
@@ -343,6 +398,7 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     refreshBalances,
     error,
     canSignMessage: Boolean(selectedWallet?.features[SolanaSignMessage]),
+    canSignTransaction: Boolean(selectedWallet?.features[SolanaSignTransaction]),
     cluster: SOLANA_CLUSTER,
     rpcUrl: SOLANA_RPC_URL,
     retryNetwork: () => checkNetwork(),
@@ -350,37 +406,11 @@ export function SolanaWalletProvider({ children }: { children: React.ReactNode }
     disconnect,
     clearError: () => setError(null),
     signAndSendTransaction,
+    signTransaction,
     signMessage,
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
-}
-
-async function broadcastSignedTransaction(signedTransaction: Uint8Array): Promise<string> {
-  const response = await fetch(SOLANA_RPC_URL, {
-    body: JSON.stringify({
-      id: 'dailydraft-send',
-      jsonrpc: '2.0',
-      method: 'sendTransaction',
-      params: [
-        toBase64(signedTransaction),
-        { encoding: 'base64', preflightCommitment: 'confirmed' },
-      ],
-    }),
-    headers: { 'content-type': 'application/json' },
-    method: 'POST',
-  });
-  const payload = (await response.json()) as { error?: { message?: string }; result?: unknown };
-  if (!response.ok || typeof payload.result !== 'string') {
-    throw new Error(payload.error?.message ?? 'The signed devnet transaction was not broadcast.');
-  }
-  return payload.result;
-}
-
-function toBase64(value: Uint8Array): string {
-  let binary = '';
-  for (const byte of value) binary += String.fromCharCode(byte);
-  return window.btoa(binary);
 }
 
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
