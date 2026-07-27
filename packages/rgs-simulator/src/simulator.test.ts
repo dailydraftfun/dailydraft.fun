@@ -81,13 +81,20 @@ describe('RGS math simulator', () => {
   test('fails malformed, uncommitted, or economically ambiguous configs closed', () => {
     const unsigned = unsignedFixtureConfig();
     const cases: Array<[unknown, string]> = [
+      [null, 'required'],
       [{ ...unsigned, schemaVersion: 'dailydraft.rgs-simulation-config.v2' }, 'schemaVersion'],
+      [{ ...unsigned, simulatorVersion: 'dailydraft.rgs-simulator.v2' }, 'simulatorVersion'],
+      [{ ...unsigned, mode: 'roulette' }, 'mode'],
       [{ ...unsigned, activation: 'mainnet' }, 'activation'],
       [{ ...unsigned, realValueGate: 'approved' }, 'hitl-required'],
       [{ ...unsigned, configHash: 'invalid' }, 'configHash'],
       [{ ...unsigned, rulesHash: 'invalid' }, 'rulesHash'],
+      [{ ...unsigned, currency: 'usdc' }, 'currency'],
+      [{ ...unsigned, decimals: 19 }, 'decimals'],
       [{ ...unsigned, probabilityScalePpm: 100 }, 'probabilityScalePpm'],
       [{ ...unsigned, stakeMinor: '0' }, 'stakeMinor'],
+      [{ ...unsigned, stakeMinor: '-1' }, 'minor units'],
+      [{ ...unsigned, stakeMinor: '18446744073709551616' }, 'u64'],
       [{ ...unsigned, tiers: [] }, 'tiers'],
       [
         {
@@ -109,6 +116,42 @@ describe('RGS math simulator', () => {
         },
         'duplicated',
       ],
+      [
+        {
+          ...unsigned,
+          tiers: unsigned.tiers.map((tier) =>
+            tier.key === 'base' ? { ...tier, probabilityPpm: 0 } : tier,
+          ),
+        },
+        'positive integer',
+      ],
+      [
+        {
+          ...unsigned,
+          tiers: unsigned.tiers.map((tier) =>
+            tier.key === 'base' ? { ...tier, payouts: [] } : tier,
+          ),
+        },
+        'payouts',
+      ],
+      [
+        {
+          ...unsigned,
+          tiers: unsigned.tiers.map((tier) =>
+            tier.key === 'plus'
+              ? { ...tier, payouts: [{ id: 'fixture-base', payoutMinor: '75000000' }] }
+              : tier,
+          ),
+        },
+        'payout id is duplicated',
+      ],
+      [
+        {
+          ...unsigned,
+          tolerances: { ...unsigned.tolerances, hitRateAbsolutePpm: 0 },
+        },
+        'hitRateAbsolutePpm',
+      ],
     ];
 
     for (const [candidate, message] of cases) {
@@ -118,6 +161,9 @@ describe('RGS math simulator', () => {
     }
 
     const config = fixtureConfig();
+    expect(() => validateRgsSimulationConfig({ ...config, mathConfigHash: 'invalid' })).toThrow(
+      'mathConfigHash',
+    );
     expect(() =>
       validateRgsSimulationConfig({ ...config, mathConfigHash: 'f'.repeat(64) }),
     ).toThrow('does not match');
