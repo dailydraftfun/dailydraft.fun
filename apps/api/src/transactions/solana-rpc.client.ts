@@ -43,6 +43,9 @@ export abstract class SolanaRpcGateway {
   abstract assertDevnet(): Promise<void>;
   abstract getBlockHeight(): Promise<bigint>;
   abstract getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: bigint }>;
+  isBlockhashValid(_blockhash: string, _commitment: 'confirmed' | 'finalized'): Promise<boolean> {
+    throw new SolanaRpcUnavailableError('Blockhash validity reads are not implemented');
+  }
   getAccountInfo(_address: string): Promise<SolanaAccountInfo | null> {
     throw new SolanaRpcUnavailableError('Raw Solana account reads are not implemented');
   }
@@ -96,6 +99,17 @@ export class SolanaRpcClient extends SolanaRpcGateway {
       blockhash: result.value.blockhash,
       lastValidBlockHeight: BigInt(Number(result.value.lastValidBlockHeight)),
     };
+  }
+
+  override async isBlockhashValid(
+    blockhash: string,
+    commitment: 'confirmed' | 'finalized',
+  ): Promise<boolean> {
+    const result = await this.request('isBlockhashValid', [blockhash, { commitment }]);
+    if (!isObject(result) || typeof result.value !== 'boolean') {
+      throw new SolanaRpcUnavailableError('RPC returned invalid blockhash validity');
+    }
+    return result.value;
   }
 
   async getAccountInfo(address: string): Promise<SolanaAccountInfo | null> {

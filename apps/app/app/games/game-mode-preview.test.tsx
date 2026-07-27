@@ -14,6 +14,8 @@ describe('game mode preview', () => {
     };
 
     expect(source).toContain("from '@dailydraft/contracts/pull-rarity'");
+    expect(source).toContain("from '../components/celebration'");
+    expect(source.match(/<CelebrationOverlay\b/g)).toHaveLength(2);
     expect(source).not.toMatch(/from '@dailydraft\/contracts';/);
     expect(nextConfig).toContain("transpilePackages: ['@dailydraft/contracts']");
     expect(contractsPackage.exports['./pull-rarity']?.import).toBe('./src/pull-rarity.ts');
@@ -57,6 +59,7 @@ describe('game mode preview', () => {
     expect(active).toContain('data-choreography-beat="settled"');
     expect(active).toContain('data-choreography-rarity="uncommon"');
     expect(active).toContain('data-choreography-settled="true"');
+    expect(active).toContain('data-celebration-static="true"');
     expect(active).toContain('aria-hidden="true"');
     expect(active).toContain('Skip animation');
     expect(active).toContain('aria-disabled="true"');

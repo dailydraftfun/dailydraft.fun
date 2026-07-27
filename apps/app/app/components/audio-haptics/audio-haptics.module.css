@@ -1,0 +1,66 @@
+.control {
+  display: inline-flex;
+  min-inline-size: 2.75rem;
+  min-block-size: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding-inline: 0.7rem;
+  border: 1px solid var(--opd-border);
+  border-radius: var(--opd-radius-md);
+  background: var(--opd-bg-secondary);
+  color: var(--opd-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.control:hover {
+  border-color: rgb(from var(--opd-accent) r g b / 0.5);
+  background: var(--opd-bg-tertiary);
+  color: var(--opd-text-primary);
+}
+
+.control:focus-visible {
+  outline: 3px solid var(--opd-accent);
+  outline-offset: 2px;
+}
+
+.control[aria-pressed="true"] {
+  border-color: rgb(from var(--opd-success) r g b / 0.45);
+  background: rgb(from var(--opd-success) r g b / 0.1);
+  color: var(--opd-success);
+}
+
+.label {
+  white-space: nowrap;
+}
+
+.shortcut {
+  padding: 0.12rem 0.3rem;
+  border: 1px solid rgb(from var(--opd-text-secondary) r g b / 0.28);
+  border-radius: 0.25rem;
+  color: inherit;
+  background: rgb(from var(--opd-bg-primary) r g b / 0.5);
+  font-family: var(--opd-font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .label,
+  .shortcut {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control {
+    transition: none;
+  }
+}

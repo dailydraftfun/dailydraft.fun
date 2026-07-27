@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { FastifyReply } from 'fastify';
 
+import { assertWalletActor } from '../auth/authentication.js';
 import type { Duel } from '../domain.js';
 import type { DuelFundingService } from '../transactions/duel-funding.service.js';
 import type { DuelOpeningService } from './duel-opening.service.js';
 import {
   assertDuelParticipant,
-  assertWalletActor,
   DuelLeaderboardController,
   DuelsController,
   resolvePrivateRematchOpponent,

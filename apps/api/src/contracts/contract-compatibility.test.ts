@@ -153,11 +153,10 @@ function hasIdempotencyKey(operation: OpenApiOperation | undefined): boolean {
 function resolveAuth(
   operation: OpenApiOperation | undefined,
   rootSecurity: Array<Record<string, unknown>> | undefined,
-): 'none' | 'wallet-or-integration' {
+): 'none' | 'wallet-or-integration' | 'wallet-session' {
   const security = operation?.security ?? rootSecurity ?? [];
   if (security.length === 0) return 'none';
   const schemes = new Set(security.flatMap((entry) => Object.keys(entry)));
-  return schemes.has('walletSession') && schemes.has('integrationKey')
-    ? 'wallet-or-integration'
-    : 'none';
+  if (schemes.has('walletSession') && schemes.has('integrationKey')) return 'wallet-or-integration';
+  return schemes.size === 1 && schemes.has('walletSession') ? 'wallet-session' : 'none';
 }

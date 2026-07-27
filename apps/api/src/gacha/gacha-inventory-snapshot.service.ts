@@ -9,7 +9,8 @@ import { ConflictException, Inject, Injectable, ServiceUnavailableException } fr
 
 import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
-import { stableStringify } from '../providers/valuation-policy.js';
+import { DEVNET_DEMO_VALUATION_POLICY, stableStringify } from '../providers/valuation-policy.js';
+import { gachaDevnetModeEnabled } from './gacha-capability.js';
 import { gachaFixtureModeEnabled } from './sports-pack-gacha.fixture.js';
 import type {
   SportsPackGachaCard,
@@ -111,9 +112,12 @@ export class GachaInventorySnapshotService {
     revision: number;
     sealedAt: Date;
   }> {
-    if (!gachaFixtureModeEnabled()) {
+    // Named for the fixture rail it shipped with; devnet now seals through the
+    // same path with its own policy (see `snapshotInputForMode`). Collector
+    // Crypt production inventory still has no sealing rail, so the gate stays.
+    if (!gachaFixtureModeEnabled() && !gachaDevnetModeEnabled()) {
       throw new ServiceUnavailableException(
-        'Gacha inventory snapshots are disabled outside explicit fixture or preview mode',
+        'Gacha inventory snapshots are disabled outside explicit fixture, preview, or devnet mode',
       );
     }
     const prepared = prepareGachaInventorySnapshot(input);
@@ -351,17 +355,9 @@ export function fixtureSnapshotInput(
   machine: SportsPackGachaMachine,
   candidates: readonly SportsPackGachaCard[],
 ): PrepareGachaInventorySnapshotInput {
-  const evaluatedAt = candidates.reduce((latest, candidate) => {
-    const evidenceTimestamp =
-      candidate.insuredValue?.sourceTimestamp &&
-      candidate.insuredValue.sourceTimestamp > candidate.inventorySourceTimestamp
-        ? candidate.insuredValue.sourceTimestamp
-        : candidate.inventorySourceTimestamp;
-    return evidenceTimestamp > latest ? evidenceTimestamp : latest;
-  }, new Date(0));
   return {
     candidates,
-    evaluatedAt,
+    evaluatedAt: latestEvidenceTimestamp(candidates),
     policy: {
       machine,
       maximumEligibleItems: machine.committedPoolSize,
@@ -373,6 +369,59 @@ export function fixtureSnapshotInput(
       provider: 'collector-crypt-devnet-fixture',
     },
   };
+}
+
+export function devnetSnapshotInput(
+  machine: SportsPackGachaMachine,
+  candidates: readonly SportsPackGachaCard[],
+): PrepareGachaInventorySnapshotInput {
+  return {
+    candidates,
+    evaluatedAt: latestEvidenceTimestamp(candidates),
+    policy: {
+      machine,
+      maximumEligibleItems: machine.committedPoolSize,
+      maximumFutureSkewMs: 30_000,
+      // Devnet values real Pokémon TCG cards, whose price rows carry a
+      // `YYYY/MM/DD` timestamp normalized to UTC start of day. The fixture's
+      // five-minute window would exclude every one of them as
+      // `STALE_VALUATION`, and because `minimumEligibleItems` equals the
+      // committed pool size a single exclusion fails the whole seal. The
+      // allowance is the pinned demo valuation policy's own maximum source
+      // age, so both rails answer to one number.
+      maximumSourceAgeMs: DEVNET_DEMO_VALUATION_POLICY.maxSourceAgeSeconds * 1_000,
+      minimumEligibleItems: machine.committedPoolSize,
+      policyVersion: 'sports-pack-gacha-devnet-v1',
+      poolKey: `${machine.machineKey}:pool`,
+      provider: 'dailydraft-devnet',
+    },
+  };
+}
+
+/**
+ * Fixture first, matching the provider selection in `gacha.module.ts`: a
+ * deployment that turns fixtures on is explicitly asking for deterministic
+ * inventory even when devnet credentials happen to be present.
+ */
+export function snapshotInputForMode(
+  machine: SportsPackGachaMachine,
+  candidates: readonly SportsPackGachaCard[],
+): PrepareGachaInventorySnapshotInput {
+  if (gachaFixtureModeEnabled()) {
+    return fixtureSnapshotInput(machine, candidates);
+  }
+  return devnetSnapshotInput(machine, candidates);
+}
+
+function latestEvidenceTimestamp(candidates: readonly SportsPackGachaCard[]): Date {
+  return candidates.reduce((latest, candidate) => {
+    const evidenceTimestamp =
+      candidate.insuredValue?.sourceTimestamp &&
+      candidate.insuredValue.sourceTimestamp > candidate.inventorySourceTimestamp
+        ? candidate.insuredValue.sourceTimestamp
+        : candidate.inventorySourceTimestamp;
+    return evidenceTimestamp > latest ? evidenceTimestamp : latest;
+  }, new Date(0));
 }
 
 function canonicalPolicy(input: GachaInventorySnapshotPolicy): CanonicalPolicy {

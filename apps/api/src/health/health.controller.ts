@@ -53,7 +53,7 @@ export class HealthController {
       dependencies: { database: 'ok' },
       service: 'dailydraft-api',
       status: 'ok',
-      version: '0.2.0-devnet',
+      version: '0.3.0-devnet',
     };
   }
 

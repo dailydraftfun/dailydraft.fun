@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { ChoreographyBeat, ChoreographyController } from './components/choreography';
 import type { LivePull } from './duel/live-duel-state';
 import { journeyTestIds } from './e2e/journey-test-ids';
 
@@ -14,6 +15,7 @@ const walletState = {
   account: null,
   address: null,
   canSignMessage: false,
+  canSignTransaction: true,
   clearError: () => undefined,
   cluster: 'devnet' as const,
   connect: async () => true,
@@ -24,6 +26,11 @@ const walletState = {
   rpcUrl: 'https://api.devnet.solana.com',
   selectedWallet: null,
   shortAddress: null,
+  signTransaction: async () => ({
+    serializedTransaction: new Uint8Array(),
+    signature: 'signature',
+    signedTransactionBase64: '',
+  }),
   signAndSendTransaction: async () => 'signature',
   signMessage: async () => new Uint8Array(),
   status: 'disconnected' as const,
@@ -48,7 +55,9 @@ mock.module('./solana/wallet-auth-provider', () => ({
   useWalletAuth: () => authenticationState,
 }));
 
-const { DuelArena, DuelCard } = await import('./duel-arena');
+const { DuelArena, DuelCard, duelResolutionReady, duelWinnerCelebrationIntensity } = await import(
+  './duel-arena'
+);
 
 const charizard: LivePull = {
   id: 'outcome-you',
@@ -105,8 +114,11 @@ describe('duel card stages', () => {
   test('a revealed pull with art renders the card image, sheen, burst and tier badge', () => {
     const markup = renderToStaticMarkup(
       <DuelCard
+        choreography={controllerFor('settled', 'rare')}
         pull={charizard}
+        reducedMotion={false}
         resolution="winner"
+        rivalValueMinor={25_000_000n}
         side="you"
         stage="revealed"
         tier="$50.00"
@@ -118,8 +130,11 @@ describe('duel card stages', () => {
     expect(markup).toContain('class="pull-image"');
     expect(markup).toContain('alt="Charizard fixture pull"');
     expect(markup).toContain('class="pull-sheen"');
-    expect(markup).toContain('class="pull-burst"');
+    expect(markup).toContain('class="pull-winner-celebration"');
     expect(markup).toContain('>Rare pull<');
+    expect(markup).toContain('data-choreography-beat="settled"');
+    expect(markup).toContain('data-choreography-settled="true"');
+    expect(markup).toMatch(/data-celebration-intensity="0\.(?:9|8)\d+"/);
     // The art replaces the text plate rather than stacking on top of it.
     expect(markup).not.toContain('VERIFIED PULL');
   });
@@ -127,8 +142,11 @@ describe('duel card stages', () => {
   test('a revealed pull without art falls back to the text plate but keeps the payoff chrome', () => {
     const markup = renderToStaticMarkup(
       <DuelCard
+        choreography={controllerFor('celebrate', 'rare')}
         pull={artless}
+        reducedMotion={false}
         resolution="loser"
+        rivalValueMinor={charizard.valueMinor}
         side="opponent"
         stage="revealed"
         tier="$50.00"
@@ -147,8 +165,11 @@ describe('duel card stages', () => {
   test('an opening card shows the sealed pack with no pull chrome', () => {
     const markup = renderToStaticMarkup(
       <DuelCard
+        choreography={controllerFor('anticipation')}
         pull={null}
+        reducedMotion={false}
         resolution={null}
+        rivalValueMinor={null}
         side="you"
         stage="opening"
         tier="$50.00"
@@ -169,8 +190,11 @@ describe('duel card stages', () => {
   test('a committed pull stays hidden until the stage flips to revealed', () => {
     const markup = renderToStaticMarkup(
       <DuelCard
+        choreography={controllerFor('idle', 'rare')}
         pull={charizard}
+        reducedMotion={false}
         resolution={null}
+        rivalValueMinor={null}
         side="you"
         stage="sealed"
         tier="$50.00"
@@ -183,4 +207,74 @@ describe('duel card stages', () => {
     expect(markup).not.toContain('class="pull-burst"');
     expect(markup).toContain('Result pending');
   });
+
+  test('binds every Duel card beat to the shared choreography driver', () => {
+    for (const beat of ['anticipation', 'hold', 'reveal', 'celebrate', 'settled'] as const) {
+      const markup = renderToStaticMarkup(
+        <DuelCard
+          choreography={controllerFor(beat, 'chase')}
+          pull={charizard}
+          reducedMotion={false}
+          resolution={null}
+          rivalValueMinor={25_000_000n}
+          side="you"
+          stage={beat === 'celebrate' ? 'opening' : 'revealed'}
+          tier="$50.00"
+          walletLabel="You"
+        />,
+      );
+
+      expect(markup).toContain(`data-choreography-beat="${beat}"`);
+      expect(markup).toContain(`data-choreography-settled="${beat === 'settled'}"`);
+    }
+  });
+
+  test('holds resolution until both shared controllers settle', () => {
+    expect(duelResolutionReady(false, true, true)).toBe(false);
+    expect(duelResolutionReady(true, false, true)).toBe(false);
+    expect(duelResolutionReady(true, true, false)).toBe(false);
+    expect(duelResolutionReady(true, true, true)).toBe(true);
+  });
+
+  test('scales winner celebration by canonical rarity intensity and relative committed value', () => {
+    expect(duelWinnerCelebrationIntensity(0.78, 72_500_000n, 25_000_000n)).toBeGreaterThan(0.78);
+    expect(duelWinnerCelebrationIntensity(0.78, 72_500_000n, 72_500_000n)).toBe(0.78);
+    expect(duelWinnerCelebrationIntensity(2, 100n, 0n)).toBe(1.35);
+    expect(duelWinnerCelebrationIntensity(-1, 0n, 0n)).toBe(0);
+    expect(duelWinnerCelebrationIntensity(0.5, 100n, -1n)).toBe(0.5);
+  });
+
+  test('removes the superseded CSS keyframes and keeps a static reduced-motion fallback', () => {
+    const source = readFileSync(new URL('./duel-arena.tsx', import.meta.url), 'utf8');
+    const css = readFileSync(new URL('./globals.css', import.meta.url), 'utf8');
+
+    expect(source).toContain("from './components/choreography'");
+    expect(source).toContain('<ChoreographyDriver');
+    expect(source).toContain('<ChoreographyCelebration');
+    expect(css).not.toMatch(
+      /@keyframes (pack-rip|pack-seam-split|pull-sheen-sweep|pull-burst-ring|pull-value-pop|glint)/,
+    );
+    expect(css).not.toMatch(/card-stage-(?:opening|revealed)[^{]*\{[^}]*animation:/s);
+    expect(css).toContain('.pull-winner-celebration');
+    expect(css).toMatch(
+      /prefers-reduced-motion:[\s\S]*\.pull-winner-celebration,[\s\S]*will-change: auto;/s,
+    );
+  });
 });
+
+function controllerFor(
+  beat: ChoreographyBeat,
+  rarity: ChoreographyController['rarity'] = 'common',
+): ChoreographyController {
+  const revealed = beat === 'reveal' || beat === 'celebrate' || beat === 'settled';
+  return {
+    advance: () => undefined,
+    beat,
+    fastForward: () => undefined,
+    intensity: beat === 'celebrate' ? 0.78 : 0,
+    rarity,
+    revealed,
+    settled: beat === 'settled',
+    transition: { duration: 0.48, ease: [0.22, 1, 0.36, 1] },
+  };
+}

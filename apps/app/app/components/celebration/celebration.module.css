@@ -1,0 +1,59 @@
+.overlay {
+  position: absolute;
+  z-index: 4;
+  inset: -4%;
+  overflow: hidden;
+  border-radius: calc(var(--opd-radius-xl) + 0.5rem);
+  pointer-events: none;
+}
+
+.canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.staticTreatment {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: end center;
+  padding: 0.75rem;
+  border: 2px solid rgb(from var(--opd-accent) r g b / 0.64);
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      circle at 50% 42%,
+      rgb(from var(--opd-accent) r g b / calc(0.16 * var(--celebration-glow))),
+      transparent 58%
+    ),
+    linear-gradient(to top, rgb(from var(--opd-bg-primary) r g b / 0.56), transparent 32%);
+  box-shadow:
+    inset 0 0 calc(1.25rem * var(--celebration-glow)) rgb(from var(--opd-accent) r g b / 0.24),
+    0 0 calc(1rem * var(--celebration-glow)) rgb(from var(--opd-accent) r g b / 0.18);
+  color: var(--opd-text-primary);
+  font-family: var(--opd-font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.overlay[data-celebration-rarity="chase"] .staticTreatment {
+  border-color: var(--opd-warning);
+  color: var(--opd-warning);
+}
+
+.overlay[data-celebration-reduced-motion="true"] .staticTreatment {
+  display: grid;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas {
+    display: none;
+  }
+
+  .staticTreatment {
+    display: grid;
+  }
+}

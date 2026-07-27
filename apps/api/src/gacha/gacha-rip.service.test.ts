@@ -7,6 +7,11 @@ import { GachaRipStatus } from '@dailydraft/db';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { rarityForSerializedValue } from '../common/pull-rarity.js';
 import type { GachaInventorySnapshotService } from './gacha-inventory-snapshot.service.js';
+import type {
+  ConsumeGachaPaymentInput,
+  FindConsumedGachaPaymentInput,
+  GachaPaymentService,
+} from './gacha-payment.service.js';
 import {
   createFixtureGachaPullOddsRuleSet,
   type GachaPullOddsRuleSet,
@@ -16,6 +21,7 @@ import { GachaRipService, selectGachaOutcome } from './gacha-rip.service.js';
 import {
   type AcquiredGachaCard,
   type AcquireGachaCardInput,
+  GachaCardDefinitelyNotAcquiredError,
   type SettledGachaRip,
   type SettleGachaRipInput,
   type SportsPackGachaCard,
@@ -28,15 +34,18 @@ const FIXED_SEED = 'fixture-seed-0000000001';
 const FIXED_SERVER_SEED = 'b'.repeat(64);
 const MACHINE_KEY = 'collector-crypt-football-50000000-devnet-fixture';
 const WALLET = 'devnet-fixture-recipient-wallet';
+const SOLANA_WALLET = 'BkS1e5Kx8dCVAV4vXHzr4y6bTs2hUcHYD9Y4tzk6Bdub';
 const ORIGINAL_ENV = {
   fixture: process.env.DAILYDRAFT_GACHA_FIXTURE_MODE,
   node: process.env.NODE_ENV,
+  providerMode: process.env.DAILYDRAFT_PROVIDER_MODE,
   vercel: process.env.VERCEL_ENV,
 };
 
 afterEach(() => {
   restoreEnvironment('DAILYDRAFT_GACHA_FIXTURE_MODE', ORIGINAL_ENV.fixture);
   restoreEnvironment('NODE_ENV', ORIGINAL_ENV.node);
+  restoreEnvironment('DAILYDRAFT_PROVIDER_MODE', ORIGINAL_ENV.providerMode);
   restoreEnvironment('VERCEL_ENV', ORIGINAL_ENV.vercel);
 });
 
@@ -320,6 +329,21 @@ describe('GachaRipService', () => {
     expect(migration).toContain('CREATE UNIQUE INDEX "GachaRip_machineKey_idempotencyKey_key"');
   });
 
+  test('the payment migration persists and constrains lifecycle recovery leases', () => {
+    const migrationPath = fileURLToPath(
+      new URL(
+        '../../../../packages/db/prisma/migrations/20260726120000_gacha_rip_payments/migration.sql',
+        import.meta.url,
+      ),
+    );
+    const migration = readFileSync(migrationPath, 'utf8');
+
+    expect(migration).toContain('ADD COLUMN "recipientWallet" TEXT');
+    expect(migration).toContain('ADD COLUMN "lifecycleLeaseOwner" TEXT');
+    expect(migration).toContain('"GachaRip_status_lifecycleLeaseExpiresAt_idx"');
+    expect(migration).toContain('"GachaRip_lifecycle_recovery_check"');
+  });
+
   test('returns the existing rip when the same idempotency key is replayed', async () => {
     enableFixtureMode();
     const database = new RipDatabase();
@@ -347,6 +371,31 @@ describe('GachaRipService', () => {
     expect(replay.rip.selectedAssetReference).toBe(first.rip.selectedAssetReference);
     expect(database.rips).toHaveLength(1);
     expect(provider.operations).toEqual(['acquire', 'settle']);
+  });
+
+  test('fails closed when a legacy idempotency replay has no recipient wallet', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    const service = serviceWith(database, provider);
+    await database.gachaRip.create({
+      data: baseRipRow({
+        id: 'gacharip_legacy_null_recipient',
+        idempotencyKey: 'idem-key-legacy-null-recipient',
+        recipientWallet: null,
+      }),
+    });
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: `gachaseed_${'a'.repeat(32)}`,
+        idempotencyKey: 'idem-key-legacy-null-recipient',
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('Gacha rip replay changed its recipient wallet');
+    expect(provider.operations).toEqual([]);
   });
 
   test('creates distinct rips for distinct idempotency keys', async () => {
@@ -414,10 +463,11 @@ describe('GachaRipService', () => {
     expect(database.rips).toHaveLength(1);
   });
 
-  test('does not reveal the server seed while a replayed rip is still in flight', async () => {
+  test('resumes a post-commit rip whose prior lifecycle owner disappeared', async () => {
     enableFixtureMode();
     const database = new RipDatabase();
-    const service = serviceWith(database, new RecordingProvider());
+    const provider = new RecordingProvider();
+    const service = serviceWith(database, provider);
     const commitment = await service.createSeedCommitment(MACHINE_KEY);
     await database.gachaPullOddsCommitment.create({
       data: { id: 'gachaodds_manual', version: 1 },
@@ -428,6 +478,8 @@ describe('GachaRipService', () => {
         idempotencyKey: 'idem-in-flight',
         oddsCommitmentId: 'gachaodds_manual',
         selectedAssetReference: 'devnet:fixture:asset:in-flight',
+        lifecycleLeaseExpiresAt: new Date(Date.now() - 1_000),
+        lifecycleLeaseOwner: 'crashed-process',
         status: GachaRipStatus.SELECTED,
       }),
     });
@@ -444,14 +496,98 @@ describe('GachaRipService', () => {
       seed: FIXED_SEED,
     });
 
-    expect(replay.rip.status).toBe(GachaRipStatus.SELECTED);
-    expect(replay.serverSeed).toBeNull();
-    expect(replay.serverSeedHash).toBeNull();
+    expect(replay.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(replay.serverSeed).toBeTruthy();
+    expect(replay.serverSeedHash).toBe(commitment.serverSeedHash);
+    expect(provider.operations).toEqual(['acquire', 'settle']);
   });
 
-  test('fails closed before reading snapshots when fixture mode is disabled', async () => {
+  test('does not duplicate provider work while another lifecycle lease is active', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    const service = serviceWith(database, provider);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+    await database.gachaPullOddsCommitment.create({
+      data: { id: 'gachaodds_active_lease', version: 1 },
+    });
+    const inFlightRip = await database.gachaRip.create({
+      data: baseRipRow({
+        id: 'gacharip_active_lease',
+        idempotencyKey: 'idem-active-lease',
+        lifecycleLeaseExpiresAt: new Date(Date.now() + 60_000),
+        lifecycleLeaseOwner: 'active-process',
+        oddsCommitmentId: 'gachaodds_active_lease',
+        status: GachaRipStatus.REVEALED,
+      }),
+    });
+    await database.gachaRipSeedCommitment.updateMany({
+      data: { consumedByRipId: inFlightRip.id },
+      where: { consumedByRipId: null, expiresAt: { gt: new Date(0) }, id: commitment.commitmentId },
+    });
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: commitment.commitmentId,
+        idempotencyKey: 'idem-active-lease',
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('already in progress');
+    expect(provider.operations).toEqual([]);
+  });
+
+  test('uses a consumed payment as the replay anchor when no idempotency key was sent', async () => {
+    enableDevnetMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    const payments = new RecordingPayments();
+    const service = serviceWith(database, provider, snapshot(), payments);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+    await database.gachaPullOddsCommitment.create({
+      data: { id: 'gachaodds_paid_recovery', version: 1 },
+    });
+    const inFlightRip = await database.gachaRip.create({
+      data: baseRipRow({
+        id: 'gacharip_paid_recovery',
+        oddsCommitmentId: 'gachaodds_paid_recovery',
+        recipientWallet: SOLANA_WALLET,
+        selectedAssetReference: 'devnet:fixture:asset:paid-recovery',
+        status: GachaRipStatus.SELECTED,
+      }),
+    });
+    await database.gachaRipSeedCommitment.updateMany({
+      data: { consumedByRipId: inFlightRip.id },
+      where: { consumedByRipId: null, expiresAt: { gt: new Date(0) }, id: commitment.commitmentId },
+    });
+    const paymentIntentId = `gachapay_${'e'.repeat(32)}`;
+    payments.recordConsumed({
+      intentId: paymentIntentId,
+      machineKey: MACHINE_KEY,
+      now: new Date(),
+      payerWallet: SOLANA_WALLET,
+      ripId: inFlightRip.id,
+    });
+
+    const recovered = await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      machineKey: MACHINE_KEY,
+      paymentIntentId,
+      recipientWallet: SOLANA_WALLET,
+      seed: FIXED_SEED,
+    });
+
+    expect(recovered.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(database.rips).toHaveLength(1);
+    expect(payments.consumed).toHaveLength(1);
+    expect(provider.operations).toEqual(['acquire', 'settle']);
+  });
+
+  test('fails closed before reading snapshots when fixture and devnet modes are disabled', async () => {
     process.env.NODE_ENV = 'test';
     delete process.env.DAILYDRAFT_GACHA_FIXTURE_MODE;
+    delete process.env.DAILYDRAFT_PROVIDER_MODE;
     const database = new RipDatabase();
     let snapshotReads = 0;
     const snapshots = {
@@ -464,6 +600,7 @@ describe('GachaRipService', () => {
       database as unknown as DatabaseClient,
       snapshots,
       new RecordingProvider(),
+      new RecordingPayments() as unknown as GachaPaymentService,
     );
 
     await expect(
@@ -473,9 +610,102 @@ describe('GachaRipService', () => {
         recipientWallet: WALLET,
         seed: FIXED_SEED,
       }),
-    ).rejects.toThrow('disabled outside explicit fixture or preview mode');
+    ).rejects.toThrow('disabled outside explicit fixture, preview, or devnet mode');
     expect(snapshotReads).toBe(0);
     expect(database.transitions).toEqual([]);
+  });
+
+  test('spends the verified payment intent on the rip when devnet mode requires funding', async () => {
+    enableDevnetMode();
+    const database = new RipDatabase();
+    const payments = new RecordingPayments();
+    const service = serviceWith(database, new RecordingProvider(), snapshot(), payments);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    const result = await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      machineKey: MACHINE_KEY,
+      paymentIntentId: `gachapay_${'c'.repeat(32)}`,
+      recipientWallet: WALLET,
+      seed: FIXED_SEED,
+    });
+
+    expect(result.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(payments.consumed).toHaveLength(1);
+    expect(payments.consumed[0]).toMatchObject({
+      intentId: `gachapay_${'c'.repeat(32)}`,
+      machineKey: MACHINE_KEY,
+      // Single-player: the payer and the recipient are the same wallet.
+      payerWallet: WALLET,
+      ripId: result.rip.id,
+    });
+  });
+
+  test('refuses a funded rip that names no payment intent', async () => {
+    enableDevnetMode();
+    const database = new RipDatabase();
+    const payments = new RecordingPayments();
+    const service = serviceWith(database, new RecordingProvider(), snapshot(), payments);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: commitment.commitmentId,
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('requires a verified payment intent');
+    expect(payments.consumed).toEqual([]);
+    expect(database.transitions).toEqual([]);
+  });
+
+  test('keeps the rip and the payment consistent when the intent cannot be spent', async () => {
+    enableDevnetMode();
+    const database = new RipDatabase();
+    const payments = new RecordingPayments();
+    payments.failure = new Error('Gacha rip payment is not verified or was already consumed');
+    const service = serviceWith(database, new RecordingProvider(), snapshot(), payments);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: commitment.commitmentId,
+        machineKey: MACHINE_KEY,
+        paymentIntentId: `gachapay_${'d'.repeat(32)}`,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('is not verified or was already consumed');
+    // The throw happens inside the rip transaction, before the reveal, so the rip
+    // never advances past SELECTED. Postgres rolls the row back too; this in-memory
+    // fake has no rollback, which is why the insert is still visible here.
+    expect(database.transitions).toEqual([GachaRipStatus.SELECTED]);
+    // The load-bearing assertion: an unspendable payment must not burn the seed.
+    const stored = await database.gachaRipSeedCommitment.findUnique({
+      where: { id: commitment.commitmentId },
+    });
+    expect(stored?.consumedByRipId).toBeNull();
+  });
+
+  test('leaves fixture rips unfunded even when devnet credentials are present', async () => {
+    enableFixtureMode();
+    process.env.DAILYDRAFT_PROVIDER_MODE = 'dailydraft-devnet';
+    const database = new RipDatabase();
+    const payments = new RecordingPayments();
+    const service = serviceWith(database, new RecordingProvider(), snapshot(), payments);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    const result = await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      machineKey: MACHINE_KEY,
+      paymentIntentId: `gachapay_${'f'.repeat(32)}`,
+      recipientWallet: WALLET,
+      seed: FIXED_SEED,
+    });
+
+    expect(result.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(payments.consumed).toEqual([]);
   });
 
   test('reports provider capabilities and exposes only sealed committed odds', async () => {
@@ -537,6 +767,92 @@ describe('GachaRipService', () => {
     // audit trail moves to failedAssetReference.
     expect(database.rip?.selectedAssetReference).toBeNull();
     expect(database.rip?.failedAssetReference).toBe('devnet:fixture:asset:base');
+  });
+
+  test('keeps a transient acquisition failure REVEALED and resumes it idempotently', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    provider.transientAcquisitionFailures = 1;
+    const service = serviceWith(database, provider);
+    const commitment = await service.createSeedCommitment(MACHINE_KEY);
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: commitment.commitmentId,
+        idempotencyKey: 'idem-transient-acquisition',
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('Fixture acquisition outcome is unknown');
+    expect(database.rip).toMatchObject({
+      lifecycleLeaseExpiresAt: null,
+      lifecycleLeaseOwner: null,
+      status: GachaRipStatus.REVEALED,
+    });
+    const retainedAssetReference = database.rip?.selectedAssetReference;
+    if (!retainedAssetReference) {
+      throw new Error('expected the transient rip to retain its selected asset');
+    }
+    expect(retainedAssetReference).toMatch(/^devnet:fixture:asset:/);
+    expect(database.rip?.failedAssetReference).toBeUndefined();
+
+    const resumed = await service.createFixtureRip({
+      commitmentId: commitment.commitmentId,
+      idempotencyKey: 'idem-transient-acquisition',
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: 'ignored-on-idempotent-replay',
+    });
+
+    expect(resumed.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(resumed.rip.selectedAssetReference).toBe(retainedAssetReference);
+    expect(provider.operations).toEqual(['acquire', 'acquire', 'settle']);
+  });
+
+  test('does not reallocate an asset after an ambiguous acquisition outcome', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    provider.transientAcquisitionFailures = 1;
+    provider.deliverBeforeTransientFailure = true;
+    const service = serviceWith(database, provider, twoCardBaseSnapshot());
+    const rules = validateGachaPullOddsRuleSet(createFixtureGachaPullOddsRuleSet(SNAPSHOT_HASH));
+
+    const first = await service.createSeedCommitment(MACHINE_KEY);
+    const firstServerSeed = requireStoredServerSeed(database, first.commitmentId);
+    const firstClientSeed = findSeedLandingInBand(rules, firstServerSeed, 'base');
+    await expect(
+      service.createFixtureRip({
+        commitmentId: first.commitmentId,
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: firstClientSeed,
+      }),
+    ).rejects.toThrow('Fixture acquisition outcome is unknown');
+
+    const ambiguousRip = database.rip;
+    if (!ambiguousRip?.selectedAssetReference) {
+      throw new Error('expected the ambiguous rip to retain its selected asset');
+    }
+    expect(ambiguousRip.status).toBe(GachaRipStatus.REVEALED);
+    expect(provider.deliveredAssetReferences).toContain(ambiguousRip.selectedAssetReference);
+
+    const second = await service.createSeedCommitment(MACHINE_KEY);
+    const secondServerSeed = requireStoredServerSeed(database, second.commitmentId);
+    const secondClientSeed = findSeedLandingInBand(rules, secondServerSeed, 'base');
+    const settled = await service.createFixtureRip({
+      commitmentId: second.commitmentId,
+      machineKey: MACHINE_KEY,
+      recipientWallet: WALLET,
+      seed: secondClientSeed,
+    });
+
+    expect(settled.rip.status).toBe(GachaRipStatus.SETTLED);
+    expect(settled.rip.selectedAssetReference).not.toBe(ambiguousRip.selectedAssetReference);
+    expect(ambiguousRip.selectedAssetReference).not.toBeNull();
+    expect(ambiguousRip.status).toBe(GachaRipStatus.REVEALED);
   });
 
   test('a rip that fails acquisition releases its asset for a later rip to claim', async () => {
@@ -611,11 +927,17 @@ function serviceWith(
   database: RipDatabase,
   provider: RecordingProvider,
   snapshotOverride: ReturnType<typeof snapshot> = snapshot(),
+  payments: RecordingPayments = new RecordingPayments(),
 ): GachaRipService {
   const snapshots = {
     findLatestSealed: async () => snapshotOverride,
   } as unknown as GachaInventorySnapshotService;
-  return new GachaRipService(database as unknown as DatabaseClient, snapshots, provider);
+  return new GachaRipService(
+    database as unknown as DatabaseClient,
+    snapshots,
+    provider,
+    payments as unknown as GachaPaymentService,
+  );
 }
 
 function snapshot() {
@@ -698,14 +1020,25 @@ class RecordingProvider extends SportsPackGachaProvider {
     settlement: true,
   });
   readonly mode = 'fixture' as const;
+  deliverBeforeTransientFailure = false;
+  deliveredAssetReferences: string[] = [];
   failAcquisition = false;
   operations: string[] = [];
+  transientAcquisitionFailures = 0;
 
-  async acquireCard(_input: AcquireGachaCardInput): Promise<AcquiredGachaCard> {
+  async acquireCard(input: AcquireGachaCardInput): Promise<AcquiredGachaCard> {
     this.operations.push('acquire');
     if (this.failAcquisition) {
-      throw new ServiceUnavailableException('Fixture acquisition failed');
+      throw new GachaCardDefinitelyNotAcquiredError('Fixture acquisition failed');
     }
+    if (this.transientAcquisitionFailures > 0) {
+      this.transientAcquisitionFailures -= 1;
+      if (this.deliverBeforeTransientFailure) {
+        this.deliveredAssetReferences.push(input.assetReference);
+      }
+      throw new ServiceUnavailableException('Fixture acquisition outcome is unknown');
+    }
+    this.deliveredAssetReferences.push(input.assetReference);
     return { acquisitionReference: 'devnet-acquisition-reference', status: 'acquired' };
   }
 
@@ -727,15 +1060,20 @@ interface StoredRip {
   acquiredAt?: Date;
   acquisitionReference?: string;
   failedAssetReference?: string | null;
+  failedAt?: Date;
+  failureReason?: string;
   id: string;
   idempotencyKey: string | null;
   insuredValueCurrency: string;
   insuredValueDecimals: number;
   insuredValueMinor: string;
+  lifecycleLeaseExpiresAt: Date | null;
+  lifecycleLeaseOwner: string | null;
   machineKey: string;
   oddsCommitmentId: string;
   oddsRulesHash: string;
   revealedAt?: Date;
+  recipientWallet: string | null;
   seedCommitmentHash: string;
   // Nullable: a FAILED rip never delivered its asset, so it is released back to the
   // eligible pool (see the create() duplicate check below, which mirrors Postgres's
@@ -746,7 +1084,6 @@ interface StoredRip {
   settlementReference?: string;
   snapshotContentHash: string;
   status: GachaRipStatus;
-  [key: string]: unknown;
 }
 
 interface StoredSeedCommitment {
@@ -758,6 +1095,9 @@ interface StoredSeedCommitment {
   serverSeed: string;
   serverSeedHash: string;
 }
+
+type StoredRipCreateInput = Omit<StoredRip, 'lifecycleLeaseExpiresAt' | 'lifecycleLeaseOwner'> &
+  Partial<Pick<StoredRip, 'lifecycleLeaseExpiresAt' | 'lifecycleLeaseOwner'>>;
 
 // Production's createSeedCommitment never includes consumedByRipId in its create
 // payload (it relies on the column defaulting to NULL), so the fake's create input
@@ -774,9 +1114,12 @@ function baseRipRow(overrides: Partial<StoredRip> = {}): StoredRip {
     insuredValueCurrency: 'USDC',
     insuredValueDecimals: 6,
     insuredValueMinor: '35000000',
+    lifecycleLeaseExpiresAt: null,
+    lifecycleLeaseOwner: null,
     machineKey: MACHINE_KEY,
     oddsCommitmentId: 'gachaodds_manual',
     oddsRulesHash: 'r'.repeat(64),
+    recipientWallet: WALLET,
     seedCommitmentHash: sha256(FIXED_SEED),
     selectedAssetReference: 'devnet:fixture:asset:manual',
     selectedAt: new Date(),
@@ -808,7 +1151,7 @@ class RipDatabase {
   };
 
   readonly gachaRip = {
-    create: async ({ data }: { data: StoredRip }) => {
+    create: async ({ data }: { data: StoredRipCreateInput }) => {
       // Mirrors Postgres unique-index semantics: a NULL selectedAssetReference (a
       // FAILED rip whose asset was released) never collides with anything, including
       // another NULL, so only a non-null match is a real duplicate.
@@ -823,7 +1166,11 @@ class RipDatabase {
           'Unique constraint failed on GachaRip_snapshotContentHash_selectedAssetReference_key',
         );
       }
-      const rip = { ...data };
+      const rip = {
+        lifecycleLeaseExpiresAt: null,
+        lifecycleLeaseOwner: null,
+        ...data,
+      };
       this.rips.push(rip);
       this.transitions.push(data.status);
       return rip;
@@ -861,14 +1208,14 @@ class RipDatabase {
       where,
     }: {
       data: Partial<StoredRip>;
-      where: { id: string; status: GachaRipStatus };
+      where: Record<string, unknown>;
     }) => {
       const rip = this.rips.find((candidate) => candidate.id === where.id);
-      if (!rip || rip.status !== where.status) {
+      if (!rip || !matchesRipWhere(rip, where)) {
         return { count: 0 };
       }
       Object.assign(rip, data);
-      this.transitions.push(data.status as GachaRipStatus);
+      if (data.status) this.transitions.push(data.status);
       return { count: 1 };
     },
   };
@@ -919,9 +1266,87 @@ class RipDatabase {
   }
 }
 
+class RecordingPayments {
+  readonly consumed: ConsumeGachaPaymentInput[] = [];
+  failure: Error | null = null;
+
+  recordConsumed(input: ConsumeGachaPaymentInput): void {
+    this.consumed.push(input);
+  }
+
+  async consumeVerifiedPayment(
+    _transaction: unknown,
+    input: ConsumeGachaPaymentInput,
+  ): Promise<void> {
+    if (this.failure) throw this.failure;
+    this.consumed.push(input);
+  }
+
+  async findConsumedRip(
+    _transaction: unknown,
+    input: FindConsumedGachaPaymentInput,
+  ): Promise<string | null> {
+    const payment = this.consumed.find((candidate) => candidate.intentId === input.intentId);
+    if (!payment) return null;
+    if (payment.machineKey !== input.machineKey || payment.payerWallet !== input.payerWallet) {
+      throw new Error('Gacha payment replay changed its committed request');
+    }
+    return payment.ripId;
+  }
+}
+
+function matchesRipWhere(rip: StoredRip, where: Record<string, unknown>): boolean {
+  if (where.id !== undefined && rip.id !== where.id) return false;
+  if (
+    where.lifecycleLeaseOwner !== undefined &&
+    rip.lifecycleLeaseOwner !== where.lifecycleLeaseOwner
+  )
+    return false;
+  if (typeof where.status === 'string' && rip.status !== where.status) return false;
+  if (
+    typeof where.status === 'object' &&
+    where.status !== null &&
+    'in' in where.status &&
+    Array.isArray(where.status.in) &&
+    !where.status.in.includes(rip.status)
+  ) {
+    return false;
+  }
+  if (Array.isArray(where.OR)) {
+    return where.OR.some((candidate) => matchesRipWhere(rip, candidate as Record<string, unknown>));
+  }
+  const expiry = where.lifecycleLeaseExpiresAt;
+  if (
+    'lifecycleLeaseExpiresAt' in where &&
+    expiry === null &&
+    rip.lifecycleLeaseExpiresAt !== null
+  ) {
+    return false;
+  }
+  if (
+    typeof expiry === 'object' &&
+    expiry !== null &&
+    'lte' in expiry &&
+    expiry.lte instanceof Date &&
+    (rip.lifecycleLeaseExpiresAt === null ||
+      rip.lifecycleLeaseExpiresAt.getTime() > expiry.lte.getTime())
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function enableFixtureMode(): void {
   process.env.NODE_ENV = 'test';
   process.env.DAILYDRAFT_GACHA_FIXTURE_MODE = 'true';
+  delete process.env.VERCEL_ENV;
+}
+
+/** Devnet without fixtures is the only mode in which a rip must be funded. */
+function enableDevnetMode(): void {
+  process.env.NODE_ENV = 'test';
+  delete process.env.DAILYDRAFT_GACHA_FIXTURE_MODE;
+  process.env.DAILYDRAFT_PROVIDER_MODE = 'dailydraft-devnet';
   delete process.env.VERCEL_ENV;
 }
 

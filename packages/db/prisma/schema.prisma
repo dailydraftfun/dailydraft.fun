@@ -203,6 +203,14 @@ enum GachaRipStatus {
   FAILED
 }
 
+enum GachaRipPaymentStatus {
+  PENDING
+  VERIFIED
+  CONSUMED
+  EXPIRED
+  FAILED
+}
+
 enum GachaInventoryExclusionReason {
   MISSING_INSURED_VALUE
   MISSING_ASSET_REFERENCE
@@ -780,6 +788,7 @@ model GachaMachine {
   updatedAt          DateTime                  @updatedAt
   inventorySnapshots GachaInventorySnapshot[]
   oddsCommitments    GachaPullOddsCommitment[]
+  payments           GachaRipPayment[]
   rips               GachaRip[]
 
   @@index([sport, tierPriceMinor, active])
@@ -904,39 +913,98 @@ model GachaRipSeedCommitment {
 /// claimed. failedAssetReference preserves an audit trail of what a FAILED rip had
 /// selected before the asset was released.
 model GachaRip {
-  id                     String                  @id
-  machineKey             String
-  oddsCommitmentId       String
-  status                 GachaRipStatus
-  snapshotContentHash    String
-  oddsRulesHash          String
-  seedCommitmentHash     String
-  selectedAssetReference String?
-  failedAssetReference   String?
-  acquisitionReference   String?
-  settlementReference    String?
-  insuredValueMinor      String
-  insuredValueCurrency   String                  @default("USDC")
-  insuredValueDecimals   Int                     @default(6)
-  selectedAt             DateTime
-  revealedAt             DateTime?
-  acquiredAt             DateTime?
-  settledAt              DateTime?
-  failedAt               DateTime?
-  failureReason          String?
-  idempotencyKey         String?
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  machine                GachaMachine            @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
-  oddsCommitment         GachaPullOddsCommitment @relation(fields: [oddsCommitmentId], references: [id], onDelete: Restrict)
-  seedCommitment         GachaRipSeedCommitment?
+  id                      String                  @id
+  machineKey              String
+  oddsCommitmentId        String
+  status                  GachaRipStatus
+  snapshotContentHash     String
+  oddsRulesHash           String
+  seedCommitmentHash      String
+  selectedAssetReference  String?
+  failedAssetReference    String?
+  acquisitionReference    String?
+  settlementReference     String?
+  insuredValueMinor       String
+  insuredValueCurrency    String                  @default("USDC")
+  insuredValueDecimals    Int                     @default(6)
+  selectedAt              DateTime
+  revealedAt              DateTime?
+  acquiredAt              DateTime?
+  settledAt               DateTime?
+  failedAt                DateTime?
+  failureReason           String?
+  idempotencyKey          String?
+  /// Internal recovery state. recipientWallet is persisted so a retry can
+  /// deterministically resume provider delivery after the payment transaction
+  /// has committed; lease fields serialize concurrent resume attempts.
+  recipientWallet         String?
+  lifecycleLeaseOwner     String?
+  lifecycleLeaseExpiresAt DateTime?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  machine                 GachaMachine            @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
+  oddsCommitment          GachaPullOddsCommitment @relation(fields: [oddsCommitmentId], references: [id], onDelete: Restrict)
+  payment                 GachaRipPayment?
+  seedCommitment          GachaRipSeedCommitment?
 
   @@unique([snapshotContentHash, selectedAssetReference])
   @@unique([machineKey, idempotencyKey])
   @@index([machineKey, createdAt])
+  @@index([status, lifecycleLeaseExpiresAt])
   @@index([status, updatedAt])
   @@index([snapshotContentHash])
   @@index([oddsRulesHash])
+}
+
+/// A player-funded SPL transfer that pays for exactly one Gacha rip.
+///
+/// A rip is single-player, so unlike a duel there is no escrow instruction the
+/// payment can be bound to. Instead the intent is issued first with a memoNonce
+/// the payer must echo inside the signed transaction; verification then binds
+/// the landed signature to this row. Both the signature and consumedByRipId are
+/// unique, so the database itself refuses to let one payment fund two rips or
+/// one transfer satisfy two intents, even under concurrent requests.
+model GachaRipPayment {
+  id                      String                @id
+  machineKey              String
+  status                  GachaRipPaymentStatus @default(PENDING)
+  network                 SolanaNetwork         @default(DEVNET)
+  payerWallet             String
+  /// Mirrors payerWallet + machineKey only while this intent is unresolved.
+  /// PostgreSQL's nullable composite uniqueness makes terminal rows release the
+  /// slot while preventing concurrent tabs/devices from opening a second one.
+  activePayerWallet       String?
+  activeMachineKey        String?
+  destinationTokenAccount String
+  mint                    String
+  amountMinor             String
+  amountCurrency          String                @default("USDC")
+  amountDecimals          Int                   @default(6)
+  memoNonce               String                @unique
+  signature               String?               @unique
+  signatureClaimedAt      DateTime?
+  claimedRecentBlockhash  String?
+  reconciliationCheckedAt DateTime?
+  reconciliationReason    String?
+  /// False when the payer used plain SPL `transfer`, which omits the mint. The
+  /// destination token account's mint is resolved out of band before the intent
+  /// is issued, so the transfer is still bound to one mint either way.
+  mintVerifiedOnChain     Boolean               @default(false)
+  consumedByRipId         String?               @unique
+  verifiedAt              DateTime?
+  consumedAt              DateTime?
+  terminalAt              DateTime?
+  terminalReason          String?
+  expiresAt               DateTime
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  consumedByRip           GachaRip?             @relation(fields: [consumedByRipId], references: [id], onDelete: Restrict)
+  machine                 GachaMachine          @relation(fields: [machineKey], references: [machineKey], onDelete: Restrict)
+
+  @@unique([activePayerWallet, activeMachineKey])
+  @@index([machineKey, createdAt])
+  @@index([status, expiresAt])
+  @@index([payerWallet, createdAt])
 }
 
 // Fantasy Tournaments foundation (sport.fun model on Solana, sourced from

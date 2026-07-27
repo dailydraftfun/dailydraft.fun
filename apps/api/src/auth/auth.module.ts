@@ -9,7 +9,7 @@ import { WalletSessionGuard } from './wallet-session.guard.js';
 
 @Module({
   controllers: [AuthController],
-  exports: [DuelMutationGuard, WalletAuthService],
+  exports: [DuelMutationGuard, WalletAuthService, WalletSessionGuard],
   providers: [
     DuelMutationGuard,
     WalletAuthService,

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   fetchLamportBalance,
   fetchSignatureCommitment,
+  fetchTokenAccountBalance,
   fetchTokenBalance,
   SolanaRpcError,
 } from './rpc-client';
@@ -99,6 +100,51 @@ describe('fetchTokenBalance', () => {
     const { result } = await withRpc(
       () => Response.json({ id: '1', jsonrpc: '2.0', result: {} }),
       () => fetchTokenBalance(wallet, mint),
+    );
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('fetchTokenAccountBalance', () => {
+  test('reads only the prepared source account', async () => {
+    const sourceTokenAccount = 'Ata111111111111111111111111111111111111111';
+    const { calls, result } = await withRpc(
+      () =>
+        Response.json({
+          id: '1',
+          jsonrpc: '2.0',
+          result: {
+            value: {
+              data: {
+                parsed: { info: { tokenAmount: { amount: '25000000', decimals: 6 } } },
+              },
+            },
+          },
+        }),
+      () => fetchTokenAccountBalance(sourceTokenAccount),
+    );
+
+    expect(result).toEqual({ amount: 25_000_000n, decimals: 6 });
+    expect(calls[0]).toMatchObject({
+      method: 'getAccountInfo',
+      params: [sourceTokenAccount, { commitment: 'confirmed', encoding: 'jsonParsed' }],
+    });
+  });
+
+  test('rejects a malformed exact-account balance', async () => {
+    const attempt = withRpc(
+      () => Response.json({ id: '1', jsonrpc: '2.0', result: { value: {} } }),
+      () => fetchTokenAccountBalance('Ata111111111111111111111111111111111111111'),
+    );
+
+    await expect(attempt).rejects.toThrow('returned an invalid token balance');
+  });
+
+  test('treats a missing source account as a zero token balance', async () => {
+    const { result } = await withRpc(
+      () => Response.json({ id: '1', jsonrpc: '2.0', result: { value: null } }),
+      () => fetchTokenAccountBalance('Ata111111111111111111111111111111111111111'),
     );
 
     expect(result).toBeNull();
