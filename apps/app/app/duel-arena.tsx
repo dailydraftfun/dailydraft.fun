@@ -23,11 +23,19 @@ import {
   XLogoIcon,
 } from '@phosphor-icons/react';
 import { Button, Card, CardContent, Separator } from '@shipshitdev/ui';
+import { motion } from 'motion/react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { getRovingTabIndex } from './accessibility/focus-navigation';
 import { trackProductEvent } from './analytics-client';
+import {
+  ChoreographyCelebration,
+  type ChoreographyController,
+  ChoreographyDriver,
+  choreographyTimingFor,
+  useRevealChoreography,
+} from './components/choreography';
 import {
   clearStoredActiveDuel,
   readStoredActiveDuel,
@@ -149,6 +157,26 @@ const completedEntryStatuses = new Set<DurableDuel['status']>([
 const STILL_RECONCILING_PAYMENT =
   'The previous payment is still reconciling on Solana devnet. Retry shortly; no wallet prompt will open until it is safe.';
 
+export function duelResolutionReady(
+  presentationReady: boolean,
+  leftSettled: boolean,
+  rightSettled: boolean,
+): boolean {
+  return presentationReady && leftSettled && rightSettled;
+}
+
+export function duelWinnerCelebrationIntensity(
+  rarityIntensity: number,
+  winnerValue: bigint,
+  rivalValue: bigint,
+): number {
+  const boundedRarity = Math.min(Math.max(rarityIntensity, 0), 1);
+  if (winnerValue <= 0n || rivalValue < 0n || winnerValue <= rivalValue) return boundedRarity;
+
+  const marginRatio = Number(((winnerValue - rivalValue) * 1_000n) / winnerValue) / 1_000;
+  return Math.min(boundedRarity * (1 + marginRatio * 0.35), 1.35);
+}
+
 function Avatar({ color, label }: { color: string; label: string }) {
   return (
     <span
@@ -167,25 +195,53 @@ function Avatar({ color, label }: { color: string; label: string }) {
 // and its API polling; the card is a pure function of its props, so it is tested
 // the same way GameModePreview is — rendered directly with each state.
 export function DuelCard({
+  choreography,
   pull,
+  reducedMotion,
+  rivalValueMinor,
   side,
   stage,
   resolution,
   tier,
   walletLabel,
 }: {
+  choreography: ChoreographyController;
   pull: LivePull | null;
+  reducedMotion: boolean;
+  rivalValueMinor: bigint | null;
   side: 'you' | 'opponent';
   stage: DuelCardStage;
   resolution: RevealSideResolution | null;
   tier: string;
   walletLabel: string;
 }) {
-  const visible = stage === 'revealed' && pull !== null;
-  const displayPull = visible ? pull : null;
+  const revealActive = stage === 'revealed' && pull !== null;
+  const visible = revealActive && choreography.revealed;
+  const displayPull = revealActive ? pull : null;
+  const celebrationTiming = choreographyTimingFor(
+    'celebrate',
+    displayPull?.rarity ?? choreography.rarity,
+    reducedMotion,
+  );
+  const winnerIntensity =
+    resolution === 'winner' && displayPull
+      ? duelWinnerCelebrationIntensity(
+          celebrationTiming.intensity,
+          displayPull.valueMinor,
+          rivalValueMinor ?? displayPull.valueMinor,
+        )
+      : 0;
+  const celebrationTransition = {
+    duration: celebrationTiming.durationMs / 1_000,
+    ease: [...celebrationTiming.easing] as [number, number, number, number],
+  };
+
   return (
     <article
       className={`reveal-column reveal-${side} ${resolution === 'winner' && visible ? 'reveal-winner' : ''}`}
+      data-choreography-beat={choreography.beat}
+      data-choreography-settled={choreography.settled}
+      data-celebration-intensity={winnerIntensity.toFixed(3)}
       data-testid={journeyTestIds.pull[side === 'you' ? 'you' : 'opponent']}
     >
       <div className="player-label">
@@ -213,10 +269,37 @@ export function DuelCard({
         ) : null}
       </div>
 
-      <div className={`card-stage card-stage-${stage}`} data-rarity={displayPull?.rarity}>
-        <div className="pack-shell" aria-hidden={visible}>
-          <div className="pack-glint" />
-          <div className="pack-seam" />
+      <div
+        className={`card-stage card-stage-${stage}`}
+        data-choreography-beat={choreography.beat}
+        data-choreography-settled={choreography.settled}
+        data-rarity={displayPull?.rarity}
+        style={
+          {
+            '--choreography-intensity': choreography.intensity,
+            '--duel-celebration-intensity': winnerIntensity,
+          } as React.CSSProperties
+        }
+      >
+        <motion.div
+          animate={duelPackTarget(choreography, stage)}
+          aria-hidden={visible}
+          className="pack-shell"
+          initial={false}
+          transition={choreography.transition}
+        >
+          <motion.div
+            animate={duelGlintTarget(choreography)}
+            className="pack-glint"
+            initial={false}
+            transition={choreography.transition}
+          />
+          <motion.div
+            animate={duelSeamTarget(choreography)}
+            className="pack-seam"
+            initial={false}
+            transition={choreography.transition}
+          />
           <div className="pack-brand">
             <span>PACK</span>
             <strong>DUEL</strong>
@@ -228,8 +311,14 @@ export function DuelCard({
               from the one screen where latency is most visible. */}
           <div className="pack-art" aria-hidden="true" />
           <span className="pack-tier">{visible ? '—' : tier}</span>
-        </div>
-        <div className="pull-shell" aria-hidden={!visible}>
+        </motion.div>
+        <motion.div
+          animate={duelPullTarget(choreography)}
+          aria-hidden={!visible}
+          className="pull-shell"
+          initial={false}
+          transition={choreography.transition}
+        >
           {displayPull?.image ? (
             <Image
               src={displayPull.image}
@@ -246,12 +335,32 @@ export function DuelCard({
               <small>{displayPull.label}</small>
             </div>
           ) : null}
-          {displayPull ? <span className="pull-sheen" aria-hidden="true" /> : null}
+          {displayPull ? (
+            <motion.span
+              animate={duelSheenTarget(choreography)}
+              aria-hidden="true"
+              className="pull-sheen"
+              initial={false}
+              transition={choreography.transition}
+            />
+          ) : null}
           {displayPull ? (
             <span className="pull-rarity">{pullRarityLabel(displayPull.rarity)}</span>
           ) : null}
-        </div>
-        {visible && displayPull ? <span className="pull-burst" aria-hidden="true" /> : null}
+        </motion.div>
+        {visible && displayPull ? (
+          <ChoreographyCelebration className="pull-burst" controller={choreography} />
+        ) : null}
+        {visible && displayPull && resolution === 'winner' ? (
+          <motion.span
+            animate={{ opacity: [0, 1, 0], scale: [0.9, 1 + winnerIntensity * 0.12, 1.08] }}
+            aria-hidden="true"
+            className="pull-winner-celebration"
+            initial={{ opacity: 0, scale: 0.9 }}
+            transition={celebrationTransition}
+          />
+        ) : null}
+        <ChoreographyDriver controller={choreography} sequenceKey={`${side}-${pull?.id ?? tier}`} />
         {stage === 'opening' ? (
           <div className="opening-status" role="status">
             <span /> Opening pack
@@ -275,6 +384,71 @@ export function DuelCard({
       </div>
     </article>
   );
+}
+
+function duelPackTarget(choreography: ChoreographyController, stage: DuelCardStage) {
+  if (stage === 'revealed' && choreography.revealed) {
+    return { opacity: 0, rotateY: -90, rotateZ: 0, scale: 0.88, x: 0, y: 0 };
+  }
+
+  switch (choreography.beat) {
+    case 'anticipation':
+      return {
+        opacity: 1,
+        rotateY: 0,
+        rotateZ: [0, -0.5, 0.5, -0.9, 0.9, 0],
+        scale: [1, 1.008, 1.012, 1.016, 1.02, 1.024],
+        x: [0, -2, 2, -3, 3, 0],
+        y: [0, 1, -1, 2, -2, 0],
+      };
+    case 'hold':
+      return {
+        opacity: 1,
+        rotateY: 0,
+        rotateZ: [0, -1.3, 1.3, 0],
+        scale: 1.024,
+        x: [0, -4, 4, 0],
+        y: [0, 2, -3, 0],
+      };
+    case 'celebrate':
+    case 'idle':
+    case 'reveal':
+    case 'settled':
+      return { opacity: 1, rotateY: 0, rotateZ: 0, scale: 1, x: 0, y: 0 };
+  }
+}
+
+function duelGlintTarget(choreography: ChoreographyController) {
+  if (choreography.beat === 'anticipation' || choreography.beat === 'hold') {
+    return { opacity: [0, 1, 0], x: ['-38%', '42%'] };
+  }
+  return { opacity: 0, x: '-38%' };
+}
+
+function duelSeamTarget(choreography: ChoreographyController) {
+  if (choreography.beat === 'anticipation') {
+    return { opacity: 0.65, scaleX: 1, scaleY: 0.7 };
+  }
+  if (choreography.beat === 'hold') {
+    return { opacity: 1, scaleX: 7, scaleY: 1 };
+  }
+  return { opacity: 0, scaleX: 1, scaleY: 0.35 };
+}
+
+function duelPullTarget(choreography: ChoreographyController) {
+  return choreography.revealed
+    ? { opacity: 1, rotateY: 0, scale: 1 }
+    : { opacity: 0, rotateY: 90, scale: 0.86 };
+}
+
+function duelSheenTarget(choreography: ChoreographyController) {
+  if (choreography.beat === 'reveal' || choreography.beat === 'celebrate') {
+    return {
+      opacity: [0, Math.max(choreography.intensity, 0.35), 0],
+      x: ['-65%', '65%'],
+    };
+  }
+  return { opacity: 0, x: '-65%' };
 }
 
 export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
@@ -354,6 +528,26 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     committedResultReady && revealStartedAt !== null
       ? revealPresentationAt(revealClock - revealStartedAt, reducedMotion)
       : null;
+  const leftChoreography = useRevealChoreography({
+    active:
+      phase === 'opening' ||
+      Boolean(phase === 'result' && revealPresentation?.showLeft && liveDuel?.left),
+    rarity: liveDuel?.left?.rarity ?? 'common',
+    reducedMotion,
+    sequenceKey:
+      phase === 'result' ? `${resultKey ?? 'pending'}:left` : `${duelId ?? 'lobby'}:${phase}:left`,
+  });
+  const rightChoreography = useRevealChoreography({
+    active:
+      phase === 'opening' ||
+      Boolean(phase === 'result' && revealPresentation?.showRight && liveDuel?.right),
+    rarity: liveDuel?.right?.rarity ?? 'common',
+    reducedMotion,
+    sequenceKey:
+      phase === 'result'
+        ? `${resultKey ?? 'pending'}:right`
+        : `${duelId ?? 'lobby'}:${phase}:right`,
+  });
   const playerStatus = persistedDuel
     ? getDuelPlayerStatus(persistedDuel.status, matchmakingSession?.state === 'searching')
     : null;
@@ -1585,7 +1779,11 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }
 
   if (phase !== 'lobby' && liveDuel && persistedDuel) {
-    const showResolution = revealPresentation?.showResolution ?? false;
+    const showResolution = duelResolutionReady(
+      revealPresentation?.showResolution ?? false,
+      leftChoreography.settled,
+      rightChoreography.settled,
+    );
     const leftStage: DuelCardStage =
       phase === 'result'
         ? revealPresentation?.showLeft
@@ -1679,7 +1877,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
           <div className={`reveal-grid reveal-grid-${revealPresentation?.phase ?? phase}`}>
             <DuelCard
+              choreography={leftChoreography}
               pull={liveDuel.left}
+              reducedMotion={reducedMotion}
+              rivalValueMinor={liveDuel.right?.valueMinor ?? null}
               side="you"
               stage={leftStage}
               resolution={showResolution ? revealSideResolution(liveDuel.winner, 'you') : null}
@@ -1690,7 +1891,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               <span>VS</span>
             </div>
             <DuelCard
+              choreography={rightChoreography}
               pull={liveDuel.right}
+              reducedMotion={reducedMotion}
+              rivalValueMinor={liveDuel.left?.valueMinor ?? null}
               side="opponent"
               stage={rightStage}
               resolution={showResolution ? revealSideResolution(liveDuel.winner, 'opponent') : null}

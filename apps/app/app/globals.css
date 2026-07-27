@@ -2064,9 +2064,7 @@
   border-radius: 15px;
   backface-visibility: hidden;
   transform-style: preserve-3d;
-  transition:
-    opacity 380ms ease,
-    transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
 }
 
 .pack-shell {
@@ -2192,8 +2190,25 @@
 .pull-burst {
   position: absolute;
   z-index: 6;
-  inset: 0;
+  inset: -3%;
+  border: 2px solid var(--rarity-accent);
   border-radius: 15px;
+  background: radial-gradient(circle at 50% 48%, var(--rarity-veil), transparent 64%);
+  box-shadow:
+    0 0 calc(22px * var(--choreography-intensity)) var(--rarity-veil),
+    inset 0 0 calc(14px * var(--choreography-intensity)) var(--rarity-veil);
+  opacity: 0;
+  pointer-events: none;
+}
+.pull-winner-celebration {
+  position: absolute;
+  z-index: 7;
+  inset: calc(-5% - 2% * var(--duel-celebration-intensity));
+  border: 2px solid var(--rarity-accent);
+  border-radius: 18px;
+  box-shadow:
+    0 0 calc(26px * var(--duel-celebration-intensity)) var(--rarity-veil),
+    inset 0 0 calc(18px * var(--duel-celebration-intensity)) var(--rarity-veil);
   opacity: 0;
   pointer-events: none;
 }
@@ -2214,45 +2229,15 @@
   text-transform: uppercase;
 }
 
-.card-stage-opening .pack-shell {
-  animation: pack-rip 1.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite;
-}
-.card-stage-opening .pack-glint {
-  animation: glint 1.2s ease-in-out infinite;
-}
-.card-stage-opening .pack-seam {
-  animation: pack-seam-split 1.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite;
-}
-.card-stage-revealed .pack-shell {
-  opacity: 0;
-  transform: rotateY(-90deg) scale(0.88);
-}
-.card-stage-revealed .pull-shell {
-  opacity: 1;
-  transform: rotateY(0) scale(1);
-}
-.card-stage-revealed .pull-sheen {
-  animation: pull-sheen-sweep 1.6s cubic-bezier(0.22, 1, 0.36, 1) 320ms both;
-}
-.card-stage-revealed[data-rarity="rare"] .pull-sheen {
-  animation-iteration-count: 2;
-}
-.card-stage-revealed[data-rarity="chase"] .pull-sheen {
-  animation: pull-sheen-sweep 2.8s cubic-bezier(0.22, 1, 0.36, 1) 320ms infinite;
-}
-.card-stage-revealed[data-rarity="rare"] .pull-burst,
-.card-stage-revealed[data-rarity="chase"] .pull-burst {
-  background: radial-gradient(circle at 50% 48%, var(--rarity-veil), transparent 64%);
-  animation: pull-burst-ring 940ms cubic-bezier(0.22, 1, 0.36, 1) 380ms both;
-}
 .reveal-winner .pull-shell {
-  filter: drop-shadow(0 0 24px rgba(184, 255, 90, 0.22));
+  filter: drop-shadow(0 0 calc(18px + 12px * var(--duel-celebration-intensity)) var(--rarity-veil));
 }
-.card-stage-revealed[data-rarity="rare"] .pull-shell {
-  filter: drop-shadow(0 0 22px rgba(167, 139, 250, 0.3));
-}
-.card-stage-revealed[data-rarity="chase"] .pull-shell {
-  filter: drop-shadow(0 0 28px rgba(247, 201, 72, 0.36));
+.card-stage[data-choreography-settled="true"] .pack-shell,
+.card-stage[data-choreography-settled="true"] .pull-shell,
+.card-stage[data-choreography-settled="true"] .pack-glint,
+.card-stage[data-choreography-settled="true"] .pack-seam,
+.card-stage[data-choreography-settled="true"] .pull-sheen {
+  will-change: auto;
 }
 
 .opening-status {
@@ -2334,10 +2319,6 @@
   font-size: 13px;
   font-weight: 700;
 }
-.reveal-winner .pull-meta-visible .pull-value {
-  animation: pull-value-pop 640ms cubic-bezier(0.22, 1, 0.36, 1) 520ms both;
-}
-
 .versus-mark {
   position: absolute;
   z-index: 10;
@@ -2464,107 +2445,6 @@
 .share-button {
   background: var(--text-primary);
   color: var(--bg-primary);
-}
-
-/* Escalating tear: the shake builds across a single cycle instead of wobbling
-   symmetrically, so the pack reads as straining rather than idling. */
-@keyframes pack-rip {
-  0% {
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-  14% {
-    transform: translate3d(-2px, 1px, 0) rotate(-0.5deg);
-  }
-  28% {
-    transform: translate3d(2px, -1px, 0) rotate(0.5deg);
-  }
-  42% {
-    transform: translate3d(-3px, 2px, 0) rotate(-0.9deg) scale(1.008);
-  }
-  56% {
-    transform: translate3d(3px, -2px, 0) rotate(0.9deg) scale(1.012);
-  }
-  70% {
-    transform: translate3d(-4px, 2px, 0) rotate(-1.3deg) scale(1.016);
-  }
-  84% {
-    transform: translate3d(4px, -3px, 0) rotate(1.3deg) scale(1.02);
-  }
-  100% {
-    transform: translate3d(0, 0, 0) rotate(0deg) scale(1.024);
-  }
-}
-
-@keyframes pack-seam-split {
-  0% {
-    opacity: 0;
-    transform: translateX(-50%) scaleY(0.35);
-  }
-  55% {
-    opacity: 0.85;
-    transform: translateX(-50%) scaleY(1);
-  }
-  100% {
-    opacity: 1;
-    transform: translateX(-50%) scaleY(1) scaleX(7);
-  }
-}
-
-@keyframes pull-sheen-sweep {
-  0% {
-    opacity: 0;
-    transform: translateX(-65%) rotate(3deg);
-  }
-  18% {
-    opacity: 1;
-  }
-  80% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(65%) rotate(3deg);
-  }
-}
-
-@keyframes pull-burst-ring {
-  0% {
-    opacity: 0;
-    transform: scale(0.72);
-  }
-  35% {
-    opacity: 1;
-    transform: scale(1.06);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.4);
-  }
-}
-
-@keyframes pull-value-pop {
-  0% {
-    opacity: 0.4;
-    transform: scale(0.82);
-  }
-  55% {
-    opacity: 1;
-    text-shadow: 0 0 18px rgba(184, 255, 90, 0.55);
-    transform: scale(1.18);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes glint {
-  from {
-    transform: translateX(-38%) rotate(4deg);
-  }
-  to {
-    transform: translateX(42%) rotate(4deg);
-  }
 }
 
 @keyframes blink {
@@ -3621,14 +3501,6 @@
   }
 
   .animate-ping,
-  .card-stage-opening .pack-shell,
-  .card-stage-opening .pack-glint,
-  .card-stage-opening .pack-seam,
-  .card-stage-revealed .pull-sheen,
-  .card-stage-revealed[data-rarity="chase"] .pull-sheen,
-  .card-stage-revealed[data-rarity="rare"] .pull-burst,
-  .card-stage-revealed[data-rarity="chase"] .pull-burst,
-  .reveal-winner .pull-meta-visible .pull-value,
   .opening-status span,
   .reveal-countdown strong {
     animation: none;
@@ -3639,8 +3511,14 @@
   .queue-card,
   .pack-shell,
   .pull-shell,
+  .pack-glint,
+  .pack-seam,
+  .pull-sheen,
+  .pull-burst,
+  .pull-winner-celebration,
   .pull-meta {
     transition: none;
+    will-change: auto;
   }
 
   .tier-card:hover,
