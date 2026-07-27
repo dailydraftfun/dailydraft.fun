@@ -22,6 +22,11 @@ type OpenApiSchemaDocument = {
 const OPENAPI_PATH = new URL('../../../docs/public/openapi.yaml', import.meta.url);
 const PRISMA_SCHEMA_PATH = new URL('../../../../packages/db/prisma/schema.prisma', import.meta.url);
 const SCHEMA_ROOT_ID = 'https://dailydraft.fun/openapi.yaml';
+const GACHA_RIP_INTERNAL_SCALAR_FIELDS = new Set([
+  'lifecycleLeaseExpiresAt',
+  'lifecycleLeaseOwner',
+  'recipientWallet',
+]);
 
 const CREATOR = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
 const OPPONENT = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
@@ -104,13 +109,15 @@ describe('API response schema gate', () => {
     }
   });
 
-  test('binds the GachaRip fixture to every persisted column and its derived rarity', async () => {
-    // The service serializes every Prisma scalar plus one value-derived rarity.
-    // Fail here first when either the row or that derived response contract drifts.
+  test('binds the GachaRip fixture to every public persisted column and its derived rarity', async () => {
+    // The service explicitly projects every public Prisma scalar plus one
+    // value-derived rarity. Recovery-only fields must never reach the wire.
     const fixture = cases.find((responseCase) => responseCase.schema === 'GachaRip');
     const fields = Object.keys(fixture?.payload as object);
     expect(fields.filter((field) => field !== 'rarity').sort()).toEqual(
-      prismaScalarFields(await Bun.file(PRISMA_SCHEMA_PATH).text(), 'GachaRip'),
+      prismaScalarFields(await Bun.file(PRISMA_SCHEMA_PATH).text(), 'GachaRip').filter(
+        (field) => !GACHA_RIP_INTERNAL_SCALAR_FIELDS.has(field),
+      ),
     );
     expect(fields).toContain('rarity');
   });
@@ -214,7 +221,7 @@ function prismaScalarFields(schema: string, model: string): string[] {
   return body
     .split('\n')
     .map((line) => line.trim().split(/\s+/))
-    .filter(([name, type]) => name && type && !name.startsWith('@'))
+    .filter(([name, type]) => name && type && !name.startsWith('@') && !name.startsWith('//'))
     .filter(([, type]) => !models.has((type as string).replace(/[?[\]]/g, '')))
     .map(([name]) => name as string)
     .sort();
