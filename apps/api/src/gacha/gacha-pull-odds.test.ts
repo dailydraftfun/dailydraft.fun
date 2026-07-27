@@ -5,6 +5,8 @@ import {
   GACHA_PULL_ODDS_SCHEMA_VERSION,
   GachaPullOddsContractError,
   type GachaPullOddsRuleSet,
+  gachaPullOddsBandForRoll,
+  gachaPullOddsBandForValue,
   hashGachaPullOddsRuleSet,
   type UnsignedGachaPullOddsRuleSet,
   validateGachaPullOddsRuleSet,
@@ -164,6 +166,25 @@ describe('versioned Gacha pull odds', () => {
     for (const candidate of cases) {
       expectContractError(() => validateGachaPullOddsRuleSet(candidate), 'INVALID_RULES');
     }
+  });
+
+  test('classifies deterministic PPM rolls and insured values at exact band boundaries', () => {
+    expect(gachaPullOddsBandForRoll(RULES.bands, 0).label).toBe('base');
+    expect(gachaPullOddsBandForRoll(RULES.bands, 599_999).label).toBe('base');
+    expect(gachaPullOddsBandForRoll(RULES.bands, 600_000).label).toBe('plus');
+    expect(gachaPullOddsBandForRoll(RULES.bands, 999_999).label).toBe('chase');
+
+    expect(gachaPullOddsBandForValue(RULES.bands, '0').label).toBe('base');
+    expect(gachaPullOddsBandForValue(RULES.bands, '49999999').label).toBe('base');
+    expect(gachaPullOddsBandForValue(RULES.bands, '50000000').label).toBe('plus');
+    expect(gachaPullOddsBandForValue(RULES.bands, '250000000').label).toBe('chase');
+  });
+
+  test('fails closed for invalid simulation rolls and insured values', () => {
+    expectContractError(() => gachaPullOddsBandForRoll(RULES.bands, -1), 'INVALID_RULES');
+    expectContractError(() => gachaPullOddsBandForRoll(RULES.bands, 1_000_000), 'INVALID_RULES');
+    expectContractError(() => gachaPullOddsBandForValue(RULES.bands, '-1'), 'INVALID_RULES');
+    expectContractError(() => gachaPullOddsBandForValue([], '0'), 'INVALID_RULES');
   });
 });
 

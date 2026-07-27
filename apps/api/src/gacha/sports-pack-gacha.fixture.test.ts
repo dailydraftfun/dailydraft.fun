@@ -3,6 +3,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   FixtureSportsPackGachaProvider,
   gachaFixtureModeEnabled,
+  sportsPackGachaFixtureCards,
+  sportsPackGachaFixtureMachines,
 } from './sports-pack-gacha.fixture.js';
 
 const ORIGINAL_ENV = {
@@ -61,6 +63,18 @@ describe('Sports Pack Gacha fixture provider', () => {
     await expect(
       new FixtureSportsPackGachaProvider().getEligibleCards('missing-machine'),
     ).rejects.toThrow('Gacha fixture machine was not found');
+  });
+
+  test('exports the same immutable fixture math inputs used by the provider', async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.DAILYDRAFT_GACHA_FIXTURE_MODE = 'true';
+    const machine = sportsPackGachaFixtureMachines[0];
+    if (!machine) throw new Error('Expected a fixture machine');
+
+    expect(sportsPackGachaFixtureCards(machine)).toEqual(
+      await new FixtureSportsPackGachaProvider().getEligibleCards(machine.machineKey),
+    );
+    expect(Object.isFrozen(sportsPackGachaFixtureMachines)).toBe(true);
   });
 
   test('never enables fixtures in production and permits explicit test, dev, or preview use', () => {

@@ -39,6 +39,8 @@ const FIXTURE_MACHINES: readonly SportsPackGachaMachine[] = Object.freeze(
   ),
 );
 
+export const sportsPackGachaFixtureMachines = FIXTURE_MACHINES;
+
 @Injectable()
 export class FixtureSportsPackGachaProvider extends SportsPackGachaProvider {
   readonly capabilities = Object.freeze({
@@ -67,7 +69,7 @@ export class FixtureSportsPackGachaProvider extends SportsPackGachaProvider {
     requireFixtureMode();
     const machine = FIXTURE_MACHINES.find((candidate) => candidate.machineKey === machineKey);
     if (!machine) throw new NotFoundException('Gacha fixture machine was not found');
-    return fixtureCards(machine);
+    return sportsPackGachaFixtureCards(machine);
   }
 
   async listMachines(): Promise<readonly SportsPackGachaMachine[]> {
@@ -100,7 +102,9 @@ export function gachaFixtureModeEnabled(environment: NodeJS.ProcessEnv = process
   );
 }
 
-function fixtureCards(machine: SportsPackGachaMachine): readonly SportsPackGachaCard[] {
+export function sportsPackGachaFixtureCards(
+  machine: SportsPackGachaMachine,
+): readonly SportsPackGachaCard[] {
   const values = ['35000000', '75000000', '150000000', '350000000'] as const;
   return Object.freeze(
     values.map((amount, index) =>

@@ -214,6 +214,35 @@ export function createFixtureGachaPullOddsRuleSet(
   });
 }
 
+export function gachaPullOddsBandForRoll(
+  bands: readonly GachaPullOddsBand[],
+  rollPpm: number,
+): GachaPullOddsBand {
+  if (!Number.isInteger(rollPpm) || rollPpm < 0 || rollPpm >= GACHA_PROBABILITY_SCALE_PPM) {
+    throw contractError('INVALID_RULES', 'Gacha pull odds roll is outside the PPM scale');
+  }
+  let upperBound = 0;
+  for (const band of bands) {
+    upperBound += band.probabilityPpm;
+    if (rollPpm < upperBound) return band;
+  }
+  throw contractError('INVALID_RULES', 'Gacha pull odds bands do not cover the committed roll');
+}
+
+export function gachaPullOddsBandForValue(
+  bands: readonly GachaPullOddsBand[],
+  insuredValueMinor: string,
+): GachaPullOddsBand {
+  const value = parseMinorUnits(insuredValueMinor);
+  let selected = bands[0];
+  for (const band of bands) {
+    if (value < BigInt(band.minimumInsuredValueMinor)) break;
+    selected = band;
+  }
+  if (!selected) throw contractError('INVALID_RULES', 'Gacha pull odds bands are empty');
+  return selected;
+}
+
 function parseMinorUnits(value: unknown): bigint {
   if (typeof value !== 'string' || !UNSIGNED_INTEGER_PATTERN.test(value)) {
     throw contractError(

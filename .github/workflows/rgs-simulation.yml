@@ -1,0 +1,73 @@
+name: RGS simulation evidence
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/rgs-simulation.yml"
+      - "apps/api/src/gacha/gacha-inventory-snapshot.service.ts"
+      - "apps/api/src/gacha/gacha-pull-odds.ts"
+      - "apps/api/src/gacha/gacha-rip.service.ts"
+      - "apps/api/src/gacha/sports-pack-gacha.fixture.ts"
+      - "evidence/rgs-simulation/**"
+      - "packages/contracts/src/rgs.ts"
+      - "packages/rgs-simulator/**"
+      - "scripts/rgs-simulation.ts"
+      - "scripts/rgs-simulation/**"
+      - "bun.lock"
+      - "package.json"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/rgs-simulation.yml"
+      - "apps/api/src/gacha/gacha-inventory-snapshot.service.ts"
+      - "apps/api/src/gacha/gacha-pull-odds.ts"
+      - "apps/api/src/gacha/gacha-rip.service.ts"
+      - "apps/api/src/gacha/sports-pack-gacha.fixture.ts"
+      - "evidence/rgs-simulation/**"
+      - "packages/contracts/src/rgs.ts"
+      - "packages/rgs-simulator/**"
+      - "scripts/rgs-simulation.ts"
+      - "scripts/rgs-simulation/**"
+      - "bun.lock"
+      - "package.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rgs-simulation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - run: bun install --frozen-lockfile
+      - run: bun --filter @dailydraft/db db:generate
+      - name: Test the simulator and Gacha regression adapter
+        run: >-
+          bun test
+          packages/rgs-simulator/src
+          scripts/rgs-simulation/core.test.ts
+          apps/api/src/gacha/gacha-pull-odds.test.ts
+          apps/api/src/gacha/sports-pack-gacha.fixture.test.ts
+      - name: Typecheck and build the reusable simulator
+        run: |
+          bun --filter @dailydraft/rgs-simulator typecheck
+          bun --filter @dailydraft/rgs-simulator build
+      - name: Reproduce checked-in simulation evidence
+        run: bun run rgs:verify
+      - name: Retain the exact checked-in evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rgs-simulation-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/rgs-simulation/*.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9

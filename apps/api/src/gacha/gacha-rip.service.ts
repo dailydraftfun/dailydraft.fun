@@ -23,6 +23,8 @@ import {
   createFixtureGachaPullOddsRuleSet,
   type GachaPullOddsBand,
   type GachaPullOddsRuleSet,
+  gachaPullOddsBandForRoll,
+  gachaPullOddsBandForValue,
   validateGachaPullOddsRuleSet,
 } from './gacha-pull-odds.js';
 import { gachaFixtureModeEnabled } from './sports-pack-gacha.fixture.js';
@@ -723,9 +725,9 @@ export function selectGachaOutcome(
     'hex',
   );
   const rollPpm = digest.readUInt32BE(0) % 1_000_000;
-  const band = bandForRoll(rules.bands, rollPpm);
+  const band = gachaPullOddsBandForRoll(rules.bands, rollPpm);
   const candidates = eligible.filter(
-    (entry) => bandForValue(rules.bands, BigInt(entry.insuredValueMinor)).label === band.label,
+    (entry) => gachaPullOddsBandForValue(rules.bands, entry.insuredValueMinor).label === band.label,
   );
   if (candidates.length === 0) {
     throw new ServiceUnavailableException(`Gacha inventory has no eligible ${band.label} cards`);
@@ -786,28 +788,6 @@ async function ensureOddsCommitment(
       version,
     },
   });
-}
-
-function bandForRoll(bands: readonly GachaPullOddsBand[], rollPpm: number): GachaPullOddsBand {
-  let upperBound = 0;
-  for (const band of bands) {
-    upperBound += band.probabilityPpm;
-    if (rollPpm < upperBound) return band;
-  }
-  throw new ServiceUnavailableException('Gacha probability bands do not cover the committed roll');
-}
-
-function bandForValue(
-  bands: readonly GachaPullOddsBand[],
-  insuredValueMinor: bigint,
-): GachaPullOddsBand {
-  let selected = bands[0];
-  for (const band of bands) {
-    if (insuredValueMinor < BigInt(band.minimumInsuredValueMinor)) break;
-    selected = band;
-  }
-  if (!selected) throw new ServiceUnavailableException('Gacha probability bands are empty');
-  return selected;
 }
 
 function requireKey(value: string, field: string): string {
