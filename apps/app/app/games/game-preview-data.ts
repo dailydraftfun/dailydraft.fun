@@ -4,7 +4,7 @@ export type PreviewMode = 'crash' | 'flip' | 'house';
 // server-rendered route metadata cannot drift apart on a rebrand.
 export const previewModeTitles: Record<PreviewMode, string> = {
   crash: 'Card Streak',
-  flip: 'Sports Pack Gacha',
+  flip: 'Marketplace Flip',
   house: 'Instant House',
 };
 
@@ -91,7 +91,7 @@ export const activityItems: readonly ActivityItem[] = [
     amount: '$25 fixture',
     badge: 'Flip preview',
     detail: 'Committed pool, probability band, selection, and acquisition receipt UI.',
-    href: '/games/flip',
+    href: '/games/marketplace-flip',
     id: 'flip-1',
     mode: 'flip',
     player: 'Fixture player',

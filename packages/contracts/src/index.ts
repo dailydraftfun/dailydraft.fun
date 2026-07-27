@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { pullRarityFixtures } from './pull-rarity.js';
 import { rgsCompatibilityFixtures } from './rgs.js';
 
+export * from './game-catalog.js';
 export * from './pull-rarity.js';
 export * from './rgs.js';
 
@@ -19,7 +20,7 @@ export type ContractOperation = {
   successStatus: number;
 };
 
-export const OPENAPI_CONTRACT_VERSION = '0.4.0-devnet';
+export const OPENAPI_CONTRACT_VERSION = '0.5.0-devnet';
 
 export const contractValues = {
   challengeId: 'authc_0123456789abcdef0123456789abcdef',
@@ -259,6 +260,16 @@ export const contractOperations = [
   },
   {
     auth: 'none',
+    errorStatuses: [429],
+    idempotencyRequired: false,
+    method: 'get',
+    operationId: 'getGameCatalog',
+    path: '/games/catalog',
+    requestRequired: false,
+    successStatus: 200,
+  },
+  {
+    auth: 'none',
     errorStatuses: [400, 429],
     idempotencyRequired: false,
     method: 'post',
@@ -379,7 +390,7 @@ export const contractOperations = [
   },
 ] as const satisfies readonly ContractOperation[];
 
-export const CONTRACT_FIXTURE_VERSION = '2026-07-27.v10+c01b9cb0a5f9';
+export const CONTRACT_FIXTURE_VERSION = '2026-07-27.v11+ee5893123b77';
 
 export function contractFixtureFingerprint(): string {
   return createHash('sha256')

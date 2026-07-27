@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: DailyDraft API
-  version: 0.4.0-devnet
+  version: 0.5.0-devnet
   summary: Build pack-opening duels on Solana
   description: |
     Preview contract for pack discovery, duel matchmaking, wallet-signed Solana
@@ -27,6 +27,8 @@ tags:
     description: Duel-eligible pack definitions and current inventory metadata.
   - name: Gacha
     description: Inspectable Sports Pack Gacha capabilities, inventory, odds, deposit intents, and rips.
+  - name: Games
+    description: Capability-derived player catalog for live and fixture-only game modes.
   - name: RGS
     description: Versioned game-mode configs and independently verifiable round proofs.
   - name: Valuation
@@ -163,6 +165,31 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /games/catalog:
+    get:
+      operationId: getGameCatalog
+      tags: [Games]
+      summary: Resolve the canonical player-facing game catalog
+      description: |
+        Publishes the stable Duel, Gacha, Marketplace Flip, and Crash taxonomy.
+        Duel and Gacha actions derive from their live runtime capability checks.
+        Flip and Crash remain explicitly fixture-only and cannot expose a
+        value-bearing action through this response.
+      x-dailydraft-availability: devnet-preview
+      responses:
+        '200':
+          description: Current fail-closed game catalog
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameCatalog'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /gacha/capability:
     get:
       operationId: getGachaCapability
@@ -2366,7 +2393,7 @@ components:
           const: ok
         version:
           type: string
-          const: 0.4.0-devnet
+          const: 0.5.0-devnet
         dependencies:
           type: object
           additionalProperties: false
@@ -2433,6 +2460,87 @@ components:
               type: string
             ready:
               type: boolean
+    GameCatalogAction:
+      type: object
+      additionalProperties: false
+      required: [href, id, label]
+      properties:
+        href:
+          type: string
+          pattern: '^/games/[a-z0-9-]+$'
+        id:
+          type: string
+          minLength: 1
+        label:
+          type: string
+          minLength: 1
+    GameCapabilitySource:
+      type: object
+      additionalProperties: false
+      required: [kind, name, status]
+      properties:
+        kind:
+          type: string
+          enum: [fixture, runtime]
+        name:
+          type: string
+          enum: [duel-readiness, gacha-capability, rgs-fixture]
+        status:
+          type: string
+          enum: [degraded, gated, verified]
+    GameCatalogMode:
+      type: object
+      additionalProperties: false
+      required:
+        - availableActions
+        - capabilitySource
+        - description
+        - id
+        - name
+        - reason
+        - state
+      properties:
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/GameCatalogAction'
+        capabilitySource:
+          $ref: '#/components/schemas/GameCapabilitySource'
+        description:
+          type: string
+          minLength: 1
+        id:
+          type: string
+          enum: [duel, gacha, flip, crash]
+        name:
+          type: string
+          minLength: 1
+        reason:
+          type: string
+          minLength: 1
+        state:
+          type: string
+          enum: [degraded, playable, preview, unavailable]
+    GameCatalog:
+      type: object
+      additionalProperties: false
+      required: [asOf, modes, network, schemaVersion]
+      properties:
+        asOf:
+          type: string
+          format: date-time
+        modes:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/GameCatalogMode'
+        network:
+          type: string
+          const: solana-devnet
+        schemaVersion:
+          type: string
+          const: dailydraft.game-catalog.v1
     GachaMachineKey:
       type: string
       pattern: '^[a-z0-9][a-z0-9._:-]{0,127}$'

@@ -1,14 +1,12 @@
-import { CardsThreeIcon, ChartBarIcon, LightningIcon } from '@phosphor-icons/react';
+import { CardsThreeIcon, ChartBarIcon } from '@phosphor-icons/react';
 
 export function PrimaryNavigation({
   className,
-  duelActive,
   gamesActive,
   leaderboardActive,
   mobile = false,
 }: {
   className: string;
-  duelActive: boolean;
   gamesActive: boolean;
   leaderboardActive: boolean;
   mobile?: boolean;
@@ -26,14 +24,6 @@ export function PrimaryNavigation({
       >
         <CardsThreeIcon size={15} weight="fill" />
         Games
-      </a>
-      <a
-        aria-current={duelActive ? 'page' : undefined}
-        className={`${linkClassName}${duelActive ? ' nav-link-active' : ''}`}
-        href="/overview"
-      >
-        <LightningIcon size={15} weight="fill" />
-        Card Duels
       </a>
       <a
         aria-current={leaderboardActive ? 'page' : undefined}

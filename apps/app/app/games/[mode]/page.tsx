@@ -2,11 +2,10 @@ import type { Metadata } from 'next';
 import { GameModePreview } from '../game-mode-preview';
 import { type PreviewMode, previewModeTitles } from '../game-preview-data';
 
-// `flip` is deliberately absent: `games/flip/page.tsx` is a static segment that
-// owns that path, and Next.js fails the build when `generateStaticParams` also
-// claims it. The flip route renders the same `GameModePreview` when its gates
-// are shut, so nothing is lost.
-const previewModes = new Set<PreviewMode>(['crash', 'house']);
+// Canonical live routes and compatibility redirects own their static segments.
+// Card Streak remains here as an explicitly fixture-only preview until the RGS
+// supports server-owned proof generation for that mode.
+const previewModes = new Set<PreviewMode>(['crash']);
 
 type GamePreviewPageProps = {
   params: Promise<{ mode: string }>;

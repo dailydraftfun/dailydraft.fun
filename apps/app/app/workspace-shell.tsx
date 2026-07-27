@@ -17,7 +17,6 @@ function BrandMark() {
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const gamesNavigationActive = isGamesNavigationActive(pathname);
-  const duelNavigationActive = pathname === '/overview' || pathname.startsWith('/duel/');
   const leaderboardNavigationActive = pathname === '/leaderboard';
 
   return (
@@ -26,7 +25,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-50 border-b border-border bg-primary/90 backdrop-blur-xl">
           <div className="mx-auto flex h-16 max-w-[1500px] items-center gap-4 px-4 sm:px-6">
             <a
-              href="/overview"
+              href="/games"
               className="flex shrink-0 items-center gap-2.5"
               aria-label="DailyDraft home"
             >
@@ -41,7 +40,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
             <PrimaryNavigation
               className="ml-4 hidden items-center gap-1 lg:flex"
-              duelActive={duelNavigationActive}
               gamesActive={gamesNavigationActive}
               leaderboardActive={leaderboardNavigationActive}
             />
@@ -52,8 +50,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <PrimaryNavigation
-            className="grid grid-cols-3 border-t border-border px-4 py-1 lg:hidden"
-            duelActive={duelNavigationActive}
+            className="grid grid-cols-2 border-t border-border px-4 py-1 lg:hidden"
             gamesActive={gamesNavigationActive}
             leaderboardActive={leaderboardNavigationActive}
             mobile

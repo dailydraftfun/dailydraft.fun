@@ -30,7 +30,8 @@ describe('workspace shell', () => {
     const markup = renderShell(<main>Games content</main>);
 
     expect(markup.match(/aria-current="page"/g)).toHaveLength(2);
-    expect(markup).toContain('grid-cols-3');
+    expect(markup).toContain('grid-cols-2');
+    expect(markup).not.toContain('Card Duels');
     expect(markup).toContain('Games content');
     expect(markup).toContain(`data-testid="${journeyTestIds.walletMenu}"`);
   });
@@ -47,6 +48,8 @@ describe('workspace shell', () => {
   test('keeps Games active throughout the preview routes', () => {
     expect(isGamesNavigationActive('/games')).toBe(true);
     expect(isGamesNavigationActive('/games/flip')).toBe(true);
+    expect(isGamesNavigationActive('/games/duel')).toBe(true);
+    expect(isGamesNavigationActive('/games/duel?challenge=duel_123')).toBe(true);
     expect(isGamesNavigationActive('/games/activity')).toBe(true);
     expect(isGamesNavigationActive('/overview')).toBe(false);
   });

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { buildRedirectTarget } from './redirect-target';
 import { buildSharedDuelEntry } from './shared-route-entry';
 
 const participantAddresses = {
@@ -16,6 +17,17 @@ const receipt = {
 } as const;
 
 describe('overview shared-route boundary', () => {
+  test('preserves compatibility-route query parameters for the canonical Duel Arena', () => {
+    expect(
+      buildRedirectTarget('/games/duel', {
+        challenge: 'duel/challenge',
+        ref: ['invite one', 'invite two'],
+        skipped: undefined,
+      }),
+    ).toBe('/games/duel?challenge=duel%2Fchallenge&ref=invite+one&ref=invite+two');
+    expect(buildRedirectTarget('/games/duel', {})).toBe('/games/duel');
+  });
+
   test('serializes only pseudonymous labels into rematch entry props', () => {
     const serialized = JSON.stringify(buildSharedDuelEntry(receipt, 'rematch'));
 

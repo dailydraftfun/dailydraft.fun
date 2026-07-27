@@ -16,7 +16,7 @@ export function LeaderboardView({ leaderboard }: { leaderboard: PublicDuelLeader
             never count toward the standings.
           </p>
         </div>
-        <Link href="/overview" className="proof-primary-action">
+        <Link href="/games/duel" className="proof-primary-action">
           Start a duel
         </Link>
       </header>
@@ -43,7 +43,7 @@ export function LeaderboardView({ leaderboard }: { leaderboard: PublicDuelLeader
             The first settled duel backed by non-mock provider results will open the leaderboard.
             Mock previews and incomplete proofs are intentionally excluded.
           </p>
-          <Link href="/overview" className="proof-primary-action mt-6">
+          <Link href="/games/duel" className="proof-primary-action mt-6">
             Play the first ranked duel
           </Link>
         </section>

@@ -1,0 +1,145 @@
+.scene {
+  position: relative;
+  isolation: isolate;
+  inline-size: min(100%, 22rem);
+  max-inline-size: calc(100vw - 2rem);
+  aspect-ratio: 9 / 7;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-lime) 22%, var(--color-border));
+  border-radius: 1rem;
+  background: #080b08;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.035),
+    0 24px 62px rgb(0 0 0 / 0.42);
+  contain: layout paint style;
+}
+
+.scene [data-pixi-canvas-host] {
+  position: absolute;
+  inset: 0;
+}
+
+.fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 44%, rgb(184 255 90 / 0.13), transparent 48%),
+    linear-gradient(155deg, #151b13, #070907 72%);
+}
+
+.fallbackFrame {
+  position: relative;
+  inline-size: 42%;
+  aspect-ratio: 2.5 / 3.5;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-lime) 28%, var(--color-border));
+  border-radius: 0.65rem;
+  background: var(--bg-tertiary);
+  box-shadow:
+    0 0 0 6px rgb(0 0 0 / 0.24),
+    0 20px 45px rgb(0 0 0 / 0.55);
+}
+
+.sealedPack {
+  position: relative;
+  display: flex;
+  inline-size: 46%;
+  aspect-ratio: 2.5 / 3.5;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgb(184 255 90 / 0.34);
+  border-radius: 0.72rem;
+  background:
+    linear-gradient(135deg, transparent 22%, rgb(184 255 90 / 0.08) 22% 24%, transparent 24%),
+    linear-gradient(155deg, #1f2b19, #090c08 72%);
+  box-shadow:
+    0 0 0 6px rgb(0 0 0 / 0.24),
+    0 20px 45px rgb(0 0 0 / 0.55);
+  color: var(--text-primary);
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.sealedPack::before,
+.sealedPack::after {
+  position: absolute;
+  inset-inline: 0;
+  block-size: 0.55rem;
+  background: repeating-linear-gradient(90deg, var(--color-lime) 0 0.4rem, #151b13 0.4rem 0.8rem);
+  content: "";
+  opacity: 0.72;
+}
+
+.sealedPack::before {
+  inset-block-start: 0;
+}
+
+.sealedPack::after {
+  inset-block-end: 0;
+}
+
+.sealedEyebrow,
+.sealedStatus {
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+}
+
+.sealedEyebrow {
+  margin-block-end: 0.6rem;
+  color: var(--color-lime);
+  font-size: 0.58rem;
+}
+
+.sealedPack strong {
+  max-inline-size: 8rem;
+  font-size: clamp(0.75rem, 3vw, 1rem);
+  line-height: 1.05;
+}
+
+.sealedStatus {
+  margin-block-start: 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.5rem;
+}
+
+.fallbackImage {
+  object-fit: contain;
+}
+
+.fallbackBadge {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 0.6rem;
+  inset-inline-start: 0.6rem;
+  border: 1px solid rgb(184 255 90 / 0.34);
+  border-radius: 0.25rem;
+  background: rgb(6 9 6 / 0.82);
+  padding: 0.2rem 0.38rem;
+  color: var(--color-lime);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 639px) {
+  .scene {
+    inline-size: 100%;
+  }
+
+  .fallbackFrame {
+    inline-size: 48%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene {
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.035);
+  }
+}

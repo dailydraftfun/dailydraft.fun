@@ -19,6 +19,8 @@ import {
 } from '../../solana/balance';
 import { getExplorerAddressUrl, getExplorerTransactionUrl } from '../../solana/config';
 import { describeConfirmation } from '../../solana/confirmation';
+import { engineRarityForGachaBand } from '../scenes/gacha-reveal-choreography';
+import { GachaRevealScene } from '../scenes/gacha-reveal-scene';
 import {
   describeFlipStage,
   type FlipStage,
@@ -412,10 +414,17 @@ export function FlipMachineView({
         ) : null}
 
         {stage === 'revealed' && reveal && result ? (
-          <div className="mt-6 grid gap-6 sm:grid-cols-[15rem_minmax(0,1fr)] sm:items-center">
-            <div className="pull-shell" data-rarity={reveal.rarity?.band ?? 'base'}>
-              {reveal.imageUrl ? (
-                <div className="relative aspect-[2.5/3.5] overflow-hidden rounded-xl border border-border bg-tertiary">
+          <div className="mt-6 grid gap-6 md:grid-cols-[minmax(19rem,22rem)_minmax(0,1fr)] md:items-center">
+            <div data-rarity={reveal.rarity?.band}>
+              {revealEvidenceMatches && reveal.rarity && reveal.imageUrl ? (
+                <GachaRevealScene
+                  cardImageUrl={reveal.imageUrl}
+                  displayName={reveal.displayName}
+                  rarity={engineRarityForGachaBand(reveal.rarity.band)}
+                  revealId={result.rip.id}
+                />
+              ) : reveal.imageUrl ? (
+                <div className="relative mx-auto aspect-[2.5/3.5] w-full max-w-60 overflow-hidden rounded-xl border border-border bg-tertiary">
                   <Image
                     alt={reveal.displayName}
                     className="object-cover"
@@ -426,7 +435,7 @@ export function FlipMachineView({
                   />
                 </div>
               ) : (
-                <div className="grid aspect-[2.5/3.5] place-items-center rounded-xl border border-border bg-tertiary text-sm text-secondary">
+                <div className="mx-auto grid aspect-[2.5/3.5] w-full max-w-60 place-items-center rounded-xl border border-border bg-tertiary text-sm text-secondary">
                   {reveal.displayName}
                 </div>
               )}

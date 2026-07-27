@@ -1,103 +1,164 @@
 import { describe, expect, test } from 'bun:test';
+import { GAME_CATALOG_SCHEMA_VERSION } from '@dailydraft/contracts';
 import {
-  buildGameModes,
-  type FlipCapabilities,
-  flipDevnetCapabilities,
+  fallbackGameCatalog,
+  gateRuntimeActions,
   playableGameModes,
-  resolveFlipAvailability,
+  roadmapGameModes,
 } from './game-catalog';
+import {
+  getGameCatalog,
+  parseGameCatalog,
+  readCachedGameCatalog,
+  writeCachedGameCatalog,
+} from './games-client';
 
-// Flip's lobby row now moves with NEXT_PUBLIC_PROVIDER_MODE, so every assertion
-// below builds the catalog from explicit gates. Reading the ambient default
-// would make these tests pass or fail on whether the machine happens to carry an
-// apps/app/.env, which Bun would auto-load.
-const CLOSED: FlipCapabilities = {
-  acquisition: false,
-  odds: false,
-  provider: false,
-  settlement: false,
-};
+describe('game catalog client', () => {
+  test('fails runtime-backed modes closed before a capability response arrives', () => {
+    const catalog = fallbackGameCatalog();
 
-const OPEN: FlipCapabilities = { acquisition: true, odds: true, provider: true, settlement: true };
-
-describe('game catalog', () => {
-  test('keeps only capability-backed modes actionable', () => {
-    expect(playableGameModes(buildGameModes(CLOSED))).toEqual([
-      expect.objectContaining({
-        availability: 'playable',
-        href: '/overview',
-        id: 'duels',
-      }),
+    expect(playableGameModes(catalog)).toEqual([]);
+    expect(catalog.modes.map((mode) => mode.id)).toEqual(['duel', 'gacha', 'flip', 'crash']);
+    expect(catalog.modes.slice(0, 2).every((mode) => mode.availableActions.length === 0)).toBe(
+      true,
+    );
+    expect(roadmapGameModes(catalog).map((mode) => mode.id)).toEqual([
+      'duel',
+      'gacha',
+      'flip',
+      'crash',
     ]);
   });
 
-  test('keeps Gacha, Tournaments, and Streak visible without value-bearing routes', () => {
-    const modes = buildGameModes(CLOSED);
-    const flip = modes.find((mode) => mode.id === 'flip');
-    const tournaments = modes.find((mode) => mode.id === 'tournaments');
-    const crash = modes.find((mode) => mode.id === 'crash');
+  test('accepts only one complete canonical mode set', () => {
+    const catalog = responseCatalog();
 
-    expect(flip).toMatchObject({
-      availability: 'preview',
-      detailsHref: '/games/flip',
-      eyebrow: 'Collector Crypt · next',
-      href: null,
+    expect(parseGameCatalog(catalog)).toEqual(catalog);
+    expect(() =>
+      parseGameCatalog({ ...catalog, modes: catalog.modes.filter((mode) => mode.id !== 'crash') }),
+    ).toThrow('malformed catalog');
+    expect(() =>
+      parseGameCatalog({ ...catalog, modes: catalog.modes.map(() => catalog.modes[0]) }),
+    ).toThrow('malformed catalog');
+  });
+
+  test('reads the catalog from the public no-store endpoint', async () => {
+    const catalog = responseCatalog();
+    const requests: Array<{ input: string; init?: RequestInit }> = [];
+    const result = await getGameCatalog('https://api.example.test/v1', (input, init) => {
+      requests.push({ input: String(input), ...(init ? { init } : {}) });
+      return Promise.resolve(Response.json(catalog));
     });
-    expect(crash).toMatchObject({
-      availability: 'gated',
-      detailsHref: '/games/crash',
-      href: null,
+
+    expect(result).toEqual(catalog);
+    expect(requests).toEqual([
+      {
+        init: { cache: 'no-store' },
+        input: 'https://api.example.test/v1/games/catalog',
+      },
+    ]);
+  });
+
+  test('retains a validated response as an explicit stale fallback', () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    };
+    const catalog = responseCatalog();
+
+    writeCachedGameCatalog(catalog, storage);
+
+    expect(readCachedGameCatalog(storage)).toEqual(catalog);
+    values.set('dailydraft.games-catalog.v1', '{"modes":[]}');
+    expect(readCachedGameCatalog(storage)).toBeNull();
+  });
+
+  test('withholds cached runtime actions until a fresh server response arrives', () => {
+    const catalog = responseCatalog();
+    const stale = gateRuntimeActions(catalog, 'stale');
+
+    expect(playableGameModes(stale)).toEqual([]);
+    expect(stale.modes.find((mode) => mode.id === 'duel')).toMatchObject({
+      availableActions: [],
+      capabilitySource: { kind: 'runtime', status: 'degraded' },
+      state: 'degraded',
     });
-    // Fantasy Tournaments has no fixture preview yet, so it must expose no
-    // details route at all rather than pointing at one that would 404.
-    expect(tournaments).toMatchObject({ availability: 'gated', href: null });
-    expect(tournaments?.detailsHref).toBeUndefined();
-  });
-
-  test('opens the Flip row and drops the Collector Crypt promise on devnet', () => {
-    const modes = buildGameModes(OPEN);
-    const flip = modes.find((mode) => mode.id === 'flip');
-
-    expect(playableGameModes(modes).map((mode) => mode.id)).toEqual(['duels', 'flip']);
-    // Devnet inventory is DailyDraft's own, so the gated copy naming Collector
-    // Crypt would be inaccurate in the other direction once the row goes live.
-    expect(flip).toMatchObject({
-      availability: 'playable',
-      eyebrow: 'Live devnet mode',
-      href: '/games/flip',
-      trustContract: 'Committed odds, sealed inventory, and a verified deposit before any reveal.',
-    });
-  });
-
-  test('mirrors the API capability gates off the provider mode', () => {
-    expect(flipDevnetCapabilities('dailydraft-devnet')).toEqual(OPEN);
-  });
-
-  test('leaves every gate closed for any provider mode but devnet', () => {
-    for (const providerMode of ['', 'mock', 'collector-crypt', 'collector-crypt-sandbox']) {
-      expect(flipDevnetCapabilities(providerMode)).toEqual(CLOSED);
-    }
-  });
-
-  test('promotes Flip only when every runtime capability gate passes', () => {
-    expect(resolveFlipAvailability(OPEN)).toMatchObject({
-      availability: 'playable',
-      href: '/games/flip',
-    });
-  });
-
-  test('keeps Flip in preview when any single runtime gate is unavailable', () => {
-    const gates = ['provider', 'odds', 'acquisition', 'settlement'] as const;
-
-    for (const gate of gates) {
-      expect(
-        resolveFlipAvailability({
-          acquisition: gate !== 'acquisition',
-          odds: gate !== 'odds',
-          provider: gate !== 'provider',
-          settlement: gate !== 'settlement',
-        }),
-      ).toMatchObject({ availability: 'preview', href: null });
-    }
+    expect(stale.modes.find((mode) => mode.id === 'flip')?.availableActions).toEqual(
+      catalog.modes.find((mode) => mode.id === 'flip')?.availableActions,
+    );
+    expect(catalog.modes.find((mode) => mode.id === 'duel')?.state).toBe('playable');
   });
 });
+
+function responseCatalog() {
+  return {
+    asOf: '2026-07-27T20:00:00.000Z',
+    modes: [
+      {
+        availableActions: [
+          { href: '/games/duel' as const, id: 'direct-challenge', label: 'Challenge a wallet' },
+        ],
+        capabilitySource: {
+          kind: 'runtime' as const,
+          name: 'duel-readiness' as const,
+          status: 'verified' as const,
+        },
+        description: 'Duel description',
+        id: 'duel' as const,
+        name: 'Card Duel',
+        reason: 'Duel ready.',
+        state: 'playable' as const,
+      },
+      {
+        availableActions: [],
+        capabilitySource: {
+          kind: 'runtime' as const,
+          name: 'gacha-capability' as const,
+          status: 'verified' as const,
+        },
+        description: 'Gacha description',
+        id: 'gacha' as const,
+        name: 'Sports Pack Gacha',
+        reason: 'Deposit pending.',
+        state: 'preview' as const,
+      },
+      {
+        availableActions: [
+          {
+            href: '/games/marketplace-flip' as const,
+            id: 'view-preview',
+            label: 'View fixture preview',
+          },
+        ],
+        capabilitySource: {
+          kind: 'fixture' as const,
+          name: 'rgs-fixture' as const,
+          status: 'gated' as const,
+        },
+        description: 'Flip description',
+        id: 'flip' as const,
+        name: 'Marketplace Flip',
+        reason: 'Fixture only.',
+        state: 'preview' as const,
+      },
+      {
+        availableActions: [
+          { href: '/games/crash' as const, id: 'view-preview', label: 'View fixture preview' },
+        ],
+        capabilitySource: {
+          kind: 'fixture' as const,
+          name: 'rgs-fixture' as const,
+          status: 'gated' as const,
+        },
+        description: 'Crash description',
+        id: 'crash' as const,
+        name: 'Card Streak',
+        reason: 'Fixture only.',
+        state: 'preview' as const,
+      },
+    ],
+    network: 'solana-devnet' as const,
+    schemaVersion: GAME_CATALOG_SCHEMA_VERSION,
+  };
+}

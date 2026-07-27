@@ -33,7 +33,7 @@ function receipt(
   return {
     actions: {
       primary: { href: `/duel/${duelId}`, label: 'View duel' },
-      rematch: settled ? { href: '/overview?rematch=fixture', label: 'Run a rematch' } : null,
+      rematch: settled ? { href: '/games/duel?rematch=fixture', label: 'Run a rematch' } : null,
       share: { href: `/duel/${duelId}`, label: 'Share duel' },
     },
     availability: { complete: settled, missing: settled ? [] : ['finalized result'] },

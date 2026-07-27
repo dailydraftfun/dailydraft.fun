@@ -592,7 +592,7 @@ export function buildPublicWalletProfile(
       packName: duel.pack.name,
       receiptHref: `/duel/${encodeURIComponent(duel.id)}`,
       rematchHref:
-        duel.status === 'settled' ? `/overview?rematch=${encodeURIComponent(duel.id)}` : null,
+        duel.status === 'settled' ? `/games/duel?rematch=${encodeURIComponent(duel.id)}` : null,
       result: won ? ('win' as const) : lost ? ('loss' as const) : ('none' as const),
       status,
       tier: duel.stake,
@@ -797,17 +797,17 @@ function receiptActions(duelId: string, status: PublicDuelStatus): PublicDuelRec
   const share = { href: `/duel/${encoded}`, label: 'Share proof' };
   if (status === 'waiting') {
     return {
-      primary: { href: `/overview?challenge=${encoded}`, label: 'Accept challenge' },
+      primary: { href: `/games/duel?challenge=${encoded}`, label: 'Accept challenge' },
       rematch: null,
       share,
     };
   }
   if (status === 'settled') {
-    const rematch = { href: `/overview?rematch=${encoded}`, label: 'Run a rematch' };
+    const rematch = { href: `/games/duel?rematch=${encoded}`, label: 'Run a rematch' };
     return { primary: rematch, rematch, share };
   }
   if (!TERMINAL_STATUSES.has(status)) {
-    return { primary: { href: '/overview', label: 'Open a duel' }, rematch: null, share };
+    return { primary: { href: '/games/duel', label: 'Open a duel' }, rematch: null, share };
   }
-  return { primary: { href: '/overview', label: 'Open a new duel' }, rematch: null, share };
+  return { primary: { href: '/games/duel', label: 'Open a new duel' }, rematch: null, share };
 }
