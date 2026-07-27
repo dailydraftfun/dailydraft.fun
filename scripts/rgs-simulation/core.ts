@@ -1,4 +1,8 @@
 import {
+  fixtureSnapshotInput,
+  prepareGachaInventorySnapshot,
+} from '../../apps/api/src/gacha/gacha-inventory-snapshot.service.js';
+import {
   createFixtureGachaPullOddsRuleSet,
   gachaPullOddsBandForValue,
 } from '../../apps/api/src/gacha/gacha-pull-odds.js';
@@ -6,7 +10,6 @@ import {
   sportsPackGachaFixtureCards,
   sportsPackGachaFixtureMachines,
 } from '../../apps/api/src/gacha/sports-pack-gacha.fixture.js';
-import { hashRgsValue, type RgsJsonValue } from '../../packages/contracts/src/rgs.js';
 import {
   createRgsSimulationConfig,
   RGS_SIMULATION_CONFIG_SCHEMA_VERSION,
@@ -69,32 +72,24 @@ export function createSportsPackGachaSimulationConfig(): RgsSimulationConfig {
   const machine = sportsPackGachaFixtureMachines[0];
   if (!machine) throw new Error('Sports Pack Gacha simulation fixture has no machine');
   const cards = sportsPackGachaFixtureCards(machine);
-  const simulationInput = {
-    inventory: cards.map((card) => ({
-      assetReference: card.assetReference ?? null,
-      payoutMinor: card.insuredValue?.amount ?? null,
-    })),
-    machineKey: machine.machineKey,
-    schemaVersion: 'dailydraft.gacha-simulation-input.v1',
-    stakeMinor: machine.tierPriceMinor,
-  } as const;
-  const configHash = hashRgsValue(simulationInput as unknown as RgsJsonValue);
-  const rules = createFixtureGachaPullOddsRuleSet(configHash);
+  const snapshot = prepareGachaInventorySnapshot(fixtureSnapshotInput(machine, cards));
+  const rules = createFixtureGachaPullOddsRuleSet(snapshot.contentHash);
   const tiers = rules.bands.map((band) => ({
     key: band.label,
-    payouts: cards
+    payouts: snapshot.entries
       .filter(
-        (card) =>
-          card.insuredValue &&
-          gachaPullOddsBandForValue(rules.bands, card.insuredValue.amount).label === band.label,
+        (entry) =>
+          entry.eligible &&
+          entry.insuredValue &&
+          gachaPullOddsBandForValue(rules.bands, entry.insuredValue.amount).label === band.label,
       )
-      .map((card) => {
-        if (!card.assetReference || !card.insuredValue) {
+      .map((entry) => {
+        if (!entry.assetReference || !entry.insuredValue) {
           throw new Error('Sports Pack Gacha simulation fixture card is incomplete');
         }
         return {
-          id: card.assetReference,
-          payoutMinor: card.insuredValue.amount,
+          id: entry.assetReference,
+          payoutMinor: entry.insuredValue.amount,
         };
       }),
     probabilityPpm: band.probabilityPpm,
@@ -102,7 +97,7 @@ export function createSportsPackGachaSimulationConfig(): RgsSimulationConfig {
 
   return createRgsSimulationConfig({
     activation: rules.activation,
-    configHash,
+    configHash: snapshot.contentHash,
     currency: rules.currency,
     decimals: rules.decimals,
     mode: 'gacha',

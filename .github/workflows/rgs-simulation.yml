@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - ".github/workflows/rgs-simulation.yml"
+      - "apps/api/src/gacha/gacha-inventory-snapshot.service.ts"
       - "apps/api/src/gacha/gacha-pull-odds.ts"
+      - "apps/api/src/gacha/gacha-rip.service.ts"
       - "apps/api/src/gacha/sports-pack-gacha.fixture.ts"
       - "evidence/rgs-simulation/**"
       - "packages/contracts/src/rgs.ts"
@@ -17,7 +19,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/rgs-simulation.yml"
+      - "apps/api/src/gacha/gacha-inventory-snapshot.service.ts"
       - "apps/api/src/gacha/gacha-pull-odds.ts"
+      - "apps/api/src/gacha/gacha-rip.service.ts"
       - "apps/api/src/gacha/sports-pack-gacha.fixture.ts"
       - "evidence/rgs-simulation/**"
       - "packages/contracts/src/rgs.ts"
@@ -44,6 +48,7 @@ jobs:
         with:
           bun-version: 1.3.13
       - run: bun install --frozen-lockfile
+      - run: bun --filter @dailydraft/db db:generate
       - name: Test the simulator and Gacha regression adapter
         run: >-
           bun test

@@ -77,6 +77,17 @@ if (configuration.check) {
     const reportPath = resolve(repositoryRoot, configuration.reportPath);
     await mkdir(dirname(reportPath), { recursive: true });
     await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+    if (configuration.reportPath === DEFAULT_RGS_SIMULATION_REPORT_PATH) {
+      const entry = createRgsSimulationEvidenceEntry({
+        config: mathConfig,
+        report,
+        reportPath: DEFAULT_RGS_SIMULATION_REPORT_PATH,
+      });
+      const manifest = createRgsSimulationEvidenceManifest([entry]);
+      const manifestPath = resolve(repositoryRoot, DEFAULT_RGS_SIMULATION_MANIFEST_PATH);
+      await mkdir(dirname(manifestPath), { recursive: true });
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    }
   }
   console.log(JSON.stringify(report, null, 2));
   if (!report.passed) process.exitCode = 1;

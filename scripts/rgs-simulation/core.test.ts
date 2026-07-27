@@ -1,6 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  fixtureSnapshotInput,
+  prepareGachaInventorySnapshot,
+} from '../../apps/api/src/gacha/gacha-inventory-snapshot.service.js';
+import { createFixtureGachaPullOddsRuleSet } from '../../apps/api/src/gacha/gacha-pull-odds.js';
+import { selectGachaOutcome } from '../../apps/api/src/gacha/gacha-rip.service.js';
+import {
+  sportsPackGachaFixtureCards,
+  sportsPackGachaFixtureMachines,
+} from '../../apps/api/src/gacha/sports-pack-gacha.fixture.js';
+import { hashRgsText } from '../../packages/contracts/src/rgs.js';
+import { simulateRgsMathConfig } from '../../packages/rgs-simulator/src/index.js';
+import {
   createSportsPackGachaSimulationConfig,
   DEFAULT_RGS_SIMULATION_REPORT_PATH,
   parseRgsSimulationCliConfiguration,
@@ -40,6 +52,12 @@ describe('RGS simulation CLI contract', () => {
 
   test('builds the Gacha regression config from the provider fixture and committed odds', () => {
     const config = createSportsPackGachaSimulationConfig();
+    const machine = sportsPackGachaFixtureMachines[0];
+    if (!machine) throw new Error('Sports Pack Gacha fixture has no machine');
+    const snapshot = prepareGachaInventorySnapshot(
+      fixtureSnapshotInput(machine, sportsPackGachaFixtureCards(machine)),
+    );
+    const rules = createFixtureGachaPullOddsRuleSet(snapshot.contentHash);
 
     expect(config.activation).toBe('fixture-only');
     expect(config.realValueGate).toBe('hitl-required');
@@ -56,9 +74,36 @@ describe('RGS simulation CLI contract', () => {
       '150000000',
       '350000000',
     ]);
-    expect(config.configHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(config.rulesHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(config.configHash).toBe(snapshot.contentHash);
+    expect(config.rulesHash).toBe(rules.rulesHash);
     expect(config.mathConfigHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  test('replays canonical runtime selection for deterministic round seeds', () => {
+    const config = createSportsPackGachaSimulationConfig();
+    const machine = sportsPackGachaFixtureMachines[0];
+    if (!machine) throw new Error('Sports Pack Gacha fixture has no machine');
+    const snapshot = prepareGachaInventorySnapshot(
+      fixtureSnapshotInput(machine, sportsPackGachaFixtureCards(machine)),
+    );
+    const rules = createFixtureGachaPullOddsRuleSet(snapshot.contentHash);
+    const runtimeEntries = snapshot.entries.map((entry) => ({
+      assetReference: entry.assetReference,
+      eligible: entry.eligible,
+      insuredValueMinor: entry.insuredValue?.amount ?? null,
+    }));
+
+    for (let round = 0; round < 32; round += 1) {
+      const seed = `dailydraft.runtime-parity.${round}`;
+      const report = simulateRgsMathConfig(config, { rounds: 1, seed });
+      const runtime = selectGachaOutcome(runtimeEntries, rules, {
+        clientSeed: hashRgsText(`${seed}:client:0`),
+        serverSeed: hashRgsText(`${seed}:server:0`),
+      });
+
+      expect(report.realized.maxExposure.outcomeIds).toEqual([runtime.assetReference]);
+      expect(report.realized.maxExposure.payoutMinor).toBe(runtime.insuredValueMinor);
+    }
   });
 
   test('bounds report output to local evidence or artifacts directories', () => {

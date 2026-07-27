@@ -1,6 +1,7 @@
 import {
   canonicalRgsJson,
   deriveRgsSeededEntropy,
+  hashRgsText,
   hashRgsValue,
   type RgsJsonValue,
 } from '@dailydraft/contracts/rgs';
@@ -45,11 +46,13 @@ export function simulateRgsMathConfig(
   let observedMaxOutcomeIds = new Set<string>();
 
   for (let round = 0; round < run.rounds; round += 1) {
+    const clientSeed = hashRgsText(`${run.seed}:client:${round}`);
+    const serverSeed = hashRgsText(`${run.seed}:server:${round}`);
     const entropy = deriveRgsSeededEntropy({
-      clientSeed: `${run.seed}:client:${round}`,
+      clientSeed,
       configHash: config.configHash,
       rulesHash: config.rulesHash,
-      serverSeed: `${run.seed}:server:${round}`,
+      serverSeed,
     });
     const tier = selectTier(config, parseEntropyWord(entropy, 0));
     const payout = tier.payouts[parseEntropyWord(entropy, 8) % tier.payouts.length];

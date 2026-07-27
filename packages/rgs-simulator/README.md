@@ -24,6 +24,12 @@ Run a deterministic report:
 bun run rgs:simulate --rounds 100000 --seed dailydraft.gacha-sports-pack-fixture-simulation.v1
 ```
 
+Regenerate the checked-in report and its exact manifest:
+
+```bash
+bun run rgs:simulate --rounds 100000 --seed dailydraft.gacha-sports-pack-fixture-simulation.v1 --report evidence/rgs-simulation/gacha-sports-pack-fixture-v1.json
+```
+
 Verify the checked-in report and manifest reproduce exactly:
 
 ```bash
