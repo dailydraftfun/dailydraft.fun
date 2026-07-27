@@ -22,6 +22,7 @@ import { motion } from 'motion/react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { type CSSProperties, type ReactNode, useState } from 'react';
+import { CelebrationOverlay } from '../components/celebration';
 import {
   ChoreographyCelebration,
   type ChoreographyController,
@@ -621,6 +622,11 @@ function FlipReveal({ card }: { card: PreviewCard }) {
           className={choreographyStyles.celebration}
           controller={choreography}
         />
+        <CelebrationOverlay
+          controller={choreography}
+          sequenceKey={card.name}
+          valueUsd={card.value}
+        />
         <ChoreographyDriver controller={choreography} sequenceKey={card.name} />
       </figure>
       <ChoreographySkipControl
@@ -691,6 +697,7 @@ function StageCard({
             <LockKeyIcon size={25} />
           </span>
         ) : null}
+        <CelebrationOverlay controller={choreography} sequenceKey={index} valueUsd={card.value} />
         <ChoreographyDriver controller={choreography} sequenceKey={index} />
       </div>
       <p className="proof-label mt-3">Stage {index + 1}</p>
