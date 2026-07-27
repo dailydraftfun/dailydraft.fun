@@ -17,6 +17,21 @@ export const THEME_ART_SLOTS = [
 ] as const;
 export const THEME_AUDIO_CUES = ['anticipation', 'reveal', 'celebration'] as const;
 
+const THEME_PACK_FIELDS = [
+  'art',
+  'audio',
+  'id',
+  'name',
+  'rarity',
+  'schemaVersion',
+  'source',
+  'version',
+] as const;
+const RARITY_TREATMENT_FIELDS = ['foil', 'palette'] as const;
+const PALETTE_FIELDS = ['accent', 'glow', 'shadow', 'surface'] as const;
+const FOIL_FIELDS = ['brightness', 'chroma', 'glare', 'grain', 'iridescence', 'speed'] as const;
+const OPAQUE_PROVIDER_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
+
 export type ThemeArtSlot = (typeof THEME_ART_SLOTS)[number];
 export type ThemeAudioCue = (typeof THEME_AUDIO_CUES)[number];
 
@@ -208,12 +223,25 @@ function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 }
 
+function rejectUnknownKeys(
+  value: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  path: string,
+  issues: string[],
+): void {
+  const allowed = new Set(allowedKeys);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) issues.push(`${path}.${key} is not allowed`);
+  }
+}
+
 export function validateThemePack(value: unknown): ThemePackValidation {
   const issues: string[] = [];
 
   if (!isRecord(value)) {
     return { issues: ['theme pack must be an object'], ok: false };
   }
+  rejectUnknownKeys(value, THEME_PACK_FIELDS, 'themePack', issues);
   if (value.schemaVersion !== THEME_PACK_SCHEMA_VERSION) {
     issues.push(`schemaVersion must be ${THEME_PACK_SCHEMA_VERSION}`);
   }
@@ -225,19 +253,18 @@ export function validateThemePack(value: unknown): ThemePackValidation {
   if (!isRecord(source)) {
     issues.push('source must be an object');
   } else if (source.kind === 'bundled') {
+    rejectUnknownKeys(source, ['kind', 'namespace'], 'source', issues);
     if (!isNonEmptyString(source.namespace)) {
       issues.push('source.namespace must be a non-empty string');
     }
   } else if (source.kind === 'provider') {
+    rejectUnknownKeys(source, ['contract', 'kind', 'mode', 'provider'], 'source', issues);
     if (
       source.provider !== 'collector-crypt' ||
       source.mode !== 'collector-crypt-sandbox' ||
       source.contract !== 'pack-provider'
     ) {
       issues.push('provider source must use the gated Collector Crypt pack-provider contract');
-    }
-    if ('metadata' in value) {
-      issues.push('provider themes must not embed provider metadata');
     }
   } else {
     issues.push('source.kind must be bundled or provider');
@@ -247,13 +274,14 @@ export function validateThemePack(value: unknown): ThemePackValidation {
   if (!isRecord(art)) {
     issues.push('art must be an object');
   } else {
+    rejectUnknownKeys(art, THEME_ART_SLOTS, 'art', issues);
     for (const slot of THEME_ART_SLOTS) {
       if (!isNonEmptyString(art[slot])) issues.push(`art.${slot} must be a non-empty string`);
       if (
         isRecord(source) &&
         source.kind === 'provider' &&
         typeof art[slot] === 'string' &&
-        art[slot].includes('://')
+        !OPAQUE_PROVIDER_KEY_PATTERN.test(art[slot])
       ) {
         issues.push(`art.${slot} must be an opaque provider key`);
       }
@@ -264,6 +292,7 @@ export function validateThemePack(value: unknown): ThemePackValidation {
   if (!isRecord(rarity)) {
     issues.push('rarity must be an object');
   } else {
+    rejectUnknownKeys(rarity, THEME_RARITIES, 'rarity', issues);
     for (const tier of THEME_RARITIES) {
       const treatment = rarity[tier];
       if (!isRecord(treatment) || !isRecord(treatment.palette) || !isRecord(treatment.foil)) {
@@ -271,6 +300,9 @@ export function validateThemePack(value: unknown): ThemePackValidation {
         continue;
       }
       const { palette, foil } = treatment;
+      rejectUnknownKeys(treatment, RARITY_TREATMENT_FIELDS, `rarity.${tier}`, issues);
+      rejectUnknownKeys(palette, PALETTE_FIELDS, `rarity.${tier}.palette`, issues);
+      rejectUnknownKeys(foil, FOIL_FIELDS, `rarity.${tier}.foil`, issues);
       for (const color of ['accent', 'glow', 'shadow'] as const) {
         if (!isHexColor(palette[color])) {
           issues.push(`rarity.${tier}.palette.${color} must be a six-digit hex color`);
@@ -303,6 +335,8 @@ export function validateThemePack(value: unknown): ThemePackValidation {
   if (!isRecord(audio) || !isNonEmptyString(audio.bankId) || !isRecord(audio.cues)) {
     issues.push('audio must define a bankId and cues');
   } else {
+    rejectUnknownKeys(audio, ['bankId', 'cues'], 'audio', issues);
+    rejectUnknownKeys(audio.cues, THEME_AUDIO_CUES, 'audio.cues', issues);
     for (const cue of THEME_AUDIO_CUES) {
       const definition = audio.cues[cue];
       if (
@@ -311,6 +345,8 @@ export function validateThemePack(value: unknown): ThemePackValidation {
         !isUnitInterval(definition.gain)
       ) {
         issues.push(`audio.cues.${cue} must define an assetRef and gain between 0 and 1`);
+      } else {
+        rejectUnknownKeys(definition, ['assetRef', 'gain'], `audio.cues.${cue}`, issues);
       }
     }
   }

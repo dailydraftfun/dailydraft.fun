@@ -13,6 +13,24 @@ function mutableFixture(): Record<string, unknown> {
   return structuredClone(themePackContractFixtures.devnetDemo) as Record<string, unknown>;
 }
 
+function mutableProviderFixture(): Record<string, unknown> {
+  const fixture = mutableFixture();
+  fixture.source = {
+    contract: 'pack-provider',
+    kind: 'provider',
+    mode: 'collector-crypt-sandbox',
+    provider: 'collector-crypt',
+  };
+  fixture.art = {
+    cardBack: 'theme.card.back',
+    cardFace: 'theme.card.face',
+    cardFrame: 'theme.card.frame',
+    pack: 'theme.pack.closed',
+    sceneBackground: 'theme.scene.background',
+  };
+  return fixture;
+}
+
 describe('versioned theme-pack contract', () => {
   test('keeps the committed fixture aligned with the v1 schema', () => {
     const fixture = themePackContractFixtures.devnetDemo;
@@ -49,16 +67,11 @@ describe('versioned theme-pack contract', () => {
     const unknownSource = mutableFixture();
     unknownSource.source = { kind: 'remote' };
 
-    const embeddedProviderData = mutableFixture();
-    embeddedProviderData.source = {
-      contract: 'pack-provider',
-      kind: 'provider',
-      mode: 'collector-crypt-sandbox',
-      provider: 'collector-crypt',
-    };
-    embeddedProviderData.metadata = { cardName: 'embedded card' };
-    const embeddedArt = embeddedProviderData.art as Record<string, string>;
-    embeddedArt.cardFace = 'https://provider.invalid/card-face.png';
+    const embeddedProviderData = mutableProviderFixture();
+    embeddedProviderData.cardMetadata = { cardName: 'embedded card' };
+    embeddedProviderData.cards = [{ cardName: 'embedded card' }];
+    const embeddedArt = embeddedProviderData.art as Record<string, unknown>;
+    embeddedArt.cardName = 'embedded card';
 
     expect(validateThemePack(unsupportedSchema)).toMatchObject({
       issues: [`schemaVersion must be ${THEME_PACK_SCHEMA_VERSION}`],
@@ -77,10 +90,29 @@ describe('versioned theme-pack contract', () => {
     const embeddedProviderResult = validateThemePack(embeddedProviderData);
     expect(embeddedProviderResult.ok).toBe(false);
     if (embeddedProviderResult.ok) throw new Error('expected embedded provider data to fail');
-    expect(embeddedProviderResult.issues).toContain(
-      'provider themes must not embed provider metadata',
-    );
-    expect(embeddedProviderResult.issues).toContain('art.cardFace must be an opaque provider key');
+    expect(embeddedProviderResult.issues).toContain('themePack.cardMetadata is not allowed');
+    expect(embeddedProviderResult.issues).toContain('themePack.cards is not allowed');
+    expect(embeddedProviderResult.issues).toContain('art.cardName is not allowed');
+  });
+
+  test('accepts only positive opaque keys for provider art', () => {
+    for (const directReference of [
+      'data:image/png;base64,fixture',
+      'blob:fixture',
+      '//provider.invalid/card.png',
+      '/assets/card.png',
+      'https://provider.invalid/card.png',
+    ]) {
+      const fixture = mutableProviderFixture();
+      const art = fixture.art as Record<string, string>;
+      art.cardFace = directReference;
+
+      const result = validateThemePack(fixture);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected direct provider art to fail');
+      expect(result.issues).toContain('art.cardFace must be an opaque provider key');
+    }
   });
 
   test('rejects incomplete art, rarity, and audio banks', () => {
