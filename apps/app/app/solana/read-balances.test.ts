@@ -45,6 +45,27 @@ describe('readWalletBalances', () => {
     });
   });
 
+  test('reads the exact prepared source account instead of the owner aggregate', async () => {
+    const sourceTokenAccount = 'Ata111111111111111111111111111111111111111';
+    const balances = await readWalletBalances(
+      wallet,
+      usdc,
+      {
+        readLamports: async () => 1_000n,
+        readToken: async () => {
+          throw new Error('aggregate balance must not be used');
+        },
+        readTokenAccount: async (account) => {
+          expect(account).toBe(sourceTokenAccount);
+          return { amount: 12_000_000n, decimals: 6 };
+        },
+      },
+      sourceTokenAccount,
+    );
+
+    expect(balances?.token).toEqual({ amount: 12_000_000n, decimals: 6 });
+  });
+
   test('reports a wallet holding no account for the mint', async () => {
     const balances = await readWalletBalances(wallet, usdc, {
       readLamports: async () => 7n,
@@ -126,6 +147,26 @@ describe('refreshWalletBalances', () => {
     expect(seen).toEqual([usdc]);
   });
 
+  test('passes the prepared source token account through to the read', async () => {
+    const state = sink();
+    const sourceTokenAccount = 'Ata111111111111111111111111111111111111111';
+    let seenSource: string | null | undefined;
+
+    await refreshWalletBalances(
+      wallet,
+      usdc,
+      state,
+      async (_address, _mint, _readers, source) => {
+        seenSource = source;
+        return { lamports: 1n, token: { amount: 5n, decimals: 6 } };
+      },
+      {},
+      sourceTokenAccount,
+    );
+
+    expect(seenSource).toBe(sourceTokenAccount);
+  });
+
   test('clears to idle without a network read when no wallet is connected', async () => {
     const state = sink();
     let reads = 0;
@@ -152,7 +193,6 @@ describe('refreshWalletBalances', () => {
     // emptied, and blanking the number would read as exactly that.
     expect(state.balances).toEqual([]);
   });
-
   test('ignores an older wallet read that resolves after the current wallet', async () => {
     const state = sink();
     const first = deferred<WalletBalances | null>();

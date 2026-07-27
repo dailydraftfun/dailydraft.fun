@@ -1,5 +1,5 @@
 import type { BalanceStatus, WalletBalances } from './balance';
-import { fetchLamportBalance, fetchTokenBalance } from './rpc-client';
+import { fetchLamportBalance, fetchTokenAccountBalance, fetchTokenBalance } from './rpc-client';
 
 // Extracted from the provider's refreshBalances callback so the read policy is
 // testable without a DOM: a hook body never executes under renderToStaticMarkup,
@@ -9,6 +9,7 @@ import { fetchLamportBalance, fetchTokenBalance } from './rpc-client';
 type BalanceReaders = {
   readLamports?: (address: string) => Promise<bigint>;
   readToken?: (address: string, mint: string) => Promise<WalletBalances['token']>;
+  readTokenAccount?: (tokenAccount: string) => Promise<WalletBalances['token']>;
 };
 
 /**
@@ -27,13 +28,19 @@ export async function readWalletBalances(
   address: string,
   mint?: string | null,
   readers: BalanceReaders = {},
+  sourceTokenAccount?: string | null,
 ): Promise<WalletBalances | null> {
   const readLamports = readers.readLamports ?? fetchLamportBalance;
   const readToken = readers.readToken ?? fetchTokenBalance;
+  const readTokenAccount = readers.readTokenAccount ?? fetchTokenAccountBalance;
   try {
     const [lamports, token] = await Promise.all([
       readLamports(address),
-      mint ? readToken(address, mint) : Promise.resolve(null),
+      sourceTokenAccount
+        ? readTokenAccount(sourceTokenAccount)
+        : mint
+          ? readToken(address, mint)
+          : Promise.resolve(null),
     ]);
     return { lamports, token };
   } catch {
@@ -71,14 +78,24 @@ export function createWalletBalanceRefresher({
   read,
   sessionToken,
   sink,
-}: WalletBalanceRefresherOptions): (mint?: string | null) => Promise<WalletBalances | null> {
-  return (mint?: string | null) => {
+}: WalletBalanceRefresherOptions): (
+  mint?: string | null,
+  sourceTokenAccount?: string | null,
+) => Promise<WalletBalances | null> {
+  return (mint?: string | null, sourceTokenAccount?: string | null) => {
     if (getCurrentSessionToken() !== sessionToken) return Promise.resolve(null);
     const requestGeneration = ++generation.current;
-    return refreshWalletBalances(address, mint, sink, read, {
-      isCurrent: () =>
-        getCurrentSessionToken() === sessionToken && generation.current === requestGeneration,
-    });
+    return refreshWalletBalances(
+      address,
+      mint,
+      sink,
+      read,
+      {
+        isCurrent: () =>
+          getCurrentSessionToken() === sessionToken && generation.current === requestGeneration,
+      },
+      sourceTokenAccount,
+    );
   };
 }
 
@@ -100,6 +117,7 @@ export async function refreshWalletBalances(
   sink: BalanceSink,
   read: typeof readWalletBalances = readWalletBalances,
   guard: BalanceRefreshGuard = {},
+  sourceTokenAccount?: string | null,
 ): Promise<WalletBalances | null> {
   const isCurrent = guard.isCurrent ?? (() => true);
   if (!isCurrent()) return null;
@@ -109,7 +127,7 @@ export async function refreshWalletBalances(
     return null;
   }
   sink.setBalanceStatus('loading');
-  const next = await read(address, mint);
+  const next = await read(address, mint, {}, sourceTokenAccount);
   if (!isCurrent()) return null;
   if (!next) {
     sink.setBalanceStatus('error');

@@ -5,21 +5,19 @@ const { default: GamePreviewPage, generateMetadata, generateStaticParams } = awa
 
 describe('game preview page contract', () => {
   test('prebuilds the established fixture preview modes', () => {
-    expect(generateStaticParams()).toEqual([
-      { mode: 'crash' },
-      { mode: 'flip' },
-      { mode: 'house' },
-    ]);
+    // `flip` is owned by the static `games/flip` route, so claiming it here
+    // would fail the build.
+    expect(generateStaticParams()).toEqual([{ mode: 'crash' }, { mode: 'house' }]);
   });
 
   test('publishes mode-specific metadata and content', async () => {
-    const metadata = await generateMetadata({ params: Promise.resolve({ mode: 'flip' }) });
-    const page = await GamePreviewPage({ params: Promise.resolve({ mode: 'flip' }) });
+    const metadata = await generateMetadata({ params: Promise.resolve({ mode: 'crash' }) });
+    const page = await GamePreviewPage({ params: Promise.resolve({ mode: 'crash' }) });
     const markup = renderToStaticMarkup(page);
 
-    expect(metadata.title).toBe('Sports Pack Gacha UX preview — DailyDraft Devnet');
+    expect(metadata.title).toBe('Card Streak UX preview — DailyDraft Devnet');
     expect(markup).toContain('Full UX preview');
-    expect(markup).toContain('Sports Pack Gacha');
+    expect(markup).toContain('Card Streak');
   });
 
   test('publishes Streak and House metadata', async () => {
@@ -28,5 +26,11 @@ describe('game preview page contract', () => {
 
     expect(crash.title).toBe('Card Streak UX preview — DailyDraft Devnet');
     expect(house.title).toBe('Instant House UX preview — DailyDraft Devnet');
+  });
+
+  test('publishes no preview metadata for an unsupported dynamic mode', async () => {
+    await expect(generateMetadata({ params: Promise.resolve({ mode: 'flip' }) })).resolves.toEqual(
+      {},
+    );
   });
 });

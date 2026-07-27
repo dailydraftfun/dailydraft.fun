@@ -2,7 +2,11 @@ import type { Metadata } from 'next';
 import { GameModePreview } from '../game-mode-preview';
 import { type PreviewMode, previewModeTitles } from '../game-preview-data';
 
-const previewModes = new Set<PreviewMode>(['crash', 'flip', 'house']);
+// `flip` is deliberately absent: `games/flip/page.tsx` is a static segment that
+// owns that path, and Next.js fails the build when `generateStaticParams` also
+// claims it. The flip route renders the same `GameModePreview` when its gates
+// are shut, so nothing is lost.
+const previewModes = new Set<PreviewMode>(['crash', 'house']);
 
 type GamePreviewPageProps = {
   params: Promise<{ mode: string }>;
