@@ -2,18 +2,14 @@
 
 import { type ComponentPropsWithoutRef, type ReactNode, useEffect, useRef, useState } from 'react';
 
-import type { QualityTier } from './quality.js';
-import type {
-  mountPixiScene as MountPixiScene,
-  PixiSceneDefinition,
-  SceneMount,
-} from './runtime.js';
+import type { QualityTier } from './quality';
+import type { mountPixiScene as MountPixiScene, PixiSceneDefinition, SceneMount } from './runtime';
 import type {
   DomFallbackDescriptor,
   SceneFallbackContract,
   SceneFallbackReason,
   SceneMetadata,
-} from './types.js';
+} from './types';
 
 export type PixiSceneStatus =
   | { reason: SceneFallbackReason; type: 'fallback' }
@@ -151,7 +147,7 @@ export function PixiScene<Props>({
 }
 
 function defaultRuntimeLoader(): Promise<{ mountPixiScene: typeof MountPixiScene }> {
-  return import('./runtime.js');
+  return import('./runtime');
 }
 
 function fallbackFor(

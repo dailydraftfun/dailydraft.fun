@@ -9,12 +9,11 @@ const config: NextConfig = {
       },
     ],
   },
-  // `@dailydraft/contracts/pull-rarity` resolves to TypeScript source for Next
-  // (see that subpath's `import` export condition), so Next has to compile it
-  // rather than expect a prebuilt `dist/`. Without this the journey smoke job —
-  // which runs `next dev` straight after `bun install`, never through turbo —
-  // cannot resolve the package at all.
-  transpilePackages: ['@dailydraft/contracts'],
+  // Workspace packages resolve to TypeScript source for Next (see their
+  // `import` export conditions), so Next has to compile them rather than expect
+  // prebuilt `dist/` output. The journey smoke job runs `next dev` straight
+  // after `bun install`, never through turbo.
+  transpilePackages: ['@dailydraft/contracts', '@dailydraft/engine'],
 };
 
 export default config;

@@ -1,2 +1,2 @@
-export * from './effects.js';
-export * from './runtime.js';
+export * from './effects';
+export * from './runtime';

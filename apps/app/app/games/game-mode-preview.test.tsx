@@ -4,11 +4,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { GameModePreview } from './game-mode-preview';
 
 describe('game mode preview', () => {
-  test('resolves the pull-rarity runtime from source in fresh app installs', () => {
+  test('resolves workspace runtimes from source in fresh app installs', () => {
     const source = readFileSync(new URL('./game-mode-preview.tsx', import.meta.url), 'utf8');
     const nextConfig = readFileSync(new URL('../../next.config.ts', import.meta.url), 'utf8');
     const contractsPackage = JSON.parse(
       readFileSync(new URL('../../../../packages/contracts/package.json', import.meta.url), 'utf8'),
+    ) as {
+      exports: Record<string, Record<string, string>>;
+    };
+    const enginePackage = JSON.parse(
+      readFileSync(new URL('../../../../packages/engine/package.json', import.meta.url), 'utf8'),
     ) as {
       exports: Record<string, Record<string, string>>;
     };
@@ -17,8 +22,11 @@ describe('game mode preview', () => {
     expect(source).toContain("from '../components/celebration'");
     expect(source.match(/<CelebrationOverlay\b/g)).toHaveLength(2);
     expect(source).not.toMatch(/from '@dailydraft\/contracts';/);
-    expect(nextConfig).toContain("transpilePackages: ['@dailydraft/contracts']");
+    expect(nextConfig).toContain(
+      "transpilePackages: ['@dailydraft/contracts', '@dailydraft/engine']",
+    );
     expect(contractsPackage.exports['./pull-rarity']?.import).toBe('./src/pull-rarity.ts');
+    expect(enginePackage.exports['.']?.import).toBe('./src/index.ts');
   });
 
   test('renders the complete Flip fixture journey', () => {

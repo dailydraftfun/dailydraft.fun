@@ -9,16 +9,19 @@
     ".": {
       "types": "./src/index.ts",
       "bun": "./src/index.ts",
+      "import": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./pixi": {
       "types": "./src/pixi.ts",
       "bun": "./src/pixi.ts",
+      "import": "./src/pixi.ts",
       "default": "./dist/pixi.js"
     },
     "./react": {
       "types": "./src/react.tsx",
       "bun": "./src/react.tsx",
+      "import": "./src/react.tsx",
       "default": "./dist/react.js"
     }
   },

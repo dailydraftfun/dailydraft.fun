@@ -12,8 +12,8 @@ import {
   QUALITY_BUDGETS,
   type QualityBudget,
   type QualityTier,
-} from './quality.js';
-import type { MaybePromise, SceneMetadata, SceneViewport } from './types.js';
+} from './quality';
+import type { MaybePromise, SceneMetadata, SceneViewport } from './types';
 
 export type PixiSceneContext<Props> = Readonly<{
   application: Application;

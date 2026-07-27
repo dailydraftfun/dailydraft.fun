@@ -1,3 +1,3 @@
-export * from './choreography.js';
-export * from './quality.js';
-export * from './types.js';
+export * from './choreography';
+export * from './quality';
+export * from './types';

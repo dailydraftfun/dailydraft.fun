@@ -1,6 +1,6 @@
 import { BlurFilter, type BlurFilterOptions, type Container, type ContainerChild } from 'pixi.js';
 
-import { QUALITY_BUDGETS, type QualityBudget, type QualityTier } from './quality.js';
+import { QUALITY_BUDGETS, type QualityBudget, type QualityTier } from './quality';
 
 export type ParticleSpawn<T extends ContainerChild> = Readonly<{
   display: T;
