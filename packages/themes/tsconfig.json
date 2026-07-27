@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
+    "lib": ["ES2023"],
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["bun"]
+  },
+  "include": ["src/**/*.ts"]
+}
