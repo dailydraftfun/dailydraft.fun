@@ -252,6 +252,38 @@ describe('GachaPaymentService.createIntent', () => {
     });
   });
 
+  test('keeps a claimed slot when finalized history contradicts a status-cache miss', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const rpcOptions: {
+      blockhashValid: boolean;
+      envelope: SolanaTransactionEnvelope | null;
+      signatureStatus: SolanaSignatureStatus | null;
+    } = {
+      blockhashValid: false,
+      envelope: null,
+      signatureStatus: null,
+    };
+    const rpc = new PaymentRpc(rpcOptions);
+    const service = new GachaPaymentService(asClient(database), rpc);
+    const first = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    const { signature } = await claimSignedPayment(service, first.intentId);
+    rpcOptions.envelope = paidEnvelope(first.memoNonce);
+    database.expire(first.intentId);
+
+    const resumed = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+
+    expect(resumed).toMatchObject({
+      intentId: first.intentId,
+      resumed: true,
+      signature,
+      status: GachaRipPaymentStatus.PENDING,
+    });
+    expect(database.payments).toHaveLength(1);
+    expect(rpc.transactionCommitments).toEqual(['finalized']);
+    expect(rpc.transactionReads).toBe(1);
+  });
+
   test('refuses to issue deposit terms outside funded devnet mode', async () => {
     configureDevnet();
     process.env.DAILYDRAFT_PROVIDER_MODE = 'mock';

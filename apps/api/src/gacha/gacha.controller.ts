@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Header,
   Headers,
@@ -81,7 +82,7 @@ export class GachaController {
     @Param() params: GachaMachineParams,
     @Body() input: CreateGachaPaymentIntentRequest,
   ) {
-    assertWalletActor(authentication, input.payerWallet);
+    assertGachaWalletActor(authentication, input.payerWallet);
     return this.payments.createIntent({
       machineKey: params.machineKey,
       payerWallet: input.payerWallet,
@@ -146,7 +147,7 @@ export class GachaController {
     @Body() input: CreateFixtureGachaRipRequest,
     @Headers('idempotency-key') idempotencyKeyHeader?: string,
   ) {
-    assertWalletActor(authentication, input.recipientWallet);
+    assertGachaWalletActor(authentication, input.recipientWallet);
     const idempotencyKey = idempotencyKeyHeader ?? input.idempotencyKey;
     return this.rips.createFixtureRip({
       ...input,
@@ -166,7 +167,13 @@ export class GachaController {
     authentication: DuelAuthentication,
     intentId: string,
   ): Promise<void> {
-    if (authentication.kind === 'integration') return;
-    assertWalletActor(authentication, await this.payments.findIntentPayerWallet(intentId));
+    assertGachaWalletActor(authentication, await this.payments.findIntentPayerWallet(intentId));
   }
+}
+
+function assertGachaWalletActor(authentication: DuelAuthentication, claimedWallet: string): void {
+  if (authentication.kind !== 'wallet-session') {
+    throw new ForbiddenException('Gacha routes require a wallet session');
+  }
+  assertWalletActor(authentication, claimedWallet);
 }

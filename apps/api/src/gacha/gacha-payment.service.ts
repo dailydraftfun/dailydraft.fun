@@ -578,9 +578,10 @@ export class GachaPaymentService {
   }
 
   /**
-   * Release a signed but unlanded payment only with two independent chain facts:
-   * the signature has no history and its exact blockhash is no longer valid.
-   * Any RPC error or partial answer keeps the slot active.
+   * Release a signed but unlanded payment only when every finalized chain read
+   * agrees: the history-aware status lookup and transaction history both report
+   * no signature, and its exact blockhash is no longer valid. Any RPC error,
+   * partial answer, or contradictory history keeps the slot active.
    */
   private async releaseClaimedIfProvenExpired(payment: GachaPaymentIntentRecord): Promise<boolean> {
     if (
@@ -596,6 +597,9 @@ export class GachaPaymentService {
       const statuses = await this.rpc.getSignatureStatuses([payment.signature]);
       if (statuses.length !== 1 || statuses[0] !== null) return false;
       if (await this.rpc.isBlockhashValid(payment.claimedRecentBlockhash, 'finalized')) {
+        return false;
+      }
+      if ((await this.rpc.getTransaction(payment.signature, 'finalized')) !== null) {
         return false;
       }
     } catch {

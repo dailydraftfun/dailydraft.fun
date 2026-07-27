@@ -373,6 +373,31 @@ describe('GachaRipService', () => {
     expect(provider.operations).toEqual(['acquire', 'settle']);
   });
 
+  test('fails closed when a legacy idempotency replay has no recipient wallet', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const provider = new RecordingProvider();
+    const service = serviceWith(database, provider);
+    await database.gachaRip.create({
+      data: baseRipRow({
+        id: 'gacharip_legacy_null_recipient',
+        idempotencyKey: 'idem-key-legacy-null-recipient',
+        recipientWallet: null,
+      }),
+    });
+
+    await expect(
+      service.createFixtureRip({
+        commitmentId: `gachaseed_${'a'.repeat(32)}`,
+        idempotencyKey: 'idem-key-legacy-null-recipient',
+        machineKey: MACHINE_KEY,
+        recipientWallet: WALLET,
+        seed: FIXED_SEED,
+      }),
+    ).rejects.toThrow('Gacha rip replay changed its recipient wallet');
+    expect(provider.operations).toEqual([]);
+  });
+
   test('creates distinct rips for distinct idempotency keys', async () => {
     enableFixtureMode();
     const database = new RipDatabase();

@@ -220,6 +220,7 @@ describe('GachaController', () => {
         calls.push(`payment-intent:${input.machineKey}:${input.payerWallet}`);
         return paymentIntent;
       },
+      findIntentPayerWallet: async () => paymentIntent.payerWallet,
       prepareTransaction: async (requestedIntentId: string) => {
         calls.push(`payment-transaction:${requestedIntentId}`);
         return preparedPayment;
@@ -231,14 +232,16 @@ describe('GachaController', () => {
     } as unknown as GachaPaymentService;
     const controller = new GachaController(snapshots, rips, payments);
     const params = { machineKey: 'fixture-machine' };
-    // Integration callers are trusted to act for any wallet, so this pass exercises
-    // pure routing; the wallet-session bindings get their own tests below.
-    const integration = { kind: 'integration' } as const;
+    const walletSession = {
+      kind: 'wallet-session',
+      sessionId: 'walletsession_routing',
+      wallet: paymentIntent.payerWallet,
+    } as const;
     const ripInput = {
       commitmentId: 'gachaseed_fixture',
       machineKey: 'fixture-machine',
       oddsVersion: 1,
-      recipientWallet: 'devnet-fixture-recipient',
+      recipientWallet: paymentIntent.payerWallet,
       seed: 'fixture-seed-0000000001',
     };
 
@@ -247,16 +250,16 @@ describe('GachaController', () => {
     await expect(controller.findOdds(params)).resolves.toEqual(odds);
     await expect(controller.createSeedCommitment(params)).resolves.toEqual(seedCommitment);
     await expect(
-      controller.createPaymentIntent(integration, params, {
+      controller.createPaymentIntent(walletSession, params, {
         payerWallet: paymentIntent.payerWallet,
       }),
     ).resolves.toEqual(paymentIntent);
-    await expect(controller.prepareTransaction(integration, { intentId })).resolves.toEqual(
+    await expect(controller.prepareTransaction(walletSession, { intentId })).resolves.toEqual(
       preparedPayment,
     );
     await expect(
       controller.claimPaymentSignature(
-        integration,
+        walletSession,
         { intentId },
         { signedTransactionBase64: 'c2lnbmVk' },
       ),
@@ -266,11 +269,11 @@ describe('GachaController', () => {
       signature: 'sig-fixture',
     });
     await expect(
-      controller.verifyPaymentIntent(integration, { intentId }, { signature: 'sig-fixture' }),
+      controller.verifyPaymentIntent(walletSession, { intentId }, { signature: 'sig-fixture' }),
     ).resolves.toEqual(verifiedPayment);
     await expect(
       controller.createFixtureRip(
-        integration,
+        walletSession,
         { ...ripInput, idempotencyKey: 'body-key' },
         'idem-fixture-key',
       ),
@@ -303,7 +306,11 @@ describe('GachaController', () => {
     );
 
     await controller.createFixtureRip(
-      { kind: 'integration' },
+      {
+        kind: 'wallet-session',
+        sessionId: 'walletsession_idempotency',
+        wallet: 'devnet-fixture-recipient',
+      },
       {
         commitmentId: 'gachaseed_fixture',
         idempotencyKey: 'body-key',
@@ -397,6 +404,20 @@ describe('GachaController wallet-session authorisation', () => {
     );
 
     expect(calls).toEqual(['intent']);
+  });
+
+  test('refuses an integration principal on wallet-session-only routes', async () => {
+    const calls: string[] = [];
+    const controller = buildController(calls);
+
+    await expect(
+      controller.createPaymentIntent(
+        { kind: 'integration' },
+        { machineKey: 'fixture-machine' },
+        { payerWallet: PAYER },
+      ),
+    ).rejects.toThrow('Gacha routes require a wallet session');
+    expect(calls).toEqual([]);
   });
 
   test.each([

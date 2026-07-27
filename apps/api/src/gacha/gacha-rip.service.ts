@@ -192,7 +192,7 @@ export class GachaRipService {
             where: { idempotencyKey, machineKey },
           });
           if (existing) {
-            if (existing.recipientWallet && existing.recipientWallet !== recipientWallet) {
+            if (!existing.recipientWallet || existing.recipientWallet !== recipientWallet) {
               throw new ConflictException('Gacha rip replay changed its recipient wallet');
             }
             return { kind: 'existing', ripId: existing.id };
