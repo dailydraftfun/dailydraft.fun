@@ -49,18 +49,38 @@ describe('versioned theme-pack contract', () => {
     const unknownSource = mutableFixture();
     unknownSource.source = { kind: 'remote' };
 
+    const embeddedProviderData = mutableFixture();
+    embeddedProviderData.source = {
+      contract: 'pack-provider',
+      kind: 'provider',
+      mode: 'collector-crypt-sandbox',
+      provider: 'collector-crypt',
+    };
+    embeddedProviderData.metadata = { cardName: 'embedded card' };
+    const embeddedArt = embeddedProviderData.art as Record<string, string>;
+    embeddedArt.cardFace = 'https://provider.invalid/card-face.png';
+
     expect(validateThemePack(unsupportedSchema)).toMatchObject({
       issues: [`schemaVersion must be ${THEME_PACK_SCHEMA_VERSION}`],
       ok: false,
     });
-    expect(validateThemePack(invalidProvider)).toMatchObject({
-      issues: ['provider source must use the gated Collector Crypt pack-provider contract'],
-      ok: false,
-    });
+    const invalidProviderResult = validateThemePack(invalidProvider);
+    expect(invalidProviderResult.ok).toBe(false);
+    if (invalidProviderResult.ok) throw new Error('expected invalid provider source');
+    expect(invalidProviderResult.issues).toContain(
+      'provider source must use the gated Collector Crypt pack-provider contract',
+    );
     expect(validateThemePack(unknownSource)).toMatchObject({
       issues: ['source.kind must be bundled or provider'],
       ok: false,
     });
+    const embeddedProviderResult = validateThemePack(embeddedProviderData);
+    expect(embeddedProviderResult.ok).toBe(false);
+    if (embeddedProviderResult.ok) throw new Error('expected embedded provider data to fail');
+    expect(embeddedProviderResult.issues).toContain(
+      'provider themes must not embed provider metadata',
+    );
+    expect(embeddedProviderResult.issues).toContain('art.cardFace must be an opaque provider key');
   });
 
   test('rejects incomplete art, rarity, and audio banks', () => {

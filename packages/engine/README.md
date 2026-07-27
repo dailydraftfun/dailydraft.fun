@@ -17,8 +17,8 @@ must recreate the scene.
 
 Theme packs are pure data imported from `@dailydraft/themes`. Call
 `resolveThemePack` before passing a resolved theme to `applyThemeToScene`;
-the same scene adapter can swap between the bundled `devnetDemoThemePack`
-and gated `collectorCryptThemePack` without scene-code changes. Collector
-Crypt stays unavailable unless the existing pack-provider boundary supplies
-a matching `dailydraft.theme-provider-assets.v1` normalized snapshot. Theme
-resolution does not alter the DOM or reduced-motion fallback path.
+a mounted scene can swap bundled packs through `SceneMount.applyTheme` without
+scene-code changes. Collector Crypt has no client-side ready path and stays
+unavailable until #165 adds a partner adapter that passes the existing
+`PackProvider.verifyOpenedSnapshot` gate. Theme resolution does not alter the
+DOM or reduced-motion fallback path.

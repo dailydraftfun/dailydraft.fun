@@ -1,7 +1,6 @@
 import type { PullRarity } from './pull-rarity.js';
 
 export const THEME_PACK_SCHEMA_VERSION = 'dailydraft.theme-pack.v1' as const;
-export const THEME_PROVIDER_ASSET_SCHEMA_VERSION = 'dailydraft.theme-provider-assets.v1' as const;
 
 export const THEME_RARITIES = [
   'common',
@@ -78,22 +77,6 @@ export type ThemePack = Readonly<{
   schemaVersion: typeof THEME_PACK_SCHEMA_VERSION;
   source: ThemePackSource;
   version: string;
-}>;
-
-/**
- * Normalized output from the existing gated pack-provider boundary.
- *
- * This is intentionally not a partner API shape. The API adapter may only
- * create this snapshot after its existing provider-mode and HITL gates pass.
- */
-export type ThemeProviderAssetSnapshot = Readonly<{
-  assets: Readonly<Record<string, string>>;
-  metadata: Readonly<Record<string, string>>;
-  provider: 'collector-crypt';
-  providerMode: 'collector-crypt-sandbox';
-  schemaVersion: typeof THEME_PROVIDER_ASSET_SCHEMA_VERSION;
-  themeId: string;
-  themeVersion: string;
 }>;
 
 export type ThemePackValidation =
@@ -253,6 +236,9 @@ export function validateThemePack(value: unknown): ThemePackValidation {
     ) {
       issues.push('provider source must use the gated Collector Crypt pack-provider contract');
     }
+    if ('metadata' in value) {
+      issues.push('provider themes must not embed provider metadata');
+    }
   } else {
     issues.push('source.kind must be bundled or provider');
   }
@@ -263,6 +249,14 @@ export function validateThemePack(value: unknown): ThemePackValidation {
   } else {
     for (const slot of THEME_ART_SLOTS) {
       if (!isNonEmptyString(art[slot])) issues.push(`art.${slot} must be a non-empty string`);
+      if (
+        isRecord(source) &&
+        source.kind === 'provider' &&
+        typeof art[slot] === 'string' &&
+        art[slot].includes('://')
+      ) {
+        issues.push(`art.${slot} must be an opaque provider key`);
+      }
     }
   }
 
