@@ -55,6 +55,10 @@ describe('Pixi scene lifecycle', () => {
       host: host.host,
       onQualityChange: (tier) => qualityChanges.push(tier),
       props: { cardId: 'card-1' },
+      qualityMonitorOptions: {
+        requiredSlowWindows: 2,
+        windowSize: 2,
+      },
       scene: scene.scene,
     });
 
@@ -89,12 +93,12 @@ describe('Pixi scene lifecycle', () => {
     expect(application.resizeCalls.at(-1)).toEqual([200, 300, 2]);
     expect(scene.resizeCalls.at(-1)).toEqual({ height: 300, resolution: 2, width: 200 });
 
-    application.tick(30, 30);
+    application.tick(30, 4);
     expect(result.mount.quality).toBe('medium');
-    expect(application.maxFps).toBe(45);
+    expect(application.maxFps).toBe(60);
     expect(application.resizeCalls.at(-1)).toEqual([200, 300, 1.5]);
 
-    application.tick(40, 30);
+    application.tick(50, 4);
     expect(result.mount.quality).toBe('low');
     expect(application.maxFps).toBe(30);
     expect(application.resizeCalls.at(-1)).toEqual([200, 300, 1]);
@@ -153,10 +157,80 @@ describe('Pixi scene lifecycle', () => {
     });
 
     abortController.abort();
+    expect(application.destroyCount).toBe(1);
     application.resolveInit();
     expect(await resultPromise).toEqual({ status: 'aborted' });
     expect(application.destroyCount).toBe(1);
     expect(scene.createCount).toBe(0);
+  });
+
+  test('destroys a scene instance that resolves after an in-flight scene load is aborted', async () => {
+    const application = applicationHarness();
+    const abortController = new AbortController();
+    let resolveScene: (instance: PixiSceneInstance) => void = () => undefined;
+    let instanceDestroyCount = 0;
+    const baseScene = sceneHarness().scene;
+    const scene = definePixiScene<Input>({
+      ...baseScene,
+      create: (context) => {
+        expect(context.signal).toBe(abortController.signal);
+        return new Promise<PixiSceneInstance>((resolve) => {
+          resolveScene = resolve;
+        });
+      },
+    });
+    const resultPromise = mountPixiScene({
+      dependencies: {
+        createApplication: () => application.application,
+        supportsWebGL: () => true,
+      },
+      host: hostHarness().host,
+      props: { cardId: 'card-1' },
+      scene,
+      signal: abortController.signal,
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    abortController.abort();
+    expect(application.destroyCount).toBe(1);
+    resolveScene({
+      destroy: () => {
+        instanceDestroyCount += 1;
+      },
+      resize: () => undefined,
+    });
+
+    expect(await resultPromise).toEqual({ status: 'aborted' });
+    expect(instanceDestroyCount).toBe(1);
+  });
+
+  test('falls back and releases resources when WebGL context is lost after mount', async () => {
+    const application = applicationHarness();
+    const scene = sceneHarness();
+    const fallbackReasons: string[] = [];
+    const result = await mountPixiScene({
+      dependencies: {
+        createApplication: () => application.application,
+        supportsWebGL: () => true,
+      },
+      host: hostHarness().host,
+      onFallback: (reason) => fallbackReasons.push(reason),
+      props: { cardId: 'card-1' },
+      scene: scene.scene,
+    });
+
+    expect(result.status).toBe('mounted');
+    const contextLoss = new Event('webglcontextlost', { cancelable: true });
+    application.canvas.dispatchEvent(contextLoss);
+
+    expect(contextLoss.defaultPrevented).toBe(true);
+    expect(fallbackReasons).toEqual(['no-webgl']);
+    expect(scene.destroyCount).toBe(1);
+    expect(application.destroyCount).toBe(1);
+    expect(application.canvasListenerCount).toBe(0);
+    if (result.status === 'mounted') result.mount.destroy();
+    expect(application.destroyCount).toBe(1);
   });
 
   test('returns an aborted result without probing capabilities when already cancelled', async () => {
@@ -296,7 +370,20 @@ function applicationHarness(options: { deferredInit?: boolean } = {}) {
   const listeners = new Set<(ticker: Ticker) => void>();
   const resizeCalls: Array<[number, number, number | undefined]> = [];
   const attributes: Record<string, string> = {};
+  const canvasTarget = new EventTarget();
+  const canvasListeners = new Set<EventListenerOrEventListenerObject>();
   const canvas = {
+    addEventListener(_type: string, listener: EventListenerOrEventListenerObject) {
+      canvasListeners.add(listener);
+      canvasTarget.addEventListener('webglcontextlost', listener);
+    },
+    dispatchEvent(event: Event) {
+      return canvasTarget.dispatchEvent(event);
+    },
+    removeEventListener(_type: string, listener: EventListenerOrEventListenerObject) {
+      canvasListeners.delete(listener);
+      canvasTarget.removeEventListener('webglcontextlost', listener);
+    },
     setAttribute(name: string, value: string) {
       attributes[name] = value;
     },
@@ -347,6 +434,9 @@ function applicationHarness(options: { deferredInit?: boolean } = {}) {
     application,
     attributes,
     canvas,
+    get canvasListenerCount() {
+      return canvasListeners.size;
+    },
     get destroyCount() {
       return destroyCount;
     },

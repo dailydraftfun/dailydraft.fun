@@ -134,6 +134,22 @@ export function choreographyReducer(
   }
 }
 
+export function advanceChoreography(state: ChoreographyState): ChoreographyState {
+  return choreographyReducer(state, { type: 'advance' });
+}
+
+export function interruptChoreography(state: ChoreographyState): ChoreographyState {
+  return choreographyReducer(state, { type: 'interrupt' });
+}
+
+export function fastForwardChoreography(state: ChoreographyState): ChoreographyState {
+  return choreographyReducer(state, { type: 'fast-forward' });
+}
+
+export function settleChoreography(state: ChoreographyState): ChoreographyState {
+  return choreographyReducer(state, { type: 'settle' });
+}
+
 export function choreographyTimingFor(
   beat: ChoreographyBeat,
   rarity: PullRarity,
@@ -164,6 +180,12 @@ export function createChoreographyTimeline(
     elapsedMs = entry.endsAtMs;
     return entry;
   });
+}
+
+export function isAnimatedChoreographyBeat(
+  beat: ChoreographyBeat,
+): beat is Exclude<ChoreographyBeat, 'idle' | 'settled'> {
+  return beat !== 'idle' && beat !== 'settled';
 }
 
 export class ChoreographyClock {

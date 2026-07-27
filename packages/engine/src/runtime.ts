@@ -8,6 +8,7 @@ import {
 
 import {
   FrameBudgetMonitor,
+  type FrameBudgetMonitorOptions,
   QUALITY_BUDGETS,
   type QualityBudget,
   type QualityTier,
@@ -19,6 +20,7 @@ export type PixiSceneContext<Props> = Readonly<{
   budget: QualityBudget;
   props: Props;
   quality: QualityTier;
+  signal?: AbortSignal;
   stage: Container;
   viewport: SceneViewport;
 }>;
@@ -69,8 +71,10 @@ export type MountPixiSceneOptions<Props> = Readonly<{
   host: HTMLElement;
   initialQuality?: QualityTier;
   onError?: (error: unknown) => void;
+  onFallback?: (reason: 'no-webgl' | 'renderer-error') => void;
   onQualityChange?: (tier: QualityTier, budget: QualityBudget) => void;
   props: Props;
+  qualityMonitorOptions?: Omit<FrameBudgetMonitorOptions, 'initialTier'>;
   scene: PixiSceneDefinition<Props>;
   signal?: AbortSignal;
 }>;
@@ -89,8 +93,10 @@ export async function mountPixiScene<Props>({
   host,
   initialQuality = 'high',
   onError,
+  onFallback,
   onQualityChange,
   props,
+  qualityMonitorOptions,
   scene,
   signal,
 }: MountPixiSceneOptions<Props>): Promise<SceneMountResult> {
@@ -112,8 +118,21 @@ export async function mountPixiScene<Props>({
   let instance: PixiSceneInstance | undefined;
   let resizeObserver: ResizeObserverLike | null = null;
   let tickerListener: ((ticker: Ticker) => void) | undefined;
+  let canvas: HTMLCanvasElement | undefined;
+  let destroyed = false;
+
+  const attemptCleanup = (cleanup: () => void): boolean => {
+    try {
+      cleanup();
+      return true;
+    } catch (error) {
+      onError?.(error);
+      return false;
+    }
+  };
 
   const destroyResources = (): void => {
+    if (destroyed) return;
     attemptCleanup(() => resizeObserver?.disconnect());
     resizeObserver = null;
     if (tickerListener) {
@@ -124,20 +143,28 @@ export async function mountPixiScene<Props>({
     const mountedInstance = instance;
     instance = undefined;
     if (mountedInstance) attemptCleanup(() => mountedInstance.destroy());
+    if (canvas) {
+      attemptCleanup(() => canvas?.removeEventListener('webglcontextlost', handleContextLoss));
+    }
+    canvas = undefined;
+    signal?.removeEventListener('abort', destroyResources);
     if (applicationDestroyed) return;
-    applicationDestroyed = true;
-    attemptCleanup(() => {
-      application.destroy({ removeView: true }, { children: true });
-    });
+    applicationDestroyed = attemptCleanup(() =>
+      application.destroy(
+        { removeView: true },
+        { children: true, texture: true, textureSource: true },
+      ),
+    );
+    destroyed = applicationDestroyed;
   };
 
-  const attemptCleanup = (cleanup: () => void): void => {
-    try {
-      cleanup();
-    } catch (error) {
-      onError?.(error);
-    }
+  const handleContextLoss = (event: Event): void => {
+    event.preventDefault();
+    destroyResources();
+    onFallback?.('no-webgl');
   };
+
+  signal?.addEventListener('abort', destroyResources, { once: true });
 
   try {
     let quality = initialQuality;
@@ -162,27 +189,33 @@ export async function mountPixiScene<Props>({
     }
 
     application.ticker.maxFPS = budget.maxFps;
-    instance = await scene.create({
+    const createdInstance = await scene.create({
       application,
       budget,
       props,
       quality,
+      ...(signal ? { signal } : {}),
       stage: application.stage,
       viewport,
     });
-    if (signal?.aborted) {
-      destroyResources();
+    if (signal?.aborted || applicationDestroyed) {
+      attemptCleanup(() => createdInstance.destroy());
       return { status: 'aborted' };
     }
+    instance = createdInstance;
 
-    const canvas = application.canvas;
+    canvas = application.canvas;
     canvas.style.blockSize = '100%';
     canvas.style.display = 'block';
     canvas.style.inlineSize = '100%';
     canvas.setAttribute('aria-hidden', 'true');
+    canvas.addEventListener('webglcontextlost', handleContextLoss);
     host.appendChild(canvas);
 
-    const qualityMonitor = new FrameBudgetMonitor({ initialTier: quality });
+    const qualityMonitor = new FrameBudgetMonitor({
+      ...qualityMonitorOptions,
+      initialTier: quality,
+    });
     const resize = (): void => {
       viewport = viewportFor(host, scene, dependencies.devicePixelRatio(), budget);
       application.renderer.resize(viewport.width, viewport.height, viewport.resolution);
@@ -205,12 +238,9 @@ export async function mountPixiScene<Props>({
     resizeObserver?.observe(host);
     resize();
 
-    let destroyed = false;
     return {
       mount: {
         destroy() {
-          if (destroyed) return;
-          destroyed = true;
           destroyResources();
         },
         get quality() {

@@ -46,6 +46,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@dailydraft/contracts": "workspace:*",
+        "@dailydraft/engine": "workspace:*",
         "@fontsource/dm-sans": "5.2.8",
         "@phosphor-icons/react": "^2.1.10",
         "@shipshitdev/ui": "^0.6.0",

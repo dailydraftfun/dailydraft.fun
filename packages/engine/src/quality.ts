@@ -32,7 +32,7 @@ export const QUALITY_BUDGETS = {
     bloomStrength: 6,
     blurQuality: 2,
     glowStrength: 7,
-    maxFps: 45,
+    maxFps: 60,
     maxParticles: 48,
     resolutionScale: 1.5,
   },
@@ -40,23 +40,27 @@ export const QUALITY_BUDGETS = {
 
 export type FrameBudgetMonitorOptions = Readonly<{
   initialTier?: QualityTier;
-  sampleSize?: number;
-  slowFrameRatio?: number;
-  tolerance?: number;
+  minimumFps?: number;
+  p95FrameMs?: number;
+  requiredSlowWindows?: number;
+  windowSize?: number;
 }>;
 
 export class FrameBudgetMonitor {
-  private readonly sampleSize: number;
+  private consecutiveSlowWindows = 0;
+  private readonly minimumFps: number;
+  private readonly p95FrameMs: number;
+  private readonly requiredSlowWindows: number;
   private readonly samples: number[] = [];
-  private readonly slowFrameRatio: number;
-  private readonly tolerance: number;
+  private readonly windowSize: number;
   private currentTier: QualityTier;
 
   constructor(options: FrameBudgetMonitorOptions = {}) {
     this.currentTier = options.initialTier ?? 'high';
-    this.sampleSize = positiveInteger(options.sampleSize, 30);
-    this.slowFrameRatio = unitInterval(options.slowFrameRatio, 0.4);
-    this.tolerance = positiveNumber(options.tolerance, 1.25);
+    this.minimumFps = positiveNumber(options.minimumFps, 45);
+    this.p95FrameMs = positiveNumber(options.p95FrameMs, 40);
+    this.requiredSlowWindows = positiveInteger(options.requiredSlowWindows, 3);
+    this.windowSize = positiveInteger(options.windowSize, 40);
   }
 
   get tier(): QualityTier {
@@ -69,16 +73,25 @@ export class FrameBudgetMonitor {
     }
 
     this.samples.push(elapsedMs);
-    if (this.samples.length < this.sampleSize) return this.currentTier;
+    if (this.samples.length < this.windowSize) return this.currentTier;
 
-    const frameBudgetMs = 1_000 / QUALITY_BUDGETS[this.currentTier].maxFps;
-    const slowFrames = this.samples.filter(
-      (sample) => sample > frameBudgetMs * this.tolerance,
-    ).length;
+    const orderedSamples = [...this.samples].sort((left, right) => left - right);
+    const p95Index = Math.max(0, Math.ceil(orderedSamples.length * 0.95) - 1);
+    const p95 = orderedSamples[p95Index] ?? 0;
+    const averageFrameMs =
+      this.samples.reduce((total, sample) => total + sample, 0) / this.samples.length;
+    const averageFps = 1_000 / averageFrameMs;
     this.samples.length = 0;
 
-    if (slowFrames / this.sampleSize >= this.slowFrameRatio) {
+    if (p95 > this.p95FrameMs || averageFps < this.minimumFps) {
+      this.consecutiveSlowWindows += 1;
+    } else {
+      this.consecutiveSlowWindows = 0;
+    }
+
+    if (this.consecutiveSlowWindows >= this.requiredSlowWindows) {
       this.currentTier = lowerQualityTier(this.currentTier);
+      this.consecutiveSlowWindows = 0;
     }
 
     return this.currentTier;
@@ -101,10 +114,4 @@ function positiveInteger(value: number | undefined, fallback: number): number {
 
 function positiveNumber(value: number | undefined, fallback: number): number {
   return value && Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-function unitInterval(value: number | undefined, fallback: number): number {
-  return value !== undefined && Number.isFinite(value) && value >= 0 && value <= 1
-    ? value
-    : fallback;
 }

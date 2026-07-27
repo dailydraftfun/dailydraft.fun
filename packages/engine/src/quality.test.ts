@@ -19,18 +19,22 @@ describe('adaptive Pixi quality policy', () => {
     );
   });
 
-  test('degrades one tier per slow sample window and never below low', () => {
+  test('degrades one tier only after consecutive slow windows and never below low', () => {
     const monitor = new FrameBudgetMonitor({
       initialTier: 'high',
-      sampleSize: 2,
-      slowFrameRatio: 0.5,
-      tolerance: 1,
+      requiredSlowWindows: 2,
+      windowSize: 2,
     });
 
-    expect(monitor.recordFrame(20)).toBe('high');
-    expect(monitor.recordFrame(20)).toBe('medium');
+    expect(monitor.tier).toBe('high');
+    expect(monitor.recordFrame(30)).toBe('high');
+    expect(monitor.recordFrame(30)).toBe('high');
+    expect(monitor.recordFrame(30)).toBe('high');
     expect(monitor.recordFrame(30)).toBe('medium');
-    expect(monitor.recordFrame(30)).toBe('low');
+    expect(monitor.recordFrame(50)).toBe('medium');
+    expect(monitor.recordFrame(50)).toBe('medium');
+    expect(monitor.recordFrame(50)).toBe('medium');
+    expect(monitor.recordFrame(50)).toBe('low');
     expect(monitor.recordFrame(100)).toBe('low');
     expect(lowerQualityTier('high')).toBe('medium');
     expect(lowerQualityTier('medium')).toBe('low');
@@ -38,22 +42,31 @@ describe('adaptive Pixi quality policy', () => {
   });
 
   test('keeps a healthy tier and ignores invalid frame samples', () => {
-    const monitor = new FrameBudgetMonitor({ initialTier: 'medium', sampleSize: 2 });
+    const monitor = new FrameBudgetMonitor({
+      initialTier: 'medium',
+      requiredSlowWindows: 2,
+      windowSize: 2,
+    });
 
     expect(monitor.recordFrame(Number.NaN)).toBe('medium');
     expect(monitor.recordFrame(0)).toBe('medium');
+    expect(monitor.recordFrame(50)).toBe('medium');
+    expect(monitor.recordFrame(50)).toBe('medium');
     expect(monitor.recordFrame(16)).toBe('medium');
     expect(monitor.recordFrame(16)).toBe('medium');
+    expect(monitor.recordFrame(50)).toBe('medium');
+    expect(monitor.recordFrame(50)).toBe('medium');
   });
 
   test('normalizes invalid monitor options to safe defaults', () => {
     const monitor = new FrameBudgetMonitor({
-      sampleSize: -1,
-      slowFrameRatio: 2,
-      tolerance: Number.NaN,
+      minimumFps: -1,
+      p95FrameMs: Number.NaN,
+      requiredSlowWindows: 0,
+      windowSize: -1,
     });
 
-    for (let index = 0; index < 29; index += 1) expect(monitor.recordFrame(100)).toBe('high');
+    for (let index = 0; index < 119; index += 1) expect(monitor.recordFrame(100)).toBe('high');
     expect(monitor.recordFrame(100)).toBe('medium');
   });
 });

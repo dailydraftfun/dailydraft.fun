@@ -9,5 +9,8 @@ Private workspace package for DailyDraft's tier-2 PixiJS scenes.
   `@dailydraft/engine/react`.
 
 Every scene must declare informative DOM equivalents for reduced-motion and
-renderer-unavailable paths. The React binding renders that fallback during SSR
-and imports Pixi only after the client has opted into the canvas path.
+renderer-unavailable paths. The React binding renders that fallback during SSR,
+keeps it available to assistive technology after the canvas mounts, and imports
+both the scene and Pixi runtime only after the client has opted into the canvas
+path. Keep `loadScene` module-scoped and stable; use `sceneKey` when a new input
+must recreate the scene.

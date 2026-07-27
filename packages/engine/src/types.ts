@@ -23,7 +23,12 @@ export type SceneFallbackContract = Readonly<{
   reducedMotion: DomFallbackDescriptor;
 }>;
 
-export type SceneFallbackReason = 'loading' | 'no-webgl' | 'reduced-motion' | 'renderer-error';
+export type SceneFallbackReason =
+  | 'assistive'
+  | 'loading'
+  | 'no-webgl'
+  | 'reduced-motion'
+  | 'renderer-error';
 
 export type SceneMetadata = Readonly<{
   designSize: SceneSize;

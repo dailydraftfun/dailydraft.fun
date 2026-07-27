@@ -1,12 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  advanceChoreography,
   ChoreographyClock,
   choreographyBeats,
   choreographyReducer,
   choreographyTimingFor,
   createChoreographyState,
   createChoreographyTimeline,
+  fastForwardChoreography,
+  interruptChoreography,
+  isAnimatedChoreographyBeat,
+  settleChoreography,
 } from './choreography.js';
 
 describe('engine reveal choreography', () => {
@@ -50,6 +55,12 @@ describe('engine reveal choreography', () => {
     expect(choreographyReducer(started, { rarity: 'common', type: 'settle' })).toEqual(
       createChoreographyState('common', 'settled'),
     );
+    expect(advanceChoreography(started).beat).toBe('hold');
+    expect(interruptChoreography(started)).toEqual(natural);
+    expect(fastForwardChoreography(started)).toEqual(natural);
+    expect(settleChoreography(started)).toEqual(natural);
+    expect(isAnimatedChoreographyBeat('reveal')).toBe(true);
+    expect(isAnimatedChoreographyBeat('settled')).toBe(false);
   });
 
   test('rejects stale completions and supports rarity replacement and reset', () => {
