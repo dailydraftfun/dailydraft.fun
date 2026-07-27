@@ -1,3 +1,4 @@
+import type { PullRarity } from '@dailydraft/contracts/pull-rarity';
 import {
   Application,
   type ApplicationOptions,
@@ -5,7 +6,6 @@ import {
   isWebGLSupported,
   type Ticker,
 } from 'pixi.js';
-
 import {
   FrameBudgetMonitor,
   type FrameBudgetMonitorOptions,
@@ -13,6 +13,7 @@ import {
   type QualityBudget,
   type QualityTier,
 } from './quality';
+import { applyThemeToScene, type ResolvedThemePack, type SceneThemeStyle } from './theme';
 import type { MaybePromise, SceneMetadata, SceneViewport } from './types';
 
 export type PixiSceneContext<Props> = Readonly<{
@@ -26,6 +27,7 @@ export type PixiSceneContext<Props> = Readonly<{
 }>;
 
 export type PixiSceneInstance = Readonly<{
+  applyTheme?(style: SceneThemeStyle): void;
   destroy(): void;
   resize(viewport: SceneViewport): void;
   setQuality?(tier: QualityTier, budget: QualityBudget): void;
@@ -43,6 +45,7 @@ export function definePixiScene<Props>(
 }
 
 export type SceneMount = Readonly<{
+  applyTheme(theme: ResolvedThemePack, rarity: PullRarity): boolean;
   destroy(): void;
   readonly quality: QualityTier;
   resize(): void;
@@ -240,6 +243,18 @@ export async function mountPixiScene<Props>({
 
     return {
       mount: {
+        applyTheme(theme, rarity) {
+          const mountedInstance = instance;
+          if (!mountedInstance?.applyTheme) return false;
+          applyThemeToScene(
+            {
+              applyTheme: (style) => mountedInstance.applyTheme?.(style),
+            },
+            theme,
+            rarity,
+          );
+          return true;
+        },
         destroy() {
           destroyResources();
         },

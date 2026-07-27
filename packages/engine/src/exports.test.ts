@@ -8,8 +8,10 @@ describe('engine package entrypoints', () => {
     expect(engine).toMatchObject({
       ChoreographyClock: expect.any(Function),
       FrameBudgetMonitor: expect.any(Function),
+      applyThemeToScene: expect.any(Function),
       createChoreographyTimeline: expect.any(Function),
       defineSceneMetadata: expect.any(Function),
+      resolveThemePack: expect.any(Function),
     });
     expect(pixi).toMatchObject({
       ParticleEmitter: expect.any(Function),

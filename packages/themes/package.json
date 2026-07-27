@@ -1,0 +1,30 @@
+{
+  "name": "@dailydraft/themes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Versioned theme-pack data for DailyDraft game scenes",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --target=browser --outdir=dist --external @dailydraft/contracts/theme-pack",
+    "clean": "rm -rf dist",
+    "lint": "biome check src/",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dailydraft/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.8",
+    "typescript": "6.0.3"
+  }
+}
