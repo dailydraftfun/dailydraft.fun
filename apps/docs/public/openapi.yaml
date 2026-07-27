@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: DailyDraft API
-  version: 0.2.0-devnet
+  version: 0.3.0-devnet
   summary: Build pack-opening duels on Solana
   description: |
     Preview contract for pack discovery, duel matchmaking, wallet-signed Solana
@@ -26,7 +26,7 @@ tags:
   - name: Packs
     description: Duel-eligible pack definitions and current inventory metadata.
   - name: Gacha
-    description: Inspectable Sports Pack Gacha capabilities, inventory, odds, and fixture-only rips.
+    description: Inspectable Sports Pack Gacha capabilities, inventory, odds, deposit intents, and rips.
   - name: Valuation
     description: Immutable winner-comparison policies committed before either player funds.
   - name: Duels
@@ -165,6 +165,8 @@ paths:
     post:
       operationId: createGachaRipSeedCommitment
       tags: [Gacha]
+      security:
+        - walletSession: []
       summary: Commit to a secret server seed before a fixture-mode Gacha rip
       description: |
         Generates and stores a secret serverSeed and publishes only its SHA-256
@@ -190,6 +192,198 @@ paths:
                 $ref: '#/components/schemas/GachaRipSeedCommitment'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /gacha/machines/{machineKey}/payment-intents:
+    post:
+      operationId: createGachaPaymentIntent
+      tags: [Gacha]
+      security:
+        - walletSession: []
+      summary: Open a payment intent for one funded Gacha rip
+      description: |
+        Issues the exact deposit terms for a single rip: mint, destination
+        token account, amount, and a memoNonce the payer must echo in an SPL
+        Memo instruction. The nonce is what binds an on-chain transfer to this
+        intent, so a transfer that omits it can never be claimed as payment for
+        a rip. At most one unresolved intent exists for each payer and machine.
+        Repeating this request resumes that intent, including its claimed
+        signature, instead of creating deposit terms that could fund twice.
+      x-dailydraft-availability: devnet-preview
+      parameters:
+        - $ref: '#/components/parameters/GachaMachineKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGachaPaymentIntentRequest'
+      responses:
+        '201':
+          description: New or resumed deposit terms the payer must satisfy on chain
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GachaPaymentIntent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /gacha/payment-intents/{intentId}/transaction:
+    post:
+      operationId: prepareGachaPaymentTransaction
+      tags: [Gacha]
+      security:
+        - walletSession: []
+      summary: Build the unsigned transfer that funds a Gacha payment intent
+      description: |
+        Returns the exact unsigned transaction the payer should sign: a
+        transferChecked of the intent's amount from the payer's associated token
+        account to the house treasury, plus an SPL Memo carrying the memoNonce.
+        The server builds it so the memo, mint, and amount cannot drift from the
+        intent, and publishes expectedMessageHash so the wallet can prove the
+        bytes it is about to sign are the bytes that were prepared.
+
+        This is a POST rather than a GET because each call spends a fresh
+        blockhash and can expire a lapsed intent as a side effect. It is safe to
+        repeat: preparing does not consume the intent, so a player whose
+        blockhash went stale can simply ask again.
+      x-dailydraft-availability: devnet-preview
+      parameters:
+        - $ref: '#/components/parameters/GachaPaymentIntentId'
+      responses:
+        '201':
+          description: Unsigned transaction ready for wallet inspection and signature
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreparedGachaPaymentTransaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /gacha/payment-intents/{intentId}/signature:
+    post:
+      operationId: claimGachaPaymentSignature
+      tags: [Gacha]
+      security:
+        - walletSession: []
+      summary: Prove and atomically bind the signed transaction before broadcast
+      description: |
+        Accepts the fully signed bytes returned by the payer wallet. The server
+        verifies the Ed25519 signature and requires the exact prepared fee payer,
+        source token account, mint, destination, amount, memo, and blockhash
+        before deriving and storing the authoritative signature. A caller cannot
+        reserve another wallet's intent with an arbitrary base58 string.
+
+        The first valid signed transaction wins. Exact replay resumes safely,
+        while different signed bytes are rejected before broadcast. The claimed
+        slot remains fail-closed until settlement, except when finalized RPC
+        evidence proves both signature absence and blockhash expiry.
+      x-dailydraft-availability: devnet-preview
+      parameters:
+        - $ref: '#/components/parameters/GachaPaymentIntentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimGachaPaymentSignatureRequest'
+      responses:
+        '200':
+          description: Active intent bound to this signature
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GachaPaymentIntent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /gacha/payment-intents/{intentId}/verify:
+    post:
+      operationId: verifyGachaPayment
+      tags: [Gacha]
+      security:
+        - walletSession: []
+      summary: Verify the on-chain transfer that funds a Gacha payment intent
+      description: |
+        Requires the signature to have been claimed before broadcast, then
+        re-reads the finalized signature from the chain and checks the transfer
+        against the intent it claims to fund: mint, destination token account,
+        amount, payer, and the memoNonce. Nothing the client asserts is trusted.
+        A verified intent is spendable by exactly one subsequent POST
+        /gacha/rips call. Replaying the same signature for the same intent returns
+        the previously recorded verification evidence, allowing safe recovery
+        from a dropped response; a different signature is rejected.
+      x-dailydraft-availability: devnet-preview
+      parameters:
+        - $ref: '#/components/parameters/GachaPaymentIntentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyGachaPaymentRequest'
+      responses:
+        '200':
+          description: The verified deposit, now spendable on one rip
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifiedGachaPayment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -198,15 +392,23 @@ paths:
     post:
       operationId: createFixtureGachaRip
       tags: [Gacha]
-      summary: Execute one explicitly enabled fixture-mode Gacha rip
+      security:
+        - walletSession: []
+      summary: Execute one Gacha rip against sealed inventory and odds
       description: |
         Selects against sealed inventory and odds evidence, consuming a
         previously issued rip-commitments seed commitment under the same
         advisory lock, then records reveal, acquisition, and settlement as
         separate lifecycle transitions. This route fails closed unless
-        fixture or preview mode is explicitly enabled. An Idempotency-Key
+        fixture or devnet preview mode is explicitly enabled. An Idempotency-Key
         header (or idempotencyKey body field) replays the original rip
         instead of creating a second one.
+
+        In devnet preview mode the rip must be funded: paymentIntentId is
+        required and names a verified payment intent, which is spent inside the
+        same transaction that consumes the seed. In fixture mode rips stay
+        unfunded so deterministic previews need no chain access, and
+        paymentIntentId is ignored.
       x-dailydraft-availability: devnet-preview
       parameters:
         - name: Idempotency-Key
@@ -236,6 +438,8 @@ paths:
                 $ref: '#/components/schemas/GachaRipResult'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '409':
           $ref: '#/components/responses/Conflict'
         '429':
@@ -1641,6 +1845,12 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/GachaMachineKey'
+    GachaPaymentIntentId:
+      name: intentId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/GachaPaymentIntentId'
     DuelId:
       name: duelId
       in: path
@@ -1935,7 +2145,7 @@ components:
           const: ok
         version:
           type: string
-          const: 0.2.0-devnet
+          const: 0.3.0-devnet
         dependencies:
           type: object
           additionalProperties: false
@@ -2342,6 +2552,166 @@ components:
         expiresAt:
           type: string
           format: date-time
+    GachaPaymentIntentId:
+      type: string
+      pattern: '^gachapay_[a-f0-9]{32}$'
+      examples: [gachapay_7f3c1d9e4b2a48c6a0e5f81b2c3d4e5f]
+    CreateGachaPaymentIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [payerWallet]
+      properties:
+        payerWallet:
+          $ref: '#/components/schemas/SolanaAddress'
+    GachaPaymentIntent:
+      type: object
+      additionalProperties: false
+      required:
+        - intentId
+        - machineKey
+        - payerWallet
+        - mint
+        - destinationTokenAccount
+        - amountMinor
+        - amountDecimals
+        - amountCurrency
+        - memoNonce
+        - expiresAt
+        - resumed
+        - signature
+        - status
+      properties:
+        intentId:
+          $ref: '#/components/schemas/GachaPaymentIntentId'
+        machineKey:
+          $ref: '#/components/schemas/GachaMachineKey'
+        payerWallet:
+          $ref: '#/components/schemas/SolanaAddress'
+        mint:
+          $ref: '#/components/schemas/SolanaAddress'
+        destinationTokenAccount:
+          $ref: '#/components/schemas/SolanaAddress'
+        amountMinor:
+          type: string
+          pattern: '^[0-9]{1,20}$'
+          description: Exact deposit amount in minor units; a string so u64 survives JSON.
+        amountDecimals:
+          type: integer
+          minimum: 0
+          maximum: 18
+        amountCurrency:
+          type: string
+          minLength: 1
+          maxLength: 16
+        memoNonce:
+          allOf:
+            - $ref: '#/components/schemas/GachaPaymentIntentId'
+          description: |
+            Must be the entire payload of an SPL Memo instruction in the funding
+            transaction. This is the only thing binding a transfer to this intent.
+        expiresAt:
+          type: string
+          format: date-time
+        resumed:
+          type: boolean
+          description: True when the request returned an existing unresolved intent.
+        signature:
+          type: [string, 'null']
+          pattern: '^[1-9A-HJ-NP-Za-km-z]{64,96}$'
+          description: The first pre-broadcast signature claimed for this intent.
+        status:
+          type: string
+          enum: [PENDING, VERIFIED]
+    PreparedGachaPaymentTransaction:
+      type: object
+      additionalProperties: false
+      required:
+        - intentId
+        - memoNonce
+        - amountMinor
+        - sourceTokenAccount
+        - recentBlockhash
+        - lastValidBlockHeight
+        - expiresAt
+        - expectedMessageHash
+        - serializedTransactionBase64
+      properties:
+        intentId:
+          $ref: '#/components/schemas/GachaPaymentIntentId'
+        memoNonce:
+          allOf:
+            - $ref: '#/components/schemas/GachaPaymentIntentId'
+          description: Echoed from the intent; already encoded into the memo instruction.
+        amountMinor:
+          type: string
+          pattern: '^[0-9]{1,20}$'
+        sourceTokenAccount:
+          allOf:
+            - $ref: '#/components/schemas/SolanaAddress'
+          description: |
+            The payer's associated token account for the mint, which the transfer
+            debits. No account-creation instruction is included: a payer with no
+            token account has no balance to send.
+        recentBlockhash:
+          type: string
+        lastValidBlockHeight:
+          type: string
+          pattern: '^\d+$'
+        expiresAt:
+          type: string
+          format: date-time
+          description: |
+            The earlier of the intent's own deadline and the blockhash review
+            window, so the deadline shown to a player is the one that binds.
+        expectedMessageHash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          description: |
+            sha256 of the compiled message. The wallet recomputes it before
+            signing to prove the bytes were not altered in transit.
+        serializedTransactionBase64:
+          type: string
+          contentEncoding: base64
+    ClaimGachaPaymentSignatureRequest:
+      type: object
+      additionalProperties: false
+      required: [signedTransactionBase64]
+      properties:
+        signedTransactionBase64:
+          type: string
+          contentEncoding: base64
+          maxLength: 4096
+          description: Fully signed serialized transaction returned by the payer wallet.
+    VerifyGachaPaymentRequest:
+      type: object
+      additionalProperties: false
+      required: [signature]
+      properties:
+        signature:
+          type: string
+          pattern: '^[1-9A-HJ-NP-Za-km-z]{64,96}$'
+    VerifiedGachaPayment:
+      type: object
+      additionalProperties: false
+      required: [intentId, signature, amountMinor, mintVerifiedOnChain, verifiedAt]
+      properties:
+        intentId:
+          $ref: '#/components/schemas/GachaPaymentIntentId'
+        signature:
+          type: string
+          pattern: '^[1-9A-HJ-NP-Za-km-z]{64,96}$'
+        amountMinor:
+          type: string
+          pattern: '^[0-9]{1,20}$'
+        mintVerifiedOnChain:
+          type: boolean
+          description: |
+            False when the transfer used the unchecked SPL `transfer` instruction,
+            which carries no mint account: the deposit is still bound to the
+            destination token account, but the mint was not asserted by the chain.
+        verifiedAt:
+          type: string
+          format: date-time
     CreateFixtureGachaRipRequest:
       type: object
       additionalProperties: false
@@ -2365,6 +2735,13 @@ components:
           type: string
           minLength: 1
           maxLength: 240
+        paymentIntentId:
+          allOf:
+            - $ref: '#/components/schemas/GachaPaymentIntentId'
+          description: |
+            A verified payment intent to spend on this rip. Required in devnet
+            preview mode and rejected as missing there; ignored in fixture mode,
+            where rips are unfunded.
         oddsVersion:
           type: integer
           minimum: 1

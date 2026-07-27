@@ -12,7 +12,11 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 
-import { CurrentDuelAuthentication, type DuelAuthentication } from '../auth/authentication.js';
+import {
+  assertWalletActor,
+  CurrentDuelAuthentication,
+  type DuelAuthentication,
+} from '../auth/authentication.js';
 import { DuelMutationGuard } from '../auth/duel-mutation.guard.js';
 import { IdempotencyKey } from '../common/idempotency-key.decorator.js';
 import { IntegrationKeyGuard } from '../common/integration-key.guard.js';
@@ -200,12 +204,6 @@ export class DuelLeaderboardController {
     response.header('cache-control', 'public, max-age=30, stale-while-revalidate=120');
     response.header('x-robots-tag', 'noindex, nofollow, noarchive');
     return snapshot;
-  }
-}
-
-export function assertWalletActor(authentication: DuelAuthentication, claimedWallet: string): void {
-  if (authentication.kind === 'wallet-session' && authentication.wallet !== claimedWallet) {
-    throw new ForbiddenException('Wallet session cannot act for another wallet');
   }
 }
 

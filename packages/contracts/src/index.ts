@@ -4,7 +4,7 @@ import { pullRarityFixtures } from './pull-rarity.js';
 
 export * from './pull-rarity.js';
 
-export type ContractAuth = 'none' | 'wallet-or-integration';
+export type ContractAuth = 'none' | 'wallet-or-integration' | 'wallet-session';
 
 export type ContractOperation = {
   auth: ContractAuth;
@@ -17,7 +17,7 @@ export type ContractOperation = {
   successStatus: number;
 };
 
-export const OPENAPI_CONTRACT_VERSION = '0.2.0-devnet';
+export const OPENAPI_CONTRACT_VERSION = '0.3.0-devnet';
 
 export const contractValues = {
   challengeId: 'authc_0123456789abcdef0123456789abcdef',
@@ -289,9 +289,69 @@ export const contractOperations = [
     requestRequired: false,
     successStatus: 200,
   },
+  {
+    auth: 'wallet-session',
+    errorStatuses: [400, 401, 429, 503],
+    idempotencyRequired: false,
+    method: 'post',
+    operationId: 'createGachaRipSeedCommitment',
+    path: '/gacha/machines/{machineKey}/rip-commitments',
+    requestRequired: false,
+    successStatus: 201,
+  },
+  {
+    auth: 'wallet-session',
+    errorStatuses: [400, 401, 409, 429, 503],
+    idempotencyRequired: false,
+    method: 'post',
+    operationId: 'createGachaPaymentIntent',
+    path: '/gacha/machines/{machineKey}/payment-intents',
+    requestRequired: true,
+    successStatus: 201,
+  },
+  {
+    auth: 'wallet-session',
+    errorStatuses: [400, 401, 409, 429, 503],
+    idempotencyRequired: false,
+    method: 'post',
+    operationId: 'prepareGachaPaymentTransaction',
+    path: '/gacha/payment-intents/{intentId}/transaction',
+    requestRequired: false,
+    successStatus: 201,
+  },
+  {
+    auth: 'wallet-session',
+    errorStatuses: [400, 401, 404, 409, 429, 503],
+    idempotencyRequired: false,
+    method: 'post',
+    operationId: 'claimGachaPaymentSignature',
+    path: '/gacha/payment-intents/{intentId}/signature',
+    requestRequired: true,
+    successStatus: 200,
+  },
+  {
+    auth: 'wallet-session',
+    errorStatuses: [400, 401, 404, 409, 429, 503],
+    idempotencyRequired: false,
+    method: 'post',
+    operationId: 'verifyGachaPayment',
+    path: '/gacha/payment-intents/{intentId}/verify',
+    requestRequired: true,
+    successStatus: 200,
+  },
+  {
+    auth: 'wallet-session',
+    errorStatuses: [400, 401, 409, 429, 503],
+    idempotencyRequired: false,
+    method: 'post',
+    operationId: 'createFixtureGachaRip',
+    path: '/gacha/rips',
+    requestRequired: true,
+    successStatus: 201,
+  },
 ] as const satisfies readonly ContractOperation[];
 
-export const CONTRACT_FIXTURE_VERSION = '2026-07-26.v3+78f614a12009';
+export const CONTRACT_FIXTURE_VERSION = '2026-07-27.v4+45cf57b3a2b8';
 
 export function contractFixtureFingerprint(): string {
   return createHash('sha256')

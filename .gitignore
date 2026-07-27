@@ -4,10 +4,12 @@ node_modules
 dist
 out
 generated
+*.tsbuildinfo
 .env
 .env.*
 !.env.example
 .vercel
+.claude/launch.json
 playwright-report
 test-results
 artifacts
