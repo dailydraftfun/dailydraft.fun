@@ -16,6 +16,8 @@
     "dev:mcp": "turbo run dev --filter=@dailydraft/mcp",
     "deploy:api:migrate": "bun --filter @dailydraft/db db:deploy",
     "smoke:devnet": "bun run scripts/devnet-smoke.ts",
+    "rgs:simulate": "bun scripts/rgs-simulation.ts",
+    "rgs:verify": "bun scripts/rgs-simulation.ts --check",
     "conformance:api-production": "bun scripts/api-production-conformance.ts --artifact apps/api/dist --report artifacts/api-production-conformance.json",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",

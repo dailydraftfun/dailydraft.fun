@@ -1,0 +1,139 @@
+{
+  "checks": [
+    {
+      "declared": "620000",
+      "name": "tier:base:hit-rate-ppm",
+      "passed": true,
+      "realized": "620250",
+      "tolerance": "10000"
+    },
+    {
+      "declared": "250000",
+      "name": "tier:plus:hit-rate-ppm",
+      "passed": true,
+      "realized": "250960",
+      "tolerance": "10000"
+    },
+    {
+      "declared": "100000",
+      "name": "tier:premium:hit-rate-ppm",
+      "passed": true,
+      "realized": "99700",
+      "tolerance": "10000"
+    },
+    {
+      "declared": "30000",
+      "name": "tier:chase:hit-rate-ppm",
+      "passed": true,
+      "realized": "29090",
+      "tolerance": "10000"
+    },
+    {
+      "declared": "1319000",
+      "name": "rtp-ppm",
+      "passed": true,
+      "realized": "1313345",
+      "tolerance": "39570"
+    },
+    {
+      "declared": "1496539000000",
+      "name": "payout-variance-ppm-squared",
+      "passed": true,
+      "realized": "1466417410975",
+      "tolerance": "74826950000"
+    },
+    {
+      "declared": "{\"hitRatePpm\":30000,\"netExposureMinor\":\"300000000\",\"outcomeIds\":[\"devnet:fixture:collector-crypt-football-50000000-devnet-fixture:asset:4\"],\"payoutMinor\":\"350000000\"}",
+      "name": "max-exposure-profile",
+      "passed": true,
+      "realized": "{\"hitRatePpm\":29090,\"hits\":2909,\"netExposureMinor\":\"300000000\",\"outcomeIds\":[\"devnet:fixture:collector-crypt-football-50000000-devnet-fixture:asset:4\"],\"payoutMinor\":\"350000000\"}",
+      "tolerance": "exact payout, net exposure, and outcome ids; at least one observation"
+    }
+  ],
+  "config": {
+    "activation": "fixture-only",
+    "configHash": "b7b1347323c6c32333b1d3058f1f7e30709d5969b152f71416d014186f483c95",
+    "currency": "USDC",
+    "decimals": 6,
+    "mathConfigHash": "a79dbd0f4240dae5c217617bd2faf12bcc66ef1cbdec795ef3a87a6cad0b3592",
+    "mode": "gacha",
+    "realValueGate": "hitl-required",
+    "rulesHash": "53e2bc87e4c870f79f9d188aa6c371c9083ca6a4f9acdbb0f84622271a88a037",
+    "simulationKey": "dailydraft.gacha-sports-pack-fixture-simulation.v1",
+    "stakeMinor": "50000000"
+  },
+  "declared": {
+    "maxExposure": {
+      "hitRatePpm": 30000,
+      "netExposureMinor": "300000000",
+      "outcomeIds": ["devnet:fixture:collector-crypt-football-50000000-devnet-fixture:asset:4"],
+      "payoutMinor": "350000000"
+    },
+    "payoutVariancePpmSquared": "1496539000000",
+    "rtpPpm": "1319000",
+    "tiers": [
+      {
+        "hitRatePpm": 620000,
+        "key": "base"
+      },
+      {
+        "hitRatePpm": 250000,
+        "key": "plus"
+      },
+      {
+        "hitRatePpm": 100000,
+        "key": "premium"
+      },
+      {
+        "hitRatePpm": 30000,
+        "key": "chase"
+      }
+    ]
+  },
+  "passed": true,
+  "realized": {
+    "maxExposure": {
+      "hitRatePpm": 29090,
+      "hits": 2909,
+      "netExposureMinor": "300000000",
+      "outcomeIds": ["devnet:fixture:collector-crypt-football-50000000-devnet-fixture:asset:4"],
+      "payoutMinor": "350000000"
+    },
+    "payoutVariancePpmSquared": "1466417410975",
+    "rtpPpm": "1313345",
+    "tiers": [
+      {
+        "hitRatePpm": 620250,
+        "hits": 62025,
+        "key": "base"
+      },
+      {
+        "hitRatePpm": 250960,
+        "hits": 25096,
+        "key": "plus"
+      },
+      {
+        "hitRatePpm": 99700,
+        "hits": 9970,
+        "key": "premium"
+      },
+      {
+        "hitRatePpm": 29090,
+        "hits": 2909,
+        "key": "chase"
+      }
+    ]
+  },
+  "run": {
+    "rounds": 100000,
+    "seed": "dailydraft.gacha-sports-pack-fixture-simulation.v1"
+  },
+  "schemaVersion": "dailydraft.rgs-simulation-report.v1",
+  "simulatorVersion": "dailydraft.rgs-simulator.v1",
+  "tolerances": {
+    "hitRateAbsolutePpm": 10000,
+    "rtpRelativePpm": 30000,
+    "varianceRelativePpm": 50000
+  },
+  "reportHash": "6e8ae03e1ef09f6026c237acadd5c40259bd8e7be4591bc8ae37a061ce087e9b"
+}

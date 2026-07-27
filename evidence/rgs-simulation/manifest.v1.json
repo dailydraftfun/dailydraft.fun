@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "activation": "fixture-only",
+      "configHash": "b7b1347323c6c32333b1d3058f1f7e30709d5969b152f71416d014186f483c95",
+      "mathConfigHash": "a79dbd0f4240dae5c217617bd2faf12bcc66ef1cbdec795ef3a87a6cad0b3592",
+      "minimumRounds": 100000,
+      "mode": "gacha",
+      "realValueGate": "hitl-required",
+      "reportHash": "6e8ae03e1ef09f6026c237acadd5c40259bd8e7be4591bc8ae37a061ce087e9b",
+      "reportPath": "evidence/rgs-simulation/gacha-sports-pack-fixture-v1.json",
+      "rulesHash": "53e2bc87e4c870f79f9d188aa6c371c9083ca6a4f9acdbb0f84622271a88a037"
+    }
+  ],
+  "schemaVersion": "dailydraft.rgs-simulation-manifest.v1"
+}
