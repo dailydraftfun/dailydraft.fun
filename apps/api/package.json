@@ -11,7 +11,7 @@
     "dev": "NODE_ENV=development bun --watch src/main.ts",
     "start": "NODE_ENV=production bun run dist/src/main.js",
     "lint": "biome check src/",
-    "test:contract": "bun test src/contracts/contract-compatibility.test.ts",
+    "test:contract": "bun test src/contracts/contract-compatibility.test.ts src/contracts/response-schema-compatibility.test.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
@@ -32,6 +32,8 @@
   },
   "devDependencies": {
     "@types/bun": "1.3.8",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "typescript": "6.0.3"
   }
 }
