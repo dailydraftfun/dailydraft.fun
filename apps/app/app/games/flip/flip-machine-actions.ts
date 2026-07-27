@@ -1,14 +1,17 @@
 import { type ConfirmationPhase, describeConfirmation } from '../../solana/confirmation';
 import {
+  type CreateGachaRipInput,
   claimGachaPaymentSignature,
   createGachaPaymentIntent,
   createGachaRip,
   createGachaSeedCommitment,
   type GachaPaymentIntent,
   type GachaRipResult,
+  type GachaSeedCommitment,
   isTerminalGachaExecutionFailure,
   type PreparedGachaPaymentTransaction,
   prepareGachaPaymentTransaction,
+  type VerifiedGachaPayment,
   verifyGachaPayment,
 } from '../../solana/gacha-client';
 import { trackConfirmation } from '../../solana/track-confirmation';
@@ -89,16 +92,19 @@ export async function validatePreparedTransaction(
 }
 
 export type FlipPrepareIo = {
-  createPaymentIntent: typeof createGachaPaymentIntent;
-  createSeedCommitment: typeof createGachaSeedCommitment;
-  prepareTransaction: typeof prepareGachaPaymentTransaction;
+  createPaymentIntent: (machineKey: string, payerWallet: string) => Promise<GachaPaymentIntent>;
+  createSeedCommitment: (machineKey: string) => Promise<GachaSeedCommitment>;
+  prepareTransaction: (intentId: string) => Promise<PreparedGachaPaymentTransaction>;
 };
 
-export const DEFAULT_FLIP_PREPARE_IO: FlipPrepareIo = {
-  createPaymentIntent: createGachaPaymentIntent,
-  createSeedCommitment: createGachaSeedCommitment,
-  prepareTransaction: prepareGachaPaymentTransaction,
-};
+export function createFlipPrepareIo(sessionToken: string | null): FlipPrepareIo {
+  return {
+    createPaymentIntent: (machineKey, payerWallet) =>
+      createGachaPaymentIntent(machineKey, payerWallet, sessionToken),
+    createSeedCommitment: (machineKey) => createGachaSeedCommitment(machineKey, sessionToken),
+    prepareTransaction: (intentId) => prepareGachaPaymentTransaction(intentId, sessionToken),
+  };
+}
 
 export type FlipPrepareOutcome =
   | {
@@ -123,8 +129,8 @@ export type FlipPrepareOutcome =
  * the player is shown a price, or the odds would not be provably pre-committed.
  */
 export async function prepareFlipRip(
-  input: { address: string; machineKey: string },
-  io: FlipPrepareIo = DEFAULT_FLIP_PREPARE_IO,
+  input: { address: string; machineKey: string; sessionToken: string | null },
+  io: FlipPrepareIo = createFlipPrepareIo(input.sessionToken),
 ): Promise<FlipPrepareOutcome> {
   try {
     const commitment = await io.createSeedCommitment(input.machineKey);
@@ -155,37 +161,43 @@ export async function prepareFlipRip(
 
 export type FlipConfirmIo = {
   broadcastTransaction: (signed: Uint8Array) => Promise<string>;
-  claimSignature: typeof claimGachaPaymentSignature;
-  createPaymentIntent: typeof createGachaPaymentIntent;
-  createRip: typeof createGachaRip;
+  claimSignature: (
+    intentId: string,
+    signedTransactionBase64: string,
+  ) => Promise<GachaPaymentIntent>;
+  createPaymentIntent: (machineKey: string, payerWallet: string) => Promise<GachaPaymentIntent>;
+  createRip: (input: CreateGachaRipInput) => Promise<GachaRipResult>;
   decodeTransaction: (base64: string) => Uint8Array;
   hashBytes: (bytes: Uint8Array) => Promise<string>;
   now: () => number;
-  prepareTransaction: typeof prepareGachaPaymentTransaction;
+  prepareTransaction: (intentId: string) => Promise<PreparedGachaPaymentTransaction>;
   signTransaction: (bytes: Uint8Array) => Promise<SignedWalletTransaction>;
   track: (
     signature: string,
     options: { onPhase: (phase: ConfirmationPhase) => void },
   ) => Promise<ConfirmationPhase>;
-  verifyPayment: typeof verifyGachaPayment;
+  verifyPayment: (intentId: string, signature: string) => Promise<VerifiedGachaPayment>;
 };
 
 /** Binds the wallet's signer to the real network calls. */
 export function createFlipConfirmIo(
   signTransaction: (bytes: Uint8Array) => Promise<SignedWalletTransaction>,
+  sessionToken: string | null,
 ): FlipConfirmIo {
   return {
     broadcastTransaction: (signed) => broadcastSignedTransaction(signed),
-    claimSignature: claimGachaPaymentSignature,
-    createPaymentIntent: createGachaPaymentIntent,
-    createRip: createGachaRip,
+    claimSignature: (intentId, signedTransactionBase64) =>
+      claimGachaPaymentSignature(intentId, signedTransactionBase64, sessionToken),
+    createPaymentIntent: (machineKey, payerWallet) =>
+      createGachaPaymentIntent(machineKey, payerWallet, sessionToken),
+    createRip: (input) => createGachaRip(input, sessionToken),
     decodeTransaction: decodeBase64Transaction,
     hashBytes: sha256Hex,
     now: () => Date.now(),
-    prepareTransaction: prepareGachaPaymentTransaction,
+    prepareTransaction: (intentId) => prepareGachaPaymentTransaction(intentId, sessionToken),
     signTransaction,
     track: trackConfirmation,
-    verifyPayment: verifyGachaPayment,
+    verifyPayment: (intentId, signature) => verifyGachaPayment(intentId, signature, sessionToken),
   };
 }
 

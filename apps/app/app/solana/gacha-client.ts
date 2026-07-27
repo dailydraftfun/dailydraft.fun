@@ -248,43 +248,54 @@ export async function getGachaOdds(
   return requestGachaOdds(requireApiBaseUrl(), machineKey, signal);
 }
 
-export async function createGachaSeedCommitment(machineKey: string): Promise<GachaSeedCommitment> {
-  return requestGachaSeedCommitment(requireApiBaseUrl(), machineKey);
+export async function createGachaSeedCommitment(
+  machineKey: string,
+  sessionToken: string | null,
+): Promise<GachaSeedCommitment> {
+  return requestGachaSeedCommitment(requireApiBaseUrl(), machineKey, sessionToken);
 }
 
 export async function createGachaPaymentIntent(
   machineKey: string,
   payerWallet: string,
+  sessionToken: string | null,
 ): Promise<GachaPaymentIntent> {
-  return requestGachaPaymentIntent(requireApiBaseUrl(), machineKey, payerWallet);
+  return requestGachaPaymentIntent(requireApiBaseUrl(), machineKey, payerWallet, sessionToken);
 }
 
 export async function prepareGachaPaymentTransaction(
   intentId: string,
+  sessionToken: string | null,
 ): Promise<PreparedGachaPaymentTransaction> {
-  return requestPreparedGachaPaymentTransaction(requireApiBaseUrl(), intentId);
+  return requestPreparedGachaPaymentTransaction(requireApiBaseUrl(), intentId, sessionToken);
 }
 
 export async function claimGachaPaymentSignature(
   intentId: string,
   signedTransactionBase64: string,
+  sessionToken: string | null,
 ): Promise<GachaPaymentIntent> {
   return requestClaimedGachaPaymentSignature(
     requireApiBaseUrl(),
     intentId,
     signedTransactionBase64,
+    sessionToken,
   );
 }
 
 export async function verifyGachaPayment(
   intentId: string,
   signature: string,
+  sessionToken: string | null,
 ): Promise<VerifiedGachaPayment> {
-  return requestVerifiedGachaPayment(requireApiBaseUrl(), intentId, signature);
+  return requestVerifiedGachaPayment(requireApiBaseUrl(), intentId, signature, sessionToken);
 }
 
-export async function createGachaRip(input: CreateGachaRipInput): Promise<GachaRipResult> {
-  return requestGachaRip(requireApiBaseUrl(), input);
+export async function createGachaRip(
+  input: CreateGachaRipInput,
+  sessionToken: string | null,
+): Promise<GachaRipResult> {
+  return requestGachaRip(requireApiBaseUrl(), input, sessionToken);
 }
 
 export async function requestGachaCapability(
@@ -325,6 +336,7 @@ export async function requestGachaOdds(
 export async function requestGachaSeedCommitment(
   baseUrl: string,
   machineKey: string,
+  sessionToken: string | null,
   fetcher: typeof fetch = fetch,
 ): Promise<GachaSeedCommitment> {
   return requestGachaMutation<GachaSeedCommitment>(
@@ -332,6 +344,7 @@ export async function requestGachaSeedCommitment(
     `/gacha/machines/${encodeURIComponent(machineKey)}/rip-commitments`,
     {},
     undefined,
+    sessionToken,
     fetcher,
   );
 }
@@ -340,6 +353,7 @@ export async function requestGachaPaymentIntent(
   baseUrl: string,
   machineKey: string,
   payerWallet: string,
+  sessionToken: string | null,
   fetcher: typeof fetch = fetch,
 ): Promise<GachaPaymentIntent> {
   return requestGachaMutation<GachaPaymentIntent>(
@@ -347,6 +361,7 @@ export async function requestGachaPaymentIntent(
     `/gacha/machines/${encodeURIComponent(machineKey)}/payment-intents`,
     { payerWallet },
     undefined,
+    sessionToken,
     fetcher,
   );
 }
@@ -354,6 +369,7 @@ export async function requestGachaPaymentIntent(
 export async function requestPreparedGachaPaymentTransaction(
   baseUrl: string,
   intentId: string,
+  sessionToken: string | null,
   fetcher: typeof fetch = fetch,
 ): Promise<PreparedGachaPaymentTransaction> {
   return requestGachaMutation<PreparedGachaPaymentTransaction>(
@@ -361,6 +377,7 @@ export async function requestPreparedGachaPaymentTransaction(
     `/gacha/payment-intents/${encodeURIComponent(intentId)}/transaction`,
     {},
     undefined,
+    sessionToken,
     fetcher,
   );
 }
@@ -369,6 +386,7 @@ export async function requestClaimedGachaPaymentSignature(
   baseUrl: string,
   intentId: string,
   signedTransactionBase64: string,
+  sessionToken: string | null,
   fetcher: typeof fetch = fetch,
 ): Promise<GachaPaymentIntent> {
   return requestGachaMutation<GachaPaymentIntent>(
@@ -376,6 +394,7 @@ export async function requestClaimedGachaPaymentSignature(
     `/gacha/payment-intents/${encodeURIComponent(intentId)}/signature`,
     { signedTransactionBase64 },
     undefined,
+    sessionToken,
     fetcher,
   );
 }
@@ -384,6 +403,7 @@ export async function requestVerifiedGachaPayment(
   baseUrl: string,
   intentId: string,
   signature: string,
+  sessionToken: string | null,
   fetcher: typeof fetch = fetch,
 ): Promise<VerifiedGachaPayment> {
   return requestGachaMutation<VerifiedGachaPayment>(
@@ -391,6 +411,7 @@ export async function requestVerifiedGachaPayment(
     `/gacha/payment-intents/${encodeURIComponent(intentId)}/verify`,
     { signature },
     undefined,
+    sessionToken,
     fetcher,
   );
 }
@@ -398,6 +419,7 @@ export async function requestVerifiedGachaPayment(
 export async function requestGachaRip(
   baseUrl: string,
   input: CreateGachaRipInput,
+  sessionToken: string | null,
   fetcher: typeof fetch = fetch,
 ): Promise<GachaRipResult> {
   const idempotencyKey = ripIdempotencyKey(input.commitmentId);
@@ -414,6 +436,7 @@ export async function requestGachaRip(
       ...(input.paymentIntentId === undefined ? {} : { paymentIntentId: input.paymentIntentId }),
     },
     idempotencyKey,
+    sessionToken,
     fetcher,
   );
 }
@@ -482,11 +505,13 @@ async function requestGachaMutation<T>(
   path: string,
   body: Record<string, unknown>,
   idempotencyKey: string | undefined,
+  sessionToken: string | null,
   fetcher: typeof fetch = fetch,
 ): Promise<T> {
   const response = await fetcher(`${baseUrl}${path}`, {
     body: JSON.stringify(body),
     headers: {
+      authorization: `Bearer ${requireGachaSessionToken(sessionToken)}`,
       'content-type': 'application/json',
       // Only POST /gacha/rips reads this header; sending it everywhere would
       // imply a replay guarantee the other routes do not make.
@@ -512,6 +537,12 @@ async function parseGachaResponse<T>(response: Response): Promise<T> {
 function requireApiBaseUrl(): string {
   if (!apiBaseUrl) throw new Error('The Sports Pack Gacha API is not configured.');
   return apiBaseUrl;
+}
+
+function requireGachaSessionToken(sessionToken: string | null): string {
+  if (!sessionToken)
+    throw new Error('Authenticate the connected wallet before opening a Sports Pack.');
+  return sessionToken;
 }
 
 function isCapabilityGates(value: unknown): value is GachaCapabilityGates {

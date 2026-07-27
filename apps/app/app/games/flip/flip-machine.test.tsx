@@ -2,8 +2,16 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SOLANA_CLUSTER, SOLANA_RPC_URL } from '../../solana/config';
+import { WalletAuthProvider } from '../../solana/wallet-auth-provider';
+import { SolanaWalletProvider } from '../../solana/wallet-provider';
 import { inspectSignedWalletTransaction } from '../../solana/wallet-transaction';
-import { clearTerminalFlipRecovery, FlipMachineController, hydrateRecovery } from './flip-machine';
+import {
+  bindFlipSession,
+  clearTerminalFlipRecovery,
+  FlipMachine,
+  FlipMachineController,
+  hydrateRecovery,
+} from './flip-machine';
 import {
   attachFlipSignedTransaction,
   createUnknownFlipPaymentRecovery,
@@ -12,6 +20,41 @@ import {
 } from './flip-payment-recovery';
 
 describe('flip machine controller', () => {
+  test('binds preparation, confirmation, and refresh clients to one session', async () => {
+    const session = bindFlipSession('session_secret');
+    const confirmIo = session.createFlipConfirmIo(async () => {
+      throw new Error('The signer is not used by this binding test.');
+    });
+
+    await expect(
+      session.prepareFlipRip({
+        address: 'payer',
+        machineKey: 'dailydraft-devnet-football-50000000',
+      }),
+    ).resolves.toEqual({
+      message: 'The Sports Pack Gacha API is not configured.',
+      status: 'failed',
+    });
+    await expect(session.prepareGachaPaymentTransaction('gachapay_1')).rejects.toThrow(
+      'The Sports Pack Gacha API is not configured.',
+    );
+    await expect(confirmIo.verifyPayment('gachapay_1', 'signature')).rejects.toThrow(
+      'The Sports Pack Gacha API is not configured.',
+    );
+  });
+
+  test('reads the active wallet session from the application providers', () => {
+    const html = renderToStaticMarkup(
+      <SolanaWalletProvider>
+        <WalletAuthProvider>
+          <FlipMachine />
+        </WalletAuthProvider>
+      </SolanaWalletProvider>,
+    );
+
+    expect(html).toContain('data-stage="loading"');
+  });
+
   test('server-renders the disconnected live controller without a wallet provider', () => {
     const html = renderToStaticMarkup(
       <FlipMachineController

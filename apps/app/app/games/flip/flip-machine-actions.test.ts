@@ -16,6 +16,7 @@ import {
   confirmFlipRip,
   createFlipConfirmEvents,
   createFlipConfirmIo,
+  createFlipPrepareIo,
   createFlipResumeInput,
   decodeBase64Transaction,
   describeFlipError,
@@ -277,6 +278,19 @@ describe('flip machine funding wiring', () => {
 });
 
 describe('prepareFlipRip', () => {
+  test('binds the default preparation client to the wallet session', async () => {
+    await expect(
+      prepareFlipRip({
+        address: 'payer',
+        machineKey: MACHINE_KEY,
+        sessionToken: 'session_secret',
+      }),
+    ).resolves.toEqual({
+      message: 'The Sports Pack Gacha API is not configured.',
+      status: 'failed',
+    });
+  });
+
   test('seals the seed before pricing so the odds are pre-committed', async () => {
     const calls: string[] = [];
     const io: FlipPrepareIo = {
@@ -298,7 +312,10 @@ describe('prepareFlipRip', () => {
       },
     };
 
-    const outcome = await prepareFlipRip({ address: 'payer', machineKey: MACHINE_KEY }, io);
+    const outcome = await prepareFlipRip(
+      { address: 'payer', machineKey: MACHINE_KEY, sessionToken: 'session_secret' },
+      io,
+    );
 
     expect(outcome).toEqual({
       commitmentId: 'gachaseed_1',
@@ -316,7 +333,7 @@ describe('prepareFlipRip', () => {
 
   test('reports a failure at any step as recoverable copy rather than throwing', async () => {
     const outcome = await prepareFlipRip(
-      { address: 'payer', machineKey: MACHINE_KEY },
+      { address: 'payer', machineKey: MACHINE_KEY, sessionToken: 'session_secret' },
       {
         createPaymentIntent: async () => INTENT,
         createSeedCommitment: async () => {
@@ -338,7 +355,7 @@ describe('prepareFlipRip', () => {
     } satisfies GachaPaymentIntent;
 
     const outcome = await prepareFlipRip(
-      { address: 'payer', machineKey: MACHINE_KEY },
+      { address: 'payer', machineKey: MACHINE_KEY, sessionToken: 'session_secret' },
       {
         createPaymentIntent: async () => resumedIntent,
         createSeedCommitment: async () => ({
@@ -1309,7 +1326,7 @@ describe('createFlipConfirmIo', () => {
     const io = createFlipConfirmIo(async (bytes) => {
       signed.push(bytes);
       return signedTransaction();
-    });
+    }, 'session_secret');
 
     expect(await io.signTransaction(new Uint8Array([1, 2]))).toEqual(signedTransaction());
     expect(Array.from(signed[0] as Uint8Array)).toEqual([1, 2]);
@@ -1336,5 +1353,27 @@ describe('createFlipConfirmIo', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  test('binds every mutation adapter to the wallet session', async () => {
+    const prepareIo = createFlipPrepareIo('session_secret');
+    const confirmIo = createFlipConfirmIo(async () => signedTransaction(), 'session_secret');
+    const expected = 'The Sports Pack Gacha API is not configured.';
+
+    await expect(prepareIo.createSeedCommitment(MACHINE_KEY)).rejects.toThrow(expected);
+    await expect(prepareIo.createPaymentIntent(MACHINE_KEY, 'payer')).rejects.toThrow(expected);
+    await expect(prepareIo.prepareTransaction('gachapay_1')).rejects.toThrow(expected);
+    await expect(confirmIo.claimSignature('gachapay_1', 'c2lnbmVk')).rejects.toThrow(expected);
+    await expect(confirmIo.createPaymentIntent(MACHINE_KEY, 'payer')).rejects.toThrow(expected);
+    await expect(
+      confirmIo.createRip({
+        commitmentId: 'gachaseed_1',
+        machineKey: MACHINE_KEY,
+        recipientWallet: 'payer',
+        seed: 'f'.repeat(64),
+      }),
+    ).rejects.toThrow(expected);
+    await expect(confirmIo.prepareTransaction('gachapay_1')).rejects.toThrow(expected);
+    await expect(confirmIo.verifyPayment('gachapay_1', 'signature')).rejects.toThrow(expected);
   });
 });
