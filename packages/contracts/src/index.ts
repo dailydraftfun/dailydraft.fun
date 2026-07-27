@@ -329,7 +329,7 @@ export const contractOperations = [
   },
   {
     auth: 'wallet-session',
-    errorStatuses: [400, 401, 409, 429, 503],
+    errorStatuses: [400, 401, 403, 409, 429, 503],
     idempotencyRequired: false,
     method: 'post',
     operationId: 'createGachaPaymentIntent',
@@ -339,7 +339,7 @@ export const contractOperations = [
   },
   {
     auth: 'wallet-session',
-    errorStatuses: [400, 401, 409, 429, 503],
+    errorStatuses: [400, 401, 403, 409, 429, 503],
     idempotencyRequired: false,
     method: 'post',
     operationId: 'prepareGachaPaymentTransaction',
@@ -349,7 +349,7 @@ export const contractOperations = [
   },
   {
     auth: 'wallet-session',
-    errorStatuses: [400, 401, 404, 409, 429, 503],
+    errorStatuses: [400, 401, 403, 404, 409, 429, 503],
     idempotencyRequired: false,
     method: 'post',
     operationId: 'claimGachaPaymentSignature',
@@ -359,7 +359,7 @@ export const contractOperations = [
   },
   {
     auth: 'wallet-session',
-    errorStatuses: [400, 401, 404, 409, 429, 503],
+    errorStatuses: [400, 401, 403, 404, 409, 429, 503],
     idempotencyRequired: false,
     method: 'post',
     operationId: 'verifyGachaPayment',
@@ -369,7 +369,7 @@ export const contractOperations = [
   },
   {
     auth: 'wallet-session',
-    errorStatuses: [400, 401, 409, 429, 503],
+    errorStatuses: [400, 401, 403, 409, 429, 503],
     idempotencyRequired: false,
     method: 'post',
     operationId: 'createFixtureGachaRip',
@@ -379,7 +379,7 @@ export const contractOperations = [
   },
 ] as const satisfies readonly ContractOperation[];
 
-export const CONTRACT_FIXTURE_VERSION = '2026-07-27.v9+effe990ddfdf';
+export const CONTRACT_FIXTURE_VERSION = '2026-07-27.v10+c01b9cb0a5f9';
 
 export function contractFixtureFingerprint(): string {
   return createHash('sha256')

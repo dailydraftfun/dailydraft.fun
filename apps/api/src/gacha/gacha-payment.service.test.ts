@@ -477,6 +477,25 @@ describe('GachaPaymentService.prepareTransaction', () => {
   });
 });
 
+describe('GachaPaymentService.findIntentPayerWallet', () => {
+  test('returns the payer for a known intent', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+
+    await expect(service.findIntentPayerWallet(intent.intentId)).resolves.toBe(PAYER);
+  });
+
+  test('returns 404 semantics for an unknown intent', async () => {
+    const service = new GachaPaymentService(asClient(new PaymentDatabase()), new PaymentRpc());
+
+    await expect(
+      service.findIntentPayerWallet('gachapay_00000000000000000000000000000000'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
 describe('GachaPaymentService.claimSignature', () => {
   test('cryptographically proves the first signed transaction and replays it idempotently', async () => {
     configureDevnet();

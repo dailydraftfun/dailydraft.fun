@@ -93,10 +93,14 @@ describe('API compatibility gate', () => {
       const operation = openApi.paths?.[expected.path]?.[expected.method];
       expect(operation?.operationId).toBe(expected.operationId);
       expect(Boolean(operation?.requestBody?.required)).toBe(expected.requestRequired);
-      expect(Object.hasOwn(operation?.responses ?? {}, String(expected.successStatus))).toBe(true);
-      for (const status of expected.errorStatuses) {
-        expect(Object.hasOwn(operation?.responses ?? {}, String(status))).toBe(true);
-      }
+      const expectedStatuses = new Set([
+        String(expected.successStatus),
+        ...expected.errorStatuses.map(String),
+      ]);
+      const specificationStatuses = new Set(
+        Object.keys(operation?.responses ?? {}).filter((status) => /^\d{3}$/.test(status)),
+      );
+      expect(specificationStatuses).toEqual(expectedStatuses);
       expect(hasIdempotencyKey(operation)).toBe(expected.idempotencyRequired);
       expect(resolveAuth(operation, openApi.security)).toEqual(expected.auth);
     }

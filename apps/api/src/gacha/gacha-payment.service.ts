@@ -532,7 +532,7 @@ export class GachaPaymentService {
       select: { payerWallet: true },
       where: { id: requireMemoNonce(intentId) },
     });
-    if (!payment) throw new ConflictException('Gacha payment intent was not found');
+    if (!payment) throw new NotFoundException('Gacha payment intent was not found');
     return payment.payerWallet;
   }
 
