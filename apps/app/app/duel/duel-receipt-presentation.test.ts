@@ -208,7 +208,7 @@ function receipt({
     status === 'settled' && withResult && cardActionReason !== 'ownership-mismatch';
   return {
     actions: {
-      primary: { href: '/overview', label: 'Run a rematch' },
+      primary: { href: '/games/duel', label: 'Run a rematch' },
       rematch: null,
       share: { href: '/duel/duel_receipt', label: 'Share' },
     },

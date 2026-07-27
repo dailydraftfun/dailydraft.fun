@@ -46,6 +46,7 @@ export function CelebrationOverlay({
       data-celebration-accent={profile.screenAccent}
       data-celebration-rarity={controller.rarity}
       data-celebration-reduced-motion={reducedMotion}
+      suppressHydrationWarning
       style={
         {
           '--celebration-glow': profile.glowIntensity,

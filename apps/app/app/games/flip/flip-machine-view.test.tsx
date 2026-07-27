@@ -432,7 +432,7 @@ describe('flip machine view stages', () => {
     expect(html).not.toContain('Approve and rip');
   });
 
-  test('renders the pulled card art and the provably fair receipt', () => {
+  test('keeps the pulled card sealed until hydration and renders the provably fair receipt', () => {
     const html = render({
       state: state({
         intent: INTENT,
@@ -445,7 +445,10 @@ describe('flip machine view stages', () => {
 
     expect(html).toContain('data-stage="revealed"');
     expect(html).toContain('data-rarity="premium"');
-    expect(html).toContain('images.pokemontcg.io');
+    expect(html).toContain('data-pixi-scene="sports-pack-gacha-reveal"');
+    expect(html).toContain('data-theme="dailydraft-demo@1.0.0"');
+    expect(html).toContain('Sealed sports pack');
+    expect(html).not.toContain('images.pokemontcg.io');
     expect(html).toContain('Charizard Holo');
     expect(html).toContain('1.5 USDC');
     expect(html).toContain('Provably fair receipt');

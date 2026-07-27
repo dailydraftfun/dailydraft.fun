@@ -35,7 +35,7 @@ test('keyboard completes Flip and Crash reveals, mute, skip, and every 390px bea
     window.localStorage.setItem(storageKey, 'enabled');
   }, audioHapticsStorageKey);
   await page.setViewportSize(mobileViewport);
-  await page.goto('/games/flip', { waitUntil: 'domcontentloaded' });
+  await page.goto('/games/marketplace-flip', { waitUntil: 'domcontentloaded' });
   await installBeatCapture(page);
 
   const muteControl = page.locator('button[aria-keyshortcuts="Alt+M"]');
@@ -133,7 +133,7 @@ test('reduced motion fast-forwards every mode with full terminal information', a
   await page.setViewportSize(mobileViewport);
   await page.emulateMedia({ reducedMotion: 'reduce' });
 
-  await page.goto('/games/flip', { waitUntil: 'domcontentloaded' });
+  await page.goto('/games/marketplace-flip', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('button[aria-keyshortcuts="Alt+M"]')).toHaveAttribute(
     'aria-pressed',
     'false',

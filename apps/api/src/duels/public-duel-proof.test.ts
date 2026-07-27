@@ -75,19 +75,19 @@ describe('public duel proof', () => {
   });
 
   test.each([
-    ['waiting', '/overview?challenge=duel_receipt00001', 'Accept challenge'],
-    ['matched', '/overview', 'Open a duel'],
-    ['committing', '/overview', 'Open a duel'],
-    ['funded', '/overview', 'Open a duel'],
-    ['opening', '/overview', 'Open a duel'],
-    ['awaiting_assets', '/overview', 'Open a duel'],
-    ['settling', '/overview', 'Open a duel'],
-    ['cancelling', '/overview', 'Open a duel'],
-    ['refunding', '/overview', 'Open a duel'],
-    ['settled', '/overview?rematch=duel_receipt00001', 'Run a rematch'],
-    ['cancelled', '/overview', 'Open a new duel'],
-    ['refunded', '/overview', 'Open a new duel'],
-    ['failed', '/overview', 'Open a new duel'],
+    ['waiting', '/games/duel?challenge=duel_receipt00001', 'Accept challenge'],
+    ['matched', '/games/duel', 'Open a duel'],
+    ['committing', '/games/duel', 'Open a duel'],
+    ['funded', '/games/duel', 'Open a duel'],
+    ['opening', '/games/duel', 'Open a duel'],
+    ['awaiting_assets', '/games/duel', 'Open a duel'],
+    ['settling', '/games/duel', 'Open a duel'],
+    ['cancelling', '/games/duel', 'Open a duel'],
+    ['refunding', '/games/duel', 'Open a duel'],
+    ['settled', '/games/duel?rematch=duel_receipt00001', 'Run a rematch'],
+    ['cancelled', '/games/duel', 'Open a new duel'],
+    ['refunded', '/games/duel', 'Open a new duel'],
+    ['failed', '/games/duel', 'Open a new duel'],
   ] as const)('owns the canonical %s primary action in the public receipt', (status, href, label) => {
     const receipt = buildPublicDuelReceipt(
       {

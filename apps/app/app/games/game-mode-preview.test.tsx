@@ -93,6 +93,6 @@ describe('game mode preview', () => {
     expect(disclosure).toContain('Accept fixture disclosure');
     expect(committed).toContain('house-fixture-9ae2');
     expect(ready).toContain('Admission contract accepted');
-    expect(ready).toContain('href="/overview"');
+    expect(ready).toContain('href="/games/duel"');
   });
 });

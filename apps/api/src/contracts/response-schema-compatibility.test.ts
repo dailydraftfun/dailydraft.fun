@@ -2,6 +2,8 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import {
   contractFixtures,
   createRgsExternalProof,
+  GAME_CATALOG_SCHEMA_VERSION,
+  type GameCatalog,
   rgsCompatibilityFixtures,
 } from '@dailydraft/contracts';
 import { DuelSide as DatabaseDuelSide } from '@dailydraft/db';
@@ -78,6 +80,7 @@ describe('API response schema gate', () => {
       'DuelPackOutcome',
       'DuelResult',
       'GachaRip',
+      'GameCatalog',
       'PublicDuelResult',
       'PublicPostDuelCardActionState',
       'RgsExternalProof',
@@ -165,6 +168,11 @@ function buildResponsePayloadCases(): ResponsePayloadCase[] {
 
   return [
     {
+      payload: gameCatalogPayload(),
+      schema: 'GameCatalog',
+      source: 'GamesCatalogService.getCatalog()',
+    },
+    {
       payload: contractFixtures.rgsModes.response,
       schema: 'RgsModeList',
       source: 'RgsProofService.listModes()',
@@ -214,6 +222,70 @@ function buildResponsePayloadCases(): ResponsePayloadCase[] {
       source: 'GachaRipService.loadRipResult(...).rip',
     },
   ];
+}
+
+function gameCatalogPayload(): GameCatalog {
+  return {
+    asOf: '2026-07-27T20:00:00.000Z',
+    modes: [
+      {
+        availableActions: [
+          { href: '/games/duel', id: 'direct-challenge', label: 'Challenge a wallet' },
+        ],
+        capabilitySource: {
+          kind: 'runtime',
+          name: 'duel-readiness',
+          status: 'verified',
+        },
+        description: 'Open matching sports packs against another wallet.',
+        id: 'duel',
+        name: 'Card Duel',
+        reason: 'Direct challenges are ready on Solana devnet.',
+        state: 'playable',
+      },
+      {
+        availableActions: [],
+        capabilitySource: {
+          kind: 'runtime',
+          name: 'gacha-capability',
+          status: 'verified',
+        },
+        description: 'Rip from a sealed sports-card inventory pool.',
+        id: 'gacha',
+        name: 'Sports Pack Gacha',
+        reason: 'Pending Gacha capability gates: acquisition, settlement',
+        state: 'preview',
+      },
+      {
+        availableActions: [
+          {
+            href: '/games/marketplace-flip',
+            id: 'view-preview',
+            label: 'View fixture preview',
+          },
+        ],
+        capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
+        description: 'Trade against a committed marketplace quote.',
+        id: 'flip',
+        name: 'Marketplace Flip',
+        reason: 'Fixture preview only.',
+        state: 'preview',
+      },
+      {
+        availableActions: [
+          { href: '/games/crash', id: 'view-preview', label: 'View fixture preview' },
+        ],
+        capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
+        description: 'Build a card streak and choose whether to continue.',
+        id: 'crash',
+        name: 'Card Streak',
+        reason: 'Fixture preview only.',
+        state: 'preview',
+      },
+    ],
+    network: 'solana-devnet',
+    schemaVersion: GAME_CATALOG_SCHEMA_VERSION,
+  };
 }
 
 /** Collects every component schema a documented JSON response body can resolve to. */

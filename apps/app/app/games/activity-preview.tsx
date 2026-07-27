@@ -132,8 +132,8 @@ export function ActivityPreview({
           Back to games
           <ArrowRightIcon size={15} />
         </Link>
-        <Link className="proof-secondary-action" href="/games/house">
-          Preview instant House
+        <Link className="proof-secondary-action" href="/games/duel">
+          Open Duel Arena
         </Link>
       </div>
     </main>

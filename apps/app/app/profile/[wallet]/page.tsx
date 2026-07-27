@@ -43,7 +43,7 @@ export default async function WalletProfilePage({ params }: WalletProfilePagePro
             {profile.wallet.address}
           </p>
         </div>
-        <Link href="/overview" className="proof-primary-action">
+        <Link href="/games/duel" className="proof-primary-action">
           Start a duel
         </Link>
       </header>
@@ -179,7 +179,7 @@ function UnavailableProfile() {
       <p className="mt-4 text-sm leading-6 text-secondary">
         No durable profile summary was returned. No duel record or wallet activity is inferred.
       </p>
-      <Link href="/overview" className="proof-primary-action mt-6">
+      <Link href="/games/duel" className="proof-primary-action mt-6">
         Back to duels
       </Link>
     </main>

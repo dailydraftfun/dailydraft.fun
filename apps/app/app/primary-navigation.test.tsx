@@ -5,12 +5,7 @@ import { PrimaryNavigation } from './primary-navigation';
 describe('primary navigation', () => {
   test('marks Games as the active desktop destination', () => {
     const markup = renderToStaticMarkup(
-      <PrimaryNavigation
-        className="desktop-navigation"
-        duelActive={false}
-        gamesActive
-        leaderboardActive={false}
-      />,
+      <PrimaryNavigation className="desktop-navigation" gamesActive leaderboardActive={false} />,
     );
 
     expect(markup).toContain('aria-label="Primary navigation"');
@@ -21,13 +16,12 @@ describe('primary navigation', () => {
     expect(markup).toContain('Games');
   });
 
-  test('renders the mobile layout and every destination', () => {
+  test('renders the mobile layout with one Games destination and the leaderboard', () => {
     const markup = renderToStaticMarkup(
       <PrimaryNavigation
         className="mobile-navigation"
-        duelActive
-        gamesActive={false}
-        leaderboardActive
+        gamesActive
+        leaderboardActive={false}
         mobile
       />,
     );
@@ -35,8 +29,9 @@ describe('primary navigation', () => {
     expect(markup).toContain('aria-label="Mobile primary navigation"');
     expect(markup).toContain('nav-link justify-center');
     expect(markup).toContain('href="/games"');
-    expect(markup).toContain('href="/overview"');
     expect(markup).toContain('href="/leaderboard"');
-    expect(markup).toContain('Card Duels');
+    expect(markup).not.toContain('href="/overview"');
+    expect(markup).not.toContain('Card Duels');
+    expect(markup.match(/aria-current="page"/g)).toHaveLength(1);
   });
 });

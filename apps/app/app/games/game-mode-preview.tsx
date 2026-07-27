@@ -66,6 +66,12 @@ const modeCopy: Record<
   },
 };
 
+const previewModeHrefs: Record<PreviewMode, string> = {
+  crash: '/games/crash',
+  flip: '/games/marketplace-flip',
+  house: '/games/duel',
+};
+
 export type GamePreviewFixtureState = {
   crashStage?: number;
   crashStatus?: 'active' | 'busted' | 'cashed';
@@ -122,7 +128,7 @@ export function GameModePreview({
                 ? 'bg-elevated text-primary'
                 : 'text-secondary hover:bg-tertiary hover:text-primary',
             ].join(' ')}
-            href={`/games/${candidate}`}
+            href={previewModeHrefs[candidate]}
             key={candidate}
           >
             <span className={candidate === mode ? 'text-lime' : undefined} aria-hidden="true">
@@ -448,7 +454,7 @@ function HousePreview({ initialStep = 0 }: { initialStep?: number }) {
               The real arena can now continue through wallet authentication and funding. This
               preview did not connect a wallet or reserve treasury exposure.
             </p>
-            <Link className="proof-primary-action mt-5 gap-2" href="/overview">
+            <Link className="proof-primary-action mt-5 gap-2" href="/games/duel">
               Open actual Duel arena
               <ArrowRightIcon size={16} />
             </Link>

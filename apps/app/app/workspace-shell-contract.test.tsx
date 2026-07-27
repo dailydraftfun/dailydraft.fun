@@ -2,6 +2,9 @@ import { describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 mock.module('next/navigation', () => ({
+  redirect: (target: string) => {
+    throw new Error(`NEXT_REDIRECT:${target}`);
+  },
   usePathname: () => '/games',
 }));
 
@@ -25,8 +28,10 @@ describe('workspace shell contract', () => {
     );
 
     expect(markup).toContain('aria-label="DailyDraft home"');
+    expect(markup).toContain('href="/games"');
     expect(markup).toContain('DailyDraft');
     expect(markup).not.toContain('Pack Duel');
+    expect(markup).not.toContain('Card Duels');
     expect(markup).toContain('Devnet');
   });
 });

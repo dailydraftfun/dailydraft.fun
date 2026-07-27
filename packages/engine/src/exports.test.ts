@@ -14,7 +14,13 @@ describe('engine package entrypoints', () => {
       resolveThemePack: expect.any(Function),
     });
     expect(pixi).toMatchObject({
+      Assets: expect.any(Object),
+      Container: expect.any(Function),
+      Graphics: expect.any(Function),
       ParticleEmitter: expect.any(Function),
+      Sprite: expect.any(Function),
+      Text: expect.any(Function),
+      Texture: expect.any(Function),
       createBloomFilter: expect.any(Function),
       createGlowFilter: expect.any(Function),
       definePixiScene: expect.any(Function),
