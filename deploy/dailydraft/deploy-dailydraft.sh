@@ -18,6 +18,8 @@ if [[ "$image_key" != "images/dailydraft-${sha}.tar.gz" ]]; then
 fi
 
 readonly image="dailydraft:${sha}"
+readonly container="api-dailydraft-fun"
+readonly candidate="${container}-candidate"
 readonly environment_directory="/etc/dailydraft"
 readonly environment_file="${environment_directory}/dailydraft.env"
 readonly unit_directory="/etc/systemd/system"
@@ -134,9 +136,9 @@ docker run --rm \
   "$image" \
   bun --filter @dailydraft/db db:deploy
 
-docker rm -f dailydraft-candidate >/dev/null 2>&1 || true
+docker rm -f "$candidate" >/dev/null 2>&1 || true
 docker run -d \
-  --name dailydraft-candidate \
+  --name "$candidate" \
   --network "$network" \
   --env-file "$environment_file" \
   --restart no \
@@ -144,14 +146,14 @@ docker run -d \
 
 candidate_healthy=false
 for _ in $(seq 1 30); do
-  if docker exec dailydraft-candidate bun -e \
+  if docker exec "$candidate" bun -e \
     "await fetch('http://127.0.0.1:3000/v1/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
   then
     candidate_healthy=true
     break
   fi
 
-  if [[ "$(docker inspect -f '{{.State.Running}}' dailydraft-candidate)" != "true" ]]; then
+  if [[ "$(docker inspect -f '{{.State.Running}}' "$candidate")" != "true" ]]; then
     break
   fi
   sleep 2
@@ -159,14 +161,14 @@ done
 
 if [[ "$candidate_healthy" != "true" ]]; then
   echo "Candidate API failed its health check" >&2
-  docker logs --tail 200 dailydraft-candidate >&2 || true
-  docker rm -f dailydraft-candidate >/dev/null 2>&1 || true
+  docker logs --tail 200 "$candidate" >&2 || true
+  docker rm -f "$candidate" >/dev/null 2>&1 || true
   exit 1
 fi
 
-docker rm -f dailydraft >/dev/null 2>&1 || true
-docker rename dailydraft-candidate dailydraft
-docker update --restart unless-stopped dailydraft >/dev/null
+docker rm -f "$container" >/dev/null 2>&1 || true
+docker rename "$candidate" "$container"
+docker update --restart unless-stopped "$container" >/dev/null
 docker exec shipshit-caddy caddy reload --config /etc/caddy/Caddyfile
 
 # This host is shared with other tenants, so an unbounded image set is a
@@ -204,7 +206,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/docker exec dailydraft bun -e "const secret=process.env.CRON_SECRET; if(!secret){console.error('CRON_SECRET is not set inside the container');process.exit(1);} await fetch('http://127.0.0.1:3000/v1/internal/reconciliation/${job}',{headers:{Authorization:'Bearer '+secret}}).then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
+ExecStart=/usr/bin/docker exec ${container} bun -e "const secret=process.env.CRON_SECRET; if(!secret){console.error('CRON_SECRET is not set inside the container');process.exit(1);} await fetch('http://127.0.0.1:3000/v1/internal/reconciliation/${job}',{headers:{Authorization:'Bearer '+secret}}).then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))"
 UNIT
   install -m 644 "$temporary_unit" "${unit_directory}/${unit}.service"
 

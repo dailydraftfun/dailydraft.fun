@@ -196,7 +196,7 @@ is no operator-side deploy command and no credential ever leaves SSM.
 
    Never substitute `prisma db push`; migration history is the deployment
    contract. A failed migration aborts the deploy with the previous container
-   still serving. The new image is then started as `dailydraft-candidate` and
+   still serving. The new image is then started as `api-dailydraft-fun-candidate` and
    only renamed over the live container after its own health check passes, so a
    broken build cannot take production down.
 4. Confirm the canonical host and database readiness:
