@@ -27,6 +27,9 @@ describe('ProviderOpeningRepository', () => {
       'escrow_fixture',
       'escrow_fixture',
     ]);
+    expect(database.rgsCommitmentHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(database.rgsConfigHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(database.rgsRulesHash).toBe(CANONICAL_VALUATION_POLICY_HASH);
 
     const creator = first.find((operation) => operation.side === 'creator');
     if (!creator) throw new Error('Missing creator operation');
@@ -207,9 +210,34 @@ interface StoredOperation {
 class FixtureDatabase {
   concurrentOpenedReplay = false;
   operations: StoredOperation[] = [];
+  rgsCommitmentHash: string | null = null;
+  rgsConfigHash: string | null = null;
+  rgsRulesHash: string | null = null;
 
   readonly duel = {
-    findUnique: async () => ({ status: DuelStatus.OPENING }),
+    findUnique: async () => ({
+      packId: 'pokemon_50',
+      providerMode: 'MOCK',
+      rgsCommitmentHash: this.rgsCommitmentHash,
+      rgsConfigHash: this.rgsConfigHash,
+      rgsRulesHash: this.rgsRulesHash,
+      status: DuelStatus.OPENING,
+      valuationPolicyHash: CANONICAL_VALUATION_POLICY_HASH,
+    }),
+    update: async ({
+      data,
+    }: {
+      data: {
+        rgsCommitmentHash: string;
+        rgsConfigHash: string;
+        rgsRulesHash: string;
+      };
+    }) => {
+      this.rgsCommitmentHash = data.rgsCommitmentHash;
+      this.rgsConfigHash = data.rgsConfigHash;
+      this.rgsRulesHash = data.rgsRulesHash;
+      return { status: DuelStatus.OPENING };
+    },
   };
 
   readonly duelProviderOperation = {

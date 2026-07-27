@@ -13,6 +13,7 @@ import type { DuelSide, ProviderResponseEvidence } from '../providers/pack-provi
 import { PROVIDER_RESPONSE_EVIDENCE_SCHEMA_VERSION } from '../providers/pack-provider.js';
 import type { NormalizedPackOutcome } from '../providers/provider-result.js';
 import { assertNormalizedOutcome } from '../providers/provider-result.js';
+import { createDuelRgsCommitment } from '../rgs/rgs-duel-contract.js';
 
 const MAX_ERROR_CODE_LENGTH = 120;
 
@@ -50,7 +51,15 @@ export class ProviderOpeningRepository {
     }
     return this.database.$transaction(async (transaction) => {
       const duel = await transaction.duel.findUnique({
-        select: { status: true },
+        select: {
+          packId: true,
+          providerMode: true,
+          rgsCommitmentHash: true,
+          rgsConfigHash: true,
+          rgsRulesHash: true,
+          status: true,
+          valuationPolicyHash: true,
+        },
         where: { id: reservations[0].duelId },
       });
       if (!duel || duel.status !== DatabaseDuelStatus.OPENING) {
@@ -83,6 +92,33 @@ export class ProviderOpeningRepository {
           throw new ConflictException('Provider operation replay changed its committed request');
         }
       }
+      if (!duel.valuationPolicyHash) {
+        throw new ConflictException('Provider operations require a committed valuation policy');
+      }
+      const rgsCommitment = createDuelRgsCommitment({
+        duelId: reservations[0].duelId,
+        operations,
+        packId: duel.packId,
+        providerMode: duel.providerMode,
+        rulesHash: duel.valuationPolicyHash,
+      });
+      const persistedRgsFields = [duel.rgsCommitmentHash, duel.rgsConfigHash, duel.rgsRulesHash];
+      if (
+        persistedRgsFields.some((value) => value !== null) &&
+        (duel.rgsCommitmentHash !== rgsCommitment.commitmentHash ||
+          duel.rgsConfigHash !== rgsCommitment.configHash ||
+          duel.rgsRulesHash !== rgsCommitment.rulesHash)
+      ) {
+        throw new ConflictException('Provider operation replay changed its RGS commitment');
+      }
+      await transaction.duel.update({
+        data: {
+          rgsCommitmentHash: rgsCommitment.commitmentHash,
+          rgsConfigHash: rgsCommitment.configHash,
+          rgsRulesHash: rgsCommitment.rulesHash,
+        },
+        where: { id: reservations[0].duelId },
+      });
       return operations as [ProviderOpeningOperation, ProviderOpeningOperation];
     });
   }

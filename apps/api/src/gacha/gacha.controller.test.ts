@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { createRgsSeedCommitment, createRgsSeededProof } from '@dailydraft/contracts';
 import { GachaRipPaymentStatus, GachaRipStatus, GachaSport } from '@dailydraft/db';
 
 import { GachaController } from './gacha.controller.js';
@@ -105,10 +106,22 @@ describe('GachaController', () => {
       snapshotContentHash: inventory.contentHash,
       version: 1,
     } satisfies NonNullable<Awaited<ReturnType<GachaRipService['findCommittedOdds']>>>;
-    const seedCommitment = {
+    const seedCommitmentCore = createRgsSeedCommitment({
       commitmentId: 'gachaseed_fixture',
+      configHash: inventory.contentHash,
+      mode: 'gacha',
+      rulesHash: odds.rulesHash,
+      serverSeed: 'f'.repeat(64),
+    });
+    const seedCommitment = {
+      commitmentId: seedCommitmentCore.commitmentId,
+      configHash: seedCommitmentCore.configHash,
+      contractVersion: seedCommitmentCore.contractVersion,
       expiresAt: new Date(now.getTime() + 15 * 60 * 1000),
-      serverSeedHash: 'e'.repeat(64),
+      proofKind: seedCommitmentCore.proofKind,
+      rgsCommitmentHash: seedCommitmentCore.commitmentHash,
+      rulesHash: seedCommitmentCore.rulesHash,
+      serverSeedHash: seedCommitmentCore.serverSeedHash,
     } satisfies Awaited<ReturnType<GachaRipService['createSeedCommitment']>>;
     const ripResult = {
       oddsCommitment: {
@@ -146,6 +159,21 @@ describe('GachaController', () => {
         status: GachaRipStatus.SETTLED,
         updatedAt: now,
       },
+      rgsProof: createRgsSeededProof({
+        clientSeed: 'fixture-client-seed',
+        commitmentId: seedCommitment.commitmentId,
+        configHash: seedCommitment.configHash,
+        mode: 'gacha',
+        phase: 'settled',
+        result: {
+          assetReference: 'devnet:fixture:asset:base',
+          insuredValueMinor: '35000000',
+          status: 'SETTLED',
+        },
+        roundId: 'gacharip_fixture',
+        rulesHash: seedCommitment.rulesHash,
+        serverSeed: 'f'.repeat(64),
+      }),
       serverSeed: 'f'.repeat(64),
       serverSeedHash: seedCommitment.serverSeedHash,
     } satisfies Awaited<ReturnType<GachaRipService['createFixtureRip']>>;

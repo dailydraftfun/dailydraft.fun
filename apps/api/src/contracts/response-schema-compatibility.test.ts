@@ -1,4 +1,9 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
+import {
+  contractFixtures,
+  createRgsExternalProof,
+  rgsCompatibilityFixtures,
+} from '@dailydraft/contracts';
 import { DuelSide as DatabaseDuelSide } from '@dailydraft/db';
 import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
@@ -75,6 +80,9 @@ describe('API response schema gate', () => {
       'GachaRip',
       'PublicDuelResult',
       'PublicPostDuelCardActionState',
+      'RgsExternalProof',
+      'RgsModeList',
+      'RgsSeededProof',
     ]);
   });
 
@@ -156,6 +164,30 @@ function buildResponsePayloadCases(): ResponsePayloadCase[] {
   if (!card) throw new Error('Contract fixture must produce a post-duel card action state');
 
   return [
+    {
+      payload: contractFixtures.rgsModes.response,
+      schema: 'RgsModeList',
+      source: 'RgsProofService.listModes()',
+    },
+    {
+      payload: rgsCompatibilityFixtures.seededProof,
+      schema: 'RgsSeededProof',
+      source: 'createRgsSeededProof(...)',
+    },
+    {
+      payload: createRgsExternalProof({
+        configHash: 'a'.repeat(64),
+        evidence: { creatorResultHash: 'c'.repeat(64), opponentResultHash: 'd'.repeat(64) },
+        mode: 'duel',
+        phase: 'settled',
+        request: { creator: 'request-a', opponent: 'request-b' },
+        result: { comparisonHash: 'e'.repeat(64), winnerSide: 'creator' },
+        roundId: DUEL_ID,
+        rulesHash: 'b'.repeat(64),
+      }),
+      schema: 'RgsExternalProof',
+      source: 'createRgsExternalProof(...)',
+    },
     {
       payload: duelResult,
       schema: 'DuelResult',

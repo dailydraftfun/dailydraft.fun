@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 
 import { pullRarityFixtures } from './pull-rarity.js';
+import { rgsCompatibilityFixtures } from './rgs.js';
 
 export * from './pull-rarity.js';
+export * from './rgs.js';
 
 export type ContractAuth = 'none' | 'wallet-or-integration' | 'wallet-session';
 
@@ -17,7 +19,7 @@ export type ContractOperation = {
   successStatus: number;
 };
 
-export const OPENAPI_CONTRACT_VERSION = '0.3.0-devnet';
+export const OPENAPI_CONTRACT_VERSION = '0.4.0-devnet';
 
 export const contractValues = {
   challengeId: 'authc_0123456789abcdef0123456789abcdef',
@@ -166,6 +168,12 @@ export const contractFixtures = {
       schemaVersion: 'dailydraft.receipt.v1',
     },
   },
+  rgsModes: {
+    response: {
+      modes: Object.values(rgsCompatibilityFixtures.modes),
+      schemaVersion: rgsCompatibilityFixtures.modes.gacha.schemaVersion,
+    },
+  },
   transactionPreparation: {
     request: {
       action: 'fund',
@@ -219,6 +227,26 @@ export const contractFixtures = {
 } as const;
 
 export const contractOperations = [
+  {
+    auth: 'none',
+    errorStatuses: [429, 503],
+    idempotencyRequired: false,
+    method: 'get',
+    operationId: 'listRgsModes',
+    path: '/rgs/modes',
+    requestRequired: false,
+    successStatus: 200,
+  },
+  {
+    auth: 'none',
+    errorStatuses: [400, 404, 409, 429, 503],
+    idempotencyRequired: false,
+    method: 'get',
+    operationId: 'getRgsRoundProof',
+    path: '/rgs/rounds/{mode}/{roundId}/proof',
+    requestRequired: false,
+    successStatus: 200,
+  },
   {
     auth: 'none',
     errorStatuses: [429, 503],
@@ -351,7 +379,7 @@ export const contractOperations = [
   },
 ] as const satisfies readonly ContractOperation[];
 
-export const CONTRACT_FIXTURE_VERSION = '2026-07-27.v4+45cf57b3a2b8';
+export const CONTRACT_FIXTURE_VERSION = '2026-07-27.v9+effe990ddfdf';
 
 export function contractFixtureFingerprint(): string {
   return createHash('sha256')
@@ -361,6 +389,7 @@ export function contractFixtureFingerprint(): string {
         contractOperations,
         openApiVersion: OPENAPI_CONTRACT_VERSION,
         pullRarity: pullRarityFixtures,
+        rgs: rgsCompatibilityFixtures,
       }),
     )
     .digest('hex')

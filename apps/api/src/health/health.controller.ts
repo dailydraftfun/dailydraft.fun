@@ -1,3 +1,4 @@
+import { OPENAPI_CONTRACT_VERSION } from '@dailydraft/contracts';
 import type { DatabaseClient } from '@dailydraft/db';
 import { Controller, Get, Header, Inject, ServiceUnavailableException } from '@nestjs/common';
 
@@ -53,7 +54,7 @@ export class HealthController {
       dependencies: { database: 'ok' },
       service: 'dailydraft-api',
       status: 'ok',
-      version: '0.3.0-devnet',
+      version: OPENAPI_CONTRACT_VERSION,
     };
   }
 

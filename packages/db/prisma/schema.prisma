@@ -256,6 +256,9 @@ model Duel {
   settledAt           DateTime?
   resultHash          String?
   resultReadyAt       DateTime?
+  rgsCommitmentHash   String?
+  rgsConfigHash       String?
+  rgsRulesHash        String?
   commitmentExpiresAt DateTime?
   events              DuelEvent[]
   transactions        DuelTransaction[]
@@ -891,15 +894,19 @@ model GachaPullOddsCommitment {
 /// which point it is revealed so the roll can be independently recomputed
 /// and checked against the previously published serverSeedHash.
 model GachaRipSeedCommitment {
-  id              String    @id
-  machineKey      String
-  serverSeed      String
-  serverSeedHash  String
-  consumedByRipId String?   @unique
-  committedAt     DateTime
-  expiresAt       DateTime
-  createdAt       DateTime  @default(now())
-  consumedByRip   GachaRip? @relation(fields: [consumedByRipId], references: [id], onDelete: Restrict)
+  id                String    @id
+  machineKey        String
+  serverSeed        String
+  serverSeedHash    String
+  configHash        String?
+  rulesHash         String?
+  rgsCommitmentHash String?
+  clientSeed        String?
+  consumedByRipId   String?   @unique
+  committedAt       DateTime
+  expiresAt         DateTime
+  createdAt         DateTime  @default(now())
+  consumedByRip     GachaRip? @relation(fields: [consumedByRipId], references: [id], onDelete: Restrict)
 
   @@index([machineKey, committedAt])
   @@index([expiresAt])

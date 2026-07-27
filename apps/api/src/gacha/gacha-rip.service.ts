@@ -1,4 +1,10 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import {
+  createRgsSeedCommitment,
+  createRgsSeededProof,
+  deriveRgsSeededEntropy,
+  type RgsSeededProof,
+} from '@dailydraft/contracts';
 import { type DatabaseClient, GachaRipStatus, type Prisma } from '@dailydraft/db';
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
@@ -116,24 +122,49 @@ export class GachaRipService {
       );
     }
     const machineKey = requireKey(machineKeyInput, 'machineKey');
+    const snapshot = await this.ensureFixtureSnapshot(machineKey);
+    if (!snapshot.sealedAt) {
+      throw new ServiceUnavailableException('Gacha inventory snapshot is not sealed');
+    }
+    const rules = validateGachaPullOddsRuleSet(
+      createFixtureGachaPullOddsRuleSet(snapshot.contentHash),
+    );
     const serverSeed = requireServerSeed(randomBytes(32).toString('hex'));
-    const serverSeedHash = sha256(serverSeed);
     const committedAt = new Date();
     const expiresAt = new Date(committedAt.getTime() + GACHA_SEED_COMMITMENT_TTL_MS);
     const commitmentId = createId('gachaseed');
+    const rgsCommitment = createRgsSeedCommitment({
+      commitmentId,
+      configHash: snapshot.contentHash,
+      mode: 'gacha',
+      rulesHash: rules.rulesHash,
+      serverSeed,
+    });
 
     await this.database.gachaRipSeedCommitment.create({
       data: {
         committedAt,
+        configHash: rgsCommitment.configHash,
         expiresAt,
         id: commitmentId,
         machineKey,
+        rgsCommitmentHash: rgsCommitment.commitmentHash,
+        rulesHash: rgsCommitment.rulesHash,
         serverSeed,
-        serverSeedHash,
+        serverSeedHash: rgsCommitment.serverSeedHash,
       },
     });
 
-    return { commitmentId, expiresAt, serverSeedHash };
+    return {
+      commitmentId,
+      configHash: rgsCommitment.configHash,
+      contractVersion: rgsCommitment.contractVersion,
+      expiresAt,
+      proofKind: rgsCommitment.proofKind,
+      rgsCommitmentHash: rgsCommitment.commitmentHash,
+      rulesHash: rgsCommitment.rulesHash,
+      serverSeedHash: rgsCommitment.serverSeedHash,
+    };
   }
 
   async createFixtureRip(input: CreateFixtureGachaRipInput) {
@@ -211,6 +242,22 @@ export class GachaRipService {
         if (seedCommitment.expiresAt.getTime() <= selectedAt.getTime()) {
           throw new ConflictException('Gacha rip seed commitment has expired');
         }
+        const rgsCommitment = createRgsSeedCommitment({
+          commitmentId,
+          configHash: snapshot.contentHash,
+          mode: 'gacha',
+          rulesHash: rules.rulesHash,
+          serverSeed: seedCommitment.serverSeed,
+        });
+        if (
+          seedCommitment.configHash !== snapshot.contentHash ||
+          seedCommitment.rulesHash !== rules.rulesHash ||
+          seedCommitment.rgsCommitmentHash !== rgsCommitment.commitmentHash
+        ) {
+          throw new ConflictException(
+            'Gacha rip seed commitment does not match the sealed RGS configuration',
+          );
+        }
 
         const commitment = await ensureOddsCommitment(
           transaction,
@@ -277,7 +324,7 @@ export class GachaRipService {
         }
 
         const consumed = await transaction.gachaRipSeedCommitment.updateMany({
-          data: { consumedByRipId: ripId },
+          data: { clientSeed, consumedByRipId: ripId },
           where: { consumedByRipId: null, expiresAt: { gt: selectedAt }, id: commitmentId },
         });
         if (consumed.count !== 1) {
@@ -290,6 +337,15 @@ export class GachaRipService {
 
     await this.resumeRipLifecycle(outcome.ripId);
     return this.loadRipResult(outcome.ripId);
+  }
+
+  async findRgsProof(ripIdInput: string): Promise<RgsSeededProof> {
+    const rip = await this.requireRip(requireReference(ripIdInput, 'ripId'));
+    const proof = rgsProofForRip(rip, await this.revealSeedCommitment(rip));
+    if (!proof) {
+      throw new ConflictException('Gacha RGS proof is unavailable until the rip is terminal');
+    }
+    return proof;
   }
 
   private async ensureFixtureSnapshot(machineKey: string) {
@@ -500,23 +556,55 @@ export class GachaRipService {
         version: oddsCommitment.version,
       },
       rip: publicRip(rip),
+      rgsProof: rgsProofForRip(rip, revealed),
       serverSeed: revealed.serverSeed,
       serverSeedHash: revealed.serverSeedHash,
     };
   }
 
-  private async revealSeedCommitment(rip: {
-    id: string;
-    status: GachaRipStatus;
-  }): Promise<{ serverSeed: string | null; serverSeedHash: string | null }> {
+  private async revealSeedCommitment(rip: { id: string; status: GachaRipStatus }): Promise<{
+    clientSeed: string | null;
+    commitmentId: string | null;
+    configHash: string | null;
+    rgsCommitmentHash: string | null;
+    rulesHash: string | null;
+    serverSeed: string | null;
+    serverSeedHash: string | null;
+  }> {
     if (rip.status !== GachaRipStatus.SETTLED && rip.status !== GachaRipStatus.FAILED) {
-      return { serverSeed: null, serverSeedHash: null };
+      return {
+        clientSeed: null,
+        commitmentId: null,
+        configHash: null,
+        rgsCommitmentHash: null,
+        rulesHash: null,
+        serverSeed: null,
+        serverSeedHash: null,
+      };
     }
     const commitment = await this.database.gachaRipSeedCommitment.findUnique({
       where: { consumedByRipId: rip.id },
     });
-    if (!commitment) return { serverSeed: null, serverSeedHash: null };
-    return { serverSeed: commitment.serverSeed, serverSeedHash: commitment.serverSeedHash };
+    if (!commitment) {
+      return {
+        clientSeed: null,
+        commitmentId: null,
+        configHash: null,
+        rgsCommitmentHash: null,
+        rulesHash: null,
+        serverSeed: null,
+        serverSeedHash: null,
+      };
+    }
+    return {
+      clientSeed: commitment.clientSeed,
+      commitmentId: commitment.id,
+      configHash: commitment.configHash,
+      rgsCommitmentHash: commitment.rgsCommitmentHash,
+      rulesHash: commitment.rulesHash,
+      serverSeed: commitment.serverSeed,
+      serverSeedHash: commitment.serverSeedHash,
+    };
   }
 }
 
@@ -553,6 +641,55 @@ function publicRip(rip: GachaRipRow) {
   };
 }
 
+function rgsProofForRip(
+  rip: GachaRipRow,
+  reveal: {
+    clientSeed: string | null;
+    commitmentId: string | null;
+    configHash: string | null;
+    rgsCommitmentHash: string | null;
+    rulesHash: string | null;
+    serverSeed: string | null;
+    serverSeedHash: string | null;
+  },
+): RgsSeededProof | null {
+  if (
+    !reveal.clientSeed ||
+    !reveal.commitmentId ||
+    !reveal.configHash ||
+    !reveal.rgsCommitmentHash ||
+    !reveal.rulesHash ||
+    !reveal.serverSeed ||
+    !reveal.serverSeedHash
+  ) {
+    return null;
+  }
+  const proof = createRgsSeededProof({
+    clientSeed: reveal.clientSeed,
+    commitmentId: reveal.commitmentId,
+    configHash: reveal.configHash,
+    mode: 'gacha',
+    phase: rip.status === GachaRipStatus.SETTLED ? 'settled' : 'revealed',
+    result: {
+      assetReference: rip.selectedAssetReference ?? rip.failedAssetReference,
+      insuredValueCurrency: rip.insuredValueCurrency,
+      insuredValueDecimals: rip.insuredValueDecimals,
+      insuredValueMinor: rip.insuredValueMinor,
+      status: rip.status,
+    },
+    roundId: rip.id,
+    rulesHash: reveal.rulesHash,
+    serverSeed: reveal.serverSeed,
+  });
+  if (
+    proof.commitmentHash !== reveal.rgsCommitmentHash ||
+    proof.serverSeedHash !== reveal.serverSeedHash
+  ) {
+    throw new ServiceUnavailableException('Gacha RGS proof does not match its commitment');
+  }
+  return proof;
+}
+
 export function selectGachaOutcome(
   entries: readonly SelectableEntry[],
   rulesInput: unknown,
@@ -576,11 +713,15 @@ export function selectGachaOutcome(
     throw new ServiceUnavailableException('Gacha inventory snapshot has no eligible cards');
   }
 
-  const digest = createHash('sha256')
-    .update(
-      `${rules.snapshotContentHash}:${rules.rulesHash}:${requireServerSeed(seeds.serverSeed)}:${requireSeed(seeds.clientSeed)}`,
-    )
-    .digest();
+  const digest = Buffer.from(
+    deriveRgsSeededEntropy({
+      clientSeed: requireSeed(seeds.clientSeed),
+      configHash: rules.snapshotContentHash,
+      rulesHash: rules.rulesHash,
+      serverSeed: requireServerSeed(seeds.serverSeed),
+    }),
+    'hex',
+  );
   const rollPpm = digest.readUInt32BE(0) % 1_000_000;
   const band = bandForRoll(rules.bands, rollPpm);
   const candidates = eligible.filter(

@@ -14,10 +14,16 @@
       "bun": "./src/pull-rarity.ts",
       "import": "./src/pull-rarity.ts",
       "default": "./dist/pull-rarity.js"
+    },
+    "./rgs": {
+      "types": "./src/rgs.ts",
+      "bun": "./src/rgs.ts",
+      "import": "./src/rgs.ts",
+      "default": "./dist/rgs.js"
     }
   },
   "scripts": {
-    "build": "bun build src/index.ts src/pull-rarity.ts --target=bun --outdir=dist",
+    "build": "bun build src/index.ts src/pull-rarity.ts src/rgs.ts --target=bun --outdir=dist",
     "clean": "rm -rf dist",
     "lint": "biome check src/",
     "test": "bun test",

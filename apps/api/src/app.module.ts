@@ -13,6 +13,7 @@ import { MatchmakingModule } from './matchmaking/matchmaking.module.js';
 import { PacksModule } from './packs/packs.module.js';
 import { RealValuePolicyModule } from './policy/real-value-policy.module.js';
 import { ProvidersModule } from './providers/providers.module.js';
+import { RgsModule } from './rgs/rgs.module.js';
 import { TransactionsModule } from './transactions/transactions.module.js';
 import { HouseTreasuryModule } from './treasury/house-treasury.module.js';
 
@@ -29,6 +30,7 @@ import { HouseTreasuryModule } from './treasury/house-treasury.module.js';
     ProvidersModule,
     FlipInventoryModule,
     GachaModule,
+    RgsModule,
     FantasyModule,
     DuelsModule,
     TransactionsModule,
