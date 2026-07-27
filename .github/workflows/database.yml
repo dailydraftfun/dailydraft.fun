@@ -66,7 +66,10 @@ jobs:
         working-directory: apps/api
         env:
           REQUIRE_DB_INTEGRATION: '1'
-        run: bun test src/database/advisory-lock.database.test.ts
+        run: >-
+          bun test
+          src/database/advisory-lock.database.test.ts
+          src/gacha/gacha-payment-idempotency.database.test.ts
       - name: Validate Prisma schema
         run: bun --filter @dailydraft/db db:validate
       - name: Prove schema-only drift is rejected

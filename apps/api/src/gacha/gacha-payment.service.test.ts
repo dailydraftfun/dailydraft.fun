@@ -477,6 +477,16 @@ describe('GachaPaymentService.prepareTransaction', () => {
   });
 });
 
+describe('GachaPaymentService.findIntentPayerWallet', () => {
+  test('returns 404 semantics for an unknown intent', async () => {
+    const service = new GachaPaymentService(asClient(new PaymentDatabase()), new PaymentRpc());
+
+    await expect(
+      service.findIntentPayerWallet('gachapay_00000000000000000000000000000000'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
 describe('GachaPaymentService.claimSignature', () => {
   test('cryptographically proves the first signed transaction and replays it idempotently', async () => {
     configureDevnet();
