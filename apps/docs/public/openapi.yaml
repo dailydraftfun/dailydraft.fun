@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: DailyDraft API
-  version: 0.3.0-devnet
+  version: 0.4.0-devnet
   summary: Build pack-opening duels on Solana
   description: |
     Preview contract for pack discovery, duel matchmaking, wallet-signed Solana
@@ -27,6 +27,8 @@ tags:
     description: Duel-eligible pack definitions and current inventory metadata.
   - name: Gacha
     description: Inspectable Sports Pack Gacha capabilities, inventory, odds, deposit intents, and rips.
+  - name: RGS
+    description: Versioned game-mode configs and independently verifiable round proofs.
   - name: Valuation
     description: Immutable winner-comparison policies committed before either player funds.
   - name: Duels
@@ -45,6 +47,81 @@ tags:
     description: Gated fantasy tournament capabilities pending oracle, snapshot, and payout review.
 security: []
 paths:
+  /rgs/modes:
+    get:
+      operationId: listRgsModes
+      tags: [RGS]
+      summary: List the versioned RGS math configurations and readiness gates
+      description: |
+        Declares Gacha, Duels, Flip, and Crash through one versioned configuration
+        surface. Fixture-only modes remain non-playable, and every real-value mode
+        stays behind the existing human-approval policy gate.
+      x-dailydraft-availability: devnet-preview
+      responses:
+        '200':
+          description: Versioned RGS mode configurations
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RgsModeList'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /rgs/rounds/{mode}/{roundId}/proof:
+    get:
+      operationId: getRgsRoundProof
+      tags: [RGS]
+      summary: Get an independently verifiable proof for a revealed RGS round
+      description: |
+        Returns the exact versioned commitment, reveal inputs, evidence hashes,
+        and canonical result payload. Gacha uses seeded SHA-256 commit/reveal;
+        Duels binds the pre-provider request pair to signed provider evidence.
+        Flip and Crash are fixture-only until their gated round services ship.
+      x-dailydraft-availability: devnet-preview
+      parameters:
+        - name: mode
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RgsMode'
+        - name: roundId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$'
+      responses:
+        '200':
+          description: Versioned round proof
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+            X-Robots-Tag:
+              schema:
+                type: string
+                const: noindex, nofollow, noarchive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RgsProof'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /health:
     get:
       operationId: getHealth
@@ -1939,6 +2016,140 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    RgsHash:
+      type: string
+      pattern: '^[a-f0-9]{64}$'
+    RgsMode:
+      type: string
+      enum: [crash, duel, flip, gacha]
+    RgsModeConfig:
+      type: object
+      additionalProperties: false
+      required:
+        - activation
+        - calculatorVersion
+        - configHash
+        - contractVersion
+        - mode
+        - proofKind
+        - realValueGate
+        - rulesHash
+        - schemaVersion
+      properties:
+        activation:
+          type: string
+          enum: [devnet, disabled, fixture-only]
+        calculatorVersion:
+          type: string
+          pattern: '^dailydraft\.[a-z0-9-]+\.v[1-9][0-9]*$'
+        configHash:
+          $ref: '#/components/schemas/RgsHash'
+        contractVersion:
+          type: string
+          const: dailydraft.rgs-contract.v1
+        mode:
+          $ref: '#/components/schemas/RgsMode'
+        proofKind:
+          type: string
+          enum: [external-provider, seeded-sha256]
+        realValueGate:
+          type: string
+          const: hitl-required
+        rulesHash:
+          $ref: '#/components/schemas/RgsHash'
+        schemaVersion:
+          type: string
+          const: dailydraft.rgs-mode-config.v1
+    RgsModeList:
+      type: object
+      additionalProperties: false
+      required: [modes, schemaVersion]
+      properties:
+        modes:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/RgsModeConfig'
+        schemaVersion:
+          type: string
+          const: dailydraft.rgs-mode-config.v1
+    RgsSeededProof:
+      type: object
+      additionalProperties: false
+      required:
+        - clientSeed
+        - commitmentHash
+        - commitmentId
+        - configHash
+        - contractVersion
+        - entropyHash
+        - mode
+        - phase
+        - proofKind
+        - result
+        - resultHash
+        - roundId
+        - rulesHash
+        - schemaVersion
+        - serverSeed
+        - serverSeedHash
+      properties:
+        clientSeed: { type: string, minLength: 1, maxLength: 240 }
+        commitmentHash: { $ref: '#/components/schemas/RgsHash' }
+        commitmentId: { type: string, minLength: 1, maxLength: 240 }
+        configHash: { $ref: '#/components/schemas/RgsHash' }
+        contractVersion: { type: string, const: dailydraft.rgs-contract.v1 }
+        entropyHash: { $ref: '#/components/schemas/RgsHash' }
+        mode: { $ref: '#/components/schemas/RgsMode' }
+        phase: { type: string, enum: [revealed, settled] }
+        proofKind: { type: string, const: seeded-sha256 }
+        result: {}
+        resultHash: { $ref: '#/components/schemas/RgsHash' }
+        roundId: { type: string, minLength: 1, maxLength: 240 }
+        rulesHash: { $ref: '#/components/schemas/RgsHash' }
+        schemaVersion: { type: string, const: dailydraft.rgs-proof.v1 }
+        serverSeed: { type: string, minLength: 1, maxLength: 240 }
+        serverSeedHash: { $ref: '#/components/schemas/RgsHash' }
+    RgsExternalProof:
+      type: object
+      additionalProperties: false
+      required:
+        - commitmentHash
+        - configHash
+        - contractVersion
+        - evidence
+        - evidenceHash
+        - mode
+        - phase
+        - proofKind
+        - request
+        - requestHash
+        - result
+        - resultHash
+        - roundId
+        - rulesHash
+        - schemaVersion
+      properties:
+        commitmentHash: { $ref: '#/components/schemas/RgsHash' }
+        configHash: { $ref: '#/components/schemas/RgsHash' }
+        contractVersion: { type: string, const: dailydraft.rgs-contract.v1 }
+        evidence: {}
+        evidenceHash: { $ref: '#/components/schemas/RgsHash' }
+        mode: { type: string, const: duel }
+        phase: { type: string, enum: [revealed, settled] }
+        proofKind: { type: string, const: external-provider }
+        request: {}
+        requestHash: { $ref: '#/components/schemas/RgsHash' }
+        result: {}
+        resultHash: { $ref: '#/components/schemas/RgsHash' }
+        roundId: { type: string, minLength: 1, maxLength: 240 }
+        rulesHash: { $ref: '#/components/schemas/RgsHash' }
+        schemaVersion: { type: string, const: dailydraft.rgs-proof.v1 }
+    RgsProof:
+      oneOf:
+        - $ref: '#/components/schemas/RgsSeededProof'
+        - $ref: '#/components/schemas/RgsExternalProof'
     AdminPage:
       type: object
       additionalProperties: false
@@ -2145,7 +2356,7 @@ components:
           const: ok
         version:
           type: string
-          const: 0.3.0-devnet
+          const: 0.4.0-devnet
         dependencies:
           type: object
           additionalProperties: false
@@ -2540,15 +2751,34 @@ components:
     GachaRipSeedCommitment:
       type: object
       additionalProperties: false
-      required: [commitmentId, serverSeedHash, expiresAt]
+      required:
+        - commitmentId
+        - configHash
+        - contractVersion
+        - expiresAt
+        - proofKind
+        - rgsCommitmentHash
+        - rulesHash
+        - serverSeedHash
       properties:
         commitmentId:
           type: string
           minLength: 1
           maxLength: 240
-        serverSeedHash:
+        configHash:
+          $ref: '#/components/schemas/RgsHash'
+        contractVersion:
           type: string
-          pattern: '^[a-f0-9]{64}$'
+          const: dailydraft.rgs-contract.v1
+        proofKind:
+          type: string
+          const: seeded-sha256
+        rgsCommitmentHash:
+          $ref: '#/components/schemas/RgsHash'
+        rulesHash:
+          $ref: '#/components/schemas/RgsHash'
+        serverSeedHash:
+          $ref: '#/components/schemas/RgsHash'
         expiresAt:
           type: string
           format: date-time
@@ -2881,12 +3111,19 @@ components:
     GachaRipResult:
       type: object
       additionalProperties: false
-      required: [oddsCommitment, rip, serverSeed, serverSeedHash]
+      required: [oddsCommitment, rip, rgsProof, serverSeed, serverSeedHash]
       properties:
         oddsCommitment:
           $ref: '#/components/schemas/GachaRipOddsCommitment'
         rip:
           $ref: '#/components/schemas/GachaRip'
+        rgsProof:
+          description: |
+            The versioned independently verifiable round proof. Legacy rows
+            created before the RGS contract may return null.
+          oneOf:
+            - $ref: '#/components/schemas/RgsSeededProof'
+            - type: 'null'
         serverSeed:
           description: |
             The secret serverSeed committed before the roll, revealed only once

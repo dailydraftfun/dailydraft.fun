@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { verifyRgsProof } from '@dailydraft/contracts';
 import type { DatabaseClient } from '@dailydraft/db';
 import { GachaRipStatus } from '@dailydraft/db';
 import { ServiceUnavailableException } from '@nestjs/common';
@@ -89,6 +90,11 @@ describe('GachaRipService', () => {
     expect(result.serverSeed).toMatch(/^[a-f0-9]{64}$/);
     expect(result.serverSeedHash).toBe(commitment.serverSeedHash);
     expect(sha256(result.serverSeed ?? '')).toBe(commitment.serverSeedHash);
+    expect(result.rgsProof).not.toBeNull();
+    expect(result.rgsProof ? verifyRgsProof(result.rgsProof) : null).toEqual({
+      errors: [],
+      valid: true,
+    });
   });
 
   test('selects the same committed outcome for a fixed (serverSeed, clientSeed) pair', () => {
@@ -138,7 +144,16 @@ describe('GachaRipService', () => {
 
     const commitment = await service.createSeedCommitment(MACHINE_KEY);
 
-    expect(Object.keys(commitment).sort()).toEqual(['commitmentId', 'expiresAt', 'serverSeedHash']);
+    expect(Object.keys(commitment).sort()).toEqual([
+      'commitmentId',
+      'configHash',
+      'contractVersion',
+      'expiresAt',
+      'proofKind',
+      'rgsCommitmentHash',
+      'rulesHash',
+      'serverSeedHash',
+    ]);
     expect(commitment.serverSeedHash).toMatch(/^[a-f0-9]{64}$/);
     const stored = database.seedCommitments.find(
       (candidate) => candidate.id === commitment.commitmentId,
@@ -1087,11 +1102,15 @@ interface StoredRip {
 }
 
 interface StoredSeedCommitment {
+  clientSeed?: string | null;
   committedAt: Date;
+  configHash?: string | null;
   consumedByRipId: string | null;
   expiresAt: Date;
   id: string;
   machineKey: string;
+  rgsCommitmentHash?: string | null;
+  rulesHash?: string | null;
   serverSeed: string;
   serverSeedHash: string;
 }
@@ -1222,7 +1241,11 @@ class RipDatabase {
 
   readonly gachaRipSeedCommitment = {
     create: async ({ data }: { data: SeedCommitmentCreateInput }) => {
-      const stored: StoredSeedCommitment = { consumedByRipId: null, ...data };
+      const stored: StoredSeedCommitment = {
+        clientSeed: null,
+        consumedByRipId: null,
+        ...data,
+      };
       this.seedCommitments.push(stored);
       return stored;
     },
