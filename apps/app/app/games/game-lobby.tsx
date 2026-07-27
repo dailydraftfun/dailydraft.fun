@@ -398,12 +398,24 @@ function TrustCard({ copy, icon, label }: { copy: string; icon: ReactNode; label
 
 function formatAsOf(asOf: string): string {
   if (asOf === new Date(0).toISOString()) return 'not yet';
-  return new Intl.DateTimeFormat('en', {
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    month: 'short',
-    timeZone: 'UTC',
-    timeZoneName: 'short',
-  }).format(new Date(asOf));
+  const date = new Date(asOf);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  const month = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ][date.getUTCMonth()];
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  return `${month} ${day} · ${hours}:${minutes} UTC`;
 }

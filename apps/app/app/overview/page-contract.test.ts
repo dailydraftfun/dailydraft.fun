@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import OverviewPage from './page';
 import { buildRedirectTarget } from './redirect-target';
 import { buildSharedDuelEntry } from './shared-route-entry';
 
@@ -45,5 +46,11 @@ describe('overview shared-route boundary', () => {
     expect(serialized).toContain('Creator abcd…wxyz');
     expect(serialized).not.toContain(participantAddresses.creator);
     expect(serialized).not.toContain(participantAddresses.opponent);
+  });
+
+  test('executes the compatibility redirect boundary', async () => {
+    await expect(
+      OverviewPage({ searchParams: Promise.resolve({ challenge: 'duel_123' }) }),
+    ).rejects.toThrow();
   });
 });

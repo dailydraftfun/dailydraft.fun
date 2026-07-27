@@ -2,6 +2,9 @@ import { describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 mock.module('next/navigation', () => ({
+  redirect: (target: string) => {
+    throw new Error(`NEXT_REDIRECT:${target}`);
+  },
   usePathname: () => '/games',
 }));
 

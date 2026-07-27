@@ -3,6 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { journeyTestIds } from './e2e/journey-test-ids';
 
 mock.module('next/navigation', () => ({
+  redirect: (target: string) => {
+    throw new Error(`NEXT_REDIRECT:${target}`);
+  },
   usePathname: () => '/games',
 }));
 
@@ -13,6 +16,8 @@ mock.module('next/navigation', () => ({
 // render resolves them to their initial state without any network access.
 const { SolanaWalletProvider } = await import('./solana/wallet-provider');
 const { WalletAuthProvider } = await import('./solana/wallet-auth-provider');
+const { default: GamesLayout } = await import('./games/layout');
+const { default: Home } = await import('./page');
 const { isGamesNavigationActive, WorkspaceShell } = await import('./workspace-shell');
 
 function renderShell(children: React.ReactNode) {
@@ -52,5 +57,17 @@ describe('workspace shell', () => {
     expect(isGamesNavigationActive('/games/duel?challenge=duel_123')).toBe(true);
     expect(isGamesNavigationActive('/games/activity')).toBe(true);
     expect(isGamesNavigationActive('/overview')).toBe(false);
+  });
+
+  test('renders the Games layout and executes the canonical home redirect', () => {
+    const markup = renderToStaticMarkup(
+      <GamesLayout>
+        <main>Games route</main>
+      </GamesLayout>,
+    );
+
+    expect(markup).toContain('Games route');
+    expect(markup).toContain('Pack Gacha');
+    expect(() => Home()).toThrow('NEXT_REDIRECT:/games');
   });
 });

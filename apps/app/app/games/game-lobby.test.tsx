@@ -14,7 +14,7 @@ describe('game lobby', () => {
     expect(markup).toContain('Card Streak');
     expect(markup).toContain('Honest roadmap');
     expect(markup).toContain('Fixture preview');
-    expect(markup).toContain('Jul 27 at 08:00 PM UTC');
+    expect(markup).toContain('Jul 27 · 20:00 UTC');
     expect(markup).not.toContain('Fantasy Tournaments');
   });
 
@@ -67,6 +67,20 @@ describe('game lobby', () => {
 
     expect(markup).toContain('Capability gated');
     expect(markup).toContain('Fixture preview');
+  });
+
+  test('renders deterministic catalog timestamps and fails malformed evidence closed', () => {
+    const epochCatalog = catalog();
+    epochCatalog.asOf = new Date(0).toISOString();
+    expect(renderToStaticMarkup(<GameLobby initialCatalog={epochCatalog} />)).toContain(
+      'Verified not yet',
+    );
+
+    const malformedCatalog = catalog();
+    malformedCatalog.asOf = 'not-a-date';
+    expect(renderToStaticMarkup(<GameLobby initialCatalog={malformedCatalog} />)).toContain(
+      'Verified unknown',
+    );
   });
 });
 
