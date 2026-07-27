@@ -300,9 +300,9 @@ separate HITL approval and promotion gate is complete.
 
 ## AWS production runtime
 
-The API runs as the long-lived `dailydraft` Docker container on the shared
+The API runs as the long-lived `api-dailydraft-fun` Docker container on the shared
 network attached to `shipshit-caddy`. Caddy terminates TLS and proxies the API
-hostname to `dailydraft:3000`. GitHub Actions builds the root-context image,
+hostname to `api-dailydraft-fun:3000`. GitHub Actions builds the root-context image,
 uploads an immutable archive to S3, and invokes
 `/usr/local/bin/deploy-dailydraft` through AWS Systems Manager.
 

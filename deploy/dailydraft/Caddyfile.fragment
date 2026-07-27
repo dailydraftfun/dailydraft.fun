@@ -8,5 +8,5 @@
 # the Docker network shipshit-caddy shares with it.
 api.dailydraft.fun {
 	encode zstd gzip
-	reverse_proxy dailydraft:3000
+	reverse_proxy api-dailydraft-fun:3000
 }
