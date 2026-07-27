@@ -4,6 +4,7 @@ import {
   assertRgsTransition,
   canonicalRgsJson,
   createRgsExternalProof,
+  createRgsModeConfig,
   createRgsSeedCommitment,
   createRgsSeededProof,
   deriveRgsSeededEntropy,
@@ -159,5 +160,32 @@ describe('versioned RGS contract', () => {
         schemaVersion: 'dailydraft.rgs-proof.v2' as typeof RGS_PROOF_SCHEMA_VERSION,
       }),
     ).toEqual({ errors: ['unsupported schemaVersion'], valid: false });
+  });
+
+  test('reports every independently recomputable seeded-proof mismatch', () => {
+    const proof = rgsCompatibilityFixtures.seededProof;
+
+    expect(verifyRgsProof({ ...proof, serverSeedHash: 'c'.repeat(64) }).errors).toContain(
+      'serverSeedHash mismatch',
+    );
+    expect(verifyRgsProof({ ...proof, commitmentHash: 'c'.repeat(64) }).errors).toContain(
+      'commitmentHash mismatch',
+    );
+    expect(verifyRgsProof({ ...proof, entropyHash: 'c'.repeat(64) }).errors).toContain(
+      'entropyHash mismatch',
+    );
+  });
+
+  test('rejects an unversioned mode calculator identifier', () => {
+    expect(() =>
+      createRgsModeConfig({
+        activation: 'fixture-only',
+        calculatorVersion: 'unversioned-calculator',
+        config: {},
+        mode: 'crash',
+        proofKind: 'seeded-sha256',
+        rules: {},
+      }),
+    ).toThrow('calculatorVersion must be a versioned DailyDraft identifier');
   });
 });

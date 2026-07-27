@@ -80,6 +80,43 @@ describe('RgsProofService', () => {
     await expect(service.findRoundProof('crash', 'round_1')).rejects.toThrow(
       'fixture-only and cannot emit live proofs',
     );
+    await expect(service.findRoundProof('duel', 'invalid round id')).rejects.toThrow(
+      'RGS roundId is invalid',
+    );
+  });
+
+  test('fails closed for absent, incomplete, drifted, or contradictory Duel proof evidence', async () => {
+    await expect(serviceWith(null).findRoundProof('duel', 'duel_missing')).rejects.toThrow(
+      'Duel RGS round was not found',
+    );
+    await expect(
+      serviceWith({ ...duelFixture(), resultHash: null }).findRoundProof(
+        'duel',
+        'duel_rgs_fixture',
+      ),
+    ).rejects.toThrow('unavailable until both packs are revealed');
+
+    const incompleteEvidence = duelFixture();
+    const firstOperation = incompleteEvidence.providerOperations[0];
+    if (!firstOperation) throw new Error('Duel fixture must include a creator operation');
+    (firstOperation as { payloadHash: string | null }).payloadHash = null;
+    await expect(
+      serviceWith(incompleteEvidence).findRoundProof('duel', 'duel_rgs_fixture'),
+    ).rejects.toThrow('provider proof evidence is incomplete');
+
+    await expect(
+      serviceWith({ ...duelFixture(), rgsCommitmentHash: 'f'.repeat(64) }).findRoundProof(
+        'duel',
+        'duel_rgs_fixture',
+      ),
+    ).rejects.toThrow('RGS commitment is inconsistent');
+
+    await expect(
+      serviceWith({ ...duelFixture(), winnerWallet: 'unknown-wallet' }).findRoundProof(
+        'duel',
+        'duel_rgs_fixture',
+      ),
+    ).rejects.toThrow('winner does not match either participant');
   });
 
   test('migrates RGS commitments without invalidating legacy completed rounds', () => {
@@ -97,7 +134,7 @@ describe('RgsProofService', () => {
   });
 });
 
-function serviceWith(duel: ReturnType<typeof duelFixture> | null): RgsProofService {
+function serviceWith(duel: unknown): RgsProofService {
   const database = {
     duel: { findUnique: async () => duel },
   } as unknown as DatabaseClient;
