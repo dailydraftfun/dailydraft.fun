@@ -30,8 +30,8 @@ Source epics: #205 (reveal choreography), #206 (PixiJS SDK), #207 (DailyDraft En
 
 ## Shared choreography module (tier 1, shipped)
 
-- `apps/app/app/components/choreography/` (PR #228) is the canonical reveal substrate: beats `idle → anticipation → hold → reveal → celebrate → settled`, per-beat cubic-bezier easings, `PullRarity`-keyed celebration timing/intensity.
-- **Structural invariant**: `choreography-motion.ts` is pure — no React, no DOM. Motion binding lives only in `choreography.tsx`. Keep it that way; it is what makes the changed-coverage gate passable (#228 scored 95.3% lines / 86.0% branches).
+- `packages/engine/src/choreography.ts` is the canonical reveal substrate: beats `idle → anticipation → hold → reveal → celebrate → settled`, per-beat cubic-bezier easings, `PullRarity`-keyed celebration timing/intensity. The app's `choreography-motion.ts` is a compatibility re-export so the DOM and Pixi paths cannot drift.
+- **Structural invariant**: the canonical choreography module is pure — no React, DOM, or Pixi imports. Motion binding lives only in the app's `choreography.tsx`.
 - Interrupt, fast-forward, and settle all converge on a deep-equal terminal state; reduced-motion dispatches `fast-forward` at the state-machine level rather than merely zeroing CSS durations, so information is never withheld. Any new beat must preserve both properties.
 - Builds on `holo-card/` (PR #224), the fail-closed tier-1 baseline and the bottom rung of the degradation ladder.
 - Consumers pending: #211 (duel migration onto this module), #212 (rarity-scaled particles — deliberately not implemented here), #213 (audio/haptics), #214 (e2e proof).
