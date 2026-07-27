@@ -1,5 +1,5 @@
 ---
-last_verified: 2026-07-26
+last_verified: 2026-07-27
 ---
 
 # Game engine & casino-feel roadmap — durable decisions
@@ -35,6 +35,13 @@ Source epics: #205 (reveal choreography), #206 (PixiJS SDK), #207 (DailyDraft En
 - Interrupt, fast-forward, and settle all converge on a deep-equal terminal state; reduced-motion dispatches `fast-forward` at the state-machine level rather than merely zeroing CSS durations, so information is never withheld. Any new beat must preserve both properties.
 - Builds on `holo-card/` (PR #224), the fail-closed tier-1 baseline and the bottom rung of the degradation ladder.
 - Consumers pending: #211 (duel migration onto this module), #212 (rarity-scaled particles — deliberately not implemented here), #213 (audio/haptics), #214 (e2e proof).
+
+## Theme-pack contract (tier 2)
+
+- `packages/contracts/src/theme-pack.ts` owns the browser-safe `dailydraft.theme-pack.v1` schema: art slots, audio cues, canonical rarity-keyed palettes, and bounded foil parameters.
+- `packages/themes` owns materialization and renderer-neutral scene styling. The same resolved pack feeds Pixi scene properties and DOM/reduced-motion CSS variables; theme IDs never branch scene code.
+- `COLLECTOR_CRYPT_THEME` contains provider-owned art slots only. It has no embedded Collector Crypt card art, card metadata, or rarity fallback and resolves only from a validated `dailydraft.theme-provider-source.v1` envelope in `collector-crypt-production` mode. Until HITL issue #165 promotes the provider, it fails closed.
+- Collector rarity is derived from the gated source's insured value through `@dailydraft/contracts/pull-rarity`; a source cannot supply rarity directly. `DEVNET_DEMO_THEME` is the bundled, valueless second tenant.
 
 ## Gotchas
 

@@ -1,0 +1,42 @@
+{
+  "name": "@dailydraft/themes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Versioned DailyDraft theme packs and fail-closed provider materialization",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./collector-crypt": {
+      "types": "./src/collector-crypt.ts",
+      "bun": "./src/collector-crypt.ts",
+      "import": "./src/collector-crypt.ts",
+      "default": "./dist/collector-crypt.js"
+    },
+    "./devnet-demo": {
+      "types": "./src/devnet-demo.ts",
+      "bun": "./src/devnet-demo.ts",
+      "import": "./src/devnet-demo.ts",
+      "default": "./dist/devnet-demo.js"
+    }
+  },
+  "scripts": {
+    "build": "bun build src/index.ts src/collector-crypt.ts src/devnet-demo.ts --target=browser --outdir=dist --splitting --external @dailydraft/contracts/pull-rarity --external @dailydraft/contracts/theme-pack",
+    "clean": "rm -rf dist",
+    "lint": "biome check src/",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dailydraft/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.8",
+    "typescript": "6.0.3"
+  }
+}

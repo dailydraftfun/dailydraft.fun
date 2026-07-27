@@ -20,10 +20,16 @@
       "bun": "./src/rgs.ts",
       "import": "./src/rgs.ts",
       "default": "./dist/rgs.js"
+    },
+    "./theme-pack": {
+      "types": "./src/theme-pack.ts",
+      "bun": "./src/theme-pack.ts",
+      "import": "./src/theme-pack.ts",
+      "default": "./dist/theme-pack.js"
     }
   },
   "scripts": {
-    "build": "bun build src/index.ts src/pull-rarity.ts src/rgs.ts --target=bun --outdir=dist",
+    "build": "bun build src/index.ts src/pull-rarity.ts src/rgs.ts src/theme-pack.ts --target=bun --outdir=dist",
     "clean": "rm -rf dist",
     "lint": "biome check src/",
     "test": "bun test",

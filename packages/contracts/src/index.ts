@@ -2,9 +2,11 @@ import { createHash } from 'node:crypto';
 
 import { pullRarityFixtures } from './pull-rarity.js';
 import { rgsCompatibilityFixtures } from './rgs.js';
+import { themePackCompatibilityFixtures } from './theme-pack.js';
 
 export * from './pull-rarity.js';
 export * from './rgs.js';
+export * from './theme-pack.js';
 
 export type ContractAuth = 'none' | 'wallet-or-integration' | 'wallet-session';
 
@@ -379,7 +381,7 @@ export const contractOperations = [
   },
 ] as const satisfies readonly ContractOperation[];
 
-export const CONTRACT_FIXTURE_VERSION = '2026-07-27.v9+effe990ddfdf';
+export const CONTRACT_FIXTURE_VERSION = '2026-07-27.v10+5e2a38d99dbd';
 
 export function contractFixtureFingerprint(): string {
   return createHash('sha256')
@@ -390,6 +392,7 @@ export function contractFixtureFingerprint(): string {
         openApiVersion: OPENAPI_CONTRACT_VERSION,
         pullRarity: pullRarityFixtures,
         rgs: rgsCompatibilityFixtures,
+        themePacks: themePackCompatibilityFixtures,
       }),
     )
     .digest('hex')
