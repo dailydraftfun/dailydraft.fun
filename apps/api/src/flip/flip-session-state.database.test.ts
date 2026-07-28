@@ -328,6 +328,126 @@ describeDatabase('Flip session state machine against two real Postgres connectio
   });
 
   test.each([
+    { label: 'awaiting stake', status: FlipSessionStatus.AWAITING_STAKE },
+    { label: 'stake confirmed', status: FlipSessionStatus.STAKE_CONFIRMED },
+    { label: 'reveal ready', status: FlipSessionStatus.REVEAL_READY },
+    { label: 'recovery required', status: FlipSessionStatus.RECOVERY_REQUIRED },
+    { label: 'failed', status: FlipSessionStatus.FAILED },
+  ])('rejects a direct $label insert without its initial transition ledger', async (vector) => {
+    const data = await directFlipSessionInsertData(
+      databaseA,
+      `missing-initial-${vector.label.replaceAll(' ', '-')}`,
+      vector.status,
+    );
+
+    await expect(Promise.resolve(databaseA.flipSession.create({ data }))).rejects.toThrow(
+      'insert requires exact session-started evidence',
+    );
+    await expect(
+      Promise.resolve(databaseA.flipSession.findUnique({ where: { id: data.id } })),
+    ).resolves.toBeNull();
+  });
+
+  test.each([
+    { label: 'awaiting stake', status: FlipSessionStatus.AWAITING_STAKE },
+    { label: 'stake confirmed', status: FlipSessionStatus.STAKE_CONFIRMED },
+    { label: 'reveal ready', status: FlipSessionStatus.REVEAL_READY },
+    { label: 'recovery required', status: FlipSessionStatus.RECOVERY_REQUIRED },
+    { label: 'failed', status: FlipSessionStatus.FAILED },
+  ])('rejects a direct $label insert with mismatched initial transition evidence', async (vector) => {
+    const data = await directFlipSessionInsertData(
+      databaseA,
+      `mismatched-initial-${vector.label.replaceAll(' ', '-')}`,
+      vector.status,
+    );
+    const requestPayload = stableStringify({
+      playerWalletReference: data.playerWalletReference,
+      sessionReference: data.id,
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.create({ data });
+        await transaction.flipSessionTransition.create({
+          data: {
+            evidence: {
+              playerWalletReference: data.playerWalletReference,
+              stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+            },
+            fromStatus: null,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind: FlipSessionTransitionKind.SESSION_STARTED,
+            requestHash: hash(requestPayload),
+            requestPayload,
+            sequence: 1,
+            sessionId: data.id,
+            toStatus: FlipSessionStatus.AWAITING_STAKE,
+            transitionKey: 'mismatched-session-started',
+          },
+        });
+      }),
+    ).rejects.toThrow();
+    await expect(
+      Promise.resolve(databaseA.flipSession.findUnique({ where: { id: data.id } })),
+    ).resolves.toBeNull();
+  });
+
+  test('accepts an atomic initial aggregate and exact session-started transition', async () => {
+    const data = await directFlipSessionInsertData(
+      databaseA,
+      'valid-atomic-initial',
+      FlipSessionStatus.AWAITING_STAKE,
+    );
+    const requestPayload = stableStringify({
+      playerWalletReference: data.playerWalletReference,
+      sessionReference: data.id,
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+
+    await databaseA.$transaction(async (transaction) => {
+      await transaction.flipSession.create({ data });
+      await transaction.flipSessionTransition.create({
+        data: {
+          evidence: {
+            playerWalletReference: data.playerWalletReference,
+            stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+          },
+          fromStatus: null,
+          id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+          kind: FlipSessionTransitionKind.SESSION_STARTED,
+          requestHash: hash(requestPayload),
+          requestPayload,
+          sequence: 1,
+          sessionId: data.id,
+          toStatus: FlipSessionStatus.AWAITING_STAKE,
+          transitionKey: 'session-started',
+        },
+      });
+    });
+
+    await expect(
+      Promise.resolve(
+        databaseA.flipSession.findUnique({
+          include: { transitions: true },
+          where: { id: data.id },
+        }),
+      ),
+    ).resolves.toMatchObject({
+      id: data.id,
+      status: FlipSessionStatus.AWAITING_STAKE,
+      transitions: [
+        {
+          kind: FlipSessionTransitionKind.SESSION_STARTED,
+          sequence: 1,
+          transitionKey: 'session-started',
+        },
+      ],
+      version: 1,
+    });
+  });
+
+  test.each([
     {
       evidence: { secret: 'forged' },
       kind: FlipSessionTransitionKind.SETTLED,
@@ -1404,6 +1524,75 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     });
   });
 });
+
+async function directFlipSessionInsertData(
+  database: DatabaseClient,
+  label: string,
+  status: FlipSessionStatus,
+): Promise<Prisma.FlipSessionUncheckedCreateInput> {
+  const now = new Date('2026-07-28T16:00:00.000Z');
+  const base = {
+    activationMode: 'fixture-only',
+    id: `raw-flip-session-${label}-${crypto.randomUUID().replaceAll('-', '')}`,
+    playerWalletReference: 'fixture-wallet:raw-insert',
+    stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    status,
+    updatedAt: now,
+  } satisfies Omit<Prisma.FlipSessionUncheckedCreateInput, 'version'>;
+
+  switch (status) {
+    case FlipSessionStatus.AWAITING_STAKE:
+      return { ...base, version: 1 };
+    case FlipSessionStatus.STAKE_CONFIRMED:
+      return {
+        ...base,
+        stakeAmount: '50000000',
+        stakeCurrency: 'USDC',
+        stakeDecimals: 6,
+        version: 2,
+      };
+    case FlipSessionStatus.RECOVERY_REQUIRED:
+      return { ...base, version: 2 };
+    case FlipSessionStatus.FAILED:
+      return {
+        ...base,
+        terminalAt: now,
+        terminalReason: 'FIXTURE_TERMINATED:RAW_INSERT',
+        version: 3,
+      };
+    case FlipSessionStatus.REVEAL_READY: {
+      const fixture = await prepareDatabaseFixture(database, label);
+      const commitment = await database.flipSessionPoolCommitment.findUniqueOrThrow({
+        where: { id: fixture.commitmentId },
+      });
+      return {
+        ...base,
+        id: fixture.sessionReference,
+        poolCommitmentHash: commitment.poolCommitmentHash,
+        poolCommitmentId: commitment.id,
+        purchaseReference: 'fixture-purchase:raw-insert',
+        purchasedAt: now,
+        revealReadyAt: now,
+        revealReadyReference: 'fixture-reveal:raw-insert',
+        rulesHash: commitment.rulesHash,
+        selectedAssetReference: fixture.selected.providerAssetReference,
+        selectedBandLabel: fixture.selected.bandLabel,
+        selectedListingReference: fixture.selected.providerListingReference,
+        selectedOrdinal: fixture.selected.ordinal,
+        selectedValueAmount: fixture.selected.listingValueAmount,
+        snapshotContentHash: commitment.snapshotContentHash,
+        stakeAmount: '50000000',
+        stakeCurrency: 'USDC',
+        stakeDecimals: 6,
+        transferredAt: now,
+        transferReference: 'fixture-transfer:raw-insert',
+        version: 7,
+      };
+    }
+    default:
+      throw new Error(`unsupported raw Flip session status ${status}`);
+  }
+}
 
 async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
   const suffix = `${label}-${crypto.randomUUID().replaceAll('-', '')}`;

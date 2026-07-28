@@ -932,6 +932,26 @@ FOR EACH ROW EXECUTE FUNCTION "validate_flip_session_transition_contract"();
 
 CREATE FUNCTION "require_flip_session_transition_append"() RETURNS trigger AS $$
 BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF
+      NEW."status" <> 'AWAITING_STAKE'
+      OR NEW."version" <> 1
+      OR NOT EXISTS (
+        SELECT 1
+        FROM "FlipSessionTransition"
+        WHERE "sessionId" = NEW."id"
+          AND "sequence" = 1
+          AND "transitionKey" = 'session-started'
+          AND "kind" = 'SESSION_STARTED'
+          AND "fromStatus" IS NULL
+          AND "toStatus" = 'AWAITING_STAKE'
+      )
+    THEN
+      RAISE EXCEPTION 'Flip session insert requires exact session-started evidence';
+    END IF;
+    RETURN NEW;
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM "FlipSessionTransition"
@@ -947,7 +967,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE CONSTRAINT TRIGGER "FlipSession_require_transition_append"
-AFTER UPDATE ON "FlipSession"
+AFTER INSERT OR UPDATE ON "FlipSession"
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION "require_flip_session_transition_append"();
 
