@@ -31,6 +31,7 @@ import {
   type FlipSessionSnapshot,
   FlipSessionStateService,
 } from './flip-session-state.service.js';
+import { admitFlipStake } from './flip-tier-admission.service.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (process.env.REQUIRE_DB_INTEGRATION === '1' && !databaseUrl) {
@@ -253,9 +254,11 @@ describeDatabase('Flip session state machine against two real Postgres connectio
       version: 1,
     });
     await expect(
-      databaseA.flipTierAdmissionState.findUnique({
-        where: { tierKey: 'USDC:6:50000000' },
-      }),
+      Promise.resolve(
+        databaseA.flipTierAdmissionState.findUnique({
+          where: { tierKey: 'USDC:6:50000000' },
+        }),
+      ),
     ).resolves.toMatchObject({
       disabled: true,
       reason: 'provider_outage',
@@ -268,9 +271,11 @@ describeDatabase('Flip session state machine against two real Postgres connectio
       version: 2,
     });
     await expect(
-      databaseA.flipTierAdmissionState.findUnique({
-        where: { tierKey: 'USDC:6:50000000' },
-      }),
+      Promise.resolve(
+        databaseA.flipTierAdmissionState.findUnique({
+          where: { tierKey: 'USDC:6:50000000' },
+        }),
+      ),
     ).resolves.toMatchObject({
       disabled: false,
       reason: null,
@@ -399,20 +404,23 @@ describeDatabase('Flip session state machine against two real Postgres connectio
 
     await expect(
       databaseA.$transaction((transaction) =>
-        transaction.flipSession.updateMany({
-          data: {
-            stakeAmount: '50000000',
-            stakeCurrency: 'USDC',
-            stakeDecimals: 6,
-            status: FlipSessionStatus.STAKE_CONFIRMED,
-            version: { increment: 1 },
-          },
-          where: {
-            id: session.id,
-            status: FlipSessionStatus.AWAITING_STAKE,
-            version: session.version,
-          },
-        }),
+        admitRawStake(transaction, fixture).then((admissionDecisionId) =>
+          transaction.flipSession.updateMany({
+            data: {
+              admissionDecisionId,
+              stakeAmount: '50000000',
+              stakeCurrency: 'USDC',
+              stakeDecimals: 6,
+              status: FlipSessionStatus.STAKE_CONFIRMED,
+              version: { increment: 1 },
+            },
+            where: {
+              id: session.id,
+              status: FlipSessionStatus.AWAITING_STAKE,
+              version: session.version,
+            },
+          }),
+        ),
       ),
     ).rejects.toThrow('requires matching append-only evidence');
     await expect(service.findSession(session.id)).resolves.toMatchObject({
@@ -584,8 +592,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
 
     await expect(
       databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.updateMany({
           data: {
+            admissionDecisionId,
             stakeAmount: '50000000',
             stakeCurrency: 'USDC',
             stakeDecimals: 6,
@@ -706,8 +716,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
 
     await expect(
       databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.updateMany({
           data: {
+            admissionDecisionId,
             stakeAmount: '50000000',
             stakeCurrency: 'USDC',
             stakeDecimals: 6,
@@ -766,8 +778,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
 
     await expect(
       databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.update({
           data: {
+            admissionDecisionId,
             stakeAmount: '50000000',
             stakeCurrency: 'USDC',
             stakeDecimals: 6,
@@ -1063,8 +1077,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     });
     await expect(
       databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.update({
           data: {
+            admissionDecisionId,
             stakeAmount: '50000000',
             stakeCurrency: 'USDC',
             stakeDecimals: 6,
@@ -1181,8 +1197,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     });
     await expect(
       databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.update({
           data: {
+            admissionDecisionId,
             stakeAmount: evidence.amount.amount,
             stakeCurrency: evidence.amount.currency,
             stakeDecimals: evidence.amount.decimals,
@@ -1391,8 +1409,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
 
     await expect(
       databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.update({
           data: {
+            admissionDecisionId,
             stakeAmount: '50000000',
             stakeCurrency: 'USDC',
             stakeDecimals: 6,
@@ -1637,14 +1657,21 @@ async function directFlipSessionInsertData(
   switch (status) {
     case FlipSessionStatus.AWAITING_STAKE:
       return { ...base, version: 1 };
-    case FlipSessionStatus.STAKE_CONFIRMED:
+    case FlipSessionStatus.STAKE_CONFIRMED: {
+      const fixture = await prepareDatabaseFixture(database, label);
+      const admissionDecisionId = await database.$transaction((transaction) =>
+        admitRawStake(transaction, fixture),
+      );
       return {
         ...base,
+        admissionDecisionId,
+        id: fixture.sessionReference,
         stakeAmount: '50000000',
         stakeCurrency: 'USDC',
         stakeDecimals: 6,
         version: 2,
       };
+    }
     case FlipSessionStatus.RECOVERY_REQUIRED:
       return { ...base, version: 2 };
     case FlipSessionStatus.FAILED:
@@ -1656,11 +1683,15 @@ async function directFlipSessionInsertData(
       };
     case FlipSessionStatus.REVEAL_READY: {
       const fixture = await prepareDatabaseFixture(database, label);
+      const admissionDecisionId = await database.$transaction((transaction) =>
+        admitRawStake(transaction, fixture),
+      );
       const commitment = await database.flipSessionPoolCommitment.findUniqueOrThrow({
         where: { id: fixture.commitmentId },
       });
       return {
         ...base,
+        admissionDecisionId,
         id: fixture.sessionReference,
         poolCommitmentHash: commitment.poolCommitmentHash,
         poolCommitmentId: commitment.id,
@@ -1750,6 +1781,28 @@ function setProviderHealthFixture(poolKey: string, status: 'healthy' | 'outage')
 }
 
 type DatabaseFixture = Awaited<ReturnType<typeof prepareDatabaseFixture>>;
+
+function admitRawStake(
+  transaction: Prisma.TransactionClient,
+  fixture: DatabaseFixture,
+  stakeAmount = '50000000',
+): Promise<string> {
+  return admitFlipStake(transaction, {
+    evaluatedAt: new DatabaseTestClock().now(),
+    providerHealth: {
+      observedAt: '2026-08-03T12:02:30.000Z',
+      poolKey: fixture.poolKey,
+      provider: 'fixture-marketplace',
+      schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+      status: 'healthy',
+    },
+    sessionReference: fixture.sessionReference,
+    stakeAmount,
+    stakeCurrency: 'USDC',
+    stakeDecimals: 6,
+  });
+}
+
 type DatabaseSessionTarget =
   | 'awaiting-stake'
   | 'stake-confirmed'
