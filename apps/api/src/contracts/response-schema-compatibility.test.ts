@@ -1,5 +1,9 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import {
+  CRASH_HISTORY_SCHEMA_VERSION,
+  CRASH_RECEIPT_SCHEMA_VERSION,
+  type CrashHistoryPage,
+  type CrashReceipt,
   contractFixtures,
   createRgsExternalProof,
   GAME_AVAILABILITY_SCHEMA_VERSION,
@@ -88,6 +92,8 @@ describe('API response schema gate', () => {
   test('covers every schema this gate claims to guard', () => {
     expect(cases.map((responseCase) => responseCase.schema).sort()).toEqual([
       'CrashCurrentStage',
+      'CrashHistoryPage',
+      'CrashReceipt',
       'DuelPackOutcome',
       'DuelResult',
       'GachaRip',
@@ -193,6 +199,16 @@ function buildResponsePayloadCases(): ResponsePayloadCase[] {
       source: 'CrashDecisionService.currentStage()',
     },
     {
+      payload: crashHistoryPayload(),
+      schema: 'CrashHistoryPage',
+      source: 'CrashHistoryService.list()',
+    },
+    {
+      payload: crashReceiptPayload(),
+      schema: 'CrashReceipt',
+      source: 'CrashHistoryService.getReceipt()',
+    },
+    {
       payload: gameCatalogPayload(),
       schema: 'GameCatalog',
       source: 'GamesCatalogService.getCatalog()',
@@ -288,6 +304,120 @@ function crashCurrentStagePayload(): CrashCurrentStage {
     stage: 2,
     status: 'active',
     terminalReason: null,
+    version: 2,
+  };
+}
+
+function crashHistoryPayload(): CrashHistoryPage {
+  const receipt = crashReceiptPayload();
+  return {
+    data: [
+      {
+        createdAt: receipt.createdAt,
+        currentStage: receipt.stage,
+        gameState: {
+          committed: true,
+          status: receipt.status,
+          version: receipt.version,
+        },
+        pot: receipt.pot,
+        receiptHref: `/v1/crash/rounds/${receipt.roundId}/receipt`,
+        roundId: receipt.roundId,
+        safeNextAction: receipt.safeNextAction,
+        settlement: {
+          finalizedOperationCount: receipt.settlement.finalizedOperationCount,
+          receiptHash: receipt.settlement.receiptHash,
+          status: receipt.settlement.status,
+        },
+        terminalReason: receipt.terminalReason,
+        updatedAt: receipt.updatedAt,
+      },
+    ],
+    hasMore: false,
+    nextCursor: null,
+    schemaVersion: CRASH_HISTORY_SCHEMA_VERSION,
+  };
+}
+
+function crashReceiptPayload(): CrashReceipt {
+  return {
+    bindings: {
+      architectureVersion: 'crash-architecture-v1',
+      calculatorVersion: 'dailydraft.crash-calculator.v1',
+      custodyPolicyHash: 'c'.repeat(64),
+      riskRulesHash: 'e'.repeat(64),
+      riskRulesVersion: 'dailydraft.crash-risk.v1',
+      rulesHash: 'b'.repeat(64),
+      rulesVersion: 'dailydraft.crash-rules.v1',
+      settlementPolicyHash: 'd'.repeat(64),
+      stateMachineRulesHash: 'a'.repeat(64),
+      stateMachineVersion: 'dailydraft.crash-stage-state.v1',
+    },
+    createdAt: '2026-07-28T12:00:00.000Z',
+    custody: {
+      preparedIntentCount: 1,
+      recoveryRequiredIntentCount: 0,
+      status: 'prepared',
+    },
+    events: [
+      {
+        amount: { amount: '1000000', currency: 'USDC', decimals: 6 },
+        decision: null,
+        eventId: 'transition:1',
+        kind: 'round-started',
+        occurredAt: '2026-07-28T12:00:00.000Z',
+        reference: 'round-started',
+        stage: 1,
+        terminalReason: null,
+      },
+      {
+        amount: null,
+        decision: 'cash-out',
+        eventId: 'transition:2',
+        kind: 'round-cashed-out',
+        occurredAt: '2026-07-28T12:00:10.000Z',
+        reference: 'player:contract-decision',
+        stage: 1,
+        terminalReason: 'PLAYER_CASH_OUT',
+      },
+      {
+        amount: null,
+        decision: null,
+        eventId: 'settlement:1',
+        kind: 'settlement-finalized',
+        occurredAt: '2026-07-28T12:00:12.000Z',
+        reference: 'proceeds:transfer:contract',
+        stage: 1,
+        terminalReason: null,
+      },
+    ],
+    finality: {
+      custody: 'settled',
+      gameState: 'committed',
+      settlement: 'settled',
+    },
+    mode: 'fixture-preview',
+    network: 'solana-devnet',
+    pot: { amount: '1000000', currency: 'USDC', decimals: 6 },
+    privacy: {
+      exposesProviderSignatures: false,
+      exposesWalletAddresses: false,
+    },
+    roundId: 'crashround_contract01',
+    safeNextAction: 'review-receipt',
+    schemaVersion: CRASH_RECEIPT_SCHEMA_VERSION,
+    settlement: {
+      expectedOperationCount: 1,
+      finalizedOperationCount: 1,
+      receiptHash: 'f'.repeat(64),
+      recoveryReason: null,
+      status: 'settled',
+    },
+    stage: 1,
+    status: 'cashed-out',
+    terminalAt: '2026-07-28T12:00:10.000Z',
+    terminalReason: 'PLAYER_CASH_OUT',
+    updatedAt: '2026-07-28T12:00:12.000Z',
     version: 2,
   };
 }

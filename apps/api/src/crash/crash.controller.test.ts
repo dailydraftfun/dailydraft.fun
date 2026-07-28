@@ -9,6 +9,7 @@ import {
   type CrashCurrentStage,
   type CrashDecisionService,
 } from './crash-decision.service.js';
+import type { CrashHistoryService } from './crash-history.service.js';
 import { CrashStateMachineError } from './crash-stage-state.js';
 
 const WALLET = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
@@ -23,7 +24,7 @@ describe('CrashController', () => {
         return CURRENT;
       },
     } as unknown as CrashDecisionService;
-    const controller = new CrashController(service);
+    const controller = new CrashController(service, history());
     const body = { action: 'continue' as const, expectedStage: 1, expectedVersion: 1 };
     const response = reply();
 
@@ -72,7 +73,7 @@ describe('CrashController', () => {
       },
     } as unknown as CrashDecisionService;
 
-    await new CrashController(service).decide(
+    await new CrashController(service, history()).decide(
       { roundId: ROUND_ID },
       { action: 'continue', expectedStage: 1, expectedVersion: 1 },
       session(),
@@ -101,9 +102,69 @@ describe('CrashController', () => {
     } as unknown as CrashDecisionService;
 
     await expect(
-      new CrashController(service).currentStage({ roundId: ROUND_ID }, session(), reply()),
+      new CrashController(service, history()).currentStage(
+        { roundId: ROUND_ID },
+        session(),
+        reply(),
+      ),
     ).resolves.toEqual(CURRENT);
     expect(calls).toEqual([[ROUND_ID, WALLET]]);
+  });
+
+  test('wallet-scopes history and receipt responses with private headers', async () => {
+    const calls: unknown[] = [];
+    const historyService = {
+      getReceipt: async (roundId: string, wallet: string) => {
+        calls.push(['receipt', roundId, wallet]);
+        return { roundId };
+      },
+      list: async (wallet: string, query: unknown) => {
+        calls.push(['list', wallet, query]);
+        return { data: [] };
+      },
+    } as unknown as CrashHistoryService;
+    const headers = new Map<string, string>();
+    const response = {
+      header: (name: string, value: string) => {
+        headers.set(name, value);
+        return response;
+      },
+    } as unknown as FastifyReply;
+    const controller = new CrashController({} as CrashDecisionService, historyService);
+
+    await expect(
+      controller.recentHistory({ limit: 10 }, session(), response),
+    ).resolves.toMatchObject({
+      data: [],
+    });
+    await expect(
+      controller.receipt({ roundId: ROUND_ID }, session(), response),
+    ).resolves.toMatchObject({ roundId: ROUND_ID });
+    expect(calls).toEqual([
+      ['list', WALLET, { limit: 10 }],
+      ['receipt', ROUND_ID, WALLET],
+    ]);
+    expect(headers).toEqual(
+      new Map([
+        ['cache-control', 'private, no-store'],
+        ['x-robots-tag', 'noindex, nofollow, noarchive'],
+      ]),
+    );
+  });
+
+  test('does not reveal history or receipts to non-wallet callers', async () => {
+    const historyService = {
+      getReceipt: async () => ({ roundId: ROUND_ID }),
+      list: async () => ({ data: [] }),
+    } as unknown as CrashHistoryService;
+    const controller = new CrashController({} as CrashDecisionService, historyService);
+
+    await expect(
+      controller.recentHistory({ limit: 10 }, { kind: 'integration' }, reply()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      controller.receipt({ roundId: ROUND_ID }, { kind: 'integration' }, reply()),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   test('binds settlement reconciliation to the same authenticated wallet and private response', async () => {
@@ -132,7 +193,7 @@ describe('CrashController', () => {
       },
     } as unknown as FastifyReply;
 
-    const result = await new CrashController(service).reconcileSettlement(
+    const result = await new CrashController(service, history()).reconcileSettlement(
       { roundId: ROUND_ID },
       session(),
       response,
@@ -152,7 +213,7 @@ describe('CrashController', () => {
     const service = {
       currentStage: async () => CURRENT,
     } as unknown as CrashDecisionService;
-    const controller = new CrashController(service);
+    const controller = new CrashController(service, history());
 
     await expect(
       controller.currentStage({ roundId: ROUND_ID }, { kind: 'integration' }, reply()),
@@ -175,7 +236,11 @@ describe('CrashController', () => {
     } as unknown as CrashDecisionService;
 
     await expect(
-      new CrashController(service).currentStage({ roundId: ROUND_ID }, session(), reply()),
+      new CrashController(service, history()).currentStage(
+        { roundId: ROUND_ID },
+        session(),
+        reply(),
+      ),
     ).rejects.toBeInstanceOf(expected);
   });
 
@@ -187,7 +252,11 @@ describe('CrashController', () => {
     } as unknown as CrashDecisionService;
 
     await expect(
-      new CrashController(service).currentStage({ roundId: ROUND_ID }, session(), reply()),
+      new CrashController(service, history()).currentStage(
+        { roundId: ROUND_ID },
+        session(),
+        reply(),
+      ),
     ).rejects.toThrow('unexpected database failure');
   });
 });
@@ -215,6 +284,10 @@ const CURRENT: CrashCurrentStage = {
 
 function session(): DuelAuthentication {
   return { kind: 'wallet-session', sessionId: 'auths_crash', wallet: WALLET };
+}
+
+function history(): CrashHistoryService {
+  return {} as CrashHistoryService;
 }
 
 function reply(): FastifyReply {

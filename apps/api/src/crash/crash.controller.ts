@@ -7,6 +7,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   Res,
   ServiceUnavailableException,
   UseGuards,
@@ -17,15 +18,37 @@ import { CurrentDuelAuthentication, type DuelAuthentication } from '../auth/auth
 import { WalletSessionGuard } from '../auth/wallet-session.guard.js';
 import { IdempotencyKey } from '../common/idempotency-key.decorator.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
-import { CrashPlayerDecisionRequest, CrashRoundParams } from './crash-decision.dto.js';
+import {
+  CrashPlayerDecisionRequest,
+  CrashRoundParams,
+  ListCrashHistoryQuery,
+} from './crash-decision.dto.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { CrashDecisionService } from './crash-decision.service.js';
+// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
+import { CrashHistoryService } from './crash-history.service.js';
 import { CrashStateMachineError } from './crash-stage-state.js';
 
 @Controller('crash/rounds')
 @UseGuards(WalletSessionGuard)
 export class CrashController {
-  constructor(private readonly decisions: CrashDecisionService) {}
+  constructor(
+    private readonly decisions: CrashDecisionService,
+    private readonly history: CrashHistoryService,
+  ) {}
+
+  @Get()
+  async recentHistory(
+    @Query() query: ListCrashHistoryQuery,
+    @CurrentDuelAuthentication() authentication: DuelAuthentication,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    const page = await translateCrashErrors(() =>
+      this.history.list(requireWalletSession(authentication), query),
+    );
+    setPrivateHeaders(response);
+    return page;
+  }
 
   @Get(':roundId')
   async currentStage(
@@ -38,6 +61,19 @@ export class CrashController {
     );
     setPrivateHeaders(response);
     return current;
+  }
+
+  @Get(':roundId/receipt')
+  async receipt(
+    @Param() params: CrashRoundParams,
+    @CurrentDuelAuthentication() authentication: DuelAuthentication,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    const receipt = await translateCrashErrors(() =>
+      this.history.getReceipt(params.roundId, requireWalletSession(authentication)),
+    );
+    setPrivateHeaders(response);
+    return receipt;
   }
 
   @Post(':roundId/decisions')
