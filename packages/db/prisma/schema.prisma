@@ -226,6 +226,97 @@ enum GachaInventoryExclusionReason {
   MAXIMUM_ITEM_COUNT
 }
 
+enum CrashRoundStatus {
+  ACTIVE
+  CASHED_OUT
+  BUSTED
+  COMPLETED
+  DEFAULTED
+}
+
+enum CrashDecision {
+  CONTINUE
+  CASH_OUT
+  FORFEIT
+}
+
+enum CrashTransitionKind {
+  ROUND_STARTED
+  STAGE_CONTINUED
+  CASHED_OUT
+  BUSTED
+  COMPLETED
+  DEADLINE_DEFAULTED
+}
+
+/// Fixture-only durable Crash/Card Streak round. No production route creates
+/// these rows: every round is bound to reviewed synthetic architecture,
+/// calculator, state-machine, wallet, and rules references.
+model CrashRound {
+  id                    String           @id
+  activationMode        String           @default("fixture-only")
+  status                CrashRoundStatus @default(ACTIVE)
+  stage                 Int              @default(1)
+  version               Int              @default(1)
+  architectureVersion   String
+  stateMachineVersion   String
+  stateMachineRulesHash String
+  calculatorVersion     String
+  rulesVersion          String
+  rulesHash             String
+  playerWalletReference String
+  potAmount             String
+  potCurrency           String           @default("USDC")
+  potDecimals           Int              @default(6)
+  decisionDeadline      DateTime?
+  defaultAction         CrashDecision
+  terminalReason        String?
+  terminalAt            DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  transitions           CrashTransition[]
+
+  @@index([status, decisionDeadline])
+  @@index([playerWalletReference, createdAt])
+  @@index([rulesHash, createdAt])
+}
+
+/// Append-only evidence for one accepted Crash transition. The round version
+/// and sequence are identical, making durable replay and audit ordering
+/// independent of wall-clock timestamp precision.
+model CrashTransition {
+  id                    String              @id
+  roundId               String
+  sequence              Int
+  transitionKey         String
+  requestHash           String
+  kind                  CrashTransitionKind
+  decision              CrashDecision?
+  fromStatus            CrashRoundStatus?
+  toStatus              CrashRoundStatus
+  fromStage             Int?
+  toStage               Int
+  scheduledDeadline     DateTime?
+  payment               Json?
+  outcome               Json?
+  valueChange           Json?
+  settlement            Json?
+  terminalReason        String?
+  architectureVersion   String
+  stateMachineVersion   String
+  stateMachineRulesHash String
+  calculatorVersion     String
+  rulesVersion          String
+  rulesHash             String
+  createdAt             DateTime            @default(now())
+  round                 CrashRound           @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, sequence])
+  @@unique([roundId, transitionKey])
+  @@index([roundId, createdAt])
+  @@index([rulesHash, createdAt])
+}
+
 model Duel {
   id                  String                     @id
   mode                DuelMode
