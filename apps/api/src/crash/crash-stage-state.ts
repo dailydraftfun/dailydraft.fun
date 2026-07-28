@@ -174,6 +174,9 @@ export interface CrashRoundSnapshot {
   riskExpiresAt: string;
   riskRulesHash: string;
   riskRulesVersion: string;
+  settledAt: string | null;
+  settlementReceiptHash: string | null;
+  settlementStatus: 'not-required' | 'pending' | 'recovery-required' | 'settled';
   stage: number;
   stateMachineRulesHash: string;
   stateMachineVersion: string;
@@ -547,6 +550,9 @@ export class CrashStageStateService {
           data: {
             decisionDeadline: next.decisionDeadline,
             potAmount: next.potAfter.amount,
+            ...(next.status === DatabaseCrashRoundStatus.ACTIVE
+              ? {}
+              : { settlementStatus: 'PENDING' }),
             stage: next.stage,
             status: next.status,
             terminalAt: next.terminalAt,
@@ -682,6 +688,7 @@ export class CrashStageStateService {
         const updated = await transaction.crashRound.updateMany({
           data: {
             decisionDeadline: null,
+            settlementStatus: 'PENDING',
             status: DatabaseCrashRoundStatus.DEFAULTED,
             terminalAt: now,
             terminalReason: 'DEADLINE_DEFAULT_FORFEIT',
@@ -1058,6 +1065,9 @@ function toSnapshot(round: CrashRoundWithTransitions): CrashRoundSnapshot {
     riskExpiresAt: requireRiskExpiry(round).toISOString(),
     riskRulesHash: requireRiskHash(round),
     riskRulesVersion: requireRiskVersion(round),
+    settledAt: round.settledAt?.toISOString() ?? null,
+    settlementReceiptHash: round.settlementReceiptHash,
+    settlementStatus: toSettlementStatus(round.settlementStatus),
     stage: round.stage,
     stateMachineRulesHash: round.stateMachineRulesHash,
     stateMachineVersion: round.stateMachineVersion,
@@ -1104,6 +1114,18 @@ function assertRoundLedger(round: CrashRoundWithTransitions): void {
     );
   const first = round.transitions[0];
   const last = round.transitions.at(-1);
+  const settlementValid = terminal
+    ? round.settlementStatus !== 'NOT_REQUIRED' &&
+      (round.settlementStatus === 'SETTLED'
+        ? Boolean(
+            round.settledAt &&
+              round.settlementReceiptHash &&
+              HASH_PATTERN.test(round.settlementReceiptHash),
+          )
+        : round.settledAt === null && round.settlementReceiptHash === null)
+    : round.settlementStatus === 'NOT_REQUIRED' &&
+      round.settledAt === null &&
+      round.settlementReceiptHash === null;
   if (
     !transitionsValid ||
     first?.kind !== DatabaseCrashTransitionKind.ROUND_STARTED ||
@@ -1116,6 +1138,7 @@ function assertRoundLedger(round: CrashRoundWithTransitions): void {
     first.fromStage !== null ||
     last?.toStatus !== round.status ||
     last.toStage !== round.stage ||
+    !settlementValid ||
     (terminal
       ? round.decisionDeadline !== null ||
         round.terminalAt === null ||
@@ -1125,6 +1148,21 @@ function assertRoundLedger(round: CrashRoundWithTransitions): void {
         round.terminalReason !== null)
   ) {
     throw stateError('DISABLED', 'Crash durable transition ledger is inconsistent');
+  }
+}
+
+function toSettlementStatus(
+  status: 'NOT_REQUIRED' | 'PENDING' | 'RECOVERY_REQUIRED' | 'SETTLED',
+): CrashRoundSnapshot['settlementStatus'] {
+  switch (status) {
+    case 'NOT_REQUIRED':
+      return 'not-required';
+    case 'PENDING':
+      return 'pending';
+    case 'RECOVERY_REQUIRED':
+      return 'recovery-required';
+    case 'SETTLED':
+      return 'settled';
   }
 }
 

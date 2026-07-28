@@ -151,6 +151,7 @@ enum HouseTreasuryLedgerType {
   PLAYER_WIN_LOSS
   HOUSE_PACK_COST
   HOUSE_WIN_INVENTORY
+  CRASH_FORFEIT_INVENTORY
   INVENTORY_DISPOSITION_SET
   INVENTORY_DISPOSED
   RECONCILIATION_ALERT
@@ -264,15 +265,46 @@ enum CrashCustodySigningStatus {
   NOT_STARTED
 }
 
+enum CrashSettlementStatus {
+  NOT_REQUIRED
+  PENDING
+  RECOVERY_REQUIRED
+  SETTLED
+}
+
+enum CrashSettlementKind {
+  CASH_OUT
+  BUST
+}
+
+enum CrashSettlementOperationKind {
+  PURCHASE
+  OPEN
+  TRANSFER
+  LIQUIDATE
+}
+
+enum CrashSettlementOperationStatus {
+  PREPARED
+  RECOVERY_REQUIRED
+  FINALIZED
+}
+
+enum CrashSettlementRecoveryMode {
+  NONE
+  RETRYABLE
+  RECONCILE_ONLY
+}
+
 /// Fixture-only durable Crash/Card Streak round. No production route creates
 /// these rows: every round is bound to reviewed synthetic architecture,
 /// calculator, state-machine, wallet, and rules references.
 model CrashRound {
-  id                    String           @id
-  activationMode        String           @default("fixture-only")
-  status                CrashRoundStatus @default(ACTIVE)
-  stage                 Int              @default(1)
-  version               Int              @default(1)
+  id                    String                       @id
+  activationMode        String                       @default("fixture-only")
+  status                CrashRoundStatus             @default(ACTIVE)
+  stage                 Int                          @default(1)
+  version               Int                          @default(1)
   architectureVersion   String
   stateMachineVersion   String
   stateMachineRulesHash String
@@ -285,20 +317,26 @@ model CrashRound {
   riskExpiresAt         DateTime?
   playerWalletReference String
   potAmount             String
-  potCurrency           String           @default("USDC")
-  potDecimals           Int              @default(6)
+  potCurrency           String                       @default("USDC")
+  potDecimals           Int                          @default(6)
   decisionDeadline      DateTime?
   defaultAction         CrashDecision
   terminalReason        String?
   terminalAt            DateTime?
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
+  settlementStatus      CrashSettlementStatus        @default(NOT_REQUIRED)
+  settlementReceiptHash String?
+  settledAt             DateTime?
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
   transitions           CrashTransition[]
   custodyIntents        CrashCustodyMovementIntent[]
   houseReservation      HouseTreasuryReservation?
   houseLedgerEntries    HouseTreasuryLedgerEntry[]
+  settlement            CrashSettlement?
+  houseInventory        HouseInventoryAsset[]
 
   @@index([status, decisionDeadline])
+  @@index([settlementStatus, updatedAt])
   @@index([playerWalletReference, createdAt])
   @@index([rulesHash, createdAt])
 }
@@ -307,32 +345,32 @@ model CrashRound {
 /// stage, owner, rule binding, and approved custody recipient were checked
 /// before any signing boundary can be reached.
 model CrashCustodyMovementIntent {
-  id                         String                    @id
-  roundId                    String
-  stage                      Int
-  expectedVersion            Int
-  idempotencyKey             String
-  requestHash                String
-  assetReference             String
-  sourceWalletReference      String
-  playerWalletReference      String
-  requestedRecipient         String
-  approvedRecipient          String?
-  network                    String                    @default("solana-devnet")
-  activationMode             String                    @default("fixture-only")
-  policyVersion              String?
-  policyHash                 String?
-  architectureVersion        String
-  stateMachineVersion        String
-  stateMachineRulesHash      String
-  calculatorVersion          String
-  rulesVersion               String
-  rulesHash                  String
-  status                     CrashCustodyIntentStatus
-  signingStatus              CrashCustodySigningStatus @default(NOT_STARTED)
-  recoveryReason             String?
-  createdAt                  DateTime                  @default(now())
-  round                      CrashRound                @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  id                    String                    @id
+  roundId               String
+  stage                 Int
+  expectedVersion       Int
+  idempotencyKey        String
+  requestHash           String
+  assetReference        String
+  sourceWalletReference String
+  playerWalletReference String
+  requestedRecipient    String
+  approvedRecipient     String?
+  network               String                    @default("solana-devnet")
+  activationMode        String                    @default("fixture-only")
+  policyVersion         String?
+  policyHash            String?
+  architectureVersion   String
+  stateMachineVersion   String
+  stateMachineRulesHash String
+  calculatorVersion     String
+  rulesVersion          String
+  rulesHash             String
+  status                CrashCustodyIntentStatus
+  signingStatus         CrashCustodySigningStatus @default(NOT_STARTED)
+  recoveryReason        String?
+  createdAt             DateTime                  @default(now())
+  round                 CrashRound                @relation(fields: [roundId], references: [id], onDelete: Cascade)
 
   @@unique([roundId, idempotencyKey])
   @@index([roundId, stage, assetReference])
@@ -368,12 +406,98 @@ model CrashTransition {
   rulesVersion          String
   rulesHash             String
   createdAt             DateTime            @default(now())
-  round                 CrashRound           @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  round                 CrashRound          @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  terminalSettlement    CrashSettlement?
 
   @@unique([roundId, sequence])
   @@unique([roundId, transitionKey])
   @@index([roundId, createdAt])
   @@index([rulesHash, createdAt])
+}
+
+/// One immutable-plan, resumable fixture settlement for a terminal Crash round.
+/// Provider operations are keyed independently so an ambiguous response is
+/// reconciled by the same request key rather than signed a second time.
+model CrashSettlement {
+  id                      String                     @id
+  roundId                 String                     @unique
+  terminalTransitionId    String                     @unique
+  idempotencyKey          String
+  requestHash             String
+  kind                    CrashSettlementKind
+  status                  CrashSettlementStatus      @default(PENDING)
+  activationMode          String                     @default("fixture-only")
+  network                 String                     @default("solana-devnet")
+  playerWalletReference   String
+  custodyRecipient        String
+  custodyPolicyVersion    String
+  custodyPolicyHash       String
+  inventoryRecipient      String
+  settlementPolicyVersion String
+  settlementPolicyHash    String
+  inventoryPolicyVersion  String
+  inventoryPolicyHash     String
+  architectureVersion     String
+  stateMachineVersion     String
+  stateMachineRulesHash   String
+  calculatorVersion       String
+  rulesVersion            String
+  rulesHash               String
+  riskRulesVersion        String
+  riskRulesHash           String
+  expectedOperationCount  Int
+  finalizedOperationCount Int                        @default(0)
+  recoveryReason          String?
+  receipt                 Json?
+  receiptHash             String?
+  settledAt               DateTime?
+  leaseOwner              String?
+  leaseExpiresAt          DateTime?
+  version                 Int                        @default(1)
+  createdAt               DateTime                   @default(now())
+  updatedAt               DateTime                   @updatedAt
+  round                   CrashRound                 @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  terminalTransition      CrashTransition            @relation(fields: [terminalTransitionId], references: [id], onDelete: Restrict)
+  operations              CrashSettlementOperation[]
+
+  @@unique([roundId, idempotencyKey])
+  @@index([status, leaseExpiresAt, updatedAt])
+}
+
+/// Mutable recovery state for one deterministic provider side effect. The
+/// request hash and provider request key are immutable after insert.
+model CrashSettlementOperation {
+  id                   String                         @id
+  settlementId         String
+  sequence             Int
+  operationKey         String
+  providerRequestKey   String                         @unique
+  requestHash          String
+  kind                 CrashSettlementOperationKind
+  status               CrashSettlementOperationStatus @default(PREPARED)
+  recoveryMode         CrashSettlementRecoveryMode    @default(NONE)
+  assetReference       String
+  sourceReference      String
+  destinationReference String
+  amount               String
+  currency             String                         @default("USDC")
+  decimals             Int                            @default(6)
+  stage                Int?
+  providerSignature    String?                        @unique
+  providerResultHash   String?
+  providerEvidence     Json?
+  failureCode          String?
+  submissionCount      Int                            @default(0)
+  lastAttemptedAt      DateTime?
+  finalizedAt          DateTime?
+  createdAt            DateTime                       @default(now())
+  updatedAt            DateTime                       @updatedAt
+  settlement           CrashSettlement                @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  houseInventoryAsset  HouseInventoryAsset?
+
+  @@unique([settlementId, sequence])
+  @@unique([settlementId, operationKey])
+  @@index([status, recoveryMode, updatedAt])
 }
 
 model Duel {
@@ -781,47 +905,52 @@ model HouseTreasuryReservation {
 }
 
 model HouseInventoryAsset {
-  id                       String                     @id
-  duelId                   String
-  outcomeId                String                     @unique
-  assetReference           String                     @unique
-  displayName              String
-  acquisitionValueAmount   String
-  acquisitionValueCurrency String                     @default("USDC")
-  acquisitionValueDecimals Int                        @default(6)
-  insuredValueAmount       String
-  insuredValueCurrency     String                     @default("USDC")
-  insuredValueDecimals     Int                        @default(6)
-  listingValueAmount       String?
-  listingValueCurrency     String?
-  listingValueDecimals     Int?
-  buybackValueAmount       String?
-  buybackValueCurrency     String?
-  buybackValueDecimals     Int?
-  displayedValueAmount     String?
-  displayedValueCurrency   String?
-  displayedValueDecimals   Int?
-  buybackEligible          Boolean                    @default(false)
-  buybackExpiresAt         DateTime?
-  listingState             HouseInventoryListingState @default(UNLISTED)
-  custodyWallet            String
-  disposition              HouseInventoryDisposition  @default(MANUAL_REVIEW)
-  status                   HouseInventoryStatus       @default(HELD)
-  realizedAmount           String?
-  realizedCurrency         String?
-  realizedDecimals         Int?
-  disposedAt               DateTime?
-  lastReconciledAt         DateTime?
-  reconciliationError      String?
-  version                  Int                        @default(1)
-  createdAt                DateTime                   @default(now())
-  updatedAt                DateTime                   @updatedAt
-  duel                     Duel                       @relation(fields: [duelId], references: [id], onDelete: Restrict)
-  outcome                  DuelPackOutcome            @relation(fields: [outcomeId], references: [id], onDelete: Restrict)
-  ledgerEntries            HouseTreasuryLedgerEntry[]
+  id                         String                     @id
+  duelId                     String?
+  outcomeId                  String?                    @unique
+  crashRoundId               String?
+  crashSettlementOperationId String?                    @unique
+  assetReference             String                     @unique
+  displayName                String
+  acquisitionValueAmount     String
+  acquisitionValueCurrency   String                     @default("USDC")
+  acquisitionValueDecimals   Int                        @default(6)
+  insuredValueAmount         String
+  insuredValueCurrency       String                     @default("USDC")
+  insuredValueDecimals       Int                        @default(6)
+  listingValueAmount         String?
+  listingValueCurrency       String?
+  listingValueDecimals       Int?
+  buybackValueAmount         String?
+  buybackValueCurrency       String?
+  buybackValueDecimals       Int?
+  displayedValueAmount       String?
+  displayedValueCurrency     String?
+  displayedValueDecimals     Int?
+  buybackEligible            Boolean                    @default(false)
+  buybackExpiresAt           DateTime?
+  listingState               HouseInventoryListingState @default(UNLISTED)
+  custodyWallet              String
+  disposition                HouseInventoryDisposition  @default(MANUAL_REVIEW)
+  status                     HouseInventoryStatus       @default(HELD)
+  realizedAmount             String?
+  realizedCurrency           String?
+  realizedDecimals           Int?
+  disposedAt                 DateTime?
+  lastReconciledAt           DateTime?
+  reconciliationError        String?
+  version                    Int                        @default(1)
+  createdAt                  DateTime                   @default(now())
+  updatedAt                  DateTime                   @updatedAt
+  duel                       Duel?                      @relation(fields: [duelId], references: [id], onDelete: Restrict)
+  outcome                    DuelPackOutcome?           @relation(fields: [outcomeId], references: [id], onDelete: Restrict)
+  crashRound                 CrashRound?                @relation(fields: [crashRoundId], references: [id], onDelete: Restrict)
+  crashSettlementOperation   CrashSettlementOperation?  @relation(fields: [crashSettlementOperationId], references: [id], onDelete: Restrict)
+  ledgerEntries              HouseTreasuryLedgerEntry[]
 
   @@index([status, disposition, createdAt])
   @@index([duelId, createdAt])
+  @@index([crashRoundId, createdAt])
   @@index([custodyWallet, status])
 }
 
@@ -839,7 +968,7 @@ model HouseTreasuryLedgerEntry {
   metadata       Json?
   createdAt      DateTime                  @default(now())
   duel           Duel?                     @relation(fields: [duelId], references: [id], onDelete: Restrict)
-  crashRound      CrashRound?               @relation(fields: [crashRoundId], references: [id], onDelete: Restrict)
+  crashRound     CrashRound?               @relation(fields: [crashRoundId], references: [id], onDelete: Restrict)
   reservation    HouseTreasuryReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   inventory      HouseInventoryAsset?      @relation(fields: [inventoryId], references: [id], onDelete: Restrict)
 

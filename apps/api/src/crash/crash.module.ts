@@ -15,6 +15,12 @@ import {
   loadCrashRiskHealth,
 } from './crash-decision.service.js';
 import { CrashRiskGate, CrashRiskPolicyService } from './crash-risk.policy.js';
+import { CRASH_SETTLEMENT_POLICY, loadCrashSettlementPolicy } from './crash-settlement.policy.js';
+import {
+  CRASH_SETTLEMENT_PROVIDER,
+  DeterministicCrashSettlementFixtureProvider,
+} from './crash-settlement.provider.js';
+import { CrashSettlementService } from './crash-settlement.service.js';
 import { CRASH_CLOCK, CRASH_ENVIRONMENT, CrashStageStateService } from './crash-stage-state.js';
 
 /**
@@ -24,12 +30,19 @@ import { CRASH_CLOCK, CRASH_ENVIRONMENT, CrashStageStateService } from './crash-
  */
 @Module({
   controllers: [CrashController],
-  exports: [CrashCustodyMovementService, CrashDecisionService, CrashStageStateService],
+  exports: [
+    CrashCustodyMovementService,
+    CrashDecisionService,
+    CrashSettlementService,
+    CrashStageStateService,
+  ],
   imports: [AuthModule],
   providers: [
     CrashStageStateService,
     CrashCustodyMovementService,
     CrashDecisionService,
+    CrashSettlementService,
+    DeterministicCrashSettlementFixtureProvider,
     {
       provide: CRASH_CUSTODY_POLICY,
       useFactory: () => loadCrashCustodyPolicy(),
@@ -41,6 +54,14 @@ import { CRASH_CLOCK, CRASH_ENVIRONMENT, CrashStageStateService } from './crash-
     {
       provide: CRASH_DECISION_RULES,
       useFactory: () => loadCrashDecisionRules(),
+    },
+    {
+      provide: CRASH_SETTLEMENT_POLICY,
+      useFactory: () => loadCrashSettlementPolicy(),
+    },
+    {
+      provide: CRASH_SETTLEMENT_PROVIDER,
+      useExisting: DeterministicCrashSettlementFixtureProvider,
     },
     {
       provide: CRASH_RISK_HEALTH,

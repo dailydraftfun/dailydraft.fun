@@ -294,9 +294,10 @@ export class HouseTreasuryService {
         if (!verification.ok) {
           await appendLedger(transaction, {
             amount: asset.acquisitionValueAmount,
+            ...(asset.crashRoundId ? { crashRoundId: asset.crashRoundId } : {}),
             currency: asset.acquisitionValueCurrency,
             decimals: asset.acquisitionValueDecimals,
-            duelId: asset.duelId,
+            ...(asset.duelId ? { duelId: asset.duelId } : {}),
             idempotencyKey: `reconciliation-alert:${asset.id}:${asset.version + 1}`,
             inventoryId: asset.id,
             metadata: { code: verification.error ?? 'custody_unverified' },
@@ -523,9 +524,10 @@ export class HouseTreasuryService {
       if (changed.count !== 1) throw new ConflictException('Inventory state changed');
       await appendLedger(transaction, {
         amount: row.acquisitionValueAmount,
+        ...(row.crashRoundId ? { crashRoundId: row.crashRoundId } : {}),
         currency: row.acquisitionValueCurrency,
         decimals: row.acquisitionValueDecimals,
-        duelId: row.duelId,
+        ...(row.duelId ? { duelId: row.duelId } : {}),
         idempotencyKey: `inventory-disposition:${row.id}:${row.version + 1}`,
         inventoryId: row.id,
         metadata: { disposition: input.disposition, reason: input.reason },
@@ -561,9 +563,10 @@ export class HouseTreasuryService {
       if (changed.count !== 1) throw new ConflictException('Inventory state changed');
       await appendLedger(transaction, {
         amount: input.realizedAmount,
+        ...(row.crashRoundId ? { crashRoundId: row.crashRoundId } : {}),
         currency: input.realizedCurrency,
         decimals: input.realizedDecimals,
-        duelId: row.duelId,
+        ...(row.duelId ? { duelId: row.duelId } : {}),
         idempotencyKey: `inventory-disposed:${row.id}`,
         inventoryId: row.id,
         metadata: { disposition: row.disposition.toLowerCase(), reason: input.reason },
@@ -808,11 +811,11 @@ function inventoryAcquisitionMatches(
     assetReference: string;
     custodyWallet: string;
     displayName: string;
-    duelId: string;
+    duelId: string | null;
     insuredValueAmount: string;
     insuredValueCurrency: string;
     insuredValueDecimals: number;
-    outcomeId: string;
+    outcomeId: string | null;
   },
   input: HouseInventoryAcquisitionInput,
 ): boolean {
@@ -835,6 +838,7 @@ async function appendLedger(
   transaction: Prisma.TransactionClient,
   input: {
     amount: string;
+    crashRoundId?: string;
     currency: string;
     decimals: number;
     duelId?: string;
@@ -852,6 +856,7 @@ async function appendLedger(
   await transaction.houseTreasuryLedgerEntry.create({
     data: {
       amount: input.amount,
+      ...(input.crashRoundId ? { crashRoundId: input.crashRoundId } : {}),
       currency: input.currency,
       decimals: input.decimals,
       ...(input.duelId ? { duelId: input.duelId } : {}),

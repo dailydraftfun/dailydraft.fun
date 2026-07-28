@@ -25,6 +25,7 @@ import {
   hashCrashRiskRules,
   type UnsignedCrashRiskRules,
 } from './crash-risk.policy.js';
+import type { CrashSettlementService } from './crash-settlement.service.js';
 import {
   CRASH_STATE_MACHINE_VERSION,
   CRASH_STATE_RULES_SCHEMA_VERSION,
@@ -56,6 +57,12 @@ describe('CrashDecisionService', () => {
       pot: usdc('0'),
       roundId: ROUND_ID,
       schemaVersion: CRASH_PLAYER_DECISION_SCHEMA_VERSION,
+      settlement: {
+        finalizedOperationCount: 0,
+        receiptHash: null,
+        recoveryReason: null,
+        status: 'not-required',
+      },
       stage: 1,
       status: 'active',
       terminalReason: null,
@@ -373,6 +380,48 @@ describe('CrashDecisionService', () => {
       loadCrashRiskHealth({ DAILYDRAFT_CRASH_FIXTURE_RISK_HEALTH_JSON: '{not-json' }),
     ).toBeNull();
   });
+
+  test('resumes terminal settlement on reconnect, replay, and explicit reconciliation', async () => {
+    const terminal = terminalRound('cash-out');
+    const state = stateHarness(terminal);
+    const calls: string[] = [];
+    const settlements = {
+      resumeFixtureSettlement: async (roundId: string) => {
+        calls.push(roundId);
+        terminal.settlementStatus = 'settled';
+        terminal.settlementReceiptHash = 'f'.repeat(64);
+        terminal.settledAt = '2026-07-28T16:00:02.000Z';
+        return {
+          expectedOperationCount: 1,
+          finalizedOperationCount: 1,
+          inventoryPolicyHash: 'a'.repeat(64),
+          inventoryPolicyVersion: 'fixture-inventory-v1',
+          kind: 'cash-out',
+          operations: [],
+          receiptHash: terminal.settlementReceiptHash,
+          recoveryReason: null,
+          roundId,
+          settlementPolicyHash: 'b'.repeat(64),
+          settlementPolicyVersion: 'fixture-settlement-v1',
+          settledAt: terminal.settledAt,
+          status: 'settled',
+        };
+      },
+    } as unknown as CrashSettlementService;
+    const service = decisionService(state.service, RULES, custodyHarness(), settlements);
+
+    await expect(service.currentStage(ROUND_ID, WALLET)).resolves.toMatchObject({
+      settlement: { receiptHash: 'f'.repeat(64), status: 'settled' },
+      status: 'cashed-out',
+    });
+    await expect(service.decide(decisionInput('cash-out'))).resolves.toMatchObject({
+      settlement: { status: 'settled' },
+    });
+    await expect(service.reconcileSettlement(ROUND_ID, WALLET)).resolves.toMatchObject({
+      settlement: { finalizedOperationCount: 1, status: 'settled' },
+    });
+    expect(calls).toEqual([ROUND_ID, ROUND_ID, ROUND_ID]);
+  });
 });
 
 function stateHarness(
@@ -417,8 +466,9 @@ function decisionService(
   state: CrashStageStateService,
   rules: unknown = RULES,
   custody: CrashCustodyMovementService = custodyHarness(),
+  settlements: CrashSettlementService | null = null,
 ) {
-  return new CrashDecisionService(state, rules, custody, RISK_HEALTH);
+  return new CrashDecisionService(state, rules, custody, RISK_HEALTH, settlements);
 }
 
 function custodyHarness(
@@ -484,6 +534,9 @@ function activeRound(): CrashRoundSnapshot {
     riskExpiresAt: '2026-07-28T16:05:00.000Z',
     riskRulesHash: RULES.riskRules.riskRulesHash,
     riskRulesVersion: RULES.riskRules.rulesVersion,
+    settledAt: null,
+    settlementReceiptHash: null,
+    settlementStatus: 'not-required',
     stage: 1,
     stateMachineRulesHash: RULES.stateMachineRulesHash,
     stateMachineVersion: RULES.stateMachineVersion,
@@ -534,6 +587,7 @@ function terminalRound(action: 'cash-out' | 'continue'): CrashRoundSnapshot {
   return {
     ...initial,
     decisionDeadline: null,
+    settlementStatus: 'pending',
     status,
     terminalAt: '2026-07-28T16:00:01.000Z',
     terminalReason: action === 'cash-out' ? 'PLAYER_CASH_OUT' : 'PROVIDER_BUST_OUTCOME',
