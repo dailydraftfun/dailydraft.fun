@@ -1,4 +1,4 @@
-import type { VerifiedGameActivityPage } from '@dailydraft/contracts';
+import type { VerifiedGameActivityPage } from '@dailydraft/contracts/game-lobby';
 import type { JourneyFixtureBootstrap } from '../../app/e2e/journey-wallet';
 import type {
   DuelReconciliationResult,

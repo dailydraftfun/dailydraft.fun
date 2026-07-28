@@ -6,7 +6,7 @@ import {
   VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION,
   type VerifiedGameActivity,
   type VerifiedGameActivityPage,
-} from '@dailydraft/contracts';
+} from '@dailydraft/contracts/game-lobby';
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_DUEL_API_URL?.replace(/\/$/, '');
 const ACTIVITY_CACHE_KEY = 'dailydraft.verified-game-activity.v1';

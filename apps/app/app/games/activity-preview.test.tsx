@@ -29,7 +29,9 @@ describe('verified activity surface', () => {
     expect(markup).toContain('Verified win');
     expect(markup).toContain('9xQe…9gJ1 · Gk8Z…MQyW');
     expect(markup).toContain('View verified receipt');
+    expect(markup).toContain('aria-label="View verified receipt for Sports Pack Duel settled"');
     expect(markup).toContain('/v1/duels/duel_activity000001/receipt');
+    expect(markup).toContain('<span class="sr-only">Settled </span>');
     expect(markup).not.toContain('9xQeWvG816bUx9EPfEzF3F7PVhZVW5R1N9gJ1');
   });
 
@@ -60,6 +62,7 @@ describe('verified activity surface', () => {
 
     expect(empty).toContain('does not invent players, wins, or volume');
     expect(stale).toContain('Cached');
+    expect(stale).toContain('Jul 28 at 12:00 PM UTC');
     expect(stale).toContain('could not be refreshed');
     expect(degraded).toContain('Proof service degraded');
     expect(degraded).toContain('without inferred participation');

@@ -1,4 +1,4 @@
-import type { VerifiedGameActivityPage } from '@dailydraft/contracts';
+import type { VerifiedGameActivityPage } from '@dailydraft/contracts/game-lobby';
 import { ShieldCheckIcon } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { VerifiedActivity } from './verified-activity';
@@ -26,7 +26,7 @@ export function ActivityPreview({
         </div>
         <div className="rounded-xl border border-lime/20 bg-lime/5 p-5">
           <div className="flex items-center gap-3 text-lime">
-            <ShieldCheckIcon size={22} weight="fill" />
+            <ShieldCheckIcon aria-hidden="true" size={22} weight="fill" />
             <strong className="text-sm">No fabricated live counts</strong>
           </div>
           <p className="mt-3 text-xs leading-5 text-secondary">

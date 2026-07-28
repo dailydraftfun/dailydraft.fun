@@ -1,6 +1,9 @@
 'use client';
 
-import type { VerifiedGameActivity, VerifiedGameActivityPage } from '@dailydraft/contracts';
+import type {
+  VerifiedGameActivity,
+  VerifiedGameActivityPage,
+} from '@dailydraft/contracts/game-lobby';
 import {
   ArrowRightIcon,
   CheckCircleIcon,
@@ -93,7 +96,7 @@ export function VerifiedActivity({
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="proof-label flex items-center gap-2">
-            <ShieldCheckIcon size={15} weight="fill" />
+            <ShieldCheckIcon aria-hidden="true" size={15} weight="fill" />
             Settled proof only
           </p>
           <h2
@@ -126,7 +129,7 @@ export function VerifiedActivity({
           href="/games/activity"
         >
           Inspect verified activity
-          <ArrowRightIcon size={15} weight="bold" />
+          <ArrowRightIcon aria-hidden="true" size={15} weight="bold" />
         </Link>
       ) : null}
     </section>
@@ -149,6 +152,7 @@ function ActivityRow({ activity }: { activity: VerifiedGameActivity }) {
             {resultLabel(activity)}
           </span>
           <time className="text-xs text-muted" dateTime={activity.occurredAt}>
+            <span className="sr-only">Settled </span>
             {formatOccurredAt(activity.occurredAt)}
           </time>
         </div>
@@ -163,9 +167,10 @@ function ActivityRow({ activity }: { activity: VerifiedGameActivity }) {
         <a
           className="proof-secondary-action mt-3 gap-2"
           href={resolveActivityApiHref(activity.receiptHref)}
+          aria-label={`View verified receipt for ${activity.title}`}
           rel="noreferrer"
         >
-          <ReceiptIcon size={15} />
+          <ReceiptIcon aria-hidden="true" size={15} />
           View verified receipt
         </a>
       </div>
@@ -182,32 +187,38 @@ function ActivityStatus({
 }) {
   const status = {
     degraded: {
-      icon: <WarningCircleIcon size={16} weight="fill" />,
+      icon: <WarningCircleIcon aria-hidden="true" size={16} weight="fill" />,
       label: 'Proof service degraded',
       tone: 'text-warning',
     },
     empty: {
-      icon: <ReceiptIcon size={16} />,
+      icon: <ReceiptIcon aria-hidden="true" size={16} />,
       label: 'No verified outcomes yet',
       tone: 'text-secondary',
     },
     loading: {
-      icon: <SpinnerGapIcon className="animate-spin motion-reduce:animate-none" size={16} />,
+      icon: (
+        <SpinnerGapIcon
+          aria-hidden="true"
+          className="animate-spin motion-reduce:animate-none"
+          size={16}
+        />
+      ),
       label: 'Checking durable outcomes',
       tone: 'text-secondary',
     },
     ready: {
-      icon: <ShieldCheckIcon size={16} weight="fill" />,
-      label: page ? `Verified ${formatAsOf(page.asOf)}` : 'Verified',
+      icon: <ShieldCheckIcon aria-hidden="true" size={16} weight="fill" />,
+      label: page ? `Verified snapshot · ${formatAsOf(page.asOf)}` : 'Verified',
       tone: 'text-lime',
     },
     stale: {
-      icon: <ClockCounterClockwiseIcon size={16} />,
-      label: page ? `Cached ${formatAsOf(page.asOf)}` : 'Cached result',
+      icon: <ClockCounterClockwiseIcon aria-hidden="true" size={16} />,
+      label: page ? `Cached snapshot · ${formatAsOf(page.asOf)}` : 'Cached result',
       tone: 'text-warning',
     },
     unavailable: {
-      icon: <WarningCircleIcon size={16} weight="fill" />,
+      icon: <WarningCircleIcon aria-hidden="true" size={16} weight="fill" />,
       label: 'Proof service unavailable',
       tone: 'text-secondary',
     },
@@ -286,8 +297,10 @@ function formatOccurredAt(value: string): string {
 
 function formatAsOf(value: string): string {
   return new Intl.DateTimeFormat('en-US', {
+    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    month: 'short',
     timeZone: 'UTC',
     timeZoneName: 'short',
   }).format(new Date(value));
