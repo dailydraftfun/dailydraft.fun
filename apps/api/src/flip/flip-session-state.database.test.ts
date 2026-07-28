@@ -4,9 +4,11 @@ import {
   type DatabaseClient,
   FlipSessionStatus,
   FlipSessionTransitionKind,
+  type Prisma,
 } from '@dailydraft/db';
 
 import type { Money } from '../domain.js';
+import { stableStringify } from '../providers/valuation-policy.js';
 import {
   type FlipInventoryCandidate,
   type FlipInventorySnapshotPolicy,
@@ -22,6 +24,7 @@ import {
   FLIP_SETTLEMENT_FIXTURE_VERSION,
   FLIP_STAKE_FIXTURE_VERSION,
   FLIP_TRANSFER_FIXTURE_VERSION,
+  type FlipSessionSnapshot,
   FlipSessionStateService,
 } from './flip-session-state.service.js';
 
@@ -527,6 +530,367 @@ describeDatabase('Flip session state machine against two real Postgres connectio
       version: 1,
     });
   });
+
+  test.each([
+    'hashes',
+    'eligible outcome count',
+  ] as const)('rejects forged #117 pool commitment %s at the deferred database boundary', async (forgery) => {
+    const fixture = await prepareDatabaseFixture(
+      databaseA,
+      `forged-pool-${forgery.replaceAll(' ', '-')}`,
+    );
+    const { service, session } = await createDatabaseSessionAt(
+      databaseA,
+      fixture,
+      'stake-confirmed',
+    );
+    const commitment = await databaseA.flipSessionPoolCommitment.findUniqueOrThrow({
+      where: { id: fixture.commitmentId },
+    });
+    const forgedHash = hash(`forged-pool-${forgery}`);
+    const poolCommitmentHash = forgery === 'hashes' ? forgedHash : commitment.poolCommitmentHash;
+    const rulesHash = forgery === 'hashes' ? forgedHash : commitment.rulesHash;
+    const snapshotContentHash = forgery === 'hashes' ? forgedHash : commitment.snapshotContentHash;
+    const evidence = {
+      eligibleOutcomeCount:
+        forgery === 'eligible outcome count'
+          ? commitment.eligibleOutcomeCount + 1
+          : commitment.eligibleOutcomeCount,
+      poolCommitmentHash,
+      poolCommitmentId: commitment.id,
+      rulesHash,
+      snapshotContentHash,
+    };
+    const transitionKey = `forged-pool-${forgery.replaceAll(' ', '-')}`;
+    const requestPayload = stableStringify({
+      action: {
+        evidence: { poolCommitmentId: commitment.id },
+        expectedVersion: session.version,
+        kind: 'commit-pool',
+        transitionKey,
+      },
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.update({
+          data: {
+            poolCommitmentHash,
+            poolCommitmentId: commitment.id,
+            rulesHash,
+            snapshotContentHash,
+            status: FlipSessionStatus.POOL_COMMITTED,
+            version: { increment: 1 },
+          },
+          where: { id: session.id },
+        });
+        await transaction.flipSessionTransition.create({
+          data: {
+            evidence,
+            fromStatus: FlipSessionStatus.STAKE_CONFIRMED,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind: FlipSessionTransitionKind.POOL_COMMITTED,
+            poolCommitmentHash,
+            requestHash: hash(requestPayload),
+            requestPayload,
+            selectedAssetReference: null,
+            sequence: session.version + 1,
+            sessionId: session.id,
+            terminalReason: null,
+            toStatus: FlipSessionStatus.POOL_COMMITTED,
+            transitionKey,
+          },
+        });
+      }),
+    ).rejects.toThrow('pool transition evidence is invalid');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'stake-confirmed',
+      version: session.version,
+    });
+  });
+
+  test('rejects a selected outcome that is not an exact member of the #117 outcome space', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'forged-selection-membership');
+    const { service, session } = await createDatabaseSessionAt(
+      databaseA,
+      fixture,
+      'pool-committed',
+    );
+    const evidence = {
+      bandLabel: 'forged',
+      listingValueAmount: '1',
+      ordinal: 99,
+      providerAssetReference: 'asset_forged',
+      providerListingReference: 'listing_forged',
+      reference: 'fixture-selection:forged',
+      resultHash: hash('forged-selection'),
+      schemaVersion: FLIP_SELECTION_FIXTURE_VERSION,
+    };
+    const transitionKey = 'forged-selection-membership';
+    const requestPayload = stableStringify({
+      action: {
+        evidence,
+        expectedVersion: session.version,
+        kind: 'record-selection',
+        transitionKey,
+      },
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.update({
+          data: {
+            selectedAssetReference: evidence.providerAssetReference,
+            selectedBandLabel: evidence.bandLabel,
+            selectedListingReference: evidence.providerListingReference,
+            selectedOrdinal: evidence.ordinal,
+            selectedValueAmount: evidence.listingValueAmount,
+            status: FlipSessionStatus.SELECTION_RECORDED,
+            version: { increment: 1 },
+          },
+          where: { id: session.id },
+        });
+        await transaction.flipSessionTransition.create({
+          data: {
+            evidence,
+            fromStatus: FlipSessionStatus.POOL_COMMITTED,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind: FlipSessionTransitionKind.SELECTION_RECORDED,
+            poolCommitmentHash: session.poolCommitment?.poolCommitmentHash ?? null,
+            requestHash: hash(requestPayload),
+            requestPayload,
+            selectedAssetReference: evidence.providerAssetReference,
+            sequence: session.version + 1,
+            sessionId: session.id,
+            terminalReason: null,
+            toStatus: FlipSessionStatus.SELECTION_RECORDED,
+            transitionKey,
+          },
+        });
+      }),
+    ).rejects.toThrow('selection transition evidence is invalid');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'pool-committed',
+      version: session.version,
+    });
+  });
+
+  test('rejects semantically equivalent but non-canonical request payloads', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'noncanonical-request');
+    const { service, session } = await createDatabaseSessionAt(
+      databaseA,
+      fixture,
+      'awaiting-stake',
+    );
+    const evidence = {
+      amount: usdc('50000000'),
+      reference: 'fixture-stake:noncanonical',
+      schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+      status: 'fixture-confirmed' as const,
+    };
+    const requestPayload = JSON.stringify(
+      {
+        stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+        action: {
+          transitionKey: 'noncanonical-request',
+          kind: 'confirm-stake',
+          expectedVersion: session.version,
+          evidence,
+        },
+      },
+      null,
+      2,
+    );
+
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.update({
+          data: {
+            stakeAmount: '50000000',
+            stakeCurrency: 'USDC',
+            stakeDecimals: 6,
+            status: FlipSessionStatus.STAKE_CONFIRMED,
+            version: { increment: 1 },
+          },
+          where: { id: session.id },
+        });
+        await transaction.flipSessionTransition.create({
+          data: {
+            evidence: evidence as unknown as Prisma.InputJsonValue,
+            fromStatus: FlipSessionStatus.AWAITING_STAKE,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind: FlipSessionTransitionKind.STAKE_CONFIRMED,
+            poolCommitmentHash: null,
+            requestHash: hash(requestPayload),
+            requestPayload,
+            selectedAssetReference: null,
+            sequence: session.version + 1,
+            sessionId: session.id,
+            terminalReason: null,
+            toStatus: FlipSessionStatus.STAKE_CONFIRMED,
+            transitionKey: 'noncanonical-request',
+          },
+        });
+      }),
+    ).rejects.toThrow('request payload is not canonical');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: session.version,
+    });
+  });
+
+  test.each([
+    {
+      actionKind: 'record-transfer',
+      evidence: (fixture: Awaited<ReturnType<typeof prepareDatabaseFixture>>) => ({
+        destinationWalletReference: 'fixture-wallet:postgres-player',
+        providerAssetReference: fixture.selected.providerAssetReference,
+        reference: 'fixture-transfer:invalid-source',
+        schemaVersion: FLIP_TRANSFER_FIXTURE_VERSION,
+        sourceCustodyReference: 'not-a-fixture-reference',
+        status: 'fixture-transferred',
+      }),
+      fromStatus: FlipSessionStatus.PURCHASE_RECORDED,
+      kind: FlipSessionTransitionKind.TRANSFER_RECORDED,
+      label: 'transfer source custody reference',
+      target: 'purchase-recorded' as const,
+      terminalReason: null,
+      toStatus: FlipSessionStatus.TRANSFER_RECORDED,
+      update: (evidence: Record<string, unknown>) => ({
+        transferReference: evidence.reference as string,
+        transferredAt: new Date('2026-07-28T16:30:00.000Z'),
+      }),
+    },
+    {
+      actionKind: 'settle',
+      evidence: (fixture: Awaited<ReturnType<typeof prepareDatabaseFixture>>) => ({
+        payout: usdc('0'),
+        providerAssetReference: fixture.selected.providerAssetReference,
+        reference: 'not-a-fixture-reference',
+        resultHash: hash('invalid-settlement-reference'),
+        schemaVersion: FLIP_SETTLEMENT_FIXTURE_VERSION,
+        status: 'fixture-recorded',
+      }),
+      fromStatus: FlipSessionStatus.REVEAL_READY,
+      kind: FlipSessionTransitionKind.SETTLED,
+      label: 'settlement reference',
+      target: 'reveal-ready' as const,
+      terminalReason: 'FIXTURE_SETTLED',
+      toStatus: FlipSessionStatus.SETTLED,
+      update: () => ({
+        terminalAt: new Date('2026-07-28T16:30:00.000Z'),
+        terminalReason: 'FIXTURE_SETTLED',
+      }),
+    },
+    {
+      actionKind: 'request-recovery',
+      evidence: () => ({
+        reasonCode: 'FIXTURE_RECOVERY',
+        reference: 'not-a-fixture-reference',
+        schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+        status: 'fixture-recovery-required',
+      }),
+      fromStatus: FlipSessionStatus.AWAITING_STAKE,
+      kind: FlipSessionTransitionKind.RECOVERY_REQUESTED,
+      label: 'recovery request reference',
+      target: 'awaiting-stake' as const,
+      terminalReason: null,
+      toStatus: FlipSessionStatus.RECOVERY_REQUIRED,
+      update: () => ({}),
+    },
+    {
+      actionKind: 'complete-recovery',
+      evidence: () => ({
+        payout: usdc('0'),
+        reference: 'not-a-fixture-reference',
+        resultHash: hash('invalid-recovery-completion-reference'),
+        schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+        status: 'fixture-recovered',
+      }),
+      fromStatus: FlipSessionStatus.RECOVERY_REQUIRED,
+      kind: FlipSessionTransitionKind.RECOVERY_COMPLETED,
+      label: 'recovery completion reference',
+      target: 'recovery-required' as const,
+      terminalReason: 'FIXTURE_RECOVERY_COMPLETED',
+      toStatus: FlipSessionStatus.RECOVERED,
+      update: () => ({
+        terminalAt: new Date('2026-07-28T16:30:00.000Z'),
+        terminalReason: 'FIXTURE_RECOVERY_COMPLETED',
+      }),
+    },
+    {
+      actionKind: 'terminate',
+      evidence: () => ({
+        reasonCode: 'PROVIDER_DOWN',
+        reference: 'not-a-fixture-reference',
+        schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+        status: 'fixture-failed',
+      }),
+      fromStatus: FlipSessionStatus.RECOVERY_REQUIRED,
+      kind: FlipSessionTransitionKind.TERMINATED,
+      label: 'termination reference',
+      target: 'recovery-required' as const,
+      terminalReason: 'FIXTURE_TERMINATED:PROVIDER_DOWN',
+      toStatus: FlipSessionStatus.FAILED,
+      update: () => ({
+        terminalAt: new Date('2026-07-28T16:30:00.000Z'),
+        terminalReason: 'FIXTURE_TERMINATED:PROVIDER_DOWN',
+      }),
+    },
+  ])('rejects an invalid $label at the deferred database boundary', async (vector) => {
+    const fixture = await prepareDatabaseFixture(
+      databaseA,
+      `invalid-${vector.label.replaceAll(' ', '-')}`,
+    );
+    const { service, session } = await createDatabaseSessionAt(databaseA, fixture, vector.target);
+    const evidence = vector.evidence(fixture);
+    const transitionKey = `invalid-${vector.label.replaceAll(' ', '-')}`;
+    const requestPayload = stableStringify({
+      action: {
+        evidence,
+        expectedVersion: session.version,
+        kind: vector.actionKind,
+        transitionKey,
+      },
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.update({
+          data: {
+            ...vector.update(evidence),
+            status: vector.toStatus,
+            version: { increment: 1 },
+          },
+          where: { id: session.id },
+        });
+        await transaction.flipSessionTransition.create({
+          data: {
+            evidence: evidence as unknown as Prisma.InputJsonValue,
+            fromStatus: vector.fromStatus,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind: vector.kind,
+            poolCommitmentHash: session.poolCommitment?.poolCommitmentHash ?? null,
+            requestHash: hash(requestPayload),
+            requestPayload,
+            selectedAssetReference: session.selectedOutcome?.providerAssetReference ?? null,
+            sequence: session.version + 1,
+            sessionId: session.id,
+            terminalReason: vector.terminalReason,
+            toStatus: vector.toStatus,
+            transitionKey,
+          },
+        });
+      }),
+    ).rejects.toThrow('transition evidence is invalid');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: session.status,
+      version: session.version,
+    });
+  });
 });
 
 async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
@@ -570,6 +934,121 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
     },
     sessionReference,
   };
+}
+
+type DatabaseFixture = Awaited<ReturnType<typeof prepareDatabaseFixture>>;
+type DatabaseSessionTarget =
+  | 'awaiting-stake'
+  | 'stake-confirmed'
+  | 'pool-committed'
+  | 'selection-recorded'
+  | 'purchase-recorded'
+  | 'transfer-recorded'
+  | 'reveal-ready'
+  | 'recovery-required';
+
+async function createDatabaseSessionAt(
+  database: DatabaseClient,
+  fixture: DatabaseFixture,
+  target: DatabaseSessionTarget,
+): Promise<{ service: FlipSessionStateService; session: FlipSessionSnapshot }> {
+  const service = new FlipSessionStateService(
+    database,
+    new DatabaseTestClock(),
+    FIXTURE_ENVIRONMENT,
+  );
+  let session = await service.createFixtureSession({
+    playerWalletReference: 'fixture-wallet:postgres-player',
+    sessionReference: fixture.sessionReference,
+  });
+  if (target === 'awaiting-stake') return { service, session };
+  if (target === 'recovery-required') {
+    session = await service.transition(session.id, {
+      evidence: {
+        reasonCode: 'FIXTURE_RECOVERY',
+        reference: 'fixture-recovery:postgres-request',
+        schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+        status: 'fixture-recovery-required',
+      },
+      expectedVersion: session.version,
+      kind: 'request-recovery',
+      transitionKey: 'recovery-postgres-request',
+    });
+    return { service, session };
+  }
+
+  const actions = [
+    {
+      evidence: {
+        amount: usdc('50000000'),
+        reference: 'fixture-stake:postgres',
+        schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+        status: 'fixture-confirmed' as const,
+      },
+      kind: 'confirm-stake' as const,
+      transitionKey: 'stake-postgres',
+    },
+    {
+      evidence: { poolCommitmentId: fixture.commitmentId },
+      kind: 'commit-pool' as const,
+      transitionKey: 'pool-postgres',
+    },
+    {
+      evidence: {
+        ...fixture.selected,
+        reference: 'fixture-selection:postgres',
+        resultHash: hash('selection:postgres'),
+        schemaVersion: FLIP_SELECTION_FIXTURE_VERSION,
+      },
+      kind: 'record-selection' as const,
+      transitionKey: 'selection-postgres',
+    },
+    {
+      evidence: {
+        amount: usdc(fixture.selected.listingValueAmount),
+        provider: 'fixture-marketplace' as const,
+        providerAssetReference: fixture.selected.providerAssetReference,
+        providerListingReference: fixture.selected.providerListingReference,
+        reference: 'fixture-purchase:postgres',
+        schemaVersion: FLIP_PURCHASE_FIXTURE_VERSION,
+        status: 'fixture-acquired' as const,
+      },
+      kind: 'record-purchase' as const,
+      transitionKey: 'purchase-postgres',
+    },
+    {
+      evidence: {
+        destinationWalletReference: 'fixture-wallet:postgres-player',
+        providerAssetReference: fixture.selected.providerAssetReference,
+        reference: 'fixture-transfer:postgres',
+        schemaVersion: FLIP_TRANSFER_FIXTURE_VERSION,
+        sourceCustodyReference: 'fixture-custody:postgres-house',
+        status: 'fixture-transferred' as const,
+      },
+      kind: 'record-transfer' as const,
+      transitionKey: 'transfer-postgres',
+    },
+    {
+      evidence: {
+        purchaseReference: 'fixture-purchase:postgres',
+        reference: 'fixture-reveal:postgres',
+        schemaVersion: FLIP_REVEAL_READY_FIXTURE_VERSION,
+        status: 'fixture-ready' as const,
+        transferReference: 'fixture-transfer:postgres',
+      },
+      kind: 'mark-reveal-ready' as const,
+      transitionKey: 'reveal-postgres',
+    },
+  ];
+
+  for (const action of actions) {
+    session = await service.transition(session.id, {
+      ...action,
+      expectedVersion: session.version,
+    });
+    if (session.status === target) return { service, session };
+  }
+  throw new Error(`unsupported database session target ${target}`);
 }
 
 function policy(poolKey: string, policyVersion: string): FlipInventorySnapshotPolicy {

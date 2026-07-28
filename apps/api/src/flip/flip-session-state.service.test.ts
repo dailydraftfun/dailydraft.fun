@@ -458,6 +458,26 @@ describe('durable fixture-only Flip session state machine', () => {
     });
   });
 
+  test('fails closed when the stored #117 commitment or selected outcome no longer binds', async () => {
+    const commitmentFixture = harness('flip-corrupt-commitment-binding');
+    const committed = await commitmentFixture.advanceTo('pool-committed');
+    commitmentFixture.database.corruptCommitment({
+      poolCommitmentHash: hash('forged-pool-commitment'),
+    });
+    await expect(commitmentFixture.service.findSession(committed.id)).rejects.toMatchObject({
+      code: 'DISABLED',
+    });
+
+    const selectionFixture = harness('flip-corrupt-outcome-binding');
+    const selected = await selectionFixture.advanceTo('selection-recorded');
+    selectionFixture.database.corruptCommitment({
+      outcomeSpace: selectionFixture.commitment.outcomeSpace.filter(({ ordinal }) => ordinal !== 1),
+    });
+    await expect(selectionFixture.service.findSession(selected.id)).rejects.toMatchObject({
+      code: 'DISABLED',
+    });
+  });
+
   test('migration keeps the ledger append-only and reveal finality database-enforced', () => {
     const migration = readFileSync(
       new URL(
@@ -934,6 +954,10 @@ class MemoryFlipDatabase {
     Object.assign(session, patch);
   }
 
+  corruptCommitment(patch: Partial<MemoryCommitment>): void {
+    Object.assign(this.#commitment, structuredClone(patch));
+  }
+
   corruptTransition(sessionId: string, sequence: number, patch: Partial<MemoryTransition>): void {
     const transition = this.#transitions.find(
       (candidate) => candidate.sessionId === sessionId && candidate.sequence === sequence,
@@ -949,6 +973,8 @@ class MemoryFlipDatabase {
   private withTransitions(session: MemorySession) {
     return {
       ...structuredClone(session),
+      poolCommitment:
+        session.poolCommitmentId === this.#commitment.id ? structuredClone(this.#commitment) : null,
       transitions: this.#transitions
         .filter((transition) => transition.sessionId === session.id)
         .sort((left, right) => left.sequence - right.sequence)

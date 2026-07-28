@@ -362,7 +362,10 @@ export class FlipSessionStateService {
     });
     const requestHash = sha256(requestPayload);
     const existing = await this.database.flipSession.findUnique({
-      include: { transitions: { orderBy: { sequence: 'asc' } } },
+      include: {
+        poolCommitment: { include: { ruleset: true } },
+        transitions: { orderBy: { sequence: 'asc' } },
+      },
       where: { id: sessionReference },
     });
     if (existing) {
@@ -405,14 +408,20 @@ export class FlipSessionStateService {
               updatedAt: now,
               version: 1,
             },
-            include: { transitions: { orderBy: { sequence: 'asc' } } },
+            include: {
+              poolCommitment: { include: { ruleset: true } },
+              transitions: { orderBy: { sequence: 'asc' } },
+            },
           }),
         { isolationLevel: 'Serializable' },
       );
       return toSnapshot(created);
     } catch (error) {
       const concurrent = await this.database.flipSession.findUnique({
-        include: { transitions: { orderBy: { sequence: 'asc' } } },
+        include: {
+          poolCommitment: { include: { ruleset: true } },
+          transitions: { orderBy: { sequence: 'asc' } },
+        },
         where: { id: sessionReference },
       });
       if (concurrent?.transitions[0]?.requestHash === requestHash) return toSnapshot(concurrent);
@@ -423,7 +432,10 @@ export class FlipSessionStateService {
   async findSession(sessionReference: string): Promise<FlipSessionSnapshot> {
     requireIdentifier(sessionReference, 'sessionReference');
     const session = await this.database.flipSession.findUnique({
-      include: { transitions: { orderBy: { sequence: 'asc' } } },
+      include: {
+        poolCommitment: { include: { ruleset: true } },
+        transitions: { orderBy: { sequence: 'asc' } },
+      },
       where: { id: sessionReference },
     });
     if (!session) {
@@ -558,7 +570,10 @@ export class FlipSessionStateService {
 type NormalizedAction = FlipSessionAction;
 type FlipSessionRow = Prisma.FlipSessionGetPayload<Record<string, never>>;
 type FlipSessionWithTransitions = Prisma.FlipSessionGetPayload<{
-  include: { transitions: true };
+  include: {
+    poolCommitment: { include: { ruleset: true } };
+    transitions: true;
+  };
 }>;
 
 interface ResolvedAction {
@@ -900,7 +915,10 @@ async function loadSession(
   sessionReference: string,
 ): Promise<FlipSessionWithTransitions> {
   return transaction.flipSession.findUniqueOrThrow({
-    include: { transitions: { orderBy: { sequence: 'asc' } } },
+    include: {
+      poolCommitment: { include: { ruleset: true } },
+      transitions: { orderBy: { sequence: 'asc' } },
+    },
     where: { id: sessionReference },
   });
 }
@@ -980,6 +998,7 @@ function assertAggregateContract(session: FlipSessionRow): void {
 
 function assertSessionLedger(session: FlipSessionWithTransitions): void {
   assertAggregateContract(session);
+  assertStoredCommitmentBinding(session);
   const first = session.transitions[0];
   const last = session.transitions.at(-1);
   const terminal = TERMINAL_STATUSES.has(session.status);
@@ -1126,6 +1145,7 @@ function expectedStoredTransition(
     case DatabaseFlipSessionTransitionKind.POOL_COMMITTED: {
       const evidence = requirePoolCommitmentEvidence(transition.evidence);
       if (
+        evidence.eligibleOutcomeCount !== session.poolCommitment?.eligibleOutcomeCount ||
         evidence.poolCommitmentId !== session.poolCommitmentId ||
         evidence.poolCommitmentHash !== session.poolCommitmentHash ||
         evidence.rulesHash !== session.rulesHash ||
@@ -1275,6 +1295,59 @@ function expectedStoredTransition(
     terminalReason,
     toStatus,
   };
+}
+
+function assertStoredCommitmentBinding(session: FlipSessionWithTransitions): void {
+  const commitment = session.poolCommitment;
+  if (!commitment) {
+    if (
+      session.poolCommitmentId !== null ||
+      session.poolCommitmentHash !== null ||
+      session.rulesHash !== null ||
+      session.snapshotContentHash !== null ||
+      session.selectedOrdinal !== null ||
+      session.selectedBandLabel !== null ||
+      session.selectedAssetReference !== null ||
+      session.selectedListingReference !== null ||
+      session.selectedValueAmount !== null
+    ) {
+      throw stateError('DISABLED', 'Flip durable pool commitment binding is inconsistent');
+    }
+    return;
+  }
+
+  const outcomes = parseOutcomeSpace(commitment.outcomeSpace);
+  if (
+    commitment.id !== session.poolCommitmentId ||
+    commitment.sessionReference !== session.id ||
+    commitment.sealedAt === null ||
+    commitment.ruleset.sealedAt === null ||
+    commitment.ruleset.activation !== 'fixture-only' ||
+    commitment.ruleset.currency !== 'USDC' ||
+    commitment.ruleset.decimals !== 6 ||
+    commitment.rulesHash !== commitment.ruleset.rulesHash ||
+    commitment.rulesHash !== session.rulesHash ||
+    commitment.snapshotContentHash !== session.snapshotContentHash ||
+    commitment.poolCommitmentHash !== session.poolCommitmentHash ||
+    commitment.eligibleOutcomeCount !== outcomes.length ||
+    commitment.ruleset.stakeAmount !== session.stakeAmount ||
+    commitment.ruleset.currency !== session.stakeCurrency ||
+    commitment.ruleset.decimals !== session.stakeDecimals
+  ) {
+    throw stateError('DISABLED', 'Flip durable pool commitment binding is inconsistent');
+  }
+
+  if (session.selectedOrdinal === null) return;
+  const selected = outcomes.find((outcome) => outcome.ordinal === session.selectedOrdinal);
+  if (
+    !selected ||
+    selected.bandLabel !== session.selectedBandLabel ||
+    selected.providerAssetReference !== session.selectedAssetReference ||
+    selected.providerListingReference !== session.selectedListingReference ||
+    selected.listingValueAmount !== session.selectedValueAmount
+  ) {
+    throw stateError('DISABLED', 'Flip durable selected outcome binding is inconsistent');
+  }
 }
 
 function requireStatus(

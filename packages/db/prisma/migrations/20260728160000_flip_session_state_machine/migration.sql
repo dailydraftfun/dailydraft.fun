@@ -334,6 +334,8 @@ $$ LANGUAGE sql IMMUTABLE;
 CREATE FUNCTION "validate_flip_session_transition_contract"() RETURNS trigger AS $$
 DECLARE
   stored_session "FlipSession"%ROWTYPE;
+  stored_commitment "FlipSessionPoolCommitment"%ROWTYPE;
+  stored_ruleset "FlipRuleSet"%ROWTYPE;
   request_json JSONB;
   action_json JSONB;
   expected_action_kind TEXT;
@@ -350,6 +352,9 @@ BEGIN
     RAISE EXCEPTION 'Flip session transition evidence cannot contain null fields';
   END IF;
   request_json := NEW."requestPayload"::JSONB;
+  IF NEW."requestPayload" IS DISTINCT FROM "dailydraft_canonical_jsonb"(request_json) THEN
+    RAISE EXCEPTION 'Flip session transition request payload is not canonical';
+  END IF;
   IF
     encode(sha256(convert_to(NEW."requestPayload", 'UTF8')), 'hex')
       <> NEW."requestHash"
@@ -469,8 +474,36 @@ BEGIN
         RAISE EXCEPTION 'Flip stake transition evidence is invalid';
       END IF;
     WHEN 'POOL_COMMITTED' THEN
+      SELECT *
+      INTO stored_commitment
+      FROM "FlipSessionPoolCommitment"
+      WHERE "id" = stored_session."poolCommitmentId";
+
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Flip pool transition has no durable commitment';
+      END IF;
+
+      SELECT *
+      INTO stored_ruleset
+      FROM "FlipRuleSet"
+      WHERE "id" = stored_commitment."rulesetId";
+
       IF
-        NEW."fromStatus" <> 'STAKE_CONFIRMED'
+        NOT FOUND
+        OR stored_commitment."sessionReference" <> stored_session."id"
+        OR stored_commitment."sealedAt" IS NULL
+        OR stored_ruleset."sealedAt" IS NULL
+        OR stored_ruleset."activation" <> 'fixture-only'
+        OR stored_ruleset."currency" <> 'USDC'
+        OR stored_ruleset."decimals" <> 6
+        OR stored_commitment."rulesHash" <> stored_ruleset."rulesHash"
+        OR stored_session."stakeAmount" <> stored_ruleset."stakeAmount"
+        OR stored_session."stakeCurrency" <> stored_ruleset."currency"
+        OR stored_session."stakeDecimals" <> stored_ruleset."decimals"
+        OR stored_session."poolCommitmentHash" <> stored_commitment."poolCommitmentHash"
+        OR stored_session."rulesHash" <> stored_commitment."rulesHash"
+        OR stored_session."snapshotContentHash" <> stored_commitment."snapshotContentHash"
+        OR NEW."fromStatus" <> 'STAKE_CONFIRMED'
         OR NEW."toStatus" <> 'POOL_COMMITTED'
         OR NEW."poolCommitmentHash" IS DISTINCT FROM stored_session."poolCommitmentHash"
         OR NEW."selectedAssetReference" IS NOT NULL
@@ -486,7 +519,8 @@ BEGIN
           ]
         )
         OR jsonb_typeof(NEW."evidence"->'eligibleOutcomeCount') <> 'number'
-        OR (NEW."evidence"->>'eligibleOutcomeCount')::NUMERIC < 1
+        OR (NEW."evidence"->>'eligibleOutcomeCount')::NUMERIC
+          <> stored_commitment."eligibleOutcomeCount"
         OR NEW."evidence"->>'poolCommitmentId' <> stored_session."poolCommitmentId"
         OR NEW."evidence"->>'poolCommitmentHash' <> stored_session."poolCommitmentHash"
         OR NEW."evidence"->>'rulesHash' <> stored_session."rulesHash"
@@ -495,8 +529,19 @@ BEGIN
         RAISE EXCEPTION 'Flip pool transition evidence is invalid';
       END IF;
     WHEN 'SELECTION_RECORDED' THEN
+      SELECT *
+      INTO stored_commitment
+      FROM "FlipSessionPoolCommitment"
+      WHERE "id" = stored_session."poolCommitmentId";
+
       IF
-        NEW."fromStatus" <> 'POOL_COMMITTED'
+        NOT FOUND
+        OR stored_commitment."sessionReference" <> stored_session."id"
+        OR stored_commitment."sealedAt" IS NULL
+        OR stored_session."poolCommitmentHash" <> stored_commitment."poolCommitmentHash"
+        OR stored_session."rulesHash" <> stored_commitment."rulesHash"
+        OR stored_session."snapshotContentHash" <> stored_commitment."snapshotContentHash"
+        OR NEW."fromStatus" <> 'POOL_COMMITTED'
         OR NEW."toStatus" <> 'SELECTION_RECORDED'
         OR NEW."poolCommitmentHash" IS DISTINCT FROM stored_session."poolCommitmentHash"
         OR NEW."selectedAssetReference" IS DISTINCT FROM stored_session."selectedAssetReference"
@@ -526,6 +571,17 @@ BEGIN
         OR NEW."evidence"->>'providerListingReference'
           <> stored_session."selectedListingReference"
         OR NEW."evidence"->>'listingValueAmount' <> stored_session."selectedValueAmount"
+        OR NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(stored_commitment."outcomeSpace") AS outcome
+          WHERE jsonb_typeof(outcome) = 'object'
+            AND jsonb_typeof(outcome->'ordinal') = 'number'
+            AND (outcome->>'ordinal')::NUMERIC = stored_session."selectedOrdinal"
+            AND outcome->>'bandLabel' = stored_session."selectedBandLabel"
+            AND outcome->>'providerAssetReference' = stored_session."selectedAssetReference"
+            AND outcome->>'providerListingReference' = stored_session."selectedListingReference"
+            AND outcome->>'listingValueAmount' = stored_session."selectedValueAmount"
+        )
       THEN
         RAISE EXCEPTION 'Flip selection transition evidence is invalid';
       END IF;
@@ -552,6 +608,8 @@ BEGIN
         OR NEW."evidence"->>'provider' <> 'fixture-marketplace'
         OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-purchase-fixture.v1'
         OR NEW."evidence"->>'status' <> 'fixture-acquired'
+        OR NEW."evidence"->>'reference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
         OR NEW."evidence"->>'reference' <> stored_session."purchaseReference"
         OR NEW."evidence"->>'providerAssetReference'
           <> stored_session."selectedAssetReference"
@@ -581,6 +639,10 @@ BEGIN
         )
         OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-transfer-fixture.v1'
         OR NEW."evidence"->>'status' <> 'fixture-transferred'
+        OR NEW."evidence"->>'reference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
+        OR NEW."evidence"->>'sourceCustodyReference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
         OR NEW."evidence"->>'reference' <> stored_session."transferReference"
         OR NEW."evidence"->>'providerAssetReference'
           <> stored_session."selectedAssetReference"
@@ -602,6 +664,12 @@ BEGIN
         )
         OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-reveal-ready-fixture.v1'
         OR NEW."evidence"->>'status' <> 'fixture-ready'
+        OR NEW."evidence"->>'reference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
+        OR NEW."evidence"->>'purchaseReference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
+        OR NEW."evidence"->>'transferReference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
         OR NEW."evidence"->>'reference' <> stored_session."revealReadyReference"
         OR NEW."evidence"->>'purchaseReference' <> stored_session."purchaseReference"
         OR NEW."evidence"->>'transferReference' <> stored_session."transferReference"
@@ -631,6 +699,8 @@ BEGIN
         OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-settlement-fixture.v1'
         OR NEW."evidence"->>'status' <> 'fixture-recorded'
         OR NEW."evidence"->>'resultHash' !~ '^[a-f0-9]{64}$'
+        OR NEW."evidence"->>'reference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
         OR NEW."evidence"->>'providerAssetReference'
           <> stored_session."selectedAssetReference"
       THEN
@@ -650,6 +720,10 @@ BEGIN
         )
         OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-recovery-fixture.v1'
         OR NEW."evidence"->>'status' <> 'fixture-recovery-required'
+        OR NEW."evidence"->>'reference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
+        OR NEW."evidence"->>'reasonCode'
+          !~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$'
       THEN
         RAISE EXCEPTION 'Flip recovery request transition evidence is invalid';
       END IF;
@@ -669,6 +743,8 @@ BEGIN
         OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-recovery-fixture.v1'
         OR NEW."evidence"->>'status' <> 'fixture-recovered'
         OR NEW."evidence"->>'resultHash' !~ '^[a-f0-9]{64}$'
+        OR NEW."evidence"->>'reference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
       THEN
         RAISE EXCEPTION 'Flip recovery completion transition evidence is invalid';
       END IF;
@@ -685,6 +761,10 @@ BEGIN
         )
         OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-recovery-fixture.v1'
         OR NEW."evidence"->>'status' <> 'fixture-failed'
+        OR NEW."evidence"->>'reference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
+        OR NEW."evidence"->>'reasonCode'
+          !~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$'
         OR NEW."terminalReason" <> 'FIXTURE_TERMINATED:' || (NEW."evidence"->>'reasonCode')
       THEN
         RAISE EXCEPTION 'Flip terminal failure transition evidence is invalid';
