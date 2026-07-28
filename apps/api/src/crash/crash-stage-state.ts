@@ -11,6 +11,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type { Money } from '../domain.js';
 import { stableStringify } from '../providers/valuation-policy.js';
+import { shouldRetryTreasuryTransaction } from '../treasury/house-treasury.policy.js';
 import {
   CRASH_CALCULATOR_VERSION,
   type CrashCalculatorRuleSet,
@@ -18,6 +19,13 @@ import {
   calculateCrashPot,
   validateCrashCalculatorRuleSet,
 } from './crash-calculators.js';
+import {
+  CrashRiskGate,
+  type CrashRiskHealthFixture,
+  CrashRiskPolicyError,
+  type CrashRiskRules,
+  validateCrashRiskRules,
+} from './crash-risk.policy.js';
 
 export const CRASH_STATE_MACHINE_VERSION = 'dailydraft.crash-stage-state.v1' as const;
 export const CRASH_STATE_RULES_SCHEMA_VERSION = 'dailydraft.crash-state-rules.v1' as const;
@@ -59,7 +67,8 @@ export type CrashStateMachineErrorCode =
   | 'IDEMPOTENCY_MISMATCH'
   | 'INVALID_EVIDENCE'
   | 'INVALID_TRANSITION'
-  | 'NOT_FOUND';
+  | 'NOT_FOUND'
+  | 'RISK_REJECTED';
 
 export class CrashStateMachineError extends Error {
   constructor(
@@ -77,6 +86,7 @@ export interface UnsignedCrashStateRules {
   calculatorRules: CrashCalculatorRuleSet;
   decisionTimeoutMs: number;
   defaultAction: 'forfeit';
+  riskRules: CrashRiskRules;
   schemaVersion: typeof CRASH_STATE_RULES_SCHEMA_VERSION;
   stateMachineVersion: typeof CRASH_STATE_MACHINE_VERSION;
 }
@@ -122,6 +132,7 @@ export interface CrashClock {
 export interface CreateCrashFixtureRound {
   initialPot: Money;
   playerWalletReference: string;
+  riskHealth: CrashRiskHealthFixture;
   roundId: string;
   rules: CrashStateRules;
 }
@@ -133,6 +144,7 @@ export interface ContinueCrashFixtureStage {
   expectedVersion: number;
   payment: CrashPaymentFixture;
   providerOutcome: CrashProviderOutcomeFixture;
+  riskHealth: CrashRiskHealthFixture;
   settlement?: CrashSettlementFixture;
   transitionKey: string;
 }
@@ -157,6 +169,9 @@ export interface CrashRoundSnapshot {
   pot: Money;
   rulesHash: string;
   rulesVersion: string;
+  riskExpiresAt: string;
+  riskRulesHash: string;
+  riskRulesVersion: string;
   stage: number;
   stateMachineRulesHash: string;
   stateMachineVersion: string;
@@ -181,6 +196,7 @@ export interface CrashTransitionSnapshot {
     | 'deadline-defaulted';
   outcome: unknown;
   payment: unknown;
+  riskEvidence?: unknown;
   scheduledDeadline: string | null;
   sequence: number;
   settlement: unknown;
@@ -224,6 +240,19 @@ export function validateCrashStateRules(value: unknown): CrashStateRules {
   } catch {
     throw stateError('DISABLED', 'Crash economic rules are absent or unsupported');
   }
+  let riskRules: CrashRiskRules;
+  try {
+    riskRules = validateCrashRiskRules(rules.riskRules);
+  } catch {
+    throw stateError('DISABLED', 'Crash risk rules are absent or unsupported');
+  }
+  if (
+    riskRules.maxStage > calculatorRules.stages.length ||
+    BigInt(riskRules.maxPotAmount) >
+      BigInt(calculatorRules.stages[riskRules.maxStage - 1]?.maxPotAmount ?? '0')
+  ) {
+    throw stateError('DISABLED', 'Crash risk rules exceed the committed calculator envelope');
+  }
   if (
     calculatorRules.calculatorVersion !== CRASH_CALCULATOR_VERSION ||
     typeof rules.stateMachineRulesHash !== 'string' ||
@@ -237,6 +266,7 @@ export function validateCrashStateRules(value: unknown): CrashStateRules {
     calculatorRules,
     decisionTimeoutMs: rules.decisionTimeoutMs,
     defaultAction: 'forfeit',
+    riskRules,
     schemaVersion: CRASH_STATE_RULES_SCHEMA_VERSION,
     stateMachineVersion: CRASH_STATE_MACHINE_VERSION,
   };
@@ -290,6 +320,7 @@ export class CrashStageStateService {
     @Inject(DATABASE_CLIENT) private readonly database: DatabaseClient,
     @Inject(CRASH_CLOCK) private readonly clock: CrashClock,
     @Inject(CRASH_ENVIRONMENT) private readonly environment: NodeJS.ProcessEnv,
+    @Inject(CrashRiskGate) private readonly risk: CrashRiskGate,
   ) {}
 
   async createFixtureRound(input: CreateCrashFixtureRound): Promise<CrashRoundSnapshot> {
@@ -321,52 +352,71 @@ export class CrashStageStateService {
     }
 
     const now = this.clock.now();
-    const deadline = new Date(now.getTime() + rules.decisionTimeoutMs);
+    const riskExpiresAt = new Date(now.getTime() + rules.riskRules.maxDurationMs);
+    const deadline = boundedDeadline(now, rules.decisionTimeoutMs, riskExpiresAt);
     try {
-      const created = await this.database.$transaction(
-        (transaction) =>
-          transaction.crashRound.create({
-            data: {
-              architectureVersion: rules.architectureVersion,
-              activationMode: 'fixture-only',
-              calculatorVersion: rules.calculatorRules.calculatorVersion,
-              decisionDeadline: deadline,
-              defaultAction: DatabaseCrashDecision.FORFEIT,
-              id: input.roundId,
-              playerWalletReference: input.playerWalletReference,
-              potAmount: initialPot.amount,
-              potCurrency: initialPot.currency,
-              potDecimals: initialPot.decimals,
-              rulesHash: rules.calculatorRules.rulesHash,
-              rulesVersion: rules.calculatorRules.rulesVersion,
-              stage: 1,
-              stateMachineRulesHash: rules.stateMachineRulesHash,
-              stateMachineVersion: rules.stateMachineVersion,
-              status: DatabaseCrashRoundStatus.ACTIVE,
-              transitions: {
-                create: {
-                  architectureVersion: rules.architectureVersion,
-                  calculatorVersion: rules.calculatorRules.calculatorVersion,
-                  id: createId('crashtransition'),
-                  kind: DatabaseCrashTransitionKind.ROUND_STARTED,
-                  requestHash,
-                  rulesHash: rules.calculatorRules.rulesHash,
-                  rulesVersion: rules.calculatorRules.rulesVersion,
-                  scheduledDeadline: deadline,
-                  sequence: 1,
-                  stateMachineRulesHash: rules.stateMachineRulesHash,
-                  stateMachineVersion: rules.stateMachineVersion,
-                  toStage: 1,
-                  toStatus: DatabaseCrashRoundStatus.ACTIVE,
-                  transitionKey: 'round-started',
-                  valueChange: moneyJson(initialPot, initialPot, zeroMoney()),
-                },
+      const created = await this.runSerializable(async (transaction) => {
+        const round = await transaction.crashRound.create({
+          data: {
+            architectureVersion: rules.architectureVersion,
+            activationMode: 'fixture-only',
+            calculatorVersion: rules.calculatorRules.calculatorVersion,
+            decisionDeadline: deadline,
+            defaultAction: DatabaseCrashDecision.FORFEIT,
+            id: input.roundId,
+            playerWalletReference: input.playerWalletReference,
+            potAmount: initialPot.amount,
+            potCurrency: initialPot.currency,
+            potDecimals: initialPot.decimals,
+            rulesHash: rules.calculatorRules.rulesHash,
+            rulesVersion: rules.calculatorRules.rulesVersion,
+            riskExpiresAt,
+            riskRulesHash: rules.riskRules.riskRulesHash,
+            riskRulesVersion: rules.riskRules.rulesVersion,
+            riskStartedAt: now,
+            stage: 1,
+            stateMachineRulesHash: rules.stateMachineRulesHash,
+            stateMachineVersion: rules.stateMachineVersion,
+            status: DatabaseCrashRoundStatus.ACTIVE,
+            transitions: {
+              create: {
+                architectureVersion: rules.architectureVersion,
+                calculatorVersion: rules.calculatorRules.calculatorVersion,
+                id: createId('crashtransition'),
+                kind: DatabaseCrashTransitionKind.ROUND_STARTED,
+                requestHash,
+                rulesHash: rules.calculatorRules.rulesHash,
+                rulesVersion: rules.calculatorRules.rulesVersion,
+                riskEvidence: input.riskHealth as unknown as Prisma.InputJsonValue,
+                scheduledDeadline: deadline,
+                sequence: 1,
+                stateMachineRulesHash: rules.stateMachineRulesHash,
+                stateMachineVersion: rules.stateMachineVersion,
+                toStage: 1,
+                toStatus: DatabaseCrashRoundStatus.ACTIVE,
+                transitionKey: 'round-started',
+                valueChange: moneyJson(initialPot, initialPot, zeroMoney()),
               },
             },
-            include: { transitions: { orderBy: { sequence: 'asc' } } },
-          }),
-        { isolationLevel: 'Serializable' },
-      );
+          },
+          include: { transitions: { orderBy: { sequence: 'asc' } } },
+        });
+        try {
+          await this.risk.reserveRound(transaction, {
+            health: input.riskHealth,
+            initialPot,
+            now,
+            round: riskBinding(round),
+            rules: rules.riskRules,
+          });
+        } catch (error) {
+          if (error instanceof CrashRiskPolicyError) {
+            throw stateError('RISK_REJECTED', error.message);
+          }
+          throw error;
+        }
+        return round;
+      });
       return toSnapshot(created);
     } catch (error) {
       const concurrent = await this.database.crashRound.findUnique({
@@ -447,65 +497,81 @@ export class CrashStageStateService {
 
     const now = this.clock.now();
     try {
-      return await this.database
-        .$transaction(
-          async (transaction) => {
-            const current = await transaction.crashRound.findUnique({ where: { id: roundId } });
-            if (!current) throw stateError('NOT_FOUND', `Crash round ${roundId} was not found`);
-            assertCrashRoundRuleBinding(current, rules);
-            if (current.status !== DatabaseCrashRoundStatus.ACTIVE) {
-              throw stateError('INVALID_TRANSITION', 'A terminal Crash round cannot transition');
-            }
-            if (
-              current.stage !== input.expectedStage ||
-              current.version !== input.expectedVersion
-            ) {
-              throw stateError(
-                'INVALID_TRANSITION',
-                'Crash transition does not match the durable stage and version',
-              );
-            }
-            if (!current.decisionDeadline || current.decisionDeadline <= now) {
-              throw stateError('DEADLINE_EXPIRED', 'Crash decision deadline has expired');
-            }
-
-            const next = resolveDecision(current, rules, normalized, now);
-            const updated = await transaction.crashRound.updateMany({
-              data: {
-                decisionDeadline: next.decisionDeadline,
-                potAmount: next.potAfter.amount,
-                stage: next.stage,
-                status: next.status,
-                terminalAt: next.terminalAt,
-                terminalReason: next.terminalReason,
-                version: { increment: 1 },
-              },
-              where: {
-                id: roundId,
-                stage: current.stage,
-                status: DatabaseCrashRoundStatus.ACTIVE,
-                version: current.version,
-              },
-            });
-            if (updated.count !== 1) {
-              throw stateError('CONCURRENT_TRANSITION', 'Crash stage changed concurrently');
-            }
-            await transaction.crashTransition.create({
-              data: transitionData({
-                current,
-                input,
-                next,
-                normalized,
-                requestHash,
-                rules,
-                roundId,
-              }),
-            });
-            return loadRound(transaction, roundId);
+      return await this.runSerializable(async (transaction) => {
+        const current = await transaction.crashRound.findUnique({ where: { id: roundId } });
+        if (!current) throw stateError('NOT_FOUND', `Crash round ${roundId} was not found`);
+        assertCrashRoundRuleBinding(
+          {
+            ...current,
+            riskRulesHash: requireRiskHash(current),
+            riskRulesVersion: requireRiskVersion(current),
           },
-          { isolationLevel: 'Serializable' },
-        )
-        .then(toSnapshot);
+          rules,
+        );
+        if (current.status !== DatabaseCrashRoundStatus.ACTIVE) {
+          throw stateError('INVALID_TRANSITION', 'A terminal Crash round cannot transition');
+        }
+        if (current.stage !== input.expectedStage || current.version !== input.expectedVersion) {
+          throw stateError(
+            'INVALID_TRANSITION',
+            'Crash transition does not match the durable stage and version',
+          );
+        }
+        if (!current.decisionDeadline || current.decisionDeadline <= now) {
+          throw stateError('DEADLINE_EXPIRED', 'Crash decision deadline has expired');
+        }
+
+        const next = resolveDecision(current, rules, normalized, now);
+        try {
+          await this.risk.applyTransition(transaction, {
+            acceptsRisk: normalized.decision === 'continue',
+            health: normalized.decision === 'continue' ? normalized.riskHealth : null,
+            nextPot: next.potAfter,
+            nextStage: next.stage,
+            now,
+            round: riskBinding(current),
+            rules: rules.riskRules,
+            terminal: next.status !== DatabaseCrashRoundStatus.ACTIVE,
+          });
+        } catch (error) {
+          if (error instanceof CrashRiskPolicyError) {
+            throw stateError('RISK_REJECTED', error.message);
+          }
+          throw error;
+        }
+        const updated = await transaction.crashRound.updateMany({
+          data: {
+            decisionDeadline: next.decisionDeadline,
+            potAmount: next.potAfter.amount,
+            stage: next.stage,
+            status: next.status,
+            terminalAt: next.terminalAt,
+            terminalReason: next.terminalReason,
+            version: { increment: 1 },
+          },
+          where: {
+            id: roundId,
+            stage: current.stage,
+            status: DatabaseCrashRoundStatus.ACTIVE,
+            version: current.version,
+          },
+        });
+        if (updated.count !== 1) {
+          throw stateError('CONCURRENT_TRANSITION', 'Crash stage changed concurrently');
+        }
+        await transaction.crashTransition.create({
+          data: transitionData({
+            current,
+            input,
+            next,
+            normalized,
+            requestHash,
+            rules,
+            roundId,
+          }),
+        });
+        return loadRound(transaction, roundId);
+      }).then(toSnapshot);
     } catch (error) {
       const concurrentReplay = await this.findReplay(roundId, input.transitionKey, requestHash);
       if (concurrentReplay) return concurrentReplay;
@@ -585,7 +651,7 @@ export class CrashStageStateService {
       }),
     );
     try {
-      return await this.database.$transaction(async (transaction) => {
+      return await this.runSerializable(async (transaction) => {
         const current = await transaction.crashRound.findUnique({ where: { id: candidate.id } });
         if (
           !current ||
@@ -614,6 +680,18 @@ export class CrashStageStateService {
           },
         });
         if (updated.count !== 1) return false;
+        try {
+          await this.risk.releaseTerminal(transaction, {
+            now,
+            round: riskBinding(current),
+            stage: current.stage,
+          });
+        } catch (error) {
+          if (error instanceof CrashRiskPolicyError) {
+            throw stateError('RISK_REJECTED', error.message);
+          }
+          throw error;
+        }
         await transaction.crashTransition.create({
           data: {
             architectureVersion: current.architectureVersion,
@@ -668,6 +746,20 @@ export class CrashStageStateService {
     return this.findRound(roundId);
   }
 
+  private async runSerializable<T>(
+    operation: (transaction: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.database.$transaction(operation, {
+          isolationLevel: 'Serializable',
+        });
+      } catch (error) {
+        if (!shouldRetryTreasuryTransaction(error, attempt)) throw error;
+      }
+    }
+  }
+
   private requireFixtureMode(): void {
     if (!crashStateFixtureModeEnabled(this.environment)) {
       throw stateError(
@@ -686,6 +778,7 @@ type NormalizedDecision =
       expectedVersion: number;
       payment: CrashPaymentFixture;
       providerOutcome: CrashProviderOutcomeFixture;
+      riskHealth: CrashRiskHealthFixture;
       settlement: CrashSettlementFixture | null;
       transitionKey: string;
     }
@@ -730,6 +823,7 @@ function normalizeDecisionEvidence(
     expectedVersion: input.expectedVersion,
     payment: requirePayment(input.payment, calculatorRules),
     providerOutcome,
+    riskHealth: input.riskHealth,
     settlement: input.settlement ? requireSettlement(input.settlement, calculatorRules) : null,
     transitionKey: input.transitionKey,
   };
@@ -801,7 +895,7 @@ function resolveDecision(
   }
   return {
     bust,
-    decisionDeadline: new Date(now.getTime() + rules.decisionTimeoutMs),
+    decisionDeadline: boundedDeadline(now, rules.decisionTimeoutMs, requireRiskExpiry(current)),
     kind: DatabaseCrashTransitionKind.STAGE_CONTINUED,
     potAfter: potCalculation.nextPot,
     potCalculation,
@@ -844,6 +938,9 @@ function transitionData(input: {
     ...(outcome ? { outcome: outcome as unknown as Prisma.InputJsonValue } : {}),
     ...(normalized.decision === 'continue'
       ? { payment: normalized.payment as unknown as Prisma.InputJsonValue }
+      : {}),
+    ...(normalized.decision === 'continue'
+      ? { riskEvidence: normalized.riskHealth as unknown as Prisma.InputJsonValue }
       : {}),
     requestHash,
     roundId,
@@ -894,6 +991,8 @@ type CrashRoundRuleBinding = Pick<
   | 'calculatorVersion'
   | 'rulesHash'
   | 'rulesVersion'
+  | 'riskRulesHash'
+  | 'riskRulesVersion'
   | 'stateMachineRulesHash'
   | 'stateMachineVersion'
 >;
@@ -908,7 +1007,9 @@ export function assertCrashRoundRuleBinding(
     current.stateMachineRulesHash !== rules.stateMachineRulesHash ||
     current.calculatorVersion !== rules.calculatorRules.calculatorVersion ||
     current.rulesVersion !== rules.calculatorRules.rulesVersion ||
-    current.rulesHash !== rules.calculatorRules.rulesHash
+    current.rulesHash !== rules.calculatorRules.rulesHash ||
+    current.riskRulesVersion !== rules.riskRules.rulesVersion ||
+    current.riskRulesHash !== rules.riskRules.riskRulesHash
   ) {
     throw stateError('DISABLED', 'Crash round rule references do not match');
   }
@@ -936,6 +1037,9 @@ function toSnapshot(round: CrashRoundWithTransitions): CrashRoundSnapshot {
     pot: storedMoney(round.potAmount, round.potCurrency, round.potDecimals),
     rulesHash: round.rulesHash,
     rulesVersion: round.rulesVersion,
+    riskExpiresAt: requireRiskExpiry(round).toISOString(),
+    riskRulesHash: requireRiskHash(round),
+    riskRulesVersion: requireRiskVersion(round),
     stage: round.stage,
     stateMachineRulesHash: round.stateMachineRulesHash,
     stateMachineVersion: round.stateMachineVersion,
@@ -950,6 +1054,7 @@ function toSnapshot(round: CrashRoundWithTransitions): CrashRoundSnapshot {
       kind: toKind(transition.kind),
       outcome: transition.outcome,
       payment: transition.payment,
+      riskEvidence: transition.riskEvidence,
       scheduledDeadline: transition.scheduledDeadline?.toISOString() ?? null,
       sequence: transition.sequence,
       settlement: transition.settlement,
@@ -984,6 +1089,11 @@ function assertRoundLedger(round: CrashRoundWithTransitions): void {
   if (
     !transitionsValid ||
     first?.kind !== DatabaseCrashTransitionKind.ROUND_STARTED ||
+    !round.riskRulesHash ||
+    !round.riskRulesVersion ||
+    !round.riskStartedAt ||
+    !round.riskExpiresAt ||
+    round.riskExpiresAt <= round.riskStartedAt ||
     first.fromStatus !== null ||
     first.fromStage !== null ||
     last?.toStatus !== round.status ||
@@ -1206,6 +1316,47 @@ function storedMoney(amount: string, currency: string, decimals: number): Money 
     throw stateError('INVALID_EVIDENCE', 'Stored Crash pot is not canonical USDC');
   }
   return { amount, currency, decimals };
+}
+
+function riskBinding(round: {
+  id: string;
+  playerWalletReference: string;
+  riskExpiresAt: Date | null;
+  riskRulesHash: string | null;
+  riskRulesVersion: string | null;
+}) {
+  return {
+    id: round.id,
+    playerWalletReference: round.playerWalletReference,
+    riskExpiresAt: requireRiskExpiry(round),
+    riskRulesHash: requireRiskHash(round),
+    riskRulesVersion: requireRiskVersion(round),
+  };
+}
+
+function requireRiskExpiry(round: { riskExpiresAt: Date | null }): Date {
+  if (!round.riskExpiresAt) {
+    throw stateError('DISABLED', 'Crash round risk expiry is absent');
+  }
+  return round.riskExpiresAt;
+}
+
+function requireRiskHash(round: { riskRulesHash: string | null }): string {
+  if (!round.riskRulesHash || !HASH_PATTERN.test(round.riskRulesHash)) {
+    throw stateError('DISABLED', 'Crash round risk hash is absent');
+  }
+  return round.riskRulesHash;
+}
+
+function requireRiskVersion(round: { riskRulesVersion: string | null }): string {
+  if (!round.riskRulesVersion || !IDENTIFIER_PATTERN.test(round.riskRulesVersion)) {
+    throw stateError('DISABLED', 'Crash round risk version is absent');
+  }
+  return round.riskRulesVersion;
+}
+
+function boundedDeadline(now: Date, timeoutMs: number, riskExpiresAt: Date): Date {
+  return new Date(Math.min(now.getTime() + timeoutMs, riskExpiresAt.getTime()));
 }
 
 function requireIdentifier(value: string, label: string): void {

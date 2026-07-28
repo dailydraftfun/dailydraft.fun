@@ -28,6 +28,7 @@ export {
   HouseInventoryListingState,
   HouseInventoryStatus,
   HouseTreasuryLedgerType,
+  HouseTreasuryReservationSource,
   HouseTreasuryReservationStatus,
   MatchmakingTicketRole,
   MatchmakingTicketStatus,

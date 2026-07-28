@@ -302,7 +302,7 @@ separate HITL approval and promotion gate is complete.
 
 `src/crash/crash-stage-state.ts` is the durable fixture interpreter layered on
 the pure calculators. Each `CrashRound` is bound to immutable architecture,
-state-machine, calculator, and economic-rule references. Its append-only
+state-machine, calculator, economic-rule, and risk-rule references. Its append-only
 `CrashTransition` ledger records the optimistic round version as its sequence,
 plus every accepted decision, deadline, fixture payment, provider and custody
 outcome, pot change, settlement receipt, and terminal reason. A service restart
@@ -314,6 +314,23 @@ fixture evidence. Exact retries replay the durable result, changed retries are
 rejected, and a stage/version compare-and-swap permits only one concurrent
 transition. Expired stages apply their pre-disclosed synthetic `forfeit`
 default once, with a deterministic zero-payout fixture receipt.
+
+Crash admission and every Continue decision also pass through
+`src/crash/crash-risk.policy.ts` inside the same serializable database
+transaction as the state transition. Exact, SHA-256-committed fixture rules
+bind maximum stage, duration, pot, per-wallet exposure, and aggregate treasury
+exposure. Exact, fresh provider and pool health evidence is required before a
+round or Continue can record payment/custody evidence. The gate takes the same
+global advisory lock as house Duel admission and reads the canonical
+`HouseTreasuryReservation`, snapshot, runtime pause, and ledger rows, so Duel
+and Crash cannot oversubscribe treasury capacity in separate models.
+
+Active Crash liability is a typed row in the existing house reservation table.
+Pot growth appends `RESERVATION_ADJUSTED`; cash-out, bust, completion, and
+deadline default append one idempotent `RESERVATION_RELEASED`. Missing, stale,
+mismatched, or invalid policy/health/snapshot evidence rolls back both the risk
+write and the Crash transition. Recovery retries use the same durable
+reservation and idempotency keys.
 
 The authenticated player contract exposes `GET /v1/crash/rounds/:roundId` for a
 canonical reconnect snapshot and `POST /v1/crash/rounds/:roundId/decisions` for
@@ -337,7 +354,9 @@ configuration records deterministic `RECOVERY_REQUIRED` evidence with
 Both routes remain fail-closed unless `DAILYDRAFT_CRASH_FIXTURE_MODE=true` is
 set in test, local development, or a non-production Vercel preview.
 `DAILYDRAFT_CRASH_FIXTURE_RULES_JSON` must contain the complete hash-committed
-`fixture-only` state and calculator rules already bound to the round. Continue
+`fixture-only` state, calculator, and nested risk rules already bound to the
+round. `DAILYDRAFT_CRASH_FIXTURE_RISK_HEALTH_JSON` must contain the matching
+fresh synthetic provider/pool health fixture. Continue
 also requires `DAILYDRAFT_CRASH_FIXTURE_CUSTODY_POLICY_JSON` with one
 hash-committed fixture/devnet policy whose architecture, rules, and approved
 `fixture-wallet:` session custody exactly match that round. These controls do

@@ -138,8 +138,14 @@ enum HouseTreasuryReservationStatus {
   SETTLED
 }
 
+enum HouseTreasuryReservationSource {
+  DUEL
+  CRASH
+}
+
 enum HouseTreasuryLedgerType {
   RESERVATION_CREATED
+  RESERVATION_ADJUSTED
   RESERVATION_RELEASED
   HOUSE_FUNDING_COMMITTED
   PLAYER_WIN_LOSS
@@ -273,6 +279,10 @@ model CrashRound {
   calculatorVersion     String
   rulesVersion          String
   rulesHash             String
+  riskRulesVersion      String?
+  riskRulesHash         String?
+  riskStartedAt         DateTime?
+  riskExpiresAt         DateTime?
   playerWalletReference String
   potAmount             String
   potCurrency           String           @default("USDC")
@@ -285,6 +295,8 @@ model CrashRound {
   updatedAt             DateTime         @updatedAt
   transitions           CrashTransition[]
   custodyIntents        CrashCustodyMovementIntent[]
+  houseReservation      HouseTreasuryReservation?
+  houseLedgerEntries    HouseTreasuryLedgerEntry[]
 
   @@index([status, decisionDeadline])
   @@index([playerWalletReference, createdAt])
@@ -347,6 +359,7 @@ model CrashTransition {
   outcome               Json?
   valueChange           Json?
   settlement            Json?
+  riskEvidence          Json?
   terminalReason        String?
   architectureVersion   String
   stateMachineVersion   String
@@ -739,7 +752,10 @@ model HouseTierAdmissionState {
 
 model HouseTreasuryReservation {
   id               String                         @id
-  duelId           String                         @unique
+  source           HouseTreasuryReservationSource @default(DUEL)
+  duelId           String?                        @unique
+  crashRoundId     String?                        @unique
+  riskRulesHash    String?
   playerWallet     String
   tier             Int
   amount           String
@@ -754,12 +770,14 @@ model HouseTreasuryReservation {
   version          Int                            @default(1)
   createdAt        DateTime                       @default(now())
   updatedAt        DateTime                       @updatedAt
-  duel             Duel                           @relation(fields: [duelId], references: [id], onDelete: Restrict)
+  duel             Duel?                          @relation(fields: [duelId], references: [id], onDelete: Restrict)
+  crashRound       CrashRound?                    @relation(fields: [crashRoundId], references: [id], onDelete: Restrict)
   ledgerEntries    HouseTreasuryLedgerEntry[]
 
   @@index([status, tier, reservedAt])
   @@index([status, lastReconciledAt, id])
   @@index([playerWallet, status])
+  @@index([source, status, reservedAt])
 }
 
 model HouseInventoryAsset {
@@ -811,6 +829,7 @@ model HouseTreasuryLedgerEntry {
   id             String                    @id
   idempotencyKey String                    @unique
   duelId         String?
+  crashRoundId   String?
   reservationId  String?
   inventoryId    String?
   type           HouseTreasuryLedgerType
@@ -820,10 +839,12 @@ model HouseTreasuryLedgerEntry {
   metadata       Json?
   createdAt      DateTime                  @default(now())
   duel           Duel?                     @relation(fields: [duelId], references: [id], onDelete: Restrict)
+  crashRound      CrashRound?               @relation(fields: [crashRoundId], references: [id], onDelete: Restrict)
   reservation    HouseTreasuryReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   inventory      HouseInventoryAsset?      @relation(fields: [inventoryId], references: [id], onDelete: Restrict)
 
   @@index([createdAt, type])
+  @@index([crashRoundId, createdAt])
   @@index([duelId, createdAt])
   @@index([inventoryId, createdAt])
 }

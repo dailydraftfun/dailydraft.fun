@@ -6,6 +6,7 @@ import { stableStringify } from '../providers/valuation-policy.js';
 import { calculateCrashBust, calculateCrashPot } from './crash-calculators.js';
 // biome-ignore lint/style/useImportType: Nest uses the custody service class as a runtime injection token.
 import { CrashCustodyMovementService } from './crash-custody-movement.service.js';
+import type { CrashRiskHealthFixture } from './crash-risk.policy.js';
 // biome-ignore lint/style/useImportType: Nest uses the state service class as a runtime injection token.
 import {
   assertCrashRoundRuleBinding,
@@ -22,6 +23,7 @@ import {
 } from './crash-stage-state.js';
 
 export const CRASH_DECISION_RULES = Symbol('CRASH_DECISION_RULES');
+export const CRASH_RISK_HEALTH = Symbol('CRASH_RISK_HEALTH');
 export const CRASH_PLAYER_DECISION_SCHEMA_VERSION = 'dailydraft.crash-player-decision.v1' as const;
 export const CRASH_PLAYER_FIXTURE_VERSION = 'dailydraft.crash-player-fixture.v1' as const;
 const CRASH_CUSTODY_IDEMPOTENCY_DOMAIN = 'dailydraft.crash-custody-idempotency.v1';
@@ -56,6 +58,7 @@ export class CrashDecisionService {
     private readonly state: CrashStageStateService,
     @Inject(CRASH_DECISION_RULES) private readonly configuredRules: unknown,
     private readonly custody: CrashCustodyMovementService,
+    @Inject(CRASH_RISK_HEALTH) private readonly configuredRiskHealth: unknown = null,
   ) {}
 
   async currentStage(roundId: string, playerWallet: string): Promise<CrashCurrentStage> {
@@ -87,7 +90,13 @@ export class CrashDecisionService {
       input.action === 'continue'
         ? await this.prepareCustodyMovement(current, rules, input)
         : undefined;
-    const decision = createFixtureDecision(current, rules, input, custodyReference);
+    const decision = createFixtureDecision(
+      current,
+      rules,
+      this.configuredRiskHealth,
+      input,
+      custodyReference,
+    );
     try {
       current = await this.state.decide(input.roundId, rules, decision);
     } catch (error) {
@@ -159,9 +168,20 @@ export function loadCrashDecisionRules(environment: NodeJS.ProcessEnv = process.
   }
 }
 
+export function loadCrashRiskHealth(environment: NodeJS.ProcessEnv = process.env): unknown {
+  const serialized = environment.DAILYDRAFT_CRASH_FIXTURE_RISK_HEALTH_JSON;
+  if (!serialized) return null;
+  try {
+    return JSON.parse(serialized) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 function createFixtureDecision(
   current: CrashRoundSnapshot,
   rules: CrashStateRules,
+  riskHealth: unknown,
   input: CrashPlayerDecisionInput,
   custodyReference?: string,
 ): CrashFixtureDecision {
@@ -215,6 +235,7 @@ function createFixtureDecision(
       stage: input.expectedStage,
       stageValue,
     },
+    riskHealth: riskHealth as CrashRiskHealthFixture,
     ...(terminal
       ? {
           settlement: settlementFixture(

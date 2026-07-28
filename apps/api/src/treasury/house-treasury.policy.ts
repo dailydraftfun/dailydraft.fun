@@ -1,6 +1,7 @@
 import {
   type DatabaseClient,
   HouseTreasuryLedgerType,
+  HouseTreasuryReservationSource,
   HouseTreasuryReservationStatus,
   type Prisma,
 } from '@dailydraft/db';
@@ -13,7 +14,7 @@ import {
 import { PublicKey } from '@solana/web3.js';
 import { acquireAdvisoryTransactionLock } from '../database/advisory-lock.js';
 
-const HOUSE_TREASURY_EXPOSURE_LOCK_KEY = 770_392_114;
+export const HOUSE_TREASURY_EXPOSURE_LOCK_KEY = 770_392_114;
 
 export const HOUSE_TREASURY_SNAPSHOT_ID = 'solana-devnet-usdc';
 export const ACTIVE_HOUSE_RESERVATION_STATUSES: HouseTreasuryReservationStatus[] = [
@@ -230,7 +231,11 @@ export async function reserveHouseExposure(
       where: { playerWallet: input.playerWallet, status: { in: activeStatuses } },
     }),
     transaction.houseTreasuryReservation.count({
-      where: { status: { in: activeStatuses }, tier: input.tier },
+      where: {
+        source: HouseTreasuryReservationSource.DUEL,
+        status: { in: activeStatuses },
+        tier: input.tier,
+      },
     }),
     transaction.houseTreasuryLedgerEntry.findMany({
       select: { amount: true },
