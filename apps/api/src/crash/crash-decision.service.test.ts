@@ -119,6 +119,55 @@ describe('CrashDecisionService', () => {
     expect(state.decisions).toEqual([]);
   });
 
+  test.each([
+    ['minimum-length punctuation key', `/${'a'.repeat(15)}`],
+    ['punctuated key', 'continue/request?!@#$%^&*()-=+'],
+    ['maximum-length punctuation key', `/${'z'.repeat(127)}`],
+  ])('derives a canonical internal custody key from a %s', async (_name, idempotencyKey) => {
+    const observed: string[] = [];
+    const custody = custodyHarness({
+      prepareFixtureMovement: async (input) => {
+        observed.push(input.idempotencyKey);
+        return preparedCustodyIntent(input);
+      },
+    });
+
+    await decisionService(stateHarness(activeRound()).service, RULES, custody).decide({
+      ...decisionInput('continue'),
+      idempotencyKey,
+    });
+
+    expect(idempotencyKey.length).toBeGreaterThanOrEqual(16);
+    expect(idempotencyKey.length).toBeLessThanOrEqual(128);
+    expect(observed).toEqual([expect.stringMatching(/^custody:[a-f0-9]{64}$/)]);
+    expect(observed[0]).not.toContain(idempotencyKey);
+  });
+
+  test('keeps exact public retries stable while different public keys derive distinct custody keys', async () => {
+    const observed: string[] = [];
+    const custody = custodyHarness({
+      prepareFixtureMovement: async (input) => {
+        observed.push(input.idempotencyKey);
+        return preparedCustodyIntent(input);
+      },
+    });
+    const exact = {
+      ...decisionInput('continue'),
+      idempotencyKey: 'continue/request?!@#$%^&*()-=+',
+    };
+
+    await decisionService(stateHarness(activeRound()).service, RULES, custody).decide(exact);
+    await decisionService(stateHarness(activeRound()).service, RULES, custody).decide(exact);
+    await decisionService(stateHarness(activeRound()).service, RULES, custody).decide({
+      ...exact,
+      idempotencyKey: `${exact.idempotencyKey}:different`,
+    });
+
+    expect(observed[0]).toBe(observed[1]);
+    expect(observed[2]).not.toBe(observed[0]);
+    expect(new Set(observed).size).toBe(2);
+  });
+
   test('submits cash out and final-stage Continue with exact synthetic settlement evidence', async () => {
     const cashOutState = stateHarness(activeRound());
     const cashOutService = decisionService(cashOutState.service);

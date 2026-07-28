@@ -59,6 +59,38 @@ describe('CrashController', () => {
     ]);
   });
 
+  test.each([
+    ['minimum-length punctuation key', `/${'a'.repeat(15)}`],
+    ['punctuated key', 'continue/request?!@#$%^&*()-=+'],
+    ['maximum-length punctuation key', `/${'z'.repeat(127)}`],
+  ])('forwards the documented %s unchanged', async (_name, idempotencyKey) => {
+    const calls: unknown[] = [];
+    const service = {
+      decide: async (input: unknown) => {
+        calls.push(input);
+        return CURRENT;
+      },
+    } as unknown as CrashDecisionService;
+
+    await new CrashController(service).decide(
+      { roundId: ROUND_ID },
+      { action: 'continue', expectedStage: 1, expectedVersion: 1 },
+      session(),
+      idempotencyKey,
+      reply(),
+    );
+
+    expect(idempotencyKey.length).toBeGreaterThanOrEqual(16);
+    expect(idempotencyKey.length).toBeLessThanOrEqual(128);
+    expect(calls).toEqual([
+      expect.objectContaining({
+        idempotencyKey,
+        playerWallet: WALLET,
+        roundId: ROUND_ID,
+      }),
+    ]);
+  });
+
   test('binds reconnect to the authenticated wallet and canonical round id', async () => {
     const calls: string[][] = [];
     const service = {

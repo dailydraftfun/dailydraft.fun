@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 
 import type { Money } from '../domain.js';
+import { stableStringify } from '../providers/valuation-policy.js';
 import { calculateCrashBust, calculateCrashPot } from './crash-calculators.js';
 // biome-ignore lint/style/useImportType: Nest uses the custody service class as a runtime injection token.
 import { CrashCustodyMovementService } from './crash-custody-movement.service.js';
@@ -23,6 +24,7 @@ import {
 export const CRASH_DECISION_RULES = Symbol('CRASH_DECISION_RULES');
 export const CRASH_PLAYER_DECISION_SCHEMA_VERSION = 'dailydraft.crash-player-decision.v1' as const;
 export const CRASH_PLAYER_FIXTURE_VERSION = 'dailydraft.crash-player-fixture.v1' as const;
+const CRASH_CUSTODY_IDEMPOTENCY_DOMAIN = 'dailydraft.crash-custody-idempotency.v1';
 
 export interface CrashPlayerDecisionInput {
   action: 'cash-out' | 'continue';
@@ -129,7 +131,7 @@ export class CrashDecisionService {
       assetReference,
       expectedStage: input.expectedStage,
       expectedVersion: input.expectedVersion,
-      idempotencyKey: `${input.idempotencyKey}:custody`,
+      idempotencyKey: deriveCustodyIdempotencyKey(input),
       playerWalletReference: current.playerWalletReference,
       requestedRecipient: this.custody.configuredRecipient(),
       roundId: input.roundId,
@@ -292,6 +294,18 @@ function fixtureReference(kind: string, roundId: string, stage: number): string 
 
 function fixtureProviderWallet(roundId: string, stage: number): string {
   return `fixture-wallet:provider-${sha256(`${roundId}:${stage}`).slice(0, 24)}`;
+}
+
+function deriveCustodyIdempotencyKey(input: CrashPlayerDecisionInput): string {
+  return `custody:${sha256(
+    stableStringify({
+      domain: CRASH_CUSTODY_IDEMPOTENCY_DOMAIN,
+      expectedStage: input.expectedStage,
+      expectedVersion: input.expectedVersion,
+      publicIdempotencyKey: input.idempotencyKey,
+      roundId: input.roundId,
+    }),
+  )}`;
 }
 
 function settlementFixture(roundId: string, stage: number, payout: Money) {
