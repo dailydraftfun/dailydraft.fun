@@ -3,7 +3,6 @@ import { createRgsSeedCommitment, createRgsSeededProof } from '@dailydraft/contr
 import { GachaRipPaymentStatus, GachaRipStatus, GachaSport } from '@dailydraft/db';
 
 import { GachaController } from './gacha.controller.js';
-import type { GachaInventorySnapshotService } from './gacha-inventory-snapshot.service.js';
 import type { GachaPaymentService } from './gacha-payment.service.js';
 import type { GachaRipService } from './gacha-rip.service.js';
 
@@ -81,7 +80,7 @@ describe('GachaController', () => {
       revision: 1,
       schemaVersion: 'dailydraft.gacha-inventory.v1',
       sealedAt: now,
-    } satisfies Awaited<ReturnType<GachaInventorySnapshotService['findLatestSealed']>>;
+    } satisfies Awaited<ReturnType<GachaRipService['findCommittedInventory']>>;
     const odds = {
       bandMinimums: {
         base: '0',
@@ -211,12 +210,6 @@ describe('GachaController', () => {
       serializedTransactionBase64: 'c2lnbmVk',
       sourceTokenAccount: 'DevnetSourceTokenAccount111111111111111111',
     } satisfies Awaited<ReturnType<GachaPaymentService['prepareTransaction']>>;
-    const snapshots = {
-      findLatestSealed: async (machineKey: string) => {
-        calls.push(`inventory:${machineKey}`);
-        return inventory;
-      },
-    } as unknown as GachaInventorySnapshotService;
     const rips = {
       capability: () => {
         calls.push('capability');
@@ -229,6 +222,10 @@ describe('GachaController', () => {
       createSeedCommitment: async (machineKey: string) => {
         calls.push(`rip-commitment:${machineKey}`);
         return seedCommitment;
+      },
+      findCommittedInventory: async (machineKey: string) => {
+        calls.push(`inventory:${machineKey}`);
+        return inventory;
       },
       findCommittedOdds: async (machineKey: string) => {
         calls.push(`odds:${machineKey}`);
@@ -258,7 +255,7 @@ describe('GachaController', () => {
         return verifiedPayment;
       },
     } as unknown as GachaPaymentService;
-    const controller = new GachaController(snapshots, rips, payments);
+    const controller = new GachaController(rips, payments);
     const params = { machineKey: 'fixture-machine' };
     const walletSession = {
       kind: 'wallet-session',
@@ -327,11 +324,7 @@ describe('GachaController', () => {
         return {} as Awaited<ReturnType<GachaRipService['createFixtureRip']>>;
       },
     } as unknown as GachaRipService;
-    const controller = new GachaController(
-      {} as GachaInventorySnapshotService,
-      rips,
-      {} as GachaPaymentService,
-    );
+    const controller = new GachaController(rips, {} as GachaPaymentService);
 
     await controller.createFixtureRip(
       {
@@ -400,7 +393,7 @@ describe('GachaController wallet-session authorisation', () => {
         return {} as Awaited<ReturnType<GachaPaymentService['verifyIntent']>>;
       },
     } as unknown as GachaPaymentService;
-    return new GachaController({} as GachaInventorySnapshotService, rips, payments);
+    return new GachaController(rips, payments);
   };
 
   test('refuses to open a payment intent for another wallet', async () => {

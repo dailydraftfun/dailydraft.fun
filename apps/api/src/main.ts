@@ -7,6 +7,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { AppModule } from './app.module.js';
 import { ProblemDetailsFilter } from './common/problem-details.filter.js';
 import { validateDeploymentEnvironment } from './config/deployment-environment.js';
+import { GachaRipService } from './gacha/gacha-rip.service.js';
 
 export interface CreateAppOptions {
   enableShutdownHooks?: boolean;
@@ -21,6 +22,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<NestFas
   });
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter);
+  await app.get(GachaRipService).bootstrapConfiguredMachines();
   app.setGlobalPrefix('v1');
   app.useGlobalFilters(new ProblemDetailsFilter());
   app.useGlobalPipes(

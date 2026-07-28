@@ -103,18 +103,33 @@ export class GachaRipService {
     };
   }
 
+  async findCommittedInventory(machineKey: string) {
+    const canonicalMachineKey = requireKey(machineKey, 'machineKey');
+    const oddsCommitment = await this.requireCommittedOdds(canonicalMachineKey);
+    return this.snapshots.findSealed(canonicalMachineKey, oddsCommitment.snapshotContentHash);
+  }
+
   async findCommittedOdds(machineKey: string) {
-    const commitment = await this.database.gachaPullOddsCommitment.findFirst({
-      orderBy: [{ version: 'desc' }, { committedAt: 'desc' }],
-      where: {
-        machineKey: requireKey(machineKey, 'machineKey'),
-        sealedAt: { not: null },
-      },
-    });
-    if (!commitment) {
-      throw new ServiceUnavailableException('No sealed Gacha odds commitment is available');
+    return this.requireCommittedOdds(requireKey(machineKey, 'machineKey'));
+  }
+
+  /**
+   * Prepare every configured machine before the HTTP server starts accepting
+   * traffic. This keeps public GETs read-only while making a clean deployment
+   * self-sufficient without an operator racing the first player.
+   */
+  async bootstrapConfiguredMachines() {
+    if (
+      (!gachaFixtureModeEnabled() && !gachaDevnetModeEnabled()) ||
+      this.capability().availability !== 'playable'
+    ) {
+      return [];
     }
-    return commitment;
+    const prepared = [];
+    for (const machine of await this.provider.listMachines()) {
+      prepared.push(await this.ensureMachineReadiness(machine.machineKey));
+    }
+    return prepared;
   }
 
   async createSeedCommitment(machineKeyInput: string) {
@@ -124,7 +139,7 @@ export class GachaRipService {
       );
     }
     const machineKey = requireKey(machineKeyInput, 'machineKey');
-    const snapshot = await this.ensureFixtureSnapshot(machineKey);
+    const { snapshot } = await this.ensureMachineReadiness(machineKey);
     if (!snapshot.sealedAt) {
       throw new ServiceUnavailableException('Gacha inventory snapshot is not sealed');
     }
@@ -191,7 +206,7 @@ export class GachaRipService {
       throw new ConflictException('Gacha rip requires a verified payment intent');
     }
     const oddsVersion = requirePositiveInteger(input.oddsVersion ?? 1, 'oddsVersion');
-    const snapshot = await this.ensureFixtureSnapshot(machineKey);
+    const { snapshot } = await this.ensureMachineReadiness(machineKey);
     if (!snapshot.sealedAt) {
       throw new ServiceUnavailableException('Gacha inventory snapshot is not sealed');
     }
@@ -362,6 +377,76 @@ export class GachaRipService {
     const candidates = await this.provider.getEligibleCards(machineKey);
     await this.snapshots.createFixtureSnapshot(snapshotInputForMode(machine, candidates));
     return this.snapshots.findLatestSealed(machineKey);
+  }
+
+  private async requireCommittedOdds(machineKey: string) {
+    const commitment = await this.database.gachaPullOddsCommitment.findFirst({
+      orderBy: [{ version: 'desc' }, { committedAt: 'desc' }],
+      where: { machineKey, sealedAt: { not: null } },
+    });
+    if (!commitment) {
+      throw new ServiceUnavailableException('No sealed Gacha odds commitment is available');
+    }
+    return commitment;
+  }
+
+  /**
+   * Seal the deterministic public read model during controlled bootstrap.
+   *
+   * Inventory and odds are prerequisites for pricing, but the original lazy
+   * path created inventory on seed commitment and odds only after a paid rip.
+   * That left both public reads returning 503 on a clean deployment and made
+   * the first rip impossible.
+   *
+   * The first sealed odds commitment selects the canonical snapshot. A second
+   * process may have prepared a different timestamped snapshot concurrently,
+   * so the odds lock re-reads the winner and every caller returns the exact
+   * snapshot named by that commitment.
+   */
+  private async ensureMachineReadiness(machineKeyInput: string) {
+    if (!gachaFixtureModeEnabled() && !gachaDevnetModeEnabled()) {
+      throw new ServiceUnavailableException(
+        'Sports Pack Gacha machine reads are disabled outside explicit fixture, preview, or devnet mode',
+      );
+    }
+    const machineKey = requireKey(machineKeyInput, 'machineKey');
+    const existingOdds = await this.database.gachaPullOddsCommitment.findFirst({
+      orderBy: [{ version: 'desc' }, { committedAt: 'desc' }],
+      where: { machineKey, sealedAt: { not: null } },
+    });
+    if (existingOdds) {
+      return {
+        oddsCommitment: existingOdds,
+        snapshot: await this.snapshots.findSealed(machineKey, existingOdds.snapshotContentHash),
+      };
+    }
+
+    const candidateSnapshot = await this.ensureFixtureSnapshot(machineKey);
+    if (!candidateSnapshot.sealedAt) {
+      throw new ServiceUnavailableException('Gacha inventory snapshot is not sealed');
+    }
+    const rules = validateGachaPullOddsRuleSet(
+      createFixtureGachaPullOddsRuleSet(candidateSnapshot.contentHash),
+    );
+    const oddsKey = `${machineKey}:fixture-odds`;
+    const committedAt = new Date();
+    const oddsCommitment = await this.database.$transaction(async (transaction) => {
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        oddsKey,
+        GACHA_ODDS_LOCK_NAMESPACE,
+      );
+      const winner = await transaction.gachaPullOddsCommitment.findFirst({
+        orderBy: [{ version: 'desc' }, { committedAt: 'desc' }],
+        where: { machineKey, sealedAt: { not: null } },
+      });
+      if (winner) return winner;
+      return ensureOddsCommitment(transaction, machineKey, oddsKey, 1, rules, committedAt);
+    });
+    return {
+      oddsCommitment,
+      snapshot: await this.snapshots.findSealed(machineKey, oddsCommitment.snapshotContentHash),
+    };
   }
 
   /**

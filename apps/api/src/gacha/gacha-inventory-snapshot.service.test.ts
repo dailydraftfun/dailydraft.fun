@@ -410,6 +410,31 @@ describe('GachaInventorySnapshotService', () => {
       'Gacha inventory snapshot is not sealed',
     );
   });
+
+  test('loads only the exact sealed snapshot selected by committed odds', async () => {
+    enableFixtureMode();
+    const database = new FixtureDatabase();
+    const service = new GachaInventorySnapshotService(database as unknown as DatabaseClient);
+    const created = await service.createFixtureSnapshot({
+      candidates: [
+        card('fixture-card-a', 'asset-a', '35000000'),
+        card('fixture-card-b', 'asset-b', '75000000'),
+      ],
+      evaluatedAt: EVALUATED_AT,
+      policy: policy(),
+    });
+
+    await expect(
+      service.findSealed(MACHINE.machineKey, created.contentHash),
+    ).resolves.toMatchObject({
+      contentHash: created.contentHash,
+      machineKey: MACHINE.machineKey,
+      sealedAt: expect.any(Date),
+    });
+    await expect(service.findSealed(MACHINE.machineKey, 'f'.repeat(64))).rejects.toThrow(
+      'committed Gacha inventory snapshot is not available',
+    );
+  });
 });
 
 describe('Gacha inventory migration contract', () => {
@@ -542,7 +567,27 @@ class FixtureDatabase {
       this.snapshots.push({ ...data, sealedAt: null });
       return data;
     },
-    findFirst: async ({ where }: { where: { poolKey: string } }) => {
+    findFirst: async ({
+      where,
+    }: {
+      where: {
+        contentHash?: string;
+        machineKey?: string;
+        poolKey?: string;
+        sealedAt?: { not: null };
+      };
+    }) => {
+      if (where.contentHash && where.machineKey) {
+        return (
+          this.snapshots.find(
+            (snapshot) =>
+              snapshot.contentHash === where.contentHash &&
+              snapshot.machineKey === where.machineKey &&
+              snapshot.sealedAt !== null,
+          ) ?? null
+        );
+      }
+      if (!where.poolKey) return null;
       const revisions = this.snapshots
         .filter((snapshot) => snapshot.poolKey === where.poolKey)
         .map(({ revision }) => revision);
