@@ -59,6 +59,18 @@ describe('duel entry stepper', () => {
     expect(html).toContain('Waiting for authentication signature');
   });
 
+  test('blocks a second signature while restoring the same-tab session', () => {
+    walletState = wallet();
+    authenticationState = authentication({ status: 'restoring' });
+
+    const html = renderStepper();
+
+    expect(html).toContain('Restoring wallet session');
+    expect(html).toContain('disabled=""');
+    expect(html).toContain('short-lived same-tab session');
+    expect(html).toContain('Signatures and private keys are never stored.');
+  });
+
   test('shows one exact money summary before the transaction wallet prompt', () => {
     walletState = wallet();
     authenticationState = authentication({
@@ -307,7 +319,14 @@ function authentication(
       wallet: string;
     } | null;
     sessionToken: string | null;
-    status: 'unauthenticated' | 'preparing' | 'ready' | 'signing' | 'authenticated' | 'error';
+    status:
+      | 'unauthenticated'
+      | 'restoring'
+      | 'preparing'
+      | 'ready'
+      | 'signing'
+      | 'authenticated'
+      | 'error';
   }> = {},
 ) {
   return {

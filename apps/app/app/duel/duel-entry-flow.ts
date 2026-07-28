@@ -29,6 +29,7 @@ export type DuelEntryStage =
 type DuelEntryStageInput = {
   authenticationStatus:
     | 'unauthenticated'
+    | 'restoring'
     | 'preparing'
     | 'ready'
     | 'signing'

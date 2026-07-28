@@ -57,7 +57,7 @@ type CompatibleWallet = WalletWithFeatures<
 type WalletStatus = 'discovering' | 'disconnected' | 'connecting' | 'connected' | 'error';
 type NetworkStatus = 'checking' | 'online' | 'offline';
 
-type WalletContextValue = {
+export type WalletContextValue = {
   wallets: readonly CompatibleWallet[];
   selectedWallet: CompatibleWallet | null;
   account: WalletAccount | null;

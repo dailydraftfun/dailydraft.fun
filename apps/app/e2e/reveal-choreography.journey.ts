@@ -195,8 +195,9 @@ test('reload during a Duel animation recovers the final reveal without replaying
   await expectCapturedBeats(playerPull, ['anticipation']);
   expect(requestsEndingWith(journey, '/open-packs')).toHaveLength(1);
 
+  const restoredSession = page.waitForResponse(`${journeyApiOrigin}/auth/session`);
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await authenticateFromWalletMenu(page);
+  await restoredSession;
 
   await expect(page.getByTestId(journeyTestIds.duelHeadline)).toHaveText('You won both pulls', {
     timeout: 12_000,
@@ -415,16 +416,6 @@ async function completeDuelEntry(
   await expect(stepper).toHaveAttribute('data-stage', 'funding-review');
   await activate(stepper.getByTestId(entryTestIds.confirmFunding));
   await expect(page.getByTestId(journeyTestIds.battle)).toBeVisible();
-}
-
-async function authenticateFromWalletMenu(page: Page): Promise<void> {
-  await expect(page.getByTestId(journeyTestIds.walletMenu)).toContainText('1111…1111');
-  await page.getByTestId(journeyTestIds.walletMenu).click();
-  await page.getByTestId(journeyTestIds.walletAuthenticationPrepare).click();
-  await Promise.all([
-    page.waitForResponse(`${journeyApiOrigin}/auth/sessions`),
-    page.getByTestId(journeyTestIds.walletAuthenticationSign).click(),
-  ]);
 }
 
 async function keyboardActivate(page: Page, locator: Locator): Promise<void> {

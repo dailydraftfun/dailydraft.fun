@@ -65,6 +65,32 @@ describe('deterministic duel journey fixture', () => {
     );
   });
 
+  test('validates the seeded wallet session used by refresh journeys', () => {
+    const fixture = new DuelJourneyFixture('session-validation');
+    const authorization = authenticate(fixture);
+
+    expect(
+      fixture.handleApi({
+        authorization,
+        method: 'GET',
+        path: '/auth/session',
+      }),
+    ).toEqual({
+      body: {
+        network: 'solana-devnet',
+        wallet: fixture.bootstrap().wallet.address,
+      },
+      status: 200,
+    });
+    expect(
+      fixture.handleApi({
+        authorization: 'Bearer invalid-session',
+        method: 'GET',
+        path: '/auth/session',
+      }).status,
+    ).toBe(401);
+  });
+
   test('serves pseudonymous settled activity without exposing fixture wallets', () => {
     const fixture = new DuelJourneyFixture('verified-activity');
     const response = fixture.handleApi({ method: 'GET', path: '/games/activity?limit=4' });
