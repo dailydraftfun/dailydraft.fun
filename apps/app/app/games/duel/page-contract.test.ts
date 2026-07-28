@@ -24,6 +24,10 @@ function receipt(
 describe('canonical Duel Arena route', () => {
   test('publishes no-index Devnet metadata', () => {
     expect(metadata.title).toBe('Duel Arena — DailyDraft Devnet');
+    expect(metadata.description).toContain('DailyDraft demo pulls');
+    expect(metadata.description).toContain('not charged or purchased');
+    expect(metadata.description).toContain('test-SOL platform fee');
+    expect(metadata.description).not.toContain('sports card duel');
     expect(metadata.robots).toEqual({ follow: false, index: false, nocache: true });
   });
 
