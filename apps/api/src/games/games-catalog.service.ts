@@ -14,6 +14,7 @@ import { publicProductCapabilities } from '../health/health.controller.js';
 
 type Readiness = Awaited<ReturnType<AdminService['getReadiness']>>;
 type GachaCapability = ReturnType<GachaRipService['capability']>;
+type DuelCapabilities = ReturnType<typeof publicProductCapabilities>;
 type DuelAdmission = Readonly<{
   allowedTiers: readonly number[];
   paused: boolean;
@@ -81,7 +82,13 @@ export function resolveDuelCatalogMode(
   readiness: Readiness,
   admission: DuelAdmission,
 ): GameCatalogMode {
-  const capabilities = publicProductCapabilities(readiness);
+  return resolveDuelCatalogModeFromCapabilities(publicProductCapabilities(readiness), admission);
+}
+
+export function resolveDuelCatalogModeFromCapabilities(
+  capabilities: DuelCapabilities,
+  admission: DuelAdmission,
+): GameCatalogMode {
   const packReady = capabilities.packs.some(
     (pack) => pack.enabled && admission.allowedTiers.includes(pack.tier),
   );

@@ -2,11 +2,15 @@ import { describe, expect, test } from 'bun:test';
 
 import type { AdminService } from '../admin/admin.service.js';
 import type { GachaRipService } from '../gacha/gacha-rip.service.js';
+import type { publicProductCapabilities } from '../health/health.controller.js';
 import {
   GamesCatalogService,
   resolveDuelCatalogMode,
+  resolveDuelCatalogModeFromCapabilities,
   resolveGachaCatalogMode,
 } from './games-catalog.service.js';
+
+type TestDuelCapabilities = ReturnType<typeof publicProductCapabilities>;
 
 describe('games catalog', () => {
   test('derives Duel actions from runtime readiness and keeps House inside Duel', () => {
@@ -27,6 +31,55 @@ describe('games catalog', () => {
     expect(mode.description).toContain('pool value is not charged or purchased');
     expect(mode.description).toContain('displayed test-SOL platform fee');
     expect(mode.description).not.toContain('sports pack tier');
+  });
+
+  test('keeps only verified actions when Duel is partially playable', () => {
+    const mode = resolveDuelCatalogModeFromCapabilities(
+      capabilities({
+        direct: { enabled: true, reason: null },
+        house: { enabled: false, reason: 'House is unavailable.' },
+        open: { enabled: false, reason: 'Open matchmaking is unavailable.' },
+      }),
+      admission({ allowedTiers: [50] }),
+    );
+
+    expect(mode.state).toBe('degraded');
+    expect(mode.availableActions).toEqual([
+      { href: '/games/duel', id: 'direct-challenge', label: 'Challenge a wallet' },
+    ]);
+    expect(mode.reason).toBe('Only the listed Duel actions are currently ready on Solana devnet.');
+  });
+
+  test('uses the open-mode reason when no Duel action is available', () => {
+    const mode = resolveDuelCatalogModeFromCapabilities(
+      capabilities({
+        direct: { enabled: false, reason: null },
+        house: { enabled: false, reason: null },
+        open: { enabled: false, reason: 'Open matchmaking is unavailable.' },
+      }),
+      admission({ allowedTiers: [50] }),
+    );
+
+    expect(mode.state).toBe('unavailable');
+    expect(mode.availableActions).toEqual([]);
+    expect(mode.reason).toBe('Open matchmaking is unavailable.');
+  });
+
+  test('uses the honest default when disabled Duel modes provide no reason', () => {
+    const mode = resolveDuelCatalogModeFromCapabilities(
+      capabilities({
+        direct: { enabled: false, reason: null },
+        house: { enabled: false, reason: null },
+        open: { enabled: false, reason: null },
+      }),
+      admission({ allowedTiers: [50] }),
+    );
+
+    expect(mode.state).toBe('unavailable');
+    expect(mode.availableActions).toEqual([]);
+    expect(mode.reason).toBe(
+      'No admitted Duel demo-pool tier is currently ready on Solana devnet.',
+    );
   });
 
   test('fails Duel closed when no pack tier is ready', () => {
@@ -134,6 +187,23 @@ function serviceWith(input: {
     } as AdminService,
     { capability: () => input.gachaCapability } as GachaRipService,
   );
+}
+
+function capabilities(modes: TestDuelCapabilities['modes']): TestDuelCapabilities {
+  return {
+    modes,
+    network: 'solana-devnet',
+    packs: [
+      {
+        enabled: true,
+        id: 'pokemon_50',
+        name: 'Pokémon $50 Pack',
+        reason: null,
+        tier: 50,
+      },
+    ],
+    provider: { mode: 'dailydraft-devnet', ready: true },
+  };
 }
 
 function admission({
