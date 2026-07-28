@@ -14,7 +14,6 @@ import {
 import { Button, Separator } from '@shipshitdev/ui';
 import Image from 'next/image';
 import { useDialogFocus } from '../accessibility/use-dialog-focus';
-import { DialogPortal } from '../components/dialog-portal';
 import { resolveFundingPreflight } from '../solana/balance';
 import { getExplorerAddressUrl, getExplorerTransactionUrl } from '../solana/config';
 import { type ConfirmationPhase, describeConfirmation } from '../solana/confirmation';
@@ -90,170 +89,166 @@ export function DuelEntryStepper({
       persistedDuel.status === 'failed');
 
   return (
-    <DialogPortal>
-      <div className="duel-stepper-backdrop" role="presentation" data-testid="duel-entry-backdrop">
-        <section
-          ref={dialog}
-          className="duel-stepper-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="duel-stepper-title"
-          aria-describedby="duel-stepper-description"
-          data-stage={stage}
-          data-testid="duel-entry-stepper"
-          tabIndex={-1}
-        >
-          <div className="duel-stepper-heading">
-            <div>
-              <span className={`network-chip network-${wallet.networkStatus}`}>
-                <i /> Solana devnet · {wallet.networkStatus}
-              </span>
-              <h2 id="duel-stepper-title">Enter this duel</h2>
-              <p id="duel-stepper-description">
-                Connect, verify, review, and fund without losing your place.
-              </p>
-            </div>
-            <button
+    <div className="duel-stepper-backdrop" role="presentation" data-testid="duel-entry-backdrop">
+      <section
+        ref={dialog}
+        className="duel-stepper-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="duel-stepper-title"
+        aria-describedby="duel-stepper-description"
+        data-stage={stage}
+        data-testid="duel-entry-stepper"
+        tabIndex={-1}
+      >
+        <div className="duel-stepper-heading">
+          <div>
+            <span className={`network-chip network-${wallet.networkStatus}`}>
+              <i /> Solana devnet · {wallet.networkStatus}
+            </span>
+            <h2 id="duel-stepper-title">Enter this duel</h2>
+            <p id="duel-stepper-description">
+              Connect, verify, review, and fund without losing your place.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={blocking}
+            aria-label="Continue this duel later"
+            data-dialog-initial-focus
+            data-testid="duel-entry-close"
+          >
+            <XIcon size={18} />
+          </button>
+        </div>
+
+        <ol className="duel-stepper-progress" aria-label="Duel entry progress">
+          {['Connect', 'Verify', 'Review', 'Fund'].map((label, index) => {
+            const progress = stageProgress(stage);
+            return (
+              <li
+                key={label}
+                className={
+                  index + 1 < progress
+                    ? 'duel-step-complete'
+                    : index + 1 === progress
+                      ? 'duel-step-active'
+                      : ''
+                }
+              >
+                <span>{index + 1 < progress ? <CheckCircleIcon weight="fill" /> : index + 1}</span>
+                {label}
+              </li>
+            );
+          })}
+        </ol>
+
+        <div className="duel-stepper-content">
+          {stage === 'connect' ? <ConnectStep /> : null}
+          {stage === 'authenticate' ? <AuthenticateStep /> : null}
+          {stage === 'review' ? (
+            <ReviewStep
+              mode={mode}
+              tier={tier}
+              pending={pending}
+              onPrepare={onPrepare}
+              networkChecking={wallet.networkStatus === 'checking'}
+            />
+          ) : null}
+          {stage === 'preparing' ? (
+            <ProgressStep
+              label="Preparing funding"
+              detail="Creating or restoring the duel, then calculating the exact devnet fee."
+            />
+          ) : null}
+          {stage === 'funding-review' && intent ? (
+            <FundingReviewStep
+              intent={intent}
+              tier={tier}
+              pending={pending}
+              onConfirm={onConfirm}
+            />
+          ) : null}
+          {stage === 'funding-signature' ? (
+            <ProgressStep
+              label="Value-bearing transaction"
+              detail="Your wallet is waiting for an explicit approval to move the displayed devnet fee."
+              signature="Transaction signature · moves test SOL"
+            />
+          ) : null}
+          {stage === 'confirming' ? (
+            <ProgressStep
+              label={
+                confirmationPhase
+                  ? `${describeConfirmation(confirmationPhase).label} on devnet`
+                  : 'Confirming escrow funding'
+              }
+              detail={
+                confirmationPhase
+                  ? `${describeConfirmation(confirmationPhase).detail} DailyDraft will advance automatically.`
+                  : 'The transaction was broadcast. DailyDraft is verifying finalized escrow state and will advance automatically.'
+              }
+              explorerUrl={fundingSignature ? getExplorerTransactionUrl(fundingSignature) : null}
+            />
+          ) : null}
+          {stage === 'waiting' ? (
+            <WaitingStep status={persistedDuel?.status ?? null} notice={notice} />
+          ) : null}
+          {stage === 'complete' ? <CompleteStep status={persistedDuel?.status ?? null} /> : null}
+          {stage === 'recovery' ? (
+            <RecoveryStep
+              error={error}
+              offline={wallet.networkStatus === 'offline'}
+              persistedStatus={persistedDuel?.status ?? null}
+              pending={pending}
+              postBroadcast={fundingPhase === 'recovering'}
+              onRetryNetwork={wallet.retryNetwork}
+              onResume={onResume}
+            />
+          ) : null}
+        </div>
+
+        {authentication.error ? (
+          <StepperError message={authentication.error} onDismiss={authentication.clearError} />
+        ) : null}
+        {wallet.error ? (
+          <StepperError message={wallet.error} onDismiss={wallet.clearError} />
+        ) : null}
+        {error && stage !== 'recovery' ? <StepperError message={error} /> : null}
+        {notice && stage !== 'waiting' ? <p className="duel-stepper-notice">{notice}</p> : null}
+
+        <Separator className="bg-border" />
+        <div className="duel-stepper-footer">
+          <p>
+            Closing keeps a local recovery pointer, never a session token, signature, or private
+            key.
+          </p>
+          <div>
+            <Button
               type="button"
+              variant="ghost"
               onClick={onClose}
               disabled={blocking}
-              aria-label="Continue this duel later"
-              data-dialog-initial-focus
-              data-testid="duel-entry-close"
+              data-testid="duel-entry-continue-later"
             >
-              <XIcon size={18} />
-            </button>
-          </div>
-
-          <ol className="duel-stepper-progress" aria-label="Duel entry progress">
-            {['Connect', 'Verify', 'Review', 'Fund'].map((label, index) => {
-              const progress = stageProgress(stage);
-              return (
-                <li
-                  key={label}
-                  className={
-                    index + 1 < progress
-                      ? 'duel-step-complete'
-                      : index + 1 === progress
-                        ? 'duel-step-active'
-                        : ''
-                  }
-                >
-                  <span>
-                    {index + 1 < progress ? <CheckCircleIcon weight="fill" /> : index + 1}
-                  </span>
-                  {label}
-                </li>
-              );
-            })}
-          </ol>
-
-          <div className="duel-stepper-content">
-            {stage === 'connect' ? <ConnectStep /> : null}
-            {stage === 'authenticate' ? <AuthenticateStep /> : null}
-            {stage === 'review' ? (
-              <ReviewStep
-                mode={mode}
-                tier={tier}
-                pending={pending}
-                onPrepare={onPrepare}
-                networkChecking={wallet.networkStatus === 'checking'}
-              />
-            ) : null}
-            {stage === 'preparing' ? (
-              <ProgressStep
-                label="Preparing funding"
-                detail="Creating or restoring the duel, then calculating the exact devnet fee."
-              />
-            ) : null}
-            {stage === 'funding-review' && intent ? (
-              <FundingReviewStep
-                intent={intent}
-                tier={tier}
-                pending={pending}
-                onConfirm={onConfirm}
-              />
-            ) : null}
-            {stage === 'funding-signature' ? (
-              <ProgressStep
-                label="Value-bearing transaction"
-                detail="Your wallet is waiting for an explicit approval to move the displayed devnet fee."
-                signature="Transaction signature · moves test SOL"
-              />
-            ) : null}
-            {stage === 'confirming' ? (
-              <ProgressStep
-                label={
-                  confirmationPhase
-                    ? `${describeConfirmation(confirmationPhase).label} on devnet`
-                    : 'Confirming escrow funding'
-                }
-                detail={
-                  confirmationPhase
-                    ? `${describeConfirmation(confirmationPhase).detail} DailyDraft will advance automatically.`
-                    : 'The transaction was broadcast. DailyDraft is verifying finalized escrow state and will advance automatically.'
-                }
-                explorerUrl={fundingSignature ? getExplorerTransactionUrl(fundingSignature) : null}
-              />
-            ) : null}
-            {stage === 'waiting' ? (
-              <WaitingStep status={persistedDuel?.status ?? null} notice={notice} />
-            ) : null}
-            {stage === 'complete' ? <CompleteStep status={persistedDuel?.status ?? null} /> : null}
-            {stage === 'recovery' ? (
-              <RecoveryStep
-                error={error}
-                offline={wallet.networkStatus === 'offline'}
-                persistedStatus={persistedDuel?.status ?? null}
-                pending={pending}
-                postBroadcast={fundingPhase === 'recovering'}
-                onRetryNetwork={wallet.retryNetwork}
-                onResume={onResume}
-              />
-            ) : null}
-          </div>
-
-          {authentication.error ? (
-            <StepperError message={authentication.error} onDismiss={authentication.clearError} />
-          ) : null}
-          {wallet.error ? (
-            <StepperError message={wallet.error} onDismiss={wallet.clearError} />
-          ) : null}
-          {error && stage !== 'recovery' ? <StepperError message={error} /> : null}
-          {notice && stage !== 'waiting' ? <p className="duel-stepper-notice">{notice}</p> : null}
-
-          <Separator className="bg-border" />
-          <div className="duel-stepper-footer">
-            <p>
-              Closing keeps a local recovery pointer, never a session token, signature, or private
-              key.
-            </p>
-            <div>
+              Continue later
+            </Button>
+            {canCancel ? (
               <Button
                 type="button"
                 variant="ghost"
-                onClick={onClose}
+                onClick={onCancel}
                 disabled={blocking}
-                data-testid="duel-entry-continue-later"
+                data-testid="duel-entry-cancel"
               >
-                Continue later
+                {persistedDuel ? 'Cancel duel' : 'Cancel entry'}
               </Button>
-              {canCancel ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={onCancel}
-                  disabled={blocking}
-                  data-testid="duel-entry-cancel"
-                >
-                  {persistedDuel ? 'Cancel duel' : 'Cancel entry'}
-                </Button>
-              ) : null}
-            </div>
+            ) : null}
           </div>
-        </section>
-      </div>
-    </DialogPortal>
+        </div>
+      </section>
+    </div>
   );
 }
 
