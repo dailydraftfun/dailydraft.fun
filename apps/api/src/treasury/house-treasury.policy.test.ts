@@ -15,6 +15,7 @@ import {
   persistHouseTierAdmissionFailureSafely,
   readHouseTreasuryConfig,
   reserveHouseExposure,
+  shouldRetryTreasuryTransaction,
 } from './house-treasury.policy.js';
 import { reservationTarget } from './house-treasury.service.js';
 
@@ -24,6 +25,25 @@ const TOKEN_ACCOUNT = '8t9zGQDVsTZhz4kB8DD5qGx7PyHhNzxpmBo3ZNnQ2Uhg';
 const USDC_MINT = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
 
 describe('house treasury policy', () => {
+  test.each([
+    ['Prisma transaction conflict', { code: 'P2034' }, 1, true],
+    [
+      'Prisma PG adapter serialization conflict',
+      { cause: { kind: 'TransactionWriteConflict', originalCode: '40001' } },
+      1,
+      true,
+    ],
+    [
+      'unrelated PG adapter error',
+      { cause: { kind: 'TransactionWriteConflict', originalCode: '40P01' } },
+      1,
+      false,
+    ],
+    ['exhausted retry budget', { code: 'P2034' }, 3, false],
+  ])('recognizes %s narrowly', async (_name, error, attempt, expected) => {
+    expect(shouldRetryTreasuryTransaction(error, attempt)).toBe(expected);
+  });
+
   test('evaluates every configured exposure limit with stable reasons', () => {
     const cases = [
       { expected: 'player_exposure', snapshot: { activePerWallet: 2 } },

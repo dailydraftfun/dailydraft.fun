@@ -406,7 +406,14 @@ function assertExactReservationReplay(
 
 export function shouldRetryTreasuryTransaction(error: unknown, attempt: number): boolean {
   if (attempt >= 3 || !error || typeof error !== 'object') return false;
-  return 'code' in error && error.code === 'P2034';
+  if ('code' in error && error.code === 'P2034') return true;
+  if (!('cause' in error) || !error.cause || typeof error.cause !== 'object') return false;
+  return (
+    'originalCode' in error.cause &&
+    error.cause.originalCode === '40001' &&
+    'kind' in error.cause &&
+    error.cause.kind === 'TransactionWriteConflict'
+  );
 }
 
 export function readHouseTreasuryConfig(

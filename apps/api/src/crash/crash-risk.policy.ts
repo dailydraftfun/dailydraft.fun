@@ -238,7 +238,7 @@ export class CrashRiskPolicyService extends CrashRiskGate {
     }
 
     const currentAmount = parseAmount(reservation.amount, 'stored Crash exposure');
-    if (!input.terminal) {
+    if (input.acceptsRisk) {
       await this.assertCanonicalAdmission(transaction, {
         amountAfter,
         currentAmount,

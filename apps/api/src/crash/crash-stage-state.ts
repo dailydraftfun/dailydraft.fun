@@ -129,6 +129,8 @@ export interface CrashClock {
   now(): Date;
 }
 
+export type CrashPostRiskAdmissionEffect = (transaction: Prisma.TransactionClient) => Promise<void>;
+
 export interface CreateCrashFixtureRound {
   initialPot: Money;
   playerWalletReference: string;
@@ -473,6 +475,7 @@ export class CrashStageStateService {
     roundId: string,
     rulesInput: unknown,
     input: CrashFixtureDecision,
+    postRiskAdmission?: CrashPostRiskAdmissionEffect,
   ): Promise<CrashRoundSnapshot> {
     this.requireFixtureMode();
     const rules = validateCrashStateRules(rulesInput);
@@ -539,6 +542,7 @@ export class CrashStageStateService {
           }
           throw error;
         }
+        await postRiskAdmission?.(transaction);
         const updated = await transaction.crashRound.updateMany({
           data: {
             decisionDeadline: next.decisionDeadline,
@@ -663,6 +667,18 @@ export class CrashStageStateService {
         ) {
           return false;
         }
+        try {
+          await this.risk.releaseTerminal(transaction, {
+            now,
+            round: riskBinding(current),
+            stage: current.stage,
+          });
+        } catch (error) {
+          if (error instanceof CrashRiskPolicyError) {
+            throw stateError('RISK_REJECTED', error.message);
+          }
+          throw error;
+        }
         const updated = await transaction.crashRound.updateMany({
           data: {
             decisionDeadline: null,
@@ -679,18 +695,8 @@ export class CrashStageStateService {
             version: current.version,
           },
         });
-        if (updated.count !== 1) return false;
-        try {
-          await this.risk.releaseTerminal(transaction, {
-            now,
-            round: riskBinding(current),
-            stage: current.stage,
-          });
-        } catch (error) {
-          if (error instanceof CrashRiskPolicyError) {
-            throw stateError('RISK_REJECTED', error.message);
-          }
-          throw error;
+        if (updated.count !== 1) {
+          throw stateError('CONCURRENT_TRANSITION', 'Crash stage changed concurrently');
         }
         await transaction.crashTransition.create({
           data: {
@@ -724,6 +730,18 @@ export class CrashStageStateService {
         where: { roundId_transitionKey: { roundId: candidate.id, transitionKey } },
       });
       if (replay?.requestHash === requestHash) return false;
+      const moved = await this.database.crashRound.findUnique({
+        select: { stage: true, status: true, version: true },
+        where: { id: candidate.id },
+      });
+      if (
+        moved &&
+        (moved.status !== DatabaseCrashRoundStatus.ACTIVE ||
+          moved.stage !== candidate.stage ||
+          moved.version !== candidate.version)
+      ) {
+        return false;
+      }
       throw error;
     }
   }

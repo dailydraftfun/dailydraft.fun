@@ -2,11 +2,14 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   createDatabaseClient,
   type DatabaseClient,
+  DuelMode,
+  DuelStatus,
   HouseTreasuryLedgerType,
   HouseTreasuryReservationStatus,
 } from '@dailydraft/db';
 
 import type { Money } from '../domain.js';
+import { reserveHouseExposure } from '../treasury/house-treasury.policy.js';
 import {
   CRASH_CALCULATOR_VERSION,
   CRASH_RULES_SCHEMA_VERSION,
@@ -14,6 +17,13 @@ import {
   hashCrashCalculatorRuleSet,
   type UnsignedCrashCalculatorRuleSet,
 } from './crash-calculators.js';
+import {
+  CRASH_CUSTODY_POLICY_SCHEMA_VERSION,
+  CrashCustodyMovementService,
+  hashCrashCustodyPolicy,
+  type UnsignedCrashCustodyPolicy,
+} from './crash-custody-movement.service.js';
+import { CrashDecisionService } from './crash-decision.service.js';
 import {
   CRASH_RISK_HEALTH_SCHEMA_VERSION,
   CRASH_RISK_POLICY_VERSION,
@@ -268,6 +278,203 @@ describeDatabase('Crash risk admission against the canonical Postgres treasury l
       ),
     ).rejects.toThrow('HouseTreasuryLedgerEntry is append-only');
   });
+
+  test('admits every Continue risk before custody, payment, or transition evidence', async () => {
+    const cases = [
+      'pot',
+      'wallet',
+      'treasury',
+      'pause',
+      'daily-loss',
+      'minimum-liquidity',
+      'delegated-allowance',
+      'configuration',
+      'health',
+    ] as const;
+
+    for (const [index, rejectedBy] of cases.entries()) {
+      await resetCanonicalTreasury(database, '100000000');
+      const environment = riskEnvironment('100000000');
+      const playerWallet = `${PREFIX}-atomic-${rejectedBy}`;
+      let rules =
+        rejectedBy === 'pot'
+          ? stateRules(riskRules('100000000', '100000000', '1000000'))
+          : stateRules(riskRules('100000000', '100000000', '10000000'));
+
+      if (rejectedBy === 'wallet') {
+        rules = stateRules(riskRules('2000000', '100000000', '2000000'));
+        await stateService(database, environment).createFixtureRound({
+          initialPot: usdc('1000000'),
+          playerWalletReference: `fixture-wallet:${playerWallet}`,
+          riskHealth: riskHealth(rules.riskRules),
+          roundId: `${PREFIX}-atomic-wallet-baseline`,
+          rules,
+        });
+      }
+      if (rejectedBy === 'treasury') {
+        const active = await database.houseTreasuryReservation.findMany({
+          select: { amount: true },
+          where: { status: { in: [HouseTreasuryReservationStatus.RESERVED] } },
+        });
+        const limit = active.reduce((sum, row) => sum + BigInt(row.amount), 3_000_000n);
+        rules = stateRules(riskRules(limit.toString(), limit.toString(), '2000000'));
+        await stateService(database, environment).createFixtureRound({
+          initialPot: usdc('2000000'),
+          playerWalletReference: `fixture-wallet:${playerWallet}-baseline`,
+          riskHealth: riskHealth(rules.riskRules),
+          roundId: `${PREFIX}-atomic-treasury-baseline`,
+          rules,
+        });
+      }
+
+      const health = riskHealth(rules.riskRules);
+      const state = stateService(database, environment);
+      const round = await state.createFixtureRound({
+        initialPot: usdc('1000000'),
+        playerWalletReference: `fixture-wallet:${playerWallet}`,
+        riskHealth: health,
+        roundId: `${PREFIX}-atomic-${index}`,
+        rules,
+      });
+
+      if (rejectedBy === 'pause') {
+        await database.runtimeControl.update({
+          data: { paused: true, version: { increment: 1 } },
+          where: { key: 'global_exposure' },
+        });
+      } else if (rejectedBy === 'daily-loss') {
+        environment.DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO = '1';
+      } else if (rejectedBy === 'minimum-liquidity') {
+        environment.DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO = '99000000';
+      } else if (rejectedBy === 'delegated-allowance') {
+        await database.houseTreasurySnapshot.update({
+          data: { delegatedAmount: '1' },
+          where: { id: 'solana-devnet-usdc' },
+        });
+      } else if (rejectedBy === 'configuration') {
+        delete environment.DAILYDRAFT_HOUSE_ENABLED;
+      }
+
+      const decisionHealth = rejectedBy === 'health' ? { ...health, poolStatus: 'closed' } : health;
+      const decisions = new CrashDecisionService(
+        state,
+        rules,
+        new CrashCustodyMovementService(database, custodyPolicy(rules), FIXTURE_ENVIRONMENT),
+        decisionHealth,
+      );
+      await expect(
+        decisions.decide({
+          action: 'continue',
+          expectedStage: round.stage,
+          expectedVersion: round.version,
+          idempotencyKey: `atomic-risk-rejection-${rejectedBy}-0001`,
+          playerWallet,
+          roundId: round.id,
+        }),
+      ).rejects.toMatchObject({ code: 'RISK_REJECTED' });
+
+      expect(
+        await database.crashCustodyMovementIntent.count({ where: { roundId: round.id } }),
+        rejectedBy,
+      ).toBe(0);
+      const stored = await state.findRound(round.id);
+      expect(stored, rejectedBy).toMatchObject({
+        pot: usdc('1000000'),
+        stage: 1,
+        version: 1,
+      });
+      expect(stored.transitions, rejectedBy).toHaveLength(1);
+      expect(stored.transitions[0]?.payment, rejectedBy).toBeNull();
+      expect(
+        await database.houseTreasuryReservation.findUniqueOrThrow({
+          where: { crashRoundId: round.id },
+        }),
+        rejectedBy,
+      ).toMatchObject({
+        amount: '1000000',
+        status: HouseTreasuryReservationStatus.RESERVED,
+        version: 1,
+      });
+      expect(
+        await database.houseTreasuryLedgerEntry.count({
+          where: { crashRoundId: round.id },
+        }),
+        rejectedBy,
+      ).toBe(1);
+    }
+  });
+
+  test('serializes Duel and Crash through one canonical treasury lock without regression', async () => {
+    await resetCanonicalTreasury(database, '100000000');
+    const active = await database.houseTreasuryReservation.findMany({
+      select: { amount: true },
+      where: { status: { in: [HouseTreasuryReservationStatus.RESERVED] } },
+    });
+    const limit = active.reduce((sum, row) => sum + BigInt(row.amount), 6_000_000n);
+    const environment = riskEnvironment(limit.toString());
+    await database.houseTreasurySnapshot.update({
+      data: { balanceAmount: '100000000', delegatedAmount: limit.toString() },
+      where: { id: 'solana-devnet-usdc' },
+    });
+    const rules = stateRules(riskRules(limit.toString(), limit.toString(), '6000000'));
+    const duelId = `${PREFIX}-cross-source-duel`;
+    await database.duel.create({
+      data: {
+        creatorWallet: `${PREFIX}-duel-player`,
+        expiresAt: new Date(NOW.getTime() + 60_000),
+        houseOpponent: true,
+        id: duelId,
+        mode: DuelMode.HOUSE,
+        opponentWallet: FUNDING,
+        packId: 'fixture-pack',
+        packName: 'Fixture Pack',
+        packProvider: 'fixture-provider',
+        stakeAmount: '6000000',
+        status: DuelStatus.MATCHED,
+      },
+    });
+
+    const crashRoundId = `${PREFIX}-cross-source-crash`;
+    const results = await Promise.allSettled([
+      database.$transaction(
+        (transaction) =>
+          reserveHouseExposure(
+            transaction,
+            {
+              amount: '6000000',
+              currency: 'USDC',
+              decimals: 6,
+              duelId,
+              playerWallet: `${PREFIX}-duel-player`,
+              tier: 1,
+            },
+            environment,
+            NOW,
+          ),
+        { isolationLevel: 'Serializable' },
+      ),
+      stateService(database, environment).createFixtureRound({
+        initialPot: usdc('6000000'),
+        playerWalletReference: `fixture-wallet:${PREFIX}-crash-player`,
+        riskHealth: riskHealth(rules.riskRules),
+        roundId: crashRoundId,
+        rules,
+      }),
+    ]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+    const reservations = await database.houseTreasuryReservation.findMany({
+      where: {
+        OR: [{ crashRoundId }, { duelId }],
+      },
+    });
+    expect(reservations).toHaveLength(1);
+    expect(reservations[0]).toMatchObject({
+      amount: '6000000',
+      status: HouseTreasuryReservationStatus.RESERVED,
+    });
+  });
 });
 
 const FUNDING = 'E97fUPq9eP69ukeDWvmiKJcvuvKADWpYZfYVyanuH4e2';
@@ -362,6 +569,39 @@ function stateService(database: DatabaseClient, environment: NodeJS.ProcessEnv) 
     FIXTURE_ENVIRONMENT,
     new CrashRiskPolicyService(environment),
   );
+}
+
+function custodyPolicy(rules: CrashStateRules) {
+  const unsigned = {
+    activation: 'fixture-only',
+    approvedSessionCustody: 'fixture-wallet:atomic-risk-session-custody',
+    architectureVersion: rules.architectureVersion,
+    calculatorVersion: rules.calculatorRules.calculatorVersion,
+    network: 'solana-devnet',
+    policyVersion: `atomic-risk-custody-${rules.riskRules.riskRulesHash.slice(0, 16)}`,
+    rulesHash: rules.calculatorRules.rulesHash,
+    rulesVersion: rules.calculatorRules.rulesVersion,
+    schemaVersion: CRASH_CUSTODY_POLICY_SCHEMA_VERSION,
+    stateMachineRulesHash: rules.stateMachineRulesHash,
+    stateMachineVersion: rules.stateMachineVersion,
+  } as const satisfies UnsignedCrashCustodyPolicy;
+  return { ...unsigned, policyHash: hashCrashCustodyPolicy(unsigned) };
+}
+
+async function resetCanonicalTreasury(database: DatabaseClient, amount: string): Promise<void> {
+  await database.runtimeControl.upsert({
+    create: { key: 'global_exposure', paused: false },
+    update: { paused: false, version: { increment: 1 } },
+    where: { key: 'global_exposure' },
+  });
+  await database.houseTreasurySnapshot.update({
+    data: {
+      balanceAmount: amount,
+      delegatedAmount: amount,
+      verifiedAt: NOW,
+    },
+    where: { id: 'solana-devnet-usdc' },
+  });
 }
 
 function riskEnvironment(maxTotal: string): NodeJS.ProcessEnv {

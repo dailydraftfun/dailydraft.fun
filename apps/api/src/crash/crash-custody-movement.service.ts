@@ -1,7 +1,8 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   type DatabaseClient,
   CrashCustodyIntentStatus as DatabaseCrashCustodyIntentStatus,
+  type Prisma,
 } from '@dailydraft/db';
 import { Inject, Injectable } from '@nestjs/common';
 
@@ -18,6 +19,7 @@ import {
 export const CRASH_CUSTODY_POLICY = Symbol('CRASH_CUSTODY_POLICY');
 export const CRASH_CUSTODY_POLICY_SCHEMA_VERSION = 'dailydraft.crash-custody-policy.v1' as const;
 export const CRASH_CUSTODY_INTENT_SCHEMA_VERSION = 'dailydraft.crash-custody-intent.v1' as const;
+const CRASH_CUSTODY_INTENT_ID_DOMAIN = 'dailydraft.crash-custody-intent-id.v1';
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$/;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
@@ -118,6 +120,7 @@ export class CrashCustodyMovementService {
 
   async prepareFixtureMovement(
     input: PrepareCrashCustodyMovement,
+    transaction?: Prisma.TransactionClient,
   ): Promise<CrashCustodyMovementIntent> {
     if (!crashStateFixtureModeEnabled(this.environment)) {
       throw new CrashStateMachineError(
@@ -136,6 +139,80 @@ export class CrashCustodyMovementService {
       }),
     );
 
+    const prepare = async (activeTransaction: Prisma.TransactionClient) => {
+      const existing = await activeTransaction.crashCustodyMovementIntent.findUnique({
+        where: {
+          roundId_idempotencyKey: {
+            idempotencyKey: normalized.idempotencyKey,
+            roundId: normalized.roundId,
+          },
+        },
+      });
+      if (existing) {
+        assertReplay(existing, requestHash);
+        return existing;
+      }
+
+      const round = await activeTransaction.crashRound.findUnique({
+        where: { id: normalized.roundId },
+      });
+      if (!round) {
+        throw new CrashStateMachineError(
+          'NOT_FOUND',
+          `Crash round ${normalized.roundId} was not found`,
+        );
+      }
+      const resolution = resolveMovement(round, normalized, policyResolution);
+      if (resolution.status === DatabaseCrashCustodyIntentStatus.PREPARED) {
+        const duplicate = await activeTransaction.crashCustodyMovementIntent.findFirst({
+          where: {
+            assetReference: normalized.assetReference,
+            roundId: normalized.roundId,
+            stage: normalized.expectedStage,
+            status: DatabaseCrashCustodyIntentStatus.PREPARED,
+          },
+        });
+        if (duplicate) {
+          throw new CrashStateMachineError(
+            'CONCURRENT_TRANSITION',
+            'Crash custody movement was already prepared under another idempotency boundary',
+          );
+        }
+      }
+
+      return activeTransaction.crashCustodyMovementIntent.create({
+        data: {
+          activationMode: 'fixture-only',
+          approvedRecipient: resolution.approvedRecipient,
+          architectureVersion: normalized.rules.architectureVersion,
+          assetReference: normalized.assetReference,
+          calculatorVersion: normalized.rules.calculatorRules.calculatorVersion,
+          expectedVersion: normalized.expectedVersion,
+          id: crashCustodyIntentReference(normalized.roundId, normalized.idempotencyKey),
+          idempotencyKey: normalized.idempotencyKey,
+          network: 'solana-devnet',
+          playerWalletReference: normalized.playerWalletReference,
+          policyHash: resolution.policy?.policyHash ?? null,
+          policyVersion: resolution.policy?.policyVersion ?? null,
+          recoveryReason: resolution.recoveryReason,
+          requestHash,
+          requestedRecipient: normalized.requestedRecipient,
+          roundId: normalized.roundId,
+          rulesHash: normalized.rules.calculatorRules.rulesHash,
+          rulesVersion: normalized.rules.calculatorRules.rulesVersion,
+          sourceWalletReference: normalized.sourceWalletReference,
+          stage: normalized.expectedStage,
+          stateMachineRulesHash: normalized.rules.stateMachineRulesHash,
+          stateMachineVersion: normalized.rules.stateMachineVersion,
+          status: resolution.status,
+        },
+      });
+    };
+
+    if (transaction) {
+      return toIntent(await prepare(transaction));
+    }
+
     const replay = await this.findIdempotentReplay(
       normalized.roundId,
       normalized.idempotencyKey,
@@ -144,78 +221,7 @@ export class CrashCustodyMovementService {
     if (replay) return replay;
 
     try {
-      const created = await this.database.$transaction(
-        async (transaction) => {
-          const existing = await transaction.crashCustodyMovementIntent.findUnique({
-            where: {
-              roundId_idempotencyKey: {
-                idempotencyKey: normalized.idempotencyKey,
-                roundId: normalized.roundId,
-              },
-            },
-          });
-          if (existing) {
-            assertReplay(existing, requestHash);
-            return existing;
-          }
-
-          const round = await transaction.crashRound.findUnique({
-            where: { id: normalized.roundId },
-          });
-          if (!round) {
-            throw new CrashStateMachineError(
-              'NOT_FOUND',
-              `Crash round ${normalized.roundId} was not found`,
-            );
-          }
-          const resolution = resolveMovement(round, normalized, policyResolution);
-          if (resolution.status === DatabaseCrashCustodyIntentStatus.PREPARED) {
-            const duplicate = await transaction.crashCustodyMovementIntent.findFirst({
-              where: {
-                assetReference: normalized.assetReference,
-                roundId: normalized.roundId,
-                stage: normalized.expectedStage,
-                status: DatabaseCrashCustodyIntentStatus.PREPARED,
-              },
-            });
-            if (duplicate) {
-              throw new CrashStateMachineError(
-                'CONCURRENT_TRANSITION',
-                'Crash custody movement was already prepared under another idempotency boundary',
-              );
-            }
-          }
-
-          return transaction.crashCustodyMovementIntent.create({
-            data: {
-              activationMode: 'fixture-only',
-              approvedRecipient: resolution.approvedRecipient,
-              architectureVersion: normalized.rules.architectureVersion,
-              assetReference: normalized.assetReference,
-              calculatorVersion: normalized.rules.calculatorRules.calculatorVersion,
-              expectedVersion: normalized.expectedVersion,
-              id: createId('crashcustody'),
-              idempotencyKey: normalized.idempotencyKey,
-              network: 'solana-devnet',
-              playerWalletReference: normalized.playerWalletReference,
-              policyHash: resolution.policy?.policyHash ?? null,
-              policyVersion: resolution.policy?.policyVersion ?? null,
-              recoveryReason: resolution.recoveryReason,
-              requestHash,
-              requestedRecipient: normalized.requestedRecipient,
-              roundId: normalized.roundId,
-              rulesHash: normalized.rules.calculatorRules.rulesHash,
-              rulesVersion: normalized.rules.calculatorRules.rulesVersion,
-              sourceWalletReference: normalized.sourceWalletReference,
-              stage: normalized.expectedStage,
-              stateMachineRulesHash: normalized.rules.stateMachineRulesHash,
-              stateMachineVersion: normalized.rules.stateMachineVersion,
-              status: resolution.status,
-            },
-          });
-        },
-        { isolationLevel: 'Serializable' },
-      );
+      const created = await this.database.$transaction(prepare, { isolationLevel: 'Serializable' });
       return toIntent(created);
     } catch (error) {
       const concurrentReplay = await this.findIdempotentReplay(
@@ -304,6 +310,16 @@ export class CrashCustodyMovementService {
     });
     return existing ? assertReplay(existing, requestHash) : null;
   }
+}
+
+export function crashCustodyIntentReference(roundId: string, idempotencyKey: string): string {
+  return `crashcustody_${sha256(
+    stableStringify({
+      domain: CRASH_CUSTODY_INTENT_ID_DOMAIN,
+      idempotencyKey,
+      roundId,
+    }),
+  )}`;
 }
 
 export function hashCrashCustodyPolicy(policy: UnsignedCrashCustodyPolicy): string {
@@ -563,10 +579,6 @@ function validIdentifier(value: unknown): value is string {
 
 function validHash(value: unknown): value is string {
   return typeof value === 'string' && HASH_PATTERN.test(value);
-}
-
-function createId(prefix: string): string {
-  return `${prefix}_${randomUUID().replaceAll('-', '')}`;
 }
 
 function sha256(value: string): string {

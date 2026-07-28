@@ -194,6 +194,104 @@ describe('versioned Crash risk contract', () => {
     }
   });
 
+  test.each([
+    {
+      configure(database: RiskDatabase) {
+        database.seedReservation('wallet-terminal', '9000000', ROUND.playerWalletReference);
+      },
+      environment: configuredEnvironment(),
+      expected: 'per-wallet exposure',
+      name: 'per-wallet amount',
+    },
+    {
+      configure(database: RiskDatabase) {
+        database.seedReservation('treasury-terminal', '9000000', 'fixture-wallet:other');
+      },
+      environment: configuredEnvironment(),
+      expected: 'aggregate treasury exposure',
+      name: 'aggregate treasury amount',
+    },
+    {
+      configure(database: RiskDatabase) {
+        database.paused = true;
+      },
+      environment: configuredEnvironment(),
+      expected: 'paused',
+      name: 'operator pause',
+    },
+    {
+      configure(database: RiskDatabase) {
+        database.snapshot.verifiedAt = new Date('2026-07-28T19:00:00.000Z');
+      },
+      environment: configuredEnvironment(),
+      expected: 'snapshot',
+      name: 'stale treasury evidence',
+    },
+    {
+      configure(database: RiskDatabase) {
+        database.dailyLossEntries.push({ amount: '1000000' });
+      },
+      environment: configuredEnvironment({
+        DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: '2500000',
+      }),
+      expected: 'daily_loss',
+      name: 'daily loss',
+    },
+    {
+      configure(database: RiskDatabase) {
+        database.snapshot.balanceAmount = '10000000';
+      },
+      environment: configuredEnvironment({
+        DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '9000000',
+      }),
+      expected: 'minimum_liquidity',
+      name: 'minimum liquidity',
+    },
+    {
+      configure(database: RiskDatabase) {
+        database.snapshot.delegatedAmount = '1500000';
+      },
+      environment: configuredEnvironment(),
+      expected: 'delegated_allowance',
+      name: 'delegated allowance',
+    },
+    {
+      configure(_database: RiskDatabase) {},
+      environment: {},
+      expected: 'policy',
+      name: 'missing treasury configuration',
+    },
+  ])('rejects terminal Continue on $name before release', async ({
+    configure,
+    environment,
+    expected,
+  }) => {
+    const database = new RiskDatabase();
+    database.seedReservation(ROUND.id, '1000000', ROUND.playerWalletReference);
+    configure(database);
+    const service = new CrashRiskPolicyService(environment);
+
+    await expect(
+      service.applyTransition(database.transaction, {
+        acceptsRisk: true,
+        health: HEALTH,
+        nextPot: usdc('2000000'),
+        nextStage: 2,
+        now: NOW,
+        round: binding(),
+        rules: RULES,
+        terminal: true,
+      }),
+    ).rejects.toThrow(expected);
+
+    expect(database.reservations[0]).toMatchObject({
+      amount: '1000000',
+      status: HouseTreasuryReservationStatus.RESERVED,
+      version: 1,
+    });
+    expect(database.ledger).toEqual([]);
+  });
+
   test('adjusts once and releases terminal exposure idempotently', async () => {
     const database = new RiskDatabase();
     database.seedReservation(ROUND.id, '1000000', ROUND.playerWalletReference);
@@ -249,6 +347,7 @@ interface ReservationRow {
 class RiskDatabase {
   readonly reservations: ReservationRow[] = [];
   readonly ledger: Array<{ idempotencyKey: string; type: HouseTreasuryLedgerType }> = [];
+  readonly dailyLossEntries: Array<{ amount: string }> = [];
   paused = false;
   readonly snapshot = {
     balanceAmount: '100000000',
@@ -276,7 +375,7 @@ class RiskDatabase {
         this.ledger.push({ idempotencyKey: data.idempotencyKey, type: data.type });
         return data;
       },
-      findMany: async () => [],
+      findMany: async () => this.dailyLossEntries,
     },
     houseTreasuryReservation: {
       create: async ({ data }: { data: Omit<ReservationRow, 'status' | 'version'> }) => {
@@ -396,7 +495,7 @@ function usdc(amount: string) {
   return { amount, currency: 'USDC' as const, decimals: 6 as const };
 }
 
-function configuredEnvironment(): NodeJS.ProcessEnv {
+function configuredEnvironment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   return {
     DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: '100000000',
     DAILYDRAFT_HOUSE_DEVNET_FUNDING_SIGNER: 'E97fUPq9eP69ukeDWvmiKJcvuvKADWpYZfYVyanuH4e2',
@@ -409,5 +508,6 @@ function configuredEnvironment(): NodeJS.ProcessEnv {
     DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '1',
     DAILYDRAFT_HOUSE_SNAPSHOT_MAX_AGE_SECONDS: '300',
     DAILYDRAFT_NETWORK: 'solana-devnet',
+    ...overrides,
   };
 }

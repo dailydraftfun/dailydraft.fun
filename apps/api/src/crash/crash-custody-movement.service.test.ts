@@ -20,6 +20,7 @@ import {
   CRASH_CUSTODY_POLICY_SCHEMA_VERSION,
   CrashCustodyMovementService,
   type CrashCustodyPolicy,
+  crashCustodyIntentReference,
   hashCrashCustodyPolicy,
   loadCrashCustodyPolicy,
   type UnsignedCrashCustodyPolicy,
@@ -54,7 +55,7 @@ describe('CrashCustodyMovementService', () => {
     expect(prepared).toEqual({
       approvedRecipient: POLICY.approvedSessionCustody,
       assetReference: input.assetReference,
-      id: expect.stringMatching(/^crashcustody_/),
+      id: crashCustodyIntentReference(input.roundId, input.idempotencyKey),
       idempotencyKey: input.idempotencyKey,
       network: 'solana-devnet',
       playerWalletReference: PLAYER,

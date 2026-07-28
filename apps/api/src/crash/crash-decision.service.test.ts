@@ -7,7 +7,10 @@ import {
   hashCrashCalculatorRuleSet,
   type UnsignedCrashCalculatorRuleSet,
 } from './crash-calculators.js';
-import type { CrashCustodyMovementService } from './crash-custody-movement.service.js';
+import {
+  type CrashCustodyMovementService,
+  crashCustodyIntentReference,
+} from './crash-custody-movement.service.js';
 import {
   CRASH_PLAYER_DECISION_SCHEMA_VERSION,
   CrashDecisionService,
@@ -26,6 +29,7 @@ import {
   CRASH_STATE_MACHINE_VERSION,
   CRASH_STATE_RULES_SCHEMA_VERSION,
   type CrashFixtureDecision,
+  type CrashPostRiskAdmissionEffect,
   type CrashRoundSnapshot,
   type CrashStageStateService,
   CrashStateMachineError,
@@ -378,6 +382,7 @@ function stateHarness(
       roundId: string,
       rules: unknown,
       decision: CrashFixtureDecision,
+      postRiskAdmission?: CrashPostRiskAdmissionEffect,
     ) => Promise<CrashRoundSnapshot>;
     resume?: (roundId: string) => Promise<CrashRoundSnapshot>;
   } = {},
@@ -387,7 +392,13 @@ function stateHarness(
   const service = {
     decide:
       overrides.decide ??
-      (async (_roundId: string, _rules: unknown, decision: CrashFixtureDecision) => {
+      (async (
+        _roundId: string,
+        _rules: unknown,
+        decision: CrashFixtureDecision,
+        postRiskAdmission?: CrashPostRiskAdmissionEffect,
+      ) => {
+        await postRiskAdmission?.({} as never);
         decisions.push(decision);
         return snapshot;
       }),
@@ -431,7 +442,7 @@ function preparedCustodyIntent(
   return {
     approvedRecipient: 'fixture-wallet:approved-session-custody',
     assetReference: input.assetReference,
-    id: 'crashcustody_fixture',
+    id: crashCustodyIntentReference(input.roundId, input.idempotencyKey),
     idempotencyKey: input.idempotencyKey,
     network: 'solana-devnet' as const,
     playerWalletReference: input.playerWalletReference,

@@ -1,11 +1,15 @@
 import { createHash } from 'node:crypto';
+import type { Prisma } from '@dailydraft/db';
 import { Inject, Injectable } from '@nestjs/common';
 
 import type { Money } from '../domain.js';
 import { stableStringify } from '../providers/valuation-policy.js';
 import { calculateCrashBust, calculateCrashPot } from './crash-calculators.js';
 // biome-ignore lint/style/useImportType: Nest uses the custody service class as a runtime injection token.
-import { CrashCustodyMovementService } from './crash-custody-movement.service.js';
+import {
+  CrashCustodyMovementService,
+  crashCustodyIntentReference,
+} from './crash-custody-movement.service.js';
 import type { CrashRiskHealthFixture } from './crash-risk.policy.js';
 // biome-ignore lint/style/useImportType: Nest uses the state service class as a runtime injection token.
 import {
@@ -88,7 +92,7 @@ export class CrashDecisionService {
 
     const custodyReference =
       input.action === 'continue'
-        ? await this.prepareCustodyMovement(current, rules, input)
+        ? crashCustodyIntentReference(input.roundId, deriveCustodyIdempotencyKey(input))
         : undefined;
     const decision = createFixtureDecision(
       current,
@@ -98,7 +102,14 @@ export class CrashDecisionService {
       custodyReference,
     );
     try {
-      current = await this.state.decide(input.roundId, rules, decision);
+      current = await this.state.decide(
+        input.roundId,
+        rules,
+        decision,
+        input.action === 'continue'
+          ? (transaction) => this.prepareCustodyMovement(transaction, current, rules, input)
+          : undefined,
+      );
     } catch (error) {
       if (
         !(error instanceof CrashStateMachineError) ||
@@ -131,30 +142,42 @@ export class CrashDecisionService {
   }
 
   private async prepareCustodyMovement(
+    transaction: Prisma.TransactionClient,
     current: CrashRoundSnapshot,
     rules: CrashStateRules,
     input: CrashPlayerDecisionInput,
-  ): Promise<string> {
+  ): Promise<void> {
     const assetReference = fixtureReference('asset', input.roundId, input.expectedStage);
-    const intent = await this.custody.prepareFixtureMovement({
-      assetReference,
-      expectedStage: input.expectedStage,
-      expectedVersion: input.expectedVersion,
-      idempotencyKey: deriveCustodyIdempotencyKey(input),
-      playerWalletReference: current.playerWalletReference,
-      requestedRecipient: this.custody.configuredRecipient(),
-      roundId: input.roundId,
-      rules,
-      sourceWalletReference: fixtureProviderWallet(input.roundId, input.expectedStage),
-    });
+    const intent = await this.custody.prepareFixtureMovement(
+      {
+        assetReference,
+        expectedStage: input.expectedStage,
+        expectedVersion: input.expectedVersion,
+        idempotencyKey: deriveCustodyIdempotencyKey(input),
+        playerWalletReference: current.playerWalletReference,
+        requestedRecipient: this.custody.configuredRecipient(),
+        roundId: input.roundId,
+        rules,
+        sourceWalletReference: fixtureProviderWallet(input.roundId, input.expectedStage),
+      },
+      transaction,
+    );
     if (intent.status !== 'prepared') {
       throw new CrashStateMachineError(
         'INVALID_EVIDENCE',
         `Crash custody stopped before signing: ${intent.recoveryReason ?? 'RECOVERY_REQUIRED'}`,
       );
     }
-    await this.custody.requirePreparedFixture(input.roundId, intent.id, assetReference);
-    return intent.id;
+    const expectedReference = crashCustodyIntentReference(
+      input.roundId,
+      deriveCustodyIdempotencyKey(input),
+    );
+    if (intent.id !== expectedReference) {
+      throw new CrashStateMachineError(
+        'INVALID_EVIDENCE',
+        'Crash custody intent reference does not match the admitted decision',
+      );
+    }
   }
 }
 
