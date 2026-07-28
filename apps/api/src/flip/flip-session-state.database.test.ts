@@ -14,6 +14,10 @@ import {
   type FlipInventorySnapshotPolicy,
   FlipInventorySnapshotService,
 } from './flip-inventory-snapshot.service.js';
+import {
+  FLIP_APPROVED_ENTROPY_SCHEMA_VERSION,
+  FlipOutcomeSelectionService,
+} from './flip-outcome-selection.service.js';
 import { createFixtureFlipRuleSet, FlipRulesService } from './flip-rules.service.js';
 import {
   FLIP_PURCHASE_FIXTURE_VERSION,
@@ -95,22 +99,21 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     session = staked;
     expect(session).toMatchObject({ status: 'stake-confirmed', version: 2 });
 
+    session = await serviceB.transition(session.id, {
+      evidence: { poolCommitmentId: fixture.commitmentId },
+      expectedVersion: session.version,
+      kind: 'commit-pool',
+      transitionKey: 'pool-postgres',
+    });
+    session = await recordDatabaseSelection(
+      databaseB,
+      serviceB,
+      fixture,
+      session,
+      'selection-postgres',
+    );
+
     const actions = [
-      {
-        evidence: { poolCommitmentId: fixture.commitmentId },
-        kind: 'commit-pool' as const,
-        transitionKey: 'pool-postgres',
-      },
-      {
-        evidence: {
-          ...fixture.selected,
-          reference: 'fixture-selection:postgres',
-          resultHash: hash('selection:postgres'),
-          schemaVersion: FLIP_SELECTION_FIXTURE_VERSION,
-        },
-        kind: 'record-selection' as const,
-        transitionKey: 'selection-postgres',
-      },
       {
         evidence: {
           amount: usdc(fixture.selected.listingValueAmount),
@@ -831,7 +834,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
           transitionKey: 'fractional-ordinal',
         });
       }),
-    ).rejects.toThrow('selection transition evidence is invalid');
+    ).rejects.toThrow('requires its prepared audit proof');
     await expect(selectionService.findSession(pooled.id)).resolves.toMatchObject({
       status: 'pool-committed',
       version: pooled.version,
@@ -1261,7 +1264,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
           },
         });
       }),
-    ).rejects.toThrow('selection transition evidence is invalid');
+    ).rejects.toThrow('requires its prepared audit proof');
     await expect(service.findSession(session.id)).resolves.toMatchObject({
       status: 'pool-committed',
       version: session.version,
@@ -1694,16 +1697,26 @@ async function createDatabaseSessionAt(
       kind: 'commit-pool' as const,
       transitionKey: 'pool-postgres',
     },
-    {
-      evidence: {
-        ...fixture.selected,
-        reference: 'fixture-selection:postgres',
-        resultHash: hash('selection:postgres'),
-        schemaVersion: FLIP_SELECTION_FIXTURE_VERSION,
-      },
-      kind: 'record-selection' as const,
-      transitionKey: 'selection-postgres',
-    },
+  ];
+
+  for (const action of actions) {
+    session = await service.transition(session.id, {
+      ...action,
+      expectedVersion: session.version,
+    });
+    if (session.status === target) return { service, session };
+  }
+
+  session = await recordDatabaseSelection(
+    database,
+    service,
+    fixture,
+    session,
+    'selection-postgres',
+  );
+  if (session.status === target) return { service, session };
+
+  const postSelectionActions = [
     {
       evidence: {
         amount: usdc(fixture.selected.listingValueAmount),
@@ -1742,7 +1755,7 @@ async function createDatabaseSessionAt(
     },
   ];
 
-  for (const action of actions) {
+  for (const action of postSelectionActions) {
     session = await service.transition(session.id, {
       ...action,
       expectedVersion: session.version,
@@ -1750,6 +1763,34 @@ async function createDatabaseSessionAt(
     if (session.status === target) return { service, session };
   }
   throw new Error(`unsupported database session target ${target}`);
+}
+
+async function recordDatabaseSelection(
+  database: DatabaseClient,
+  sessions: FlipSessionStateService,
+  fixture: DatabaseFixture,
+  session: FlipSessionSnapshot,
+  transitionKey: string,
+): Promise<FlipSessionSnapshot> {
+  const selected = await new FlipOutcomeSelectionService(
+    database,
+    sessions,
+    FIXTURE_ENVIRONMENT,
+  ).selectFixtureOutcome({
+    approvedEntropy: {
+      approvedAt: '2026-08-03T12:03:00.000Z',
+      payload: `database-state-fixture:${fixture.sessionReference}`,
+      reference: `fixture-entropy:${fixture.sessionReference}`,
+      schemaVersion: FLIP_APPROVED_ENTROPY_SCHEMA_VERSION,
+      sessionReference: fixture.sessionReference,
+      source: 'fixture-approved',
+    },
+    expectedVersion: session.version,
+    sessionReference: fixture.sessionReference,
+    transitionKey,
+  });
+  fixture.selected = selected.selectedOutcome;
+  return selected.session;
 }
 
 async function insertRawTransition(

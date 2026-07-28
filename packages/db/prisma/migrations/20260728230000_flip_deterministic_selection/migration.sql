@@ -94,12 +94,57 @@ ADD CONSTRAINT "FlipOutcomeSelectionProof_terminalTransitionId_fkey"
 FOREIGN KEY ("terminalTransitionId") REFERENCES "FlipSessionTransition"("id")
 ON DELETE RESTRICT ON UPDATE CASCADE;
 
+CREATE FUNCTION "flip_selection_unbiased_index"(
+  seed TEXT,
+  domain TEXT,
+  modulus INTEGER
+) RETURNS INTEGER AS $$
+DECLARE
+  acceptance_limit NUMERIC;
+  candidate NUMERIC;
+  counter INTEGER;
+  digest_bytes BYTEA;
+  byte_index INTEGER;
+BEGIN
+  IF modulus < 1 THEN
+    RAISE EXCEPTION 'Flip selection modulus is invalid';
+  END IF;
+  acceptance_limit :=
+    18446744073709551616 - mod(18446744073709551616::NUMERIC, modulus::NUMERIC);
+  FOR counter IN 0..1023 LOOP
+    digest_bytes := digest(
+      convert_to(seed || ':' || domain || ':' || counter::TEXT, 'UTF8'),
+      'sha256'
+    );
+    candidate := 0;
+    FOR byte_index IN 0..7 LOOP
+      candidate := candidate * 256 + get_byte(digest_bytes, byte_index);
+    END LOOP;
+    IF candidate < acceptance_limit THEN
+      RETURN mod(candidate, modulus::NUMERIC)::INTEGER;
+    END IF;
+  END LOOP;
+  RAISE EXCEPTION 'Flip selection could not derive an unbiased index';
+END;
+$$ LANGUAGE plpgsql IMMUTABLE STRICT;
+
 CREATE FUNCTION "validate_flip_outcome_selection_proof"() RETURNS trigger AS $$
 DECLARE
+  band JSONB;
   stored_commitment "FlipSessionPoolCommitment"%ROWTYPE;
+  stored_ruleset "FlipRuleSet"%ROWTYPE;
+  stored_session "FlipSession"%ROWTYPE;
   selected_outcome JSONB;
-  band_outcome_count INTEGER;
-  selected_band_outcome_index INTEGER;
+  expected_band_label TEXT;
+  expected_band_outcome_count INTEGER;
+  expected_band_outcome_index INTEGER;
+  expected_request_hash TEXT;
+  expected_result_hash TEXT;
+  expected_roll_ppm INTEGER;
+  expected_seed TEXT;
+  proof_preimage TEXT;
+  seed_preimage TEXT;
+  upper_bound INTEGER := 0;
 BEGIN
   SELECT *
   INTO stored_commitment
@@ -116,31 +161,129 @@ BEGIN
     RAISE EXCEPTION 'Flip selection proof does not match the sealed pool commitment';
   END IF;
 
-  SELECT
-    selected_entry.value,
-    (
-      SELECT count(*)::INTEGER
-      FROM jsonb_array_elements(stored_commitment."outcomeSpace")
-        WITH ORDINALITY AS preceding_entry(value, position)
-      WHERE preceding_entry.value->>'bandLabel' = NEW."selectedBandLabel"
-        AND preceding_entry.position < selected_entry.position
-    )
-  INTO selected_outcome, selected_band_outcome_index
-  FROM jsonb_array_elements(stored_commitment."outcomeSpace")
-    WITH ORDINALITY AS selected_entry(value, position)
-  WHERE (selected_entry.value->>'ordinal')::INTEGER = NEW."selectedOrdinal";
+  SELECT *
+  INTO stored_ruleset
+  FROM "FlipRuleSet"
+  WHERE "id" = stored_commitment."rulesetId";
 
-  SELECT count(*)
-  INTO band_outcome_count
+  SELECT *
+  INTO stored_session
+  FROM "FlipSession"
+  WHERE "id" = NEW."sessionId"
+  FOR UPDATE;
+
+  IF NOT FOUND
+    OR stored_ruleset."sealedAt" IS NULL
+    OR stored_ruleset."rulesHash" IS DISTINCT FROM NEW."rulesHash"
+    OR stored_session."status" <> 'POOL_COMMITTED'
+    OR stored_session."poolCommitmentId" IS DISTINCT FROM NEW."poolCommitmentId"
+    OR stored_session."poolCommitmentHash" IS DISTINCT FROM NEW."poolCommitmentHash"
+    OR stored_session."rulesHash" IS DISTINCT FROM NEW."rulesHash"
+    OR stored_session."snapshotContentHash" IS DISTINCT FROM NEW."snapshotContentHash"
+    OR NEW."entropyApprovedAt" < stored_commitment."committedAt"
+    OR EXISTS (
+      SELECT 1
+      FROM "FlipSessionTransition"
+      WHERE "sessionId" = NEW."sessionId"
+        AND "transitionKey" = NEW."transitionKey"
+    )
+  THEN
+    RAISE EXCEPTION 'Flip selection proof does not match the exact prepared session boundary';
+  END IF;
+
+  seed_preimage :=
+    '{"algorithmVersion":' || to_jsonb(NEW."algorithmVersion")::TEXT
+    || ',"entropyHash":' || to_jsonb(NEW."entropyHash")::TEXT
+    || ',"poolCommitmentHash":' || to_jsonb(NEW."poolCommitmentHash")::TEXT
+    || ',"rulesHash":' || to_jsonb(NEW."rulesHash")::TEXT
+    || ',"sessionReference":' || to_jsonb(NEW."sessionId")::TEXT
+    || ',"snapshotContentHash":' || to_jsonb(NEW."snapshotContentHash")::TEXT
+    || '}';
+  expected_seed := encode(
+    digest(convert_to(seed_preimage, 'UTF8'), 'sha256'),
+    'hex'
+  );
+  expected_roll_ppm :=
+    "flip_selection_unbiased_index"(expected_seed, 'band-roll', 1000000);
+
+  FOR band IN SELECT value FROM jsonb_array_elements(stored_ruleset."bands") LOOP
+    upper_bound := upper_bound + (band->>'probabilityPpm')::INTEGER;
+    IF expected_roll_ppm < upper_bound THEN
+      expected_band_label := band->>'label';
+      EXIT;
+    END IF;
+  END LOOP;
+  IF expected_band_label IS NULL THEN
+    RAISE EXCEPTION 'Flip selection proof has no canonical probability band';
+  END IF;
+
+  SELECT count(*)::INTEGER
+  INTO expected_band_outcome_count
   FROM jsonb_array_elements(stored_commitment."outcomeSpace")
-  WHERE value->>'bandLabel' = NEW."selectedBandLabel";
+  WHERE value->>'bandLabel' = expected_band_label;
+  expected_band_outcome_index := "flip_selection_unbiased_index"(
+    expected_seed,
+    'band-outcome',
+    expected_band_outcome_count
+  );
+  SELECT value
+  INTO selected_outcome
+  FROM jsonb_array_elements(stored_commitment."outcomeSpace")
+  WHERE value->>'bandLabel' = expected_band_label
+  OFFSET expected_band_outcome_index
+  LIMIT 1;
+
+  proof_preimage :=
+    '{"algorithmVersion":' || to_jsonb(NEW."algorithmVersion")::TEXT
+    || ',"entropyApprovedAt":'
+    || to_jsonb(to_char(NEW."entropyApprovedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))::TEXT
+    || ',"entropyHash":' || to_jsonb(NEW."entropyHash")::TEXT
+    || ',"entropyReference":' || to_jsonb(NEW."entropyReference")::TEXT
+    || ',"entropySchemaVersion":' || to_jsonb(NEW."entropySchemaVersion")::TEXT
+    || ',"entropySource":' || to_jsonb(NEW."entropySource")::TEXT
+    || ',"poolCommitmentHash":' || to_jsonb(NEW."poolCommitmentHash")::TEXT
+    || ',"rollPpm":' || expected_roll_ppm::TEXT
+    || ',"rulesHash":' || to_jsonb(NEW."rulesHash")::TEXT
+    || ',"schemaVersion":' || to_jsonb(NEW."schemaVersion")::TEXT
+    || ',"selectedBandLabel":' || to_jsonb(expected_band_label)::TEXT
+    || ',"selectedBandOutcomeCount":' || expected_band_outcome_count::TEXT
+    || ',"selectedBandOutcomeIndex":' || expected_band_outcome_index::TEXT
+    || ',"selectedOrdinal":' || (selected_outcome->>'ordinal')
+    || ',"sessionReference":' || to_jsonb(NEW."sessionId")::TEXT
+    || ',"snapshotContentHash":' || to_jsonb(NEW."snapshotContentHash")::TEXT
+    || '}';
+  expected_result_hash := encode(
+    digest(convert_to(proof_preimage, 'UTF8'), 'sha256'),
+    'hex'
+  );
+  expected_request_hash := encode(
+    digest(
+      convert_to(
+        '{"entropyHash":' || to_jsonb(NEW."entropyHash")::TEXT
+        || ',"expectedVersion":' || stored_session."version"::TEXT
+        || ',"proofResultHash":' || to_jsonb(expected_result_hash)::TEXT
+        || ',"sessionReference":' || to_jsonb(NEW."sessionId")::TEXT
+        || ',"transitionKey":' || to_jsonb(NEW."transitionKey")::TEXT
+        || '}',
+        'UTF8'
+      ),
+      'sha256'
+    ),
+    'hex'
+  );
 
   IF selected_outcome IS NULL
-    OR selected_outcome->>'bandLabel' IS DISTINCT FROM NEW."selectedBandLabel"
-    OR band_outcome_count IS DISTINCT FROM NEW."selectedBandOutcomeCount"
-    OR selected_band_outcome_index IS DISTINCT FROM NEW."selectedBandOutcomeIndex"
+    OR NEW."rollPpm" IS DISTINCT FROM expected_roll_ppm
+    OR NEW."selectedBandLabel" IS DISTINCT FROM expected_band_label
+    OR NEW."selectedBandOutcomeCount" IS DISTINCT FROM expected_band_outcome_count
+    OR NEW."selectedBandOutcomeIndex" IS DISTINCT FROM expected_band_outcome_index
+    OR NEW."selectedOrdinal" IS DISTINCT FROM (selected_outcome->>'ordinal')::INTEGER
+    OR NEW."resultHash" IS DISTINCT FROM expected_result_hash
+    OR NEW."requestHash" IS DISTINCT FROM expected_request_hash
+    OR NEW."id" IS DISTINCT FROM
+      'fixture-selection-proof:' || substr(expected_result_hash, 1, 48)
   THEN
-    RAISE EXCEPTION 'Flip selection proof does not select an eligible committed outcome';
+    RAISE EXCEPTION 'Flip selection proof does not match canonical deterministic derivation';
   END IF;
 
   RETURN NEW;
@@ -155,27 +298,49 @@ CREATE FUNCTION "validate_flip_selection_transition_proof"() RETURNS trigger AS 
 DECLARE
   stored_proof "FlipOutcomeSelectionProof"%ROWTYPE;
 BEGIN
-  IF NEW."kind" <> 'SELECTION_RECORDED'
-    OR NEW."evidence"->>'reference' NOT LIKE 'fixture-selection-proof:%'
-  THEN
+  IF NEW."kind" = 'SELECTION_RECORDED' THEN
+    IF NEW."evidence"->>'reference' NOT LIKE 'fixture-selection-proof:%' THEN
+      RAISE EXCEPTION 'Flip selection transition requires its prepared audit proof';
+    END IF;
+    SELECT *
+    INTO stored_proof
+    FROM "FlipOutcomeSelectionProof"
+    WHERE "id" = NEW."evidence"->>'reference';
+
+    IF NOT FOUND
+      OR stored_proof."terminalTransitionId" IS NOT NULL
+      OR stored_proof."finalizedAt" IS NOT NULL
+      OR stored_proof."sessionId" IS DISTINCT FROM NEW."sessionId"
+      OR stored_proof."transitionKey" IS DISTINCT FROM NEW."transitionKey"
+      OR stored_proof."resultHash" IS DISTINCT FROM NEW."evidence"->>'resultHash'
+      OR stored_proof."selectedOrdinal" IS DISTINCT FROM (NEW."evidence"->>'ordinal')::INTEGER
+      OR stored_proof."selectedBandLabel" IS DISTINCT FROM NEW."evidence"->>'bandLabel'
+    THEN
+      RAISE EXCEPTION 'Flip selection transition does not match its prepared audit proof';
+    END IF;
     RETURN NEW;
   END IF;
 
   SELECT *
   INTO stored_proof
   FROM "FlipOutcomeSelectionProof"
-  WHERE "id" = NEW."evidence"->>'reference';
+  WHERE "sessionId" = NEW."sessionId";
 
-  IF NOT FOUND
-    OR stored_proof."terminalTransitionId" IS NOT NULL
-    OR stored_proof."finalizedAt" IS NOT NULL
-    OR stored_proof."sessionId" IS DISTINCT FROM NEW."sessionId"
-    OR stored_proof."transitionKey" IS DISTINCT FROM NEW."transitionKey"
-    OR stored_proof."resultHash" IS DISTINCT FROM NEW."evidence"->>'resultHash'
-    OR stored_proof."selectedOrdinal" IS DISTINCT FROM (NEW."evidence"->>'ordinal')::INTEGER
-    OR stored_proof."selectedBandLabel" IS DISTINCT FROM NEW."evidence"->>'bandLabel'
+  IF FOUND
+    AND (
+      stored_proof."terminalTransitionId" IS NULL
+      OR stored_proof."finalizedAt" IS NULL
+      OR (
+        NEW."selectedAssetReference" IS NOT NULL
+        AND stored_proof."selectedOrdinal" IS DISTINCT FROM (
+          SELECT "selectedOrdinal"
+          FROM "FlipSession"
+          WHERE "id" = NEW."sessionId"
+        )
+      )
+    )
   THEN
-    RAISE EXCEPTION 'Flip selection transition does not match its prepared audit proof';
+    RAISE EXCEPTION 'Flip prepared selection requires its finalized audit proof';
   END IF;
 
   RETURN NEW;

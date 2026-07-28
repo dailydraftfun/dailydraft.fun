@@ -182,7 +182,7 @@ describe('fixture-only deterministic Flip selection persistence', () => {
       terminalTransitionId: 'selection-transition-1',
     });
     expect(JSON.stringify(fixture.proof)).not.toContain(request.approvedEntropy.payload);
-    expect(fixture.transitionCalls).toBe(2);
+    expect(fixture.transitionCalls).toBe(1);
   });
 
   test('rejects a changed entropy replay before another state transition', async () => {
@@ -221,6 +221,78 @@ describe('fixture-only deterministic Flip selection persistence', () => {
         transitionKey: 'selection-service-invalid-state',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+  });
+
+  test('rejects stale versions and reused transition keys without poisoning a corrected retry', async () => {
+    const stale = serviceHarness();
+    const request = {
+      approvedEntropy: entropy('non-poisoning-boundary'),
+      expectedVersion: 2,
+      sessionReference: SESSION,
+      transitionKey: 'selection-stale-version',
+    };
+    await expect(stale.service.selectFixtureOutcome(request)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
+    expect(stale.createdProofs).toBe(0);
+    await expect(
+      stale.service.selectFixtureOutcome({ ...request, expectedVersion: 3 }),
+    ).resolves.toMatchObject({ session: { status: 'selection-recorded' } });
+
+    const reused = serviceHarness({
+      transition: {
+        evidence: { unrelated: true },
+        id: 'existing-transition',
+        kind: 'POOL_COMMITTED',
+        sequence: 3,
+        transitionKey: 'selection-reused-key',
+      },
+    });
+    await expect(
+      reused.service.selectFixtureOutcome({
+        ...request,
+        expectedVersion: 3,
+        transitionKey: 'selection-reused-key',
+      }),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_MISMATCH' });
+    expect(reused.createdProofs).toBe(0);
+    await expect(
+      reused.service.selectFixtureOutcome({
+        ...request,
+        expectedVersion: 3,
+        transitionKey: 'selection-corrected-key',
+      }),
+    ).resolves.toMatchObject({ session: { status: 'selection-recorded' } });
+  });
+
+  test('finalizes a recorded selection after a crash even when the aggregate advanced', async () => {
+    const options = { crashAfterTransition: true, status: 'POOL_COMMITTED' };
+    const fixture = serviceHarness(options);
+    const request = {
+      approvedEntropy: entropy('post-transition-crash'),
+      expectedVersion: 3,
+      sessionReference: SESSION,
+      transitionKey: 'selection-crash-recovery',
+    };
+
+    await expect(fixture.service.selectFixtureOutcome(request)).rejects.toThrow(
+      'simulated post-transition crash',
+    );
+    expect(fixture.proof).toMatchObject({
+      finalizedAt: null,
+      terminalTransitionId: null,
+    });
+    options.status = 'PURCHASE_RECORDED';
+    options.crashAfterTransition = false;
+
+    await expect(fixture.service.selectFixtureOutcome(request)).resolves.toMatchObject({
+      proof: { resultHash: expect.any(String) },
+    });
+    expect(fixture.proof).toMatchObject({
+      finalizedAt: expect.any(Date),
+      terminalTransitionId: 'selection-transition-1',
+    });
+    expect(fixture.transitionCalls).toBe(1);
   });
 
   test('migration binds prepared proofs to exact append-only selection transitions', () => {
@@ -275,9 +347,17 @@ function expectSelectionError(operation: () => unknown, code: FlipSelectionError
   }
 }
 
-function serviceHarness(options: { environment?: NodeJS.ProcessEnv; status?: string } = {}) {
+function serviceHarness(
+  options: {
+    crashAfterTransition?: boolean;
+    environment?: NodeJS.ProcessEnv;
+    status?: string;
+    transition?: Record<string, unknown>;
+    version?: number;
+  } = {},
+) {
   let proof: Record<string, unknown> | null = null;
-  let transition: Record<string, unknown> | null = null;
+  let transition: Record<string, unknown> | null = options.transition ?? null;
   let selectedSession: FlipSessionSnapshot | null = null;
   let createdProofs = 0;
   let transitionCalls = 0;
@@ -295,6 +375,8 @@ function serviceHarness(options: { environment?: NodeJS.ProcessEnv; status?: str
     snapshotContentHash: COMMITTED.snapshotContentHash,
   };
   const database = {
+    $queryRaw: async () => [],
+    $transaction: async (operation: (transaction: unknown) => unknown) => operation(database),
     flipOutcomeSelectionProof: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         createdProofs += 1;
@@ -325,11 +407,20 @@ function serviceHarness(options: { environment?: NodeJS.ProcessEnv; status?: str
       findUnique: async () => ({
         id: SESSION,
         poolCommitment: commitment,
+        selectedOrdinal: options.status && options.status !== 'POOL_COMMITTED' ? 0 : null,
         status: options.status ?? 'POOL_COMMITTED',
+        version: options.version ?? 3,
       }),
     },
     flipSessionTransition: {
-      findUnique: async () => transition,
+      findUnique: async ({
+        where,
+      }: {
+        where: { sessionId_transitionKey: { transitionKey: string } };
+      }) =>
+        transition?.transitionKey === where.sessionId_transitionKey.transitionKey
+          ? transition
+          : null,
     },
   };
   const sessions = {
@@ -358,9 +449,13 @@ function serviceHarness(options: { environment?: NodeJS.ProcessEnv; status?: str
         evidence: action.evidence,
         id: 'selection-transition-1',
         kind: 'SELECTION_RECORDED',
+        sequence: 4,
         transitionKey: action.transitionKey,
       };
       selectedSession ??= selectedSessionSnapshot(action.evidence);
+      if (options.crashAfterTransition) {
+        throw new Error('simulated post-transition crash');
+      }
       return selectedSession;
     },
   };

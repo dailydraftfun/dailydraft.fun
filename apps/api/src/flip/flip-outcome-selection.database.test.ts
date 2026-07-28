@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { createDatabaseClient, type DatabaseClient } from '@dailydraft/db';
 
 import type { Money } from '../domain.js';
+import { stableStringify } from '../providers/valuation-policy.js';
 import {
   type FlipInventoryCandidate,
   type FlipInventorySnapshotPolicy,
@@ -11,6 +12,7 @@ import {
   FLIP_APPROVED_ENTROPY_SCHEMA_VERSION,
   type FlipApprovedEntropyInput,
   FlipOutcomeSelectionService,
+  type FlipSelectionAuditProof,
   selectFlipOutcomeReproducibly,
 } from './flip-outcome-selection.service.js';
 import {
@@ -19,6 +21,8 @@ import {
   FlipRulesService,
 } from './flip-rules.service.js';
 import {
+  FLIP_PURCHASE_FIXTURE_VERSION,
+  FLIP_RECOVERY_FIXTURE_VERSION,
   FLIP_SELECTION_FIXTURE_VERSION,
   FLIP_STAKE_FIXTURE_VERSION,
   FlipSessionStateService,
@@ -157,6 +161,108 @@ describeDatabase('deterministic Flip selection against two real Postgres connect
     ).rejects.toThrow('Flip deterministic selection proof is append-only');
   });
 
+  test('rejects stale versions and reused ledger keys without leaving a prepared proof', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'non-poisoning-boundary');
+    const service = selectionService(databaseA);
+    const request = {
+      approvedEntropy: entropy(fixture.session.id, 'non-poisoning-boundary'),
+      expectedVersion: fixture.session.version,
+      sessionReference: fixture.session.id,
+      transitionKey: 'deterministic-selection-corrected',
+    };
+
+    await expect(
+      service.selectFixtureOutcome({
+        ...request,
+        expectedVersion: fixture.session.version - 1,
+        transitionKey: 'deterministic-selection-stale',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(
+      service.selectFixtureOutcome({
+        ...request,
+        transitionKey: 'commit-pool-non-poisoning-boundary',
+      }),
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_MISMATCH' });
+    expect(
+      await databaseA.flipOutcomeSelectionProof.count({
+        where: { sessionId: fixture.session.id },
+      }),
+    ).toBe(0);
+
+    await expect(service.selectFixtureOutcome(request)).resolves.toMatchObject({
+      session: { status: 'selection-recorded' },
+    });
+  });
+
+  test('blocks post-selection lifecycle until crash recovery finalizes the exact proof', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'finalization-gate');
+    const approvedEntropy = entropy(fixture.session.id, 'finalization-gate');
+    const request = {
+      approvedEntropy,
+      expectedVersion: fixture.session.version,
+      sessionReference: fixture.session.id,
+      transitionKey: 'deterministic-selection-finalization-gate',
+    };
+    const computed = selectFlipOutcomeReproducibly(committedSelection(fixture), approvedEntropy);
+    const proofId = `fixture-selection-proof:${computed.proof.resultHash.slice(0, 48)}`;
+    await databaseA.flipOutcomeSelectionProof.create({
+      data: proofCreateData(fixture, computed.proof, request),
+    });
+    const state = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    await expect(
+      state.transition(fixture.session.id, {
+        evidence: {
+          reasonCode: 'FIXTURE_RECOVERY',
+          reference: 'fixture-recovery:prepared-proof',
+          schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+          status: 'fixture-recovery-required',
+        },
+        expectedVersion: fixture.session.version,
+        kind: 'request-recovery',
+        transitionKey: 'recovery-with-prepared-selection',
+      }),
+    ).rejects.toThrow('prepared selection requires its finalized audit proof');
+    const selected = await state.transition(fixture.session.id, {
+      evidence: {
+        ...computed.selectedOutcome,
+        reference: proofId,
+        resultHash: computed.proof.resultHash,
+        schemaVersion: FLIP_SELECTION_FIXTURE_VERSION,
+      },
+      expectedVersion: fixture.session.version,
+      kind: 'record-selection',
+      transitionKey: request.transitionKey,
+    });
+    const purchase = {
+      evidence: {
+        amount: usdc(computed.selectedOutcome.listingValueAmount),
+        provider: 'fixture-marketplace' as const,
+        providerAssetReference: computed.selectedOutcome.providerAssetReference,
+        providerListingReference: computed.selectedOutcome.providerListingReference,
+        reference: 'fixture-purchase:finalization-gate',
+        schemaVersion: FLIP_PURCHASE_FIXTURE_VERSION,
+        status: 'fixture-acquired' as const,
+      },
+      expectedVersion: selected.version,
+      kind: 'record-purchase' as const,
+      transitionKey: 'purchase-finalization-gate',
+    };
+
+    await expect(state.transition(selected.id, purchase)).rejects.toThrow(
+      'prepared selection requires its finalized audit proof',
+    );
+    const recovered = await selectionService(databaseB).selectFixtureOutcome(request);
+    expect(recovered.session.status).toBe('selection-recorded');
+    await expect(state.transition(selected.id, purchase)).resolves.toMatchObject({
+      status: 'purchase-recorded',
+    });
+  });
+
   test('rejects a forged within-band index and a transition without its prepared proof', async () => {
     const fixture = await prepareDatabaseFixture(databaseA, 'invalid-proof-binding');
     let approvedEntropy = entropy(fixture.session.id, 'invalid-proof-index-0');
@@ -217,7 +323,7 @@ describeDatabase('deterministic Flip selection against two real Postgres connect
           },
         }),
       ),
-    ).rejects.toThrow('does not select an eligible committed outcome');
+    ).rejects.toThrow('does not match canonical deterministic derivation');
 
     const selectedOutcome = (
       fixture.commitment.outcomeSpace as unknown as FlipEligibleOutcome[]
@@ -240,6 +346,53 @@ describeDatabase('deterministic Flip selection against two real Postgres connect
         transitionKey: 'selection-without-prepared-proof',
       }),
     ).rejects.toThrow('does not match its prepared audit proof');
+  });
+
+  test('database rejects a canonically hashed proof that forges another eligible outcome', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'forged-canonical-outcome');
+    const approvedEntropy = entropy(fixture.session.id, 'forged-canonical-outcome');
+    const computed = selectFlipOutcomeReproducibly(committedSelection(fixture), approvedEntropy);
+    const outcomes = fixture.commitment.outcomeSpace as unknown as FlipEligibleOutcome[];
+    const forgedOutcome = outcomes.find(
+      (candidate) => candidate.ordinal !== computed.selectedOutcome.ordinal,
+    );
+    if (!forgedOutcome) throw new Error('Committed fixture needs another forge candidate');
+    const bandOutcomes = outcomes.filter(
+      (candidate) => candidate.bandLabel === forgedOutcome.bandLabel,
+    );
+    const unsignedForgery = {
+      ...computed.proof,
+      selectedBandLabel: forgedOutcome.bandLabel,
+      selectedBandOutcomeCount: bandOutcomes.length,
+      selectedBandOutcomeIndex: bandOutcomes.findIndex(
+        (candidate) => candidate.ordinal === forgedOutcome.ordinal,
+      ),
+      selectedOrdinal: forgedOutcome.ordinal,
+    };
+    const { resultHash: _canonicalResultHash, ...unsignedProof } = unsignedForgery;
+    const forgedProof = {
+      ...unsignedProof,
+      resultHash: hash(stableStringify(unsignedProof)),
+    } satisfies FlipSelectionAuditProof;
+    const request = {
+      approvedEntropy,
+      expectedVersion: fixture.session.version,
+      sessionReference: fixture.session.id,
+      transitionKey: 'forged-canonical-outcome',
+    };
+
+    await expect(
+      Promise.resolve(
+        databaseA.flipOutcomeSelectionProof.create({
+          data: proofCreateData(fixture, forgedProof, request),
+        }),
+      ),
+    ).rejects.toThrow('does not match canonical deterministic derivation');
+    expect(
+      await databaseA.flipOutcomeSelectionProof.count({
+        where: { sessionId: fixture.session.id },
+      }),
+    ).toBe(0);
   });
 });
 
@@ -308,6 +461,62 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
     transitionKey: `commit-pool-${label}`,
   });
   return { commitment: storedCommitment, rules, session };
+}
+
+type SelectionDatabaseFixture = Awaited<ReturnType<typeof prepareDatabaseFixture>>;
+
+function committedSelection(fixture: SelectionDatabaseFixture) {
+  return {
+    committedAt: fixture.commitment.committedAt,
+    outcomeSpace: fixture.commitment.outcomeSpace,
+    poolCommitmentHash: fixture.commitment.poolCommitmentHash,
+    rules: fixture.rules,
+    rulesHash: fixture.commitment.rulesHash,
+    sessionReference: fixture.session.id,
+    snapshotContentHash: fixture.commitment.snapshotContentHash,
+  };
+}
+
+function proofCreateData(
+  fixture: SelectionDatabaseFixture,
+  proof: FlipSelectionAuditProof,
+  request: {
+    expectedVersion: number;
+    sessionReference: string;
+    transitionKey: string;
+  },
+) {
+  return {
+    algorithmVersion: proof.algorithmVersion,
+    entropyApprovedAt: new Date(proof.entropyApprovedAt),
+    entropyHash: proof.entropyHash,
+    entropyReference: proof.entropyReference,
+    entropySchemaVersion: proof.entropySchemaVersion,
+    entropySource: proof.entropySource,
+    id: `fixture-selection-proof:${proof.resultHash.slice(0, 48)}`,
+    poolCommitmentHash: proof.poolCommitmentHash,
+    poolCommitmentId: fixture.commitment.id,
+    requestHash: hash(
+      stableStringify({
+        entropyHash: proof.entropyHash,
+        expectedVersion: request.expectedVersion,
+        proofResultHash: proof.resultHash,
+        sessionReference: request.sessionReference,
+        transitionKey: request.transitionKey,
+      }),
+    ),
+    resultHash: proof.resultHash,
+    rollPpm: proof.rollPpm,
+    rulesHash: proof.rulesHash,
+    schemaVersion: proof.schemaVersion,
+    selectedBandLabel: proof.selectedBandLabel,
+    selectedBandOutcomeCount: proof.selectedBandOutcomeCount,
+    selectedBandOutcomeIndex: proof.selectedBandOutcomeIndex,
+    selectedOrdinal: proof.selectedOrdinal,
+    sessionId: request.sessionReference,
+    snapshotContentHash: proof.snapshotContentHash,
+    transitionKey: request.transitionKey,
+  };
 }
 
 function entropy(sessionReference: string, label: string): FlipApprovedEntropyInput {

@@ -18,7 +18,6 @@ import {
   FLIP_SELECTION_FIXTURE_VERSION,
   FLIP_SESSION_ENVIRONMENT,
   type FlipSessionSnapshot,
-  FlipSessionStateError,
   FlipSessionStateService,
   flipSessionFixtureModeEnabled,
 } from './flip-session-state.service.js';
@@ -133,11 +132,11 @@ export class FlipOutcomeSelectionService {
     });
     if (
       !session?.poolCommitment ||
-      (session.status !== 'POOL_COMMITTED' && session.status !== 'SELECTION_RECORDED')
+      (session.status !== 'POOL_COMMITTED' && session.selectedOrdinal === null)
     ) {
       throw selectionError(
         'INVALID_STATE',
-        'Flip selection requires the exact durable pool-committed session',
+        'Flip selection requires the exact durable pool-committed or selected session',
       );
     }
     const commitment = session.poolCommitment;
@@ -164,16 +163,20 @@ export class FlipOutcomeSelectionService {
       }),
     );
 
-    await this.ensurePreparedProof({
+    const transitionRecorded = await this.ensurePreparedProof({
       commitmentId: commitment.id,
+      expectedVersion: input.expectedVersion,
       proof: computed.proof,
       proofId,
       requestHash,
+      sessionReference,
       transitionKey,
     });
 
     let transitioned: FlipSessionSnapshot;
-    try {
+    if (transitionRecorded) {
+      transitioned = await this.sessions.findSession(sessionReference);
+    } else {
       transitioned = await this.sessions.transition(sessionReference, {
         evidence: {
           ...computed.selectedOutcome,
@@ -185,16 +188,6 @@ export class FlipOutcomeSelectionService {
         kind: 'record-selection',
         transitionKey,
       });
-    } catch (error) {
-      if (
-        error instanceof FlipSessionStateError &&
-        error.code === 'INVALID_TRANSITION' &&
-        session.status === 'SELECTION_RECORDED'
-      ) {
-        transitioned = await this.sessions.findSession(sessionReference);
-      } else {
-        throw error;
-      }
     }
     assertSelectedReplay(transitioned, computed.selectedOutcome);
     await this.finalizeProof(proofId, sessionReference, transitionKey);
@@ -207,20 +200,65 @@ export class FlipOutcomeSelectionService {
 
   private async ensurePreparedProof(input: {
     commitmentId: string;
+    expectedVersion: number;
     proof: FlipSelectionAuditProof;
     proofId: string;
     requestHash: string;
+    sessionReference: string;
     transitionKey: string;
-  }): Promise<void> {
-    const existing = await this.database.flipOutcomeSelectionProof.findUnique({
-      where: { sessionId: input.proof.sessionReference },
-    });
-    if (existing) {
-      assertStoredProof(existing, input);
-      return;
-    }
-    try {
-      await this.database.flipOutcomeSelectionProof.create({
+  }): Promise<boolean> {
+    return this.database.$transaction(async (transaction) => {
+      await transaction.$queryRaw`
+          SELECT "id"
+          FROM "FlipSession"
+          WHERE "id" = ${input.sessionReference}
+          FOR UPDATE
+        `;
+      const current = await transaction.flipSession.findUnique({
+        where: { id: input.sessionReference },
+      });
+      if (!current) {
+        throw selectionError('INVALID_STATE', 'Flip selection session is absent');
+      }
+      const existing = await transaction.flipOutcomeSelectionProof.findUnique({
+        where: { sessionId: input.sessionReference },
+      });
+      if (existing) assertStoredProof(existing, input);
+
+      const transition = await transaction.flipSessionTransition.findUnique({
+        where: {
+          sessionId_transitionKey: {
+            sessionId: input.sessionReference,
+            transitionKey: input.transitionKey,
+          },
+        },
+      });
+      if (transition) {
+        if (
+          !existing ||
+          transition.kind !== 'SELECTION_RECORDED' ||
+          transition.sequence !== input.expectedVersion + 1 ||
+          transition.evidence === null ||
+          (transition.evidence as { reference?: unknown; resultHash?: unknown }).reference !==
+            input.proofId ||
+          (transition.evidence as { resultHash?: unknown }).resultHash !== input.proof.resultHash
+        ) {
+          throw selectionError(
+            'IDEMPOTENCY_MISMATCH',
+            'Flip selection transitionKey is already bound to different evidence',
+          );
+        }
+        return true;
+      }
+      if (current.status !== 'POOL_COMMITTED' || current.version !== input.expectedVersion) {
+        throw selectionError(
+          'INVALID_STATE',
+          'Flip selection does not match the durable pool-committed version',
+        );
+      }
+      if (existing) return false;
+
+      await transaction.flipOutcomeSelectionProof.create({
         data: {
           algorithmVersion: input.proof.algorithmVersion,
           entropyApprovedAt: new Date(input.proof.entropyApprovedAt),
@@ -245,13 +283,8 @@ export class FlipOutcomeSelectionService {
           transitionKey: input.transitionKey,
         },
       });
-    } catch (error) {
-      const concurrent = await this.database.flipOutcomeSelectionProof.findUnique({
-        where: { sessionId: input.proof.sessionReference },
-      });
-      if (!concurrent) throw error;
-      assertStoredProof(concurrent, input);
-    }
+      return false;
+    });
   }
 
   private async finalizeProof(
