@@ -1003,6 +1003,7 @@ model FlipSessionTransition {
   sequence               Int
   transitionKey          String
   requestHash            String
+  requestPayload         String
   kind                   FlipSessionTransitionKind
   fromStatus             FlipSessionStatus?
   toStatus               FlipSessionStatus

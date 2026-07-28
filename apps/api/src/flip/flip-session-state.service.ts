@@ -29,7 +29,15 @@ const FIXTURE_WALLET_PATTERN = /^fixture-wallet:[A-Za-z0-9][A-Za-z0-9._:-]{0,127
 const UNSIGNED_INTEGER_PATTERN = /^(0|[1-9]\d*)$/;
 const MAX_U64 = 18_446_744_073_709_551_615n;
 
+const MONEY_KEYS = ['amount', 'currency', 'decimals'] as const;
 const STAKE_KEYS = ['amount', 'reference', 'schemaVersion', 'status'] as const;
+const POOL_COMMITMENT_EVIDENCE_KEYS = [
+  'eligibleOutcomeCount',
+  'poolCommitmentHash',
+  'poolCommitmentId',
+  'rulesHash',
+  'snapshotContentHash',
+] as const;
 const SELECTION_KEYS = [
   'bandLabel',
   'listingValueAmount',
@@ -347,13 +355,12 @@ export class FlipSessionStateService {
         'Flip session requires a synthetic fixture wallet reference',
       );
     }
-    const requestHash = sha256(
-      stableStringify({
-        playerWalletReference: input.playerWalletReference,
-        sessionReference,
-        stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
-      }),
-    );
+    const requestPayload = stableStringify({
+      playerWalletReference: input.playerWalletReference,
+      sessionReference,
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+    const requestHash = sha256(requestPayload);
     const existing = await this.database.flipSession.findUnique({
       include: { transitions: { orderBy: { sequence: 'asc' } } },
       where: { id: sessionReference },
@@ -389,6 +396,7 @@ export class FlipSessionStateService {
                   id: createId('fliptransition'),
                   kind: DatabaseFlipSessionTransitionKind.SESSION_STARTED,
                   requestHash,
+                  requestPayload,
                   sequence: 1,
                   toStatus: DatabaseFlipSessionStatus.AWAITING_STAKE,
                   transitionKey: 'session-started',
@@ -435,12 +443,11 @@ export class FlipSessionStateService {
       throw stateError('INVALID_TRANSITION', 'Flip expectedVersion is invalid');
     }
     const normalized = normalizeAction(action);
-    const requestHash = sha256(
-      stableStringify({
-        action: normalized,
-        stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
-      }),
-    );
+    const requestPayload = stableStringify({
+      action: normalized,
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+    const requestHash = sha256(requestPayload);
     const replay = await this.findReplay(sessionReference, action.transitionKey, requestHash);
     if (replay) return replay;
 
@@ -490,6 +497,7 @@ export class FlipSessionStateService {
                 kind: resolved.kind,
                 poolCommitmentHash: resolved.poolCommitmentHash,
                 requestHash,
+                requestPayload,
                 selectedAssetReference: resolved.selectedAssetReference,
                 sequence: current.version + 1,
                 sessionId: sessionReference,
@@ -786,7 +794,8 @@ async function resolveAction(
       requireSelectedOutcome(current);
       if (
         action.evidence.providerAssetReference !== current.selectedAssetReference ||
-        action.evidence.providerListingReference !== current.selectedListingReference
+        action.evidence.providerListingReference !== current.selectedListingReference ||
+        action.evidence.amount.amount !== current.selectedValueAmount
       ) {
         throw stateError(
           'INVALID_EVIDENCE',
@@ -993,10 +1002,279 @@ function assertSessionLedger(session: FlipSessionWithTransitions): void {
       : session.terminalAt !== null || session.terminalReason !== null) ||
     ((session.status === DatabaseFlipSessionStatus.REVEAL_READY ||
       session.status === DatabaseFlipSessionStatus.SETTLED) &&
-      (!session.purchasedAt || !session.transferredAt || !session.revealReadyAt))
+      (!session.purchasedAt || !session.transferredAt || !session.revealReadyAt)) ||
+    !session.transitions.every((transition) => isValidStoredTransition(session, transition))
   ) {
     throw stateError('DISABLED', 'Flip durable transition ledger is inconsistent');
   }
+}
+
+type FlipSessionTransitionRow = FlipSessionWithTransitions['transitions'][number];
+
+function isValidStoredTransition(
+  session: FlipSessionWithTransitions,
+  transition: FlipSessionTransitionRow,
+): boolean {
+  try {
+    if (!HASH_PATTERN.test(transition.requestHash)) return false;
+
+    const expected = expectedStoredTransition(session, transition);
+    if (
+      transition.fromStatus !== expected.fromStatus ||
+      transition.toStatus !== expected.toStatus ||
+      transition.poolCommitmentHash !== expected.poolCommitmentHash ||
+      transition.selectedAssetReference !== expected.selectedAssetReference ||
+      transition.terminalReason !== expected.terminalReason ||
+      stableStringify(transition.evidence) !== stableStringify(expected.evidence) ||
+      transition.requestHash !== expected.requestHash ||
+      transition.requestPayload !== expected.requestPayload
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function expectedStoredTransition(
+  session: FlipSessionWithTransitions,
+  transition: FlipSessionTransitionRow,
+): {
+  evidence: unknown;
+  fromStatus: DatabaseFlipSessionStatus | null;
+  poolCommitmentHash: string | null;
+  requestHash: string;
+  requestPayload: string;
+  selectedAssetReference: string | null;
+  terminalReason: string | null;
+  toStatus: DatabaseFlipSessionStatus;
+} {
+  const transitionKey = requireIdentifier(transition.transitionKey, 'stored transitionKey');
+  if (transition.kind === DatabaseFlipSessionTransitionKind.SESSION_STARTED) {
+    requireExactKeys(
+      transition.evidence as object,
+      ['playerWalletReference', 'stateMachineVersion'],
+      'session start',
+    );
+    const evidence = transition.evidence as {
+      playerWalletReference: unknown;
+      stateMachineVersion: unknown;
+    };
+    if (
+      transition.sequence !== 1 ||
+      evidence.playerWalletReference !== session.playerWalletReference ||
+      evidence.stateMachineVersion !== FLIP_SESSION_STATE_MACHINE_VERSION ||
+      transitionKey !== 'session-started'
+    ) {
+      throw stateError('INVALID_EVIDENCE', 'Stored Flip session start is invalid');
+    }
+    const normalizedEvidence = {
+      playerWalletReference: session.playerWalletReference,
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    };
+    return {
+      evidence: normalizedEvidence,
+      fromStatus: null,
+      poolCommitmentHash: null,
+      requestHash: sha256(
+        stableStringify({
+          playerWalletReference: session.playerWalletReference,
+          sessionReference: session.id,
+          stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+        }),
+      ),
+      requestPayload: stableStringify({
+        playerWalletReference: session.playerWalletReference,
+        sessionReference: session.id,
+        stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+      }),
+      selectedAssetReference: null,
+      terminalReason: null,
+      toStatus: DatabaseFlipSessionStatus.AWAITING_STAKE,
+    };
+  }
+
+  if (transition.sequence <= 1) {
+    throw stateError('INVALID_EVIDENCE', 'Stored Flip transition sequence is invalid');
+  }
+
+  let action: Omit<FlipSessionAction, 'expectedVersion' | 'transitionKey'>;
+  let fromStatus: DatabaseFlipSessionStatus;
+  let toStatus: DatabaseFlipSessionStatus;
+  let poolCommitmentHash: string | null = session.poolCommitmentHash;
+  let selectedAssetReference: string | null = session.selectedAssetReference;
+  let terminalReason: string | null = null;
+
+  switch (transition.kind) {
+    case DatabaseFlipSessionTransitionKind.STAKE_CONFIRMED: {
+      const evidence = requireStake(transition.evidence as unknown as FlipStakeFixture);
+      if (
+        evidence.amount.amount !== session.stakeAmount ||
+        evidence.amount.currency !== session.stakeCurrency ||
+        evidence.amount.decimals !== session.stakeDecimals
+      ) {
+        throw stateError('INVALID_EVIDENCE', 'Stored Flip stake evidence does not match session');
+      }
+      action = { evidence, kind: 'confirm-stake' };
+      fromStatus = DatabaseFlipSessionStatus.AWAITING_STAKE;
+      toStatus = DatabaseFlipSessionStatus.STAKE_CONFIRMED;
+      poolCommitmentHash = null;
+      selectedAssetReference = null;
+      break;
+    }
+    case DatabaseFlipSessionTransitionKind.POOL_COMMITTED: {
+      const evidence = requirePoolCommitmentEvidence(transition.evidence);
+      if (
+        evidence.poolCommitmentId !== session.poolCommitmentId ||
+        evidence.poolCommitmentHash !== session.poolCommitmentHash ||
+        evidence.rulesHash !== session.rulesHash ||
+        evidence.snapshotContentHash !== session.snapshotContentHash
+      ) {
+        throw stateError(
+          'INVALID_EVIDENCE',
+          'Stored Flip pool commitment evidence does not match session',
+        );
+      }
+      action = {
+        evidence: { poolCommitmentId: evidence.poolCommitmentId },
+        kind: 'commit-pool',
+      };
+      fromStatus = DatabaseFlipSessionStatus.STAKE_CONFIRMED;
+      toStatus = DatabaseFlipSessionStatus.POOL_COMMITTED;
+      selectedAssetReference = null;
+      break;
+    }
+    case DatabaseFlipSessionTransitionKind.SELECTION_RECORDED: {
+      const evidence = requireSelection(transition.evidence as unknown as FlipSelectionFixture);
+      if (
+        evidence.ordinal !== session.selectedOrdinal ||
+        evidence.bandLabel !== session.selectedBandLabel ||
+        evidence.providerAssetReference !== session.selectedAssetReference ||
+        evidence.providerListingReference !== session.selectedListingReference ||
+        evidence.listingValueAmount !== session.selectedValueAmount
+      ) {
+        throw stateError('INVALID_EVIDENCE', 'Stored Flip selection does not match session');
+      }
+      action = { evidence, kind: 'record-selection' };
+      fromStatus = DatabaseFlipSessionStatus.POOL_COMMITTED;
+      toStatus = DatabaseFlipSessionStatus.SELECTION_RECORDED;
+      break;
+    }
+    case DatabaseFlipSessionTransitionKind.PURCHASE_RECORDED: {
+      const evidence = requirePurchase(transition.evidence as unknown as FlipPurchaseFixture);
+      if (
+        evidence.reference !== session.purchaseReference ||
+        evidence.providerAssetReference !== session.selectedAssetReference ||
+        evidence.providerListingReference !== session.selectedListingReference ||
+        evidence.amount.amount !== session.selectedValueAmount
+      ) {
+        throw stateError('INVALID_EVIDENCE', 'Stored Flip purchase does not match session');
+      }
+      action = { evidence, kind: 'record-purchase' };
+      fromStatus = DatabaseFlipSessionStatus.SELECTION_RECORDED;
+      toStatus = DatabaseFlipSessionStatus.PURCHASE_RECORDED;
+      break;
+    }
+    case DatabaseFlipSessionTransitionKind.TRANSFER_RECORDED: {
+      const evidence = requireTransfer(transition.evidence as unknown as FlipTransferFixture);
+      if (
+        evidence.reference !== session.transferReference ||
+        evidence.providerAssetReference !== session.selectedAssetReference ||
+        evidence.destinationWalletReference !== session.playerWalletReference
+      ) {
+        throw stateError('INVALID_EVIDENCE', 'Stored Flip transfer does not match session');
+      }
+      action = { evidence, kind: 'record-transfer' };
+      fromStatus = DatabaseFlipSessionStatus.PURCHASE_RECORDED;
+      toStatus = DatabaseFlipSessionStatus.TRANSFER_RECORDED;
+      break;
+    }
+    case DatabaseFlipSessionTransitionKind.REVEAL_READY: {
+      const evidence = requireRevealReady(transition.evidence as unknown as FlipRevealReadyFixture);
+      if (
+        evidence.reference !== session.revealReadyReference ||
+        evidence.purchaseReference !== session.purchaseReference ||
+        evidence.transferReference !== session.transferReference
+      ) {
+        throw stateError('INVALID_EVIDENCE', 'Stored Flip reveal evidence does not match session');
+      }
+      action = { evidence, kind: 'mark-reveal-ready' };
+      fromStatus = DatabaseFlipSessionStatus.TRANSFER_RECORDED;
+      toStatus = DatabaseFlipSessionStatus.REVEAL_READY;
+      break;
+    }
+    case DatabaseFlipSessionTransitionKind.SETTLED: {
+      const evidence = requireSettlement(transition.evidence as unknown as FlipSettlementFixture);
+      if (evidence.providerAssetReference !== session.selectedAssetReference) {
+        throw stateError('INVALID_EVIDENCE', 'Stored Flip settlement does not match session');
+      }
+      action = { evidence, kind: 'settle' };
+      fromStatus = DatabaseFlipSessionStatus.REVEAL_READY;
+      toStatus = DatabaseFlipSessionStatus.SETTLED;
+      terminalReason = 'FIXTURE_SETTLED';
+      break;
+    }
+    case DatabaseFlipSessionTransitionKind.RECOVERY_REQUESTED: {
+      const evidence = requireRecoveryRequest(
+        transition.evidence as unknown as FlipRecoveryRequestFixture,
+      );
+      if (
+        transition.fromStatus === null ||
+        transition.fromStatus === DatabaseFlipSessionStatus.RECOVERY_REQUIRED ||
+        TERMINAL_STATUSES.has(transition.fromStatus)
+      ) {
+        throw stateError('INVALID_EVIDENCE', 'Stored Flip recovery origin is invalid');
+      }
+      action = { evidence, kind: 'request-recovery' };
+      fromStatus = transition.fromStatus;
+      toStatus = DatabaseFlipSessionStatus.RECOVERY_REQUIRED;
+      break;
+    }
+    case DatabaseFlipSessionTransitionKind.RECOVERY_COMPLETED: {
+      const evidence = requireRecoveryCompletion(
+        transition.evidence as unknown as FlipRecoveryCompletionFixture,
+      );
+      action = { evidence, kind: 'complete-recovery' };
+      fromStatus = DatabaseFlipSessionStatus.RECOVERY_REQUIRED;
+      toStatus = DatabaseFlipSessionStatus.RECOVERED;
+      terminalReason = 'FIXTURE_RECOVERY_COMPLETED';
+      break;
+    }
+    case DatabaseFlipSessionTransitionKind.TERMINATED: {
+      const evidence = requireTerminalFailure(
+        transition.evidence as unknown as FlipTerminalFailureFixture,
+      );
+      action = { evidence, kind: 'terminate' };
+      fromStatus = DatabaseFlipSessionStatus.RECOVERY_REQUIRED;
+      toStatus = DatabaseFlipSessionStatus.FAILED;
+      terminalReason = `FIXTURE_TERMINATED:${evidence.reasonCode}`;
+      break;
+    }
+  }
+
+  const normalizedAction = {
+    ...action,
+    expectedVersion: transition.sequence - 1,
+    transitionKey,
+  } as FlipSessionAction;
+  const requestPayload = stableStringify({
+    action: normalizedAction,
+    stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+  });
+  return {
+    evidence:
+      transition.kind === DatabaseFlipSessionTransitionKind.POOL_COMMITTED
+        ? requirePoolCommitmentEvidence(transition.evidence)
+        : action.evidence,
+    fromStatus,
+    poolCommitmentHash,
+    requestHash: sha256(requestPayload),
+    requestPayload,
+    selectedAssetReference,
+    terminalReason,
+    toStatus,
+  };
 }
 
 function requireStatus(
@@ -1012,11 +1290,56 @@ function requireStatus(
   }
 }
 
+function requirePoolCommitmentEvidence(value: unknown): {
+  eligibleOutcomeCount: number;
+  poolCommitmentHash: string;
+  poolCommitmentId: string;
+  rulesHash: string;
+  snapshotContentHash: string;
+} {
+  requireExactKeys(value as object, POOL_COMMITMENT_EVIDENCE_KEYS, 'pool commitment evidence');
+  const evidence = value as {
+    eligibleOutcomeCount?: unknown;
+    poolCommitmentHash?: unknown;
+    poolCommitmentId?: unknown;
+    rulesHash?: unknown;
+    snapshotContentHash?: unknown;
+  };
+  if (
+    typeof evidence.eligibleOutcomeCount !== 'number' ||
+    !Number.isInteger(evidence.eligibleOutcomeCount) ||
+    evidence.eligibleOutcomeCount < 1 ||
+    typeof evidence.poolCommitmentHash !== 'string' ||
+    !HASH_PATTERN.test(evidence.poolCommitmentHash) ||
+    typeof evidence.rulesHash !== 'string' ||
+    !HASH_PATTERN.test(evidence.rulesHash) ||
+    typeof evidence.snapshotContentHash !== 'string' ||
+    !HASH_PATTERN.test(evidence.snapshotContentHash)
+  ) {
+    throw stateError('INVALID_EVIDENCE', 'Stored Flip pool commitment evidence is invalid');
+  }
+  return {
+    eligibleOutcomeCount: evidence.eligibleOutcomeCount,
+    poolCommitmentHash: evidence.poolCommitmentHash,
+    poolCommitmentId: requireIdentifier(
+      evidence.poolCommitmentId as string,
+      'stored poolCommitmentId',
+    ),
+    rulesHash: evidence.rulesHash,
+    snapshotContentHash: evidence.snapshotContentHash,
+  };
+}
+
 function requireSelectedOutcome(current: FlipSessionRow): asserts current is FlipSessionRow & {
   selectedAssetReference: string;
   selectedListingReference: string;
+  selectedValueAmount: string;
 } {
-  if (!current.selectedAssetReference || !current.selectedListingReference) {
+  if (
+    !current.selectedAssetReference ||
+    !current.selectedListingReference ||
+    !current.selectedValueAmount
+  ) {
     throw stateError('INVALID_EVIDENCE', 'Flip session has no durable selected outcome');
   }
 }
@@ -1259,6 +1582,7 @@ function requireMoney(value: unknown, label: string): Money {
   ) {
     throw stateError('INVALID_EVIDENCE', `Flip ${label} is invalid`);
   }
+  requireExactKeys(value, MONEY_KEYS, label);
   return Object.freeze({
     amount: requireAmount((value as Money).amount, label),
     currency: 'USDC',

@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createDatabaseClient, type DatabaseClient } from '@dailydraft/db';
+import {
+  createDatabaseClient,
+  type DatabaseClient,
+  FlipSessionStatus,
+  FlipSessionTransitionKind,
+} from '@dailydraft/db';
 
 import type { Money } from '../domain.js';
 import {
@@ -13,6 +18,7 @@ import {
   FLIP_RECOVERY_FIXTURE_VERSION,
   FLIP_REVEAL_READY_FIXTURE_VERSION,
   FLIP_SELECTION_FIXTURE_VERSION,
+  FLIP_SESSION_STATE_MACHINE_VERSION,
   FLIP_SETTLEMENT_FIXTURE_VERSION,
   FLIP_STAKE_FIXTURE_VERSION,
   FLIP_TRANSFER_FIXTURE_VERSION,
@@ -279,6 +285,246 @@ describeDatabase('Flip session state machine against two real Postgres connectio
       status: 'recovered',
       terminalReason: 'FIXTURE_RECOVERY_COMPLETED',
       version: 3,
+    });
+  });
+
+  test('rejects aggregate advancement without its matching append-only transition', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'missing-ledger');
+    const service = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    const session = await service.createFixtureSession({
+      playerWalletReference: 'fixture-wallet:postgres-missing-ledger',
+      sessionReference: fixture.sessionReference,
+    });
+
+    await expect(
+      databaseA.$transaction((transaction) =>
+        transaction.flipSession.updateMany({
+          data: {
+            stakeAmount: '50000000',
+            stakeCurrency: 'USDC',
+            stakeDecimals: 6,
+            status: FlipSessionStatus.STAKE_CONFIRMED,
+            version: { increment: 1 },
+          },
+          where: {
+            id: session.id,
+            status: FlipSessionStatus.AWAITING_STAKE,
+            version: session.version,
+          },
+        }),
+      ),
+    ).rejects.toThrow('requires matching append-only evidence');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: 1,
+    });
+  });
+
+  test.each([
+    {
+      evidence: { secret: 'forged' },
+      kind: FlipSessionTransitionKind.SETTLED,
+      label: 'wrong transition kind and arbitrary evidence',
+    },
+    {
+      evidence: {
+        amount: { amount: '1', currency: 'USDC', decimals: 6, secret: 'forged' },
+        reference: 'fixture-stake:forged',
+        schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+        status: 'fixture-confirmed',
+      },
+      kind: FlipSessionTransitionKind.STAKE_CONFIRMED,
+      label: 'milestone mismatch and nested secret evidence',
+    },
+  ])('rejects $label at the deferred database boundary', async ({ evidence, kind }) => {
+    const fixture = await prepareDatabaseFixture(
+      databaseA,
+      `forged-${kind.toLowerCase().replaceAll('_', '-')}`,
+    );
+    const service = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    const session = await service.createFixtureSession({
+      playerWalletReference: 'fixture-wallet:postgres-forged',
+      sessionReference: fixture.sessionReference,
+    });
+    const transitionKey = `forged-${kind.toLowerCase()}`;
+    const requestPayload = JSON.stringify({
+      action: {
+        evidence,
+        expectedVersion: 1,
+        kind: kind === FlipSessionTransitionKind.SETTLED ? 'settle' : 'confirm-stake',
+        transitionKey,
+      },
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.updateMany({
+          data: {
+            stakeAmount: '50000000',
+            stakeCurrency: 'USDC',
+            stakeDecimals: 6,
+            status: FlipSessionStatus.STAKE_CONFIRMED,
+            version: { increment: 1 },
+          },
+          where: {
+            id: session.id,
+            status: FlipSessionStatus.AWAITING_STAKE,
+            version: session.version,
+          },
+        });
+        await transaction.flipSessionTransition.create({
+          data: {
+            evidence,
+            fromStatus: FlipSessionStatus.AWAITING_STAKE,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind,
+            poolCommitmentHash: null,
+            requestHash: hash(requestPayload),
+            requestPayload,
+            selectedAssetReference: null,
+            sequence: 2,
+            sessionId: session.id,
+            terminalReason: null,
+            toStatus: FlipSessionStatus.STAKE_CONFIRMED,
+            transitionKey,
+          },
+        });
+      }),
+    ).rejects.toThrow('transition evidence is invalid');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: 1,
+    });
+  });
+
+  test('rejects a forged ledger append without aggregate advancement', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'forged-ledger-only');
+    const service = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    const session = await service.createFixtureSession({
+      playerWalletReference: 'fixture-wallet:postgres-ledger-only',
+      sessionReference: fixture.sessionReference,
+    });
+    const evidence = {
+      amount: { amount: '50000000', currency: 'USDC', decimals: 6 },
+      reference: 'fixture-stake:ledger-only',
+      schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+      status: 'fixture-confirmed',
+    };
+    const requestPayload = JSON.stringify({
+      action: {
+        evidence,
+        expectedVersion: 1,
+        kind: 'confirm-stake',
+        transitionKey: 'forged-ledger-only',
+      },
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+
+    await expect(
+      Promise.resolve(
+        databaseA.flipSessionTransition.create({
+          data: {
+            evidence,
+            fromStatus: FlipSessionStatus.AWAITING_STAKE,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind: FlipSessionTransitionKind.STAKE_CONFIRMED,
+            poolCommitmentHash: null,
+            requestHash: hash(requestPayload),
+            requestPayload,
+            selectedAssetReference: null,
+            sequence: 2,
+            sessionId: session.id,
+            terminalReason: null,
+            toStatus: FlipSessionStatus.STAKE_CONFIRMED,
+            transitionKey: 'forged-ledger-only',
+          },
+        }),
+      ),
+    ).rejects.toThrow('does not match the durable aggregate');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: 1,
+    });
+  });
+
+  test('rejects a transition whose request payload does not match its hash', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'forged-request-hash');
+    const service = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    const session = await service.createFixtureSession({
+      playerWalletReference: 'fixture-wallet:postgres-request-hash',
+      sessionReference: fixture.sessionReference,
+    });
+    const evidence = {
+      amount: { amount: '50000000', currency: 'USDC', decimals: 6 },
+      reference: 'fixture-stake:request-hash',
+      schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+      status: 'fixture-confirmed',
+    };
+    const requestPayload = JSON.stringify({
+      action: {
+        evidence,
+        expectedVersion: 1,
+        kind: 'confirm-stake',
+        transitionKey: 'forged-request-hash',
+      },
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.updateMany({
+          data: {
+            stakeAmount: '50000000',
+            stakeCurrency: 'USDC',
+            stakeDecimals: 6,
+            status: FlipSessionStatus.STAKE_CONFIRMED,
+            version: { increment: 1 },
+          },
+          where: {
+            id: session.id,
+            status: FlipSessionStatus.AWAITING_STAKE,
+            version: session.version,
+          },
+        });
+        await transaction.flipSessionTransition.create({
+          data: {
+            evidence,
+            fromStatus: FlipSessionStatus.AWAITING_STAKE,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind: FlipSessionTransitionKind.STAKE_CONFIRMED,
+            poolCommitmentHash: null,
+            requestHash: hash(`${requestPayload}:tampered`),
+            requestPayload,
+            selectedAssetReference: null,
+            sequence: 2,
+            sessionId: session.id,
+            terminalReason: null,
+            toStatus: FlipSessionStatus.STAKE_CONFIRMED,
+            transitionKey: 'forged-request-hash',
+          },
+        });
+      }),
+    ).rejects.toThrow('request hash is invalid');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: 1,
     });
   });
 });

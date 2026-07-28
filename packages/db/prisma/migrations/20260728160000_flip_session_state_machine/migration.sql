@@ -201,6 +201,7 @@ CREATE TABLE "FlipSessionTransition" (
   "sequence" INTEGER NOT NULL,
   "transitionKey" TEXT NOT NULL,
   "requestHash" TEXT NOT NULL,
+  "requestPayload" TEXT NOT NULL,
   "kind" "FlipSessionTransitionKind" NOT NULL,
   "fromStatus" "FlipSessionStatus",
   "toStatus" "FlipSessionStatus" NOT NULL,
@@ -215,6 +216,7 @@ CREATE TABLE "FlipSessionTransition" (
   CONSTRAINT "FlipSessionTransition_hash_check"
     CHECK (
       "requestHash" ~ '^[a-f0-9]{64}$'
+      AND length("requestPayload") > 0
       AND (
         "poolCommitmentHash" IS NULL
         OR "poolCommitmentHash" ~ '^[a-f0-9]{64}$'
@@ -307,6 +309,417 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER "FlipSession_contract_immutable"
 BEFORE UPDATE ON "FlipSession"
 FOR EACH ROW EXECUTE FUNCTION "protect_flip_session_contract"();
+
+CREATE FUNCTION "flip_jsonb_has_exact_keys"(value JSONB, expected_keys TEXT[])
+RETURNS BOOLEAN AS $$
+  SELECT CASE
+    WHEN jsonb_typeof(value) <> 'object' THEN FALSE
+    ELSE ARRAY(SELECT jsonb_object_keys(value) ORDER BY 1)
+      = ARRAY(SELECT unnest(expected_keys) ORDER BY 1)
+  END;
+$$ LANGUAGE sql IMMUTABLE;
+
+CREATE FUNCTION "flip_valid_money"(value JSONB)
+RETURNS BOOLEAN AS $$
+  SELECT
+    "flip_jsonb_has_exact_keys"(value, ARRAY['amount', 'currency', 'decimals'])
+    AND value->>'amount' ~ '^(0|[1-9][0-9]*)$'
+    AND value->>'currency' = 'USDC'
+    AND value->>'decimals' = '6'
+    AND jsonb_typeof(value->'amount') = 'string'
+    AND jsonb_typeof(value->'currency') = 'string'
+    AND jsonb_typeof(value->'decimals') = 'number';
+$$ LANGUAGE sql IMMUTABLE;
+
+CREATE FUNCTION "validate_flip_session_transition_contract"() RETURNS trigger AS $$
+DECLARE
+  stored_session "FlipSession"%ROWTYPE;
+  request_json JSONB;
+  action_json JSONB;
+  expected_action_kind TEXT;
+  expected_request_evidence JSONB;
+BEGIN
+  IF NEW."evidence" IS NULL OR jsonb_typeof(NEW."evidence") <> 'object' THEN
+    RAISE EXCEPTION 'Flip session transition evidence must be an object';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+    FROM jsonb_each(NEW."evidence")
+    WHERE value = 'null'::JSONB
+  ) THEN
+    RAISE EXCEPTION 'Flip session transition evidence cannot contain null fields';
+  END IF;
+  request_json := NEW."requestPayload"::JSONB;
+  IF
+    encode(sha256(convert_to(NEW."requestPayload", 'UTF8')), 'hex')
+      <> NEW."requestHash"
+  THEN
+    RAISE EXCEPTION 'Flip session transition request hash is invalid';
+  END IF;
+
+  SELECT *
+  INTO stored_session
+  FROM "FlipSession"
+  WHERE "id" = NEW."sessionId";
+
+  IF NOT FOUND
+    OR stored_session."version" <> NEW."sequence"
+    OR stored_session."status" <> NEW."toStatus"
+    OR NEW."requestHash" !~ '^[a-f0-9]{64}$'
+  THEN
+    RAISE EXCEPTION 'Flip session transition does not match the durable aggregate';
+  END IF;
+
+  IF NEW."kind" = 'SESSION_STARTED' THEN
+    IF
+      NOT "flip_jsonb_has_exact_keys"(
+        request_json,
+        ARRAY['playerWalletReference', 'sessionReference', 'stateMachineVersion']
+      )
+      OR request_json->>'playerWalletReference'
+        IS DISTINCT FROM stored_session."playerWalletReference"
+      OR request_json->>'sessionReference' IS DISTINCT FROM stored_session."id"
+      OR request_json->>'stateMachineVersion'
+        IS DISTINCT FROM stored_session."stateMachineVersion"
+    THEN
+      RAISE EXCEPTION 'Flip session start request payload is invalid';
+    END IF;
+  ELSE
+    expected_action_kind := CASE NEW."kind"
+      WHEN 'STAKE_CONFIRMED' THEN 'confirm-stake'
+      WHEN 'POOL_COMMITTED' THEN 'commit-pool'
+      WHEN 'SELECTION_RECORDED' THEN 'record-selection'
+      WHEN 'PURCHASE_RECORDED' THEN 'record-purchase'
+      WHEN 'TRANSFER_RECORDED' THEN 'record-transfer'
+      WHEN 'REVEAL_READY' THEN 'mark-reveal-ready'
+      WHEN 'SETTLED' THEN 'settle'
+      WHEN 'RECOVERY_REQUESTED' THEN 'request-recovery'
+      WHEN 'RECOVERY_COMPLETED' THEN 'complete-recovery'
+      WHEN 'TERMINATED' THEN 'terminate'
+    END;
+    expected_request_evidence := CASE NEW."kind"
+      WHEN 'POOL_COMMITTED' THEN jsonb_build_object(
+        'poolCommitmentId',
+        NEW."evidence"->'poolCommitmentId'
+      )
+      ELSE NEW."evidence"
+    END;
+    action_json := request_json->'action';
+    IF
+      NOT "flip_jsonb_has_exact_keys"(
+        request_json,
+        ARRAY['action', 'stateMachineVersion']
+      )
+      OR request_json->>'stateMachineVersion'
+        IS DISTINCT FROM stored_session."stateMachineVersion"
+      OR NOT "flip_jsonb_has_exact_keys"(
+        action_json,
+        ARRAY['evidence', 'expectedVersion', 'kind', 'transitionKey']
+      )
+      OR action_json->>'kind' IS DISTINCT FROM expected_action_kind
+      OR action_json->>'transitionKey' IS DISTINCT FROM NEW."transitionKey"
+      OR jsonb_typeof(action_json->'expectedVersion') IS DISTINCT FROM 'number'
+      OR (action_json->>'expectedVersion')::NUMERIC <> NEW."sequence" - 1
+      OR action_json->'evidence' IS DISTINCT FROM expected_request_evidence
+    THEN
+      RAISE EXCEPTION 'Flip session transition request payload is invalid';
+    END IF;
+  END IF;
+
+  CASE NEW."kind"
+    WHEN 'SESSION_STARTED' THEN
+      IF
+        NEW."sequence" <> 1
+        OR NEW."transitionKey" <> 'session-started'
+        OR NEW."fromStatus" IS NOT NULL
+        OR NEW."toStatus" <> 'AWAITING_STAKE'
+        OR NEW."poolCommitmentHash" IS NOT NULL
+        OR NEW."selectedAssetReference" IS NOT NULL
+        OR NEW."terminalReason" IS NOT NULL
+        OR NOT "flip_jsonb_has_exact_keys"(
+          NEW."evidence",
+          ARRAY['playerWalletReference', 'stateMachineVersion']
+        )
+        OR NEW."evidence"->>'playerWalletReference' <> stored_session."playerWalletReference"
+        OR NEW."evidence"->>'stateMachineVersion' <> stored_session."stateMachineVersion"
+      THEN
+        RAISE EXCEPTION 'Flip session start evidence is invalid';
+      END IF;
+    WHEN 'STAKE_CONFIRMED' THEN
+      IF
+        NEW."fromStatus" <> 'AWAITING_STAKE'
+        OR NEW."toStatus" <> 'STAKE_CONFIRMED'
+        OR NEW."poolCommitmentHash" IS NOT NULL
+        OR NEW."selectedAssetReference" IS NOT NULL
+        OR NEW."terminalReason" IS NOT NULL
+        OR NOT "flip_jsonb_has_exact_keys"(
+          NEW."evidence",
+          ARRAY['amount', 'reference', 'schemaVersion', 'status']
+        )
+        OR NOT "flip_valid_money"(NEW."evidence"->'amount')
+        OR NEW."evidence"->>'reference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
+        OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-stake-fixture.v1'
+        OR NEW."evidence"->>'status' <> 'fixture-confirmed'
+        OR NEW."evidence"->'amount'->>'amount' <> stored_session."stakeAmount"
+        OR NEW."evidence"->'amount'->>'currency' <> stored_session."stakeCurrency"
+        OR (NEW."evidence"->'amount'->>'decimals')::INTEGER
+          <> stored_session."stakeDecimals"
+      THEN
+        RAISE EXCEPTION 'Flip stake transition evidence is invalid';
+      END IF;
+    WHEN 'POOL_COMMITTED' THEN
+      IF
+        NEW."fromStatus" <> 'STAKE_CONFIRMED'
+        OR NEW."toStatus" <> 'POOL_COMMITTED'
+        OR NEW."poolCommitmentHash" IS DISTINCT FROM stored_session."poolCommitmentHash"
+        OR NEW."selectedAssetReference" IS NOT NULL
+        OR NEW."terminalReason" IS NOT NULL
+        OR NOT "flip_jsonb_has_exact_keys"(
+          NEW."evidence",
+          ARRAY[
+            'eligibleOutcomeCount',
+            'poolCommitmentHash',
+            'poolCommitmentId',
+            'rulesHash',
+            'snapshotContentHash'
+          ]
+        )
+        OR jsonb_typeof(NEW."evidence"->'eligibleOutcomeCount') <> 'number'
+        OR (NEW."evidence"->>'eligibleOutcomeCount')::NUMERIC < 1
+        OR NEW."evidence"->>'poolCommitmentId' <> stored_session."poolCommitmentId"
+        OR NEW."evidence"->>'poolCommitmentHash' <> stored_session."poolCommitmentHash"
+        OR NEW."evidence"->>'rulesHash' <> stored_session."rulesHash"
+        OR NEW."evidence"->>'snapshotContentHash' <> stored_session."snapshotContentHash"
+      THEN
+        RAISE EXCEPTION 'Flip pool transition evidence is invalid';
+      END IF;
+    WHEN 'SELECTION_RECORDED' THEN
+      IF
+        NEW."fromStatus" <> 'POOL_COMMITTED'
+        OR NEW."toStatus" <> 'SELECTION_RECORDED'
+        OR NEW."poolCommitmentHash" IS DISTINCT FROM stored_session."poolCommitmentHash"
+        OR NEW."selectedAssetReference" IS DISTINCT FROM stored_session."selectedAssetReference"
+        OR NEW."terminalReason" IS NOT NULL
+        OR NOT "flip_jsonb_has_exact_keys"(
+          NEW."evidence",
+          ARRAY[
+            'bandLabel',
+            'listingValueAmount',
+            'ordinal',
+            'providerAssetReference',
+            'providerListingReference',
+            'reference',
+            'resultHash',
+            'schemaVersion'
+          ]
+        )
+        OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-selection-fixture.v1'
+        OR NEW."evidence"->>'resultHash' !~ '^[a-f0-9]{64}$'
+        OR NEW."evidence"->>'reference'
+          !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
+        OR jsonb_typeof(NEW."evidence"->'ordinal') <> 'number'
+        OR (NEW."evidence"->>'ordinal')::NUMERIC <> stored_session."selectedOrdinal"
+        OR NEW."evidence"->>'bandLabel' <> stored_session."selectedBandLabel"
+        OR NEW."evidence"->>'providerAssetReference'
+          <> stored_session."selectedAssetReference"
+        OR NEW."evidence"->>'providerListingReference'
+          <> stored_session."selectedListingReference"
+        OR NEW."evidence"->>'listingValueAmount' <> stored_session."selectedValueAmount"
+      THEN
+        RAISE EXCEPTION 'Flip selection transition evidence is invalid';
+      END IF;
+    WHEN 'PURCHASE_RECORDED' THEN
+      IF
+        NEW."fromStatus" <> 'SELECTION_RECORDED'
+        OR NEW."toStatus" <> 'PURCHASE_RECORDED'
+        OR NEW."poolCommitmentHash" IS DISTINCT FROM stored_session."poolCommitmentHash"
+        OR NEW."selectedAssetReference" IS DISTINCT FROM stored_session."selectedAssetReference"
+        OR NEW."terminalReason" IS NOT NULL
+        OR NOT "flip_jsonb_has_exact_keys"(
+          NEW."evidence",
+          ARRAY[
+            'amount',
+            'provider',
+            'providerAssetReference',
+            'providerListingReference',
+            'reference',
+            'schemaVersion',
+            'status'
+          ]
+        )
+        OR NOT "flip_valid_money"(NEW."evidence"->'amount')
+        OR NEW."evidence"->>'provider' <> 'fixture-marketplace'
+        OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-purchase-fixture.v1'
+        OR NEW."evidence"->>'status' <> 'fixture-acquired'
+        OR NEW."evidence"->>'reference' <> stored_session."purchaseReference"
+        OR NEW."evidence"->>'providerAssetReference'
+          <> stored_session."selectedAssetReference"
+        OR NEW."evidence"->>'providerListingReference'
+          <> stored_session."selectedListingReference"
+        OR NEW."evidence"->'amount'->>'amount' <> stored_session."selectedValueAmount"
+      THEN
+        RAISE EXCEPTION 'Flip purchase transition evidence is invalid';
+      END IF;
+    WHEN 'TRANSFER_RECORDED' THEN
+      IF
+        NEW."fromStatus" <> 'PURCHASE_RECORDED'
+        OR NEW."toStatus" <> 'TRANSFER_RECORDED'
+        OR NEW."poolCommitmentHash" IS DISTINCT FROM stored_session."poolCommitmentHash"
+        OR NEW."selectedAssetReference" IS DISTINCT FROM stored_session."selectedAssetReference"
+        OR NEW."terminalReason" IS NOT NULL
+        OR NOT "flip_jsonb_has_exact_keys"(
+          NEW."evidence",
+          ARRAY[
+            'destinationWalletReference',
+            'providerAssetReference',
+            'reference',
+            'schemaVersion',
+            'sourceCustodyReference',
+            'status'
+          ]
+        )
+        OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-transfer-fixture.v1'
+        OR NEW."evidence"->>'status' <> 'fixture-transferred'
+        OR NEW."evidence"->>'reference' <> stored_session."transferReference"
+        OR NEW."evidence"->>'providerAssetReference'
+          <> stored_session."selectedAssetReference"
+        OR NEW."evidence"->>'destinationWalletReference'
+          <> stored_session."playerWalletReference"
+      THEN
+        RAISE EXCEPTION 'Flip transfer transition evidence is invalid';
+      END IF;
+    WHEN 'REVEAL_READY' THEN
+      IF
+        NEW."fromStatus" <> 'TRANSFER_RECORDED'
+        OR NEW."toStatus" <> 'REVEAL_READY'
+        OR NEW."poolCommitmentHash" IS DISTINCT FROM stored_session."poolCommitmentHash"
+        OR NEW."selectedAssetReference" IS DISTINCT FROM stored_session."selectedAssetReference"
+        OR NEW."terminalReason" IS NOT NULL
+        OR NOT "flip_jsonb_has_exact_keys"(
+          NEW."evidence",
+          ARRAY['purchaseReference', 'reference', 'schemaVersion', 'status', 'transferReference']
+        )
+        OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-reveal-ready-fixture.v1'
+        OR NEW."evidence"->>'status' <> 'fixture-ready'
+        OR NEW."evidence"->>'reference' <> stored_session."revealReadyReference"
+        OR NEW."evidence"->>'purchaseReference' <> stored_session."purchaseReference"
+        OR NEW."evidence"->>'transferReference' <> stored_session."transferReference"
+      THEN
+        RAISE EXCEPTION 'Flip reveal transition evidence is invalid';
+      END IF;
+    WHEN 'SETTLED' THEN
+      IF
+        NEW."fromStatus" <> 'REVEAL_READY'
+        OR NEW."toStatus" <> 'SETTLED'
+        OR NEW."poolCommitmentHash" IS DISTINCT FROM stored_session."poolCommitmentHash"
+        OR NEW."selectedAssetReference" IS DISTINCT FROM stored_session."selectedAssetReference"
+        OR NEW."terminalReason" <> 'FIXTURE_SETTLED'
+        OR NEW."terminalReason" <> stored_session."terminalReason"
+        OR NOT "flip_jsonb_has_exact_keys"(
+          NEW."evidence",
+          ARRAY[
+            'payout',
+            'providerAssetReference',
+            'reference',
+            'resultHash',
+            'schemaVersion',
+            'status'
+          ]
+        )
+        OR NOT "flip_valid_money"(NEW."evidence"->'payout')
+        OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-settlement-fixture.v1'
+        OR NEW."evidence"->>'status' <> 'fixture-recorded'
+        OR NEW."evidence"->>'resultHash' !~ '^[a-f0-9]{64}$'
+        OR NEW."evidence"->>'providerAssetReference'
+          <> stored_session."selectedAssetReference"
+      THEN
+        RAISE EXCEPTION 'Flip settlement transition evidence is invalid';
+      END IF;
+    WHEN 'RECOVERY_REQUESTED' THEN
+      IF
+        NEW."fromStatus" IS NULL
+        OR NEW."fromStatus" IN ('RECOVERY_REQUIRED', 'SETTLED', 'RECOVERED', 'FAILED')
+        OR NEW."toStatus" <> 'RECOVERY_REQUIRED'
+        OR NEW."poolCommitmentHash" IS DISTINCT FROM stored_session."poolCommitmentHash"
+        OR NEW."selectedAssetReference" IS DISTINCT FROM stored_session."selectedAssetReference"
+        OR NEW."terminalReason" IS NOT NULL
+        OR NOT "flip_jsonb_has_exact_keys"(
+          NEW."evidence",
+          ARRAY['reasonCode', 'reference', 'schemaVersion', 'status']
+        )
+        OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-recovery-fixture.v1'
+        OR NEW."evidence"->>'status' <> 'fixture-recovery-required'
+      THEN
+        RAISE EXCEPTION 'Flip recovery request transition evidence is invalid';
+      END IF;
+    WHEN 'RECOVERY_COMPLETED' THEN
+      IF
+        NEW."fromStatus" <> 'RECOVERY_REQUIRED'
+        OR NEW."toStatus" <> 'RECOVERED'
+        OR NEW."poolCommitmentHash" IS DISTINCT FROM stored_session."poolCommitmentHash"
+        OR NEW."selectedAssetReference" IS DISTINCT FROM stored_session."selectedAssetReference"
+        OR NEW."terminalReason" <> 'FIXTURE_RECOVERY_COMPLETED'
+        OR NEW."terminalReason" <> stored_session."terminalReason"
+        OR NOT "flip_jsonb_has_exact_keys"(
+          NEW."evidence",
+          ARRAY['payout', 'reference', 'resultHash', 'schemaVersion', 'status']
+        )
+        OR NOT "flip_valid_money"(NEW."evidence"->'payout')
+        OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-recovery-fixture.v1'
+        OR NEW."evidence"->>'status' <> 'fixture-recovered'
+        OR NEW."evidence"->>'resultHash' !~ '^[a-f0-9]{64}$'
+      THEN
+        RAISE EXCEPTION 'Flip recovery completion transition evidence is invalid';
+      END IF;
+    WHEN 'TERMINATED' THEN
+      IF
+        NEW."fromStatus" <> 'RECOVERY_REQUIRED'
+        OR NEW."toStatus" <> 'FAILED'
+        OR NEW."poolCommitmentHash" IS DISTINCT FROM stored_session."poolCommitmentHash"
+        OR NEW."selectedAssetReference" IS DISTINCT FROM stored_session."selectedAssetReference"
+        OR NEW."terminalReason" IS DISTINCT FROM stored_session."terminalReason"
+        OR NOT "flip_jsonb_has_exact_keys"(
+          NEW."evidence",
+          ARRAY['reasonCode', 'reference', 'schemaVersion', 'status']
+        )
+        OR NEW."evidence"->>'schemaVersion' <> 'dailydraft.flip-recovery-fixture.v1'
+        OR NEW."evidence"->>'status' <> 'fixture-failed'
+        OR NEW."terminalReason" <> 'FIXTURE_TERMINATED:' || (NEW."evidence"->>'reasonCode')
+      THEN
+        RAISE EXCEPTION 'Flip terminal failure transition evidence is invalid';
+      END IF;
+  END CASE;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE CONSTRAINT TRIGGER "FlipSessionTransition_validate_contract"
+AFTER INSERT ON "FlipSessionTransition"
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION "validate_flip_session_transition_contract"();
+
+CREATE FUNCTION "require_flip_session_transition_append"() RETURNS trigger AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM "FlipSessionTransition"
+    WHERE "sessionId" = NEW."id"
+      AND "sequence" = NEW."version"
+      AND "fromStatus" = OLD."status"
+      AND "toStatus" = NEW."status"
+  ) THEN
+    RAISE EXCEPTION 'Flip session aggregate update requires matching append-only evidence';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE CONSTRAINT TRIGGER "FlipSession_require_transition_append"
+AFTER UPDATE ON "FlipSession"
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION "require_flip_session_transition_append"();
 
 CREATE FUNCTION "reject_flip_session_transition_mutation"() RETURNS trigger AS $$
 BEGIN

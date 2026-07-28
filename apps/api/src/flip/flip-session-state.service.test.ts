@@ -290,6 +290,16 @@ describe('durable fixture-only Flip session state machine', () => {
         expectedVersion: session.version,
       }),
     ).rejects.toThrow('does not match the durable selected outcome');
+    await expect(
+      fixture.service.transition(session.id, {
+        ...purchaseAction(fixture),
+        evidence: {
+          ...purchaseAction(fixture).evidence,
+          amount: usdc('1'),
+        },
+        expectedVersion: session.version,
+      }),
+    ).rejects.toThrow('does not match the durable selected outcome');
 
     session = await fixture.service.transition(session.id, {
       ...purchaseAction(fixture),
@@ -351,9 +361,99 @@ describe('durable fixture-only Flip session state machine', () => {
         expectedVersion: created.version,
       }),
     ).rejects.toMatchObject({ code: 'INVALID_EVIDENCE' });
+    await expect(
+      fixture.service.transition(created.id, {
+        ...stakeAction(),
+        evidence: {
+          ...stakeAction().evidence,
+          amount: { ...stakeAction().evidence.amount, secret: 'not-allowed' },
+        } as never,
+        expectedVersion: created.version,
+      }),
+    ).rejects.toThrow('fixture has unsupported fields');
 
     fixture.database.corruptSession(created.id, { version: 2 });
     await expect(fixture.service.findSession(created.id)).rejects.toMatchObject({
+      code: 'DISABLED',
+    });
+  });
+
+  test('rejects nested secret fields in every money-bearing fixture', async () => {
+    const purchaseFixture = harness('flip-nested-purchase');
+    const selection = await purchaseFixture.advanceTo('selection-recorded');
+    const purchase = purchaseAction(purchaseFixture);
+    await expect(
+      purchaseFixture.service.transition(selection.id, {
+        ...purchase,
+        evidence: {
+          ...purchase.evidence,
+          amount: { ...purchase.evidence.amount, secret: 'not-allowed' },
+        } as never,
+        expectedVersion: selection.version,
+      }),
+    ).rejects.toThrow('fixture has unsupported fields');
+
+    const settlementFixture = harness('flip-nested-settlement');
+    const revealReady = await settlementFixture.advanceTo('reveal-ready');
+    const settlement = settleAction(settlementFixture);
+    await expect(
+      settlementFixture.service.transition(revealReady.id, {
+        ...settlement,
+        evidence: {
+          ...settlement.evidence,
+          payout: { ...settlement.evidence.payout, secret: 'not-allowed' },
+        } as never,
+        expectedVersion: revealReady.version,
+      }),
+    ).rejects.toThrow('fixture has unsupported fields');
+
+    const recoveryFixture = harness('flip-nested-recovery');
+    const created = await recoveryFixture.create();
+    const recovery = await recoveryFixture.service.transition(
+      created.id,
+      recoveryAction(created.version),
+    );
+    await expect(
+      recoveryFixture.service.transition(recovery.id, {
+        evidence: {
+          payout: { ...usdc('0'), secret: 'not-allowed' },
+          reference: 'fixture-recovery:nested-secret',
+          resultHash: hash('recovery:nested-secret'),
+          schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+          status: 'fixture-recovered',
+        } as never,
+        expectedVersion: recovery.version,
+        kind: 'complete-recovery',
+        transitionKey: 'recovery-nested-secret',
+      }),
+    ).rejects.toThrow('fixture has unsupported fields');
+  });
+
+  test.each([
+    {
+      label: 'request hash',
+      patch: { requestHash: hash('tampered-request') },
+    },
+    {
+      label: 'transition kind',
+      patch: { kind: 'SETTLED' as FlipSessionTransitionKind },
+    },
+    {
+      label: 'milestone evidence',
+      patch: {
+        evidence: {
+          amount: usdc('1'),
+          reference: 'fixture-stake:resume',
+          schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+          status: 'fixture-confirmed',
+        },
+      },
+    },
+  ])('fails closed when stored $label does not match the aggregate', async ({ patch }) => {
+    const fixture = harness(`flip-corrupt-${hash(JSON.stringify(patch)).slice(0, 8)}`);
+    const staked = await fixture.advanceTo('stake-confirmed');
+    fixture.database.corruptTransition(staked.id, 2, patch);
+    await expect(fixture.service.findSession(staked.id)).rejects.toMatchObject({
       code: 'DISABLED',
     });
   });
@@ -367,7 +467,12 @@ describe('durable fixture-only Flip session state machine', () => {
       'utf8',
     );
     expect(migration).toContain('FlipSessionTransition_append_only');
+    expect(migration).toContain('FlipSessionTransition_validate_contract');
+    expect(migration).toContain('FlipSession_require_transition_append');
     expect(migration).toContain('Flip session transitions are append-only');
+    expect(migration).toContain(
+      'Flip session aggregate update requires matching append-only evidence',
+    );
     expect(migration).toContain('"purchaseReference" IS NOT NULL');
     expect(migration).toContain('"transferReference" IS NOT NULL');
     expect(migration).toContain('"revealReadyReference" IS NOT NULL');
@@ -680,6 +785,7 @@ type MemoryTransition = {
   kind: FlipSessionTransitionKind;
   poolCommitmentHash: string | null;
   requestHash: string;
+  requestPayload: string;
   selectedAssetReference: string | null;
   sequence: number;
   sessionId: string;
@@ -826,6 +932,14 @@ class MemoryFlipDatabase {
     const session = this.#sessions.get(id);
     if (!session) throw new Error('session not found');
     Object.assign(session, patch);
+  }
+
+  corruptTransition(sessionId: string, sequence: number, patch: Partial<MemoryTransition>): void {
+    const transition = this.#transitions.find(
+      (candidate) => candidate.sessionId === sessionId && candidate.sequence === sequence,
+    );
+    if (!transition) throw new Error('transition not found');
+    Object.assign(transition, structuredClone(patch));
   }
 
   transitionCount(sessionId: string): number {
