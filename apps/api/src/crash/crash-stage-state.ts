@@ -34,6 +34,23 @@ const FIXTURE_WALLET_PATTERN = /^fixture-wallet:[A-Za-z0-9][A-Za-z0-9._:-]{0,127
 const MAX_DECISION_TIMEOUT_MS = 24 * 60 * 60 * 1_000;
 const MAX_EXPIRED_BATCH = 100;
 const MAX_U64 = 18_446_744_073_709_551_615n;
+const PAYMENT_FIXTURE_KEYS = ['amount', 'reference', 'schemaVersion', 'status'] as const;
+const PROVIDER_OUTCOME_FIXTURE_KEYS = [
+  'reference',
+  'resultHash',
+  'rollPpm',
+  'schemaVersion',
+  'stage',
+  'stageValue',
+] as const;
+const CUSTODY_FIXTURE_KEYS = ['assetReference', 'reference', 'schemaVersion'] as const;
+const SETTLEMENT_FIXTURE_KEYS = [
+  'payout',
+  'reference',
+  'resultHash',
+  'schemaVersion',
+  'status',
+] as const;
 
 export type CrashStateMachineErrorCode =
   | 'CONCURRENT_TRANSITION'
@@ -381,7 +398,19 @@ export class CrashStageStateService {
     requireIdentifier(roundId, 'roundId');
     requireIdentifier(input.transitionKey, 'transitionKey');
     const normalized = normalizeDecisionEvidence(rules.calculatorRules, input);
-    const requestHash = sha256(stableStringify(normalized));
+    const requestHash = sha256(
+      stableStringify({
+        evidence: normalized,
+        ruleBinding: {
+          architectureVersion: rules.architectureVersion,
+          calculatorVersion: rules.calculatorRules.calculatorVersion,
+          rulesHash: rules.calculatorRules.rulesHash,
+          rulesVersion: rules.calculatorRules.rulesVersion,
+          stateMachineRulesHash: rules.stateMachineRulesHash,
+          stateMachineVersion: rules.stateMachineVersion,
+        },
+      }),
+    );
     const replay = await this.findReplay(roundId, input.transitionKey, requestHash);
     if (replay) return replay;
 
@@ -969,8 +998,14 @@ function requirePayment(
   ) {
     throw stateError('INVALID_EVIDENCE', 'Crash payment fixture is invalid');
   }
+  requireExactEvidenceKeys(value, PAYMENT_FIXTURE_KEYS, 'payment');
   requireIdentifier(value.reference, 'payment reference');
-  return Object.freeze({ ...value, amount: requireMoney(value.amount, rules, 'payment amount') });
+  return Object.freeze({
+    amount: requireMoney(value.amount, rules, 'payment amount'),
+    reference: value.reference,
+    schemaVersion: CRASH_PAYMENT_FIXTURE_VERSION,
+    status: 'fixture-confirmed',
+  });
 }
 
 function requireProviderOutcome(
@@ -988,9 +1023,14 @@ function requireProviderOutcome(
   ) {
     throw stateError('INVALID_EVIDENCE', 'Crash provider outcome fixture is invalid');
   }
+  requireExactEvidenceKeys(value, PROVIDER_OUTCOME_FIXTURE_KEYS, 'provider outcome');
   requireIdentifier(value.reference, 'provider reference');
   return Object.freeze({
-    ...value,
+    reference: value.reference,
+    resultHash: value.resultHash,
+    rollPpm: value.rollPpm,
+    schemaVersion: CRASH_PROVIDER_FIXTURE_VERSION,
+    stage: value.stage,
     stageValue: requireMoney(value.stageValue, rules, 'provider stage value'),
   });
 }
@@ -999,9 +1039,14 @@ function requireCustody(value: CrashCustodyFixture): CrashCustodyFixture {
   if (value?.schemaVersion !== CRASH_CUSTODY_FIXTURE_VERSION) {
     throw stateError('INVALID_EVIDENCE', 'Crash custody fixture is invalid');
   }
+  requireExactEvidenceKeys(value, CUSTODY_FIXTURE_KEYS, 'custody');
   requireIdentifier(value.reference, 'custody reference');
   requireIdentifier(value.assetReference, 'asset reference');
-  return Object.freeze({ ...value });
+  return Object.freeze({
+    assetReference: value.assetReference,
+    reference: value.reference,
+    schemaVersion: CRASH_CUSTODY_FIXTURE_VERSION,
+  });
 }
 
 function requireSettlement(
@@ -1015,11 +1060,27 @@ function requireSettlement(
   ) {
     throw stateError('INVALID_EVIDENCE', 'Crash settlement fixture is invalid');
   }
+  requireExactEvidenceKeys(value, SETTLEMENT_FIXTURE_KEYS, 'settlement');
   requireIdentifier(value.reference, 'settlement reference');
   return Object.freeze({
-    ...value,
     payout: requireMoney(value.payout, rules, 'settlement payout'),
+    reference: value.reference,
+    resultHash: value.resultHash,
+    schemaVersion: CRASH_SETTLEMENT_FIXTURE_VERSION,
+    status: 'fixture-recorded',
   });
+}
+
+function requireExactEvidenceKeys(
+  value: object,
+  expectedKeys: readonly string[],
+  label: string,
+): void {
+  const keys = Object.keys(value);
+  const expected = new Set(expectedKeys);
+  if (keys.length !== expectedKeys.length || keys.some((key) => !expected.has(key))) {
+    throw stateError('INVALID_EVIDENCE', `Crash ${label} fixture has unsupported fields`);
+  }
 }
 
 function requireTerminalSettlement(

@@ -257,6 +257,53 @@ describe('durable fixture-only Crash stage state machine', () => {
     ).rejects.toMatchObject({ code: 'IDEMPOTENCY_MISMATCH' });
   });
 
+  test('rejects an exact transition replay under a different valid rule binding', async () => {
+    const fixture = harness();
+    const round = await fixture.create('round-idempotency-rule-binding');
+    const decision = continueDecision(1, 1, 900_000, undefined, 'rule-bound-replay');
+    await fixture.service.decide(round.id, STATE_RULES, decision);
+
+    const alternateArchitectureUnsigned = {
+      ...UNSIGNED_STATE_RULES,
+      architectureVersion: 'synthetic-crash-architecture-v2',
+    } as const satisfies UnsignedCrashStateRules;
+    const alternateCalculatorUnsigned = {
+      ...UNSIGNED_CALCULATOR_RULES,
+      rulesVersion: 'synthetic-state-machine-ci-v2',
+    } as const satisfies UnsignedCrashCalculatorRuleSet;
+    const alternateCalculatorRules: CrashCalculatorRuleSet = {
+      ...alternateCalculatorUnsigned,
+      rulesHash: hashCrashCalculatorRuleSet(alternateCalculatorUnsigned),
+    };
+    const alternateEconomicsUnsigned = {
+      ...UNSIGNED_STATE_RULES,
+      calculatorRules: alternateCalculatorRules,
+    } as const satisfies UnsignedCrashStateRules;
+    const alternateRules: CrashStateRules[] = [
+      {
+        ...alternateArchitectureUnsigned,
+        stateMachineRulesHash: hashCrashStateRules(alternateArchitectureUnsigned),
+      },
+      {
+        ...alternateEconomicsUnsigned,
+        stateMachineRulesHash: hashCrashStateRules(alternateEconomicsUnsigned),
+      },
+    ];
+
+    for (const rules of alternateRules) {
+      await expect(fixture.service.decide(round.id, rules, decision)).rejects.toMatchObject({
+        code: 'IDEMPOTENCY_MISMATCH',
+      });
+    }
+    await expect(fixture.service.findRound(round.id)).resolves.toMatchObject({
+      stage: 2,
+      transitions: expect.arrayContaining([
+        expect.objectContaining({ transitionKey: 'rule-bound-replay' }),
+      ]),
+      version: 2,
+    });
+  });
+
   test('fails closed when durable round and append-only ledger versions disagree', async () => {
     const fixture = harness();
     const round = await fixture.create('round-corrupt-ledger');
@@ -319,6 +366,64 @@ describe('durable fixture-only Crash stage state machine', () => {
       ),
     ).rejects.toMatchObject({ code });
     expect(await fixture.service.findRound(round.id)).toMatchObject({
+      stage: 1,
+      transitions: [expect.objectContaining({ kind: 'round-started' })],
+      version: 1,
+    });
+  });
+
+  test.each([
+    {
+      input: () => {
+        const decision = continueDecision(1, 1, 900_000);
+        return {
+          ...decision,
+          payment: { ...decision.payment, privateKey: 'must-never-persist' },
+        };
+      },
+      name: 'payment',
+    },
+    {
+      input: () => {
+        const decision = continueDecision(1, 1, 900_000);
+        return {
+          ...decision,
+          providerOutcome: {
+            ...decision.providerOutcome,
+            credentials: 'must-never-persist',
+          },
+        };
+      },
+      name: 'provider outcome',
+    },
+    {
+      input: () => {
+        const decision = continueDecision(1, 1, 900_000);
+        return {
+          ...decision,
+          custody: { ...decision.custody, livePayload: 'must-never-persist' },
+        };
+      },
+      name: 'custody',
+    },
+    {
+      input: () => {
+        const decision = cashOutDecision(1, 1, '0');
+        return {
+          ...decision,
+          settlement: { ...decision.settlement, privateKey: 'must-never-persist' },
+        };
+      },
+      name: 'settlement',
+    },
+  ])('rejects unsupported $name fields without persisting them', async ({ input, name }) => {
+    const fixture = harness();
+    const round = await fixture.create(`round-extra-${name.replaceAll(' ', '-')}`);
+
+    await expect(
+      fixture.service.decide(round.id, STATE_RULES, input() as never),
+    ).rejects.toMatchObject({ code: 'INVALID_EVIDENCE' });
+    await expect(fixture.service.findRound(round.id)).resolves.toMatchObject({
       stage: 1,
       transitions: [expect.objectContaining({ kind: 'round-started' })],
       version: 1,
