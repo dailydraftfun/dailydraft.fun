@@ -3,6 +3,11 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { CrashController } from './crash.controller.js';
 import {
+  CRASH_CUSTODY_POLICY,
+  CrashCustodyMovementService,
+  loadCrashCustodyPolicy,
+} from './crash-custody-movement.service.js';
+import {
   CRASH_DECISION_RULES,
   CrashDecisionService,
   loadCrashDecisionRules,
@@ -16,11 +21,16 @@ import { CRASH_CLOCK, CRASH_ENVIRONMENT, CrashStageStateService } from './crash-
  */
 @Module({
   controllers: [CrashController],
-  exports: [CrashDecisionService, CrashStageStateService],
+  exports: [CrashCustodyMovementService, CrashDecisionService, CrashStageStateService],
   imports: [AuthModule],
   providers: [
     CrashStageStateService,
+    CrashCustodyMovementService,
     CrashDecisionService,
+    {
+      provide: CRASH_CUSTODY_POLICY,
+      useFactory: () => loadCrashCustodyPolicy(),
+    },
     {
       provide: CRASH_DECISION_RULES,
       useFactory: () => loadCrashDecisionRules(),

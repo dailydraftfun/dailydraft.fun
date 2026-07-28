@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 
 import type { Money } from '../domain.js';
+import { stableStringify } from '../providers/valuation-policy.js';
 import { calculateCrashBust, calculateCrashPot } from './crash-calculators.js';
+// biome-ignore lint/style/useImportType: Nest uses the custody service class as a runtime injection token.
+import { CrashCustodyMovementService } from './crash-custody-movement.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the state service class as a runtime injection token.
 import {
   assertCrashRoundRuleBinding,
@@ -21,6 +24,7 @@ import {
 export const CRASH_DECISION_RULES = Symbol('CRASH_DECISION_RULES');
 export const CRASH_PLAYER_DECISION_SCHEMA_VERSION = 'dailydraft.crash-player-decision.v1' as const;
 export const CRASH_PLAYER_FIXTURE_VERSION = 'dailydraft.crash-player-fixture.v1' as const;
+const CRASH_CUSTODY_IDEMPOTENCY_DOMAIN = 'dailydraft.crash-custody-idempotency.v1';
 
 export interface CrashPlayerDecisionInput {
   action: 'cash-out' | 'continue';
@@ -51,6 +55,7 @@ export class CrashDecisionService {
   constructor(
     private readonly state: CrashStageStateService,
     @Inject(CRASH_DECISION_RULES) private readonly configuredRules: unknown,
+    private readonly custody: CrashCustodyMovementService,
   ) {}
 
   async currentStage(roundId: string, playerWallet: string): Promise<CrashCurrentStage> {
@@ -78,7 +83,11 @@ export class CrashDecisionService {
     if (current.status === 'defaulted') return toCurrentStage(current);
     assertCurrentDecision(current, input);
 
-    const decision = createFixtureDecision(current, rules, input);
+    const custodyReference =
+      input.action === 'continue'
+        ? await this.prepareCustodyMovement(current, rules, input)
+        : undefined;
+    const decision = createFixtureDecision(current, rules, input, custodyReference);
     try {
       current = await this.state.decide(input.roundId, rules, decision);
     } catch (error) {
@@ -111,6 +120,33 @@ export class CrashDecisionService {
       );
     }
   }
+
+  private async prepareCustodyMovement(
+    current: CrashRoundSnapshot,
+    rules: CrashStateRules,
+    input: CrashPlayerDecisionInput,
+  ): Promise<string> {
+    const assetReference = fixtureReference('asset', input.roundId, input.expectedStage);
+    const intent = await this.custody.prepareFixtureMovement({
+      assetReference,
+      expectedStage: input.expectedStage,
+      expectedVersion: input.expectedVersion,
+      idempotencyKey: deriveCustodyIdempotencyKey(input),
+      playerWalletReference: current.playerWalletReference,
+      requestedRecipient: this.custody.configuredRecipient(),
+      roundId: input.roundId,
+      rules,
+      sourceWalletReference: fixtureProviderWallet(input.roundId, input.expectedStage),
+    });
+    if (intent.status !== 'prepared') {
+      throw new CrashStateMachineError(
+        'INVALID_EVIDENCE',
+        `Crash custody stopped before signing: ${intent.recoveryReason ?? 'RECOVERY_REQUIRED'}`,
+      );
+    }
+    await this.custody.requirePreparedFixture(input.roundId, intent.id, assetReference);
+    return intent.id;
+  }
 }
 
 export function loadCrashDecisionRules(environment: NodeJS.ProcessEnv = process.env): unknown {
@@ -127,6 +163,7 @@ function createFixtureDecision(
   current: CrashRoundSnapshot,
   rules: CrashStateRules,
   input: CrashPlayerDecisionInput,
+  custodyReference?: string,
 ): CrashFixtureDecision {
   const transitionKey = `player:${sha256(input.idempotencyKey)}`;
   if (input.action === 'cash-out') {
@@ -156,7 +193,9 @@ function createFixtureDecision(
   return {
     custody: {
       assetReference: fixtureReference('asset', input.roundId, input.expectedStage),
-      reference: fixtureReference('custody', input.roundId, input.expectedStage),
+      reference:
+        custodyReference ??
+        fixtureReference('custody-unavailable', input.roundId, input.expectedStage),
       schemaVersion: CRASH_CUSTODY_FIXTURE_VERSION,
     },
     decision: 'continue',
@@ -251,6 +290,22 @@ function deterministicRoll(roundId: string, stage: number): number {
 
 function fixtureReference(kind: string, roundId: string, stage: number): string {
   return `fixture-${kind}:${sha256(`${roundId}:${stage}`).slice(0, 32)}`;
+}
+
+function fixtureProviderWallet(roundId: string, stage: number): string {
+  return `fixture-wallet:provider-${sha256(`${roundId}:${stage}`).slice(0, 24)}`;
+}
+
+function deriveCustodyIdempotencyKey(input: CrashPlayerDecisionInput): string {
+  return `custody:${sha256(
+    stableStringify({
+      domain: CRASH_CUSTODY_IDEMPOTENCY_DOMAIN,
+      expectedStage: input.expectedStage,
+      expectedVersion: input.expectedVersion,
+      publicIdempotencyKey: input.idempotencyKey,
+      roundId: input.roundId,
+    }),
+  )}`;
 }
 
 function settlementFixture(roundId: string, stage: number, payout: Money) {

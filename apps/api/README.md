@@ -324,10 +324,25 @@ actions without exposing fixture wallet references or internal evidence.
 Server-owned, deterministic provider/custody/payment/settlement fixtures keep
 clients from supplying outcome evidence.
 
+Each fixture `continue` now reserves an append-only
+`CrashCustodyMovementIntent` before the stage transition. The intent is
+deliberately non-signable and binds the canonical round stage/version, player
+wallet reference, acquired fixture asset, immutable state/economic rules,
+idempotency key, and one approved session-custody recipient. Exact retries
+replay the same row; a second boundary cannot prepare the same stage asset.
+Missing, malformed, ambiguous, mismatched, or alternate-recipient custody
+configuration records deterministic `RECOVERY_REQUIRED` evidence with
+`NOT_STARTED` signing status and stops the decision before state mutation.
+
 Both routes remain fail-closed unless `DAILYDRAFT_CRASH_FIXTURE_MODE=true` is
 set in test, local development, or a non-production Vercel preview.
 `DAILYDRAFT_CRASH_FIXTURE_RULES_JSON` must contain the complete hash-committed
-`fixture-only` state and calculator rules already bound to the round.
+`fixture-only` state and calculator rules already bound to the round. Continue
+also requires `DAILYDRAFT_CRASH_FIXTURE_CUSTODY_POLICY_JSON` with one
+hash-committed fixture/devnet policy whose architecture, rules, and approved
+`fixture-wallet:` session custody exactly match that round. These controls do
+not construct, sign, or broadcast a Solana transaction and do not enable
+production Crash.
 Production Vercel explicitly rejects fixture mode, and the product capability
 continues to report `playable: false`. Live architecture, economics, custody,
 provider integration, and promotion remain separate HITL gates.

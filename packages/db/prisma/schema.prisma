@@ -249,6 +249,15 @@ enum CrashTransitionKind {
   DEADLINE_DEFAULTED
 }
 
+enum CrashCustodyIntentStatus {
+  PREPARED
+  RECOVERY_REQUIRED
+}
+
+enum CrashCustodySigningStatus {
+  NOT_STARTED
+}
+
 /// Fixture-only durable Crash/Card Streak round. No production route creates
 /// these rows: every round is bound to reviewed synthetic architecture,
 /// calculator, state-machine, wallet, and rules references.
@@ -275,10 +284,47 @@ model CrashRound {
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
   transitions           CrashTransition[]
+  custodyIntents        CrashCustodyMovementIntent[]
 
   @@index([status, decisionDeadline])
   @@index([playerWalletReference, createdAt])
   @@index([rulesHash, createdAt])
+}
+
+/// Non-signable fixture/devnet movement intent. It proves the canonical round,
+/// stage, owner, rule binding, and approved custody recipient were checked
+/// before any signing boundary can be reached.
+model CrashCustodyMovementIntent {
+  id                         String                    @id
+  roundId                    String
+  stage                      Int
+  expectedVersion            Int
+  idempotencyKey             String
+  requestHash                String
+  assetReference             String
+  sourceWalletReference      String
+  playerWalletReference      String
+  requestedRecipient         String
+  approvedRecipient          String?
+  network                    String                    @default("solana-devnet")
+  activationMode             String                    @default("fixture-only")
+  policyVersion              String?
+  policyHash                 String?
+  architectureVersion        String
+  stateMachineVersion        String
+  stateMachineRulesHash      String
+  calculatorVersion          String
+  rulesVersion               String
+  rulesHash                  String
+  status                     CrashCustodyIntentStatus
+  signingStatus              CrashCustodySigningStatus @default(NOT_STARTED)
+  recoveryReason             String?
+  createdAt                  DateTime                  @default(now())
+  round                      CrashRound                @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, idempotencyKey])
+  @@index([roundId, stage, assetReference])
+  @@index([status, createdAt])
 }
 
 /// Append-only evidence for one accepted Crash transition. The round version

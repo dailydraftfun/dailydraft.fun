@@ -4,6 +4,8 @@ import { PrismaClient } from '../generated/client.js';
 
 export type { Prisma } from '../generated/client.js';
 export {
+  CrashCustodyIntentStatus,
+  CrashCustodySigningStatus,
   CrashDecision,
   CrashRoundStatus,
   CrashTransitionKind,
