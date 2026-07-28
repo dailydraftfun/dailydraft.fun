@@ -1,5 +1,10 @@
 import { Module } from '@nestjs/common';
 
+import {
+  DeterministicFlipAcquisitionFixtureProvider,
+  FLIP_ACQUISITION_PROVIDER,
+} from './flip-acquisition.provider.js';
+import { FlipAcquisitionService } from './flip-acquisition.service.js';
 import { FlipInventorySnapshotService } from './flip-inventory-snapshot.service.js';
 import { FlipOutcomeSelectionService } from './flip-outcome-selection.service.js';
 import { FlipRulesService } from './flip-rules.service.js';
@@ -20,16 +25,22 @@ import {
  */
 @Module({
   exports: [
+    FlipAcquisitionService,
     FlipInventorySnapshotService,
     FlipOutcomeSelectionService,
     FlipRulesService,
     FlipSessionStateService,
   ],
   providers: [
+    FlipAcquisitionService,
     FlipInventorySnapshotService,
     FlipOutcomeSelectionService,
     FlipRulesService,
     FlipSessionStateService,
+    {
+      provide: FLIP_ACQUISITION_PROVIDER,
+      useClass: DeterministicFlipAcquisitionFixtureProvider,
+    },
     {
       provide: FLIP_SESSION_CLOCK,
       useValue: { now: () => new Date() },

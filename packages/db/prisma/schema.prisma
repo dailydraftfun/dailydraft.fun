@@ -152,9 +152,39 @@ enum HouseTreasuryLedgerType {
   HOUSE_PACK_COST
   HOUSE_WIN_INVENTORY
   CRASH_FORFEIT_INVENTORY
+  FLIP_RECOVERY_INVENTORY
   INVENTORY_DISPOSITION_SET
   INVENTORY_DISPOSED
   RECONCILIATION_ALERT
+}
+
+enum FlipAcquisitionStatus {
+  PENDING
+  RECOVERY_REQUIRED
+  ACQUIRED
+}
+
+enum FlipAcquisitionOperationKind {
+  PURCHASE
+  TRANSFER
+}
+
+enum FlipAcquisitionOperationStatus {
+  PREPARED
+  RECOVERY_REQUIRED
+  FINALIZED
+}
+
+enum FlipAcquisitionRecoveryMode {
+  NONE
+  RETRYABLE
+  RECONCILE_ONLY
+}
+
+enum FlipAcquisitionRecoveryBranch {
+  REFUND
+  RESELECTION
+  SUBSTITUTE
 }
 
 enum HouseInventoryDisposition {
@@ -938,6 +968,8 @@ model HouseInventoryAsset {
   outcomeId                  String?                    @unique
   crashRoundId               String?
   crashSettlementOperationId String?                    @unique
+  flipSessionId              String?
+  flipAcquisitionOperationId String?                    @unique
   assetReference             String                     @unique
   displayName                String
   acquisitionValueAmount     String
@@ -974,11 +1006,14 @@ model HouseInventoryAsset {
   outcome                    DuelPackOutcome?           @relation(fields: [outcomeId], references: [id], onDelete: Restrict)
   crashRound                 CrashRound?                @relation(fields: [crashRoundId], references: [id], onDelete: Restrict)
   crashSettlementOperation   CrashSettlementOperation?  @relation(fields: [crashSettlementOperationId], references: [id], onDelete: Restrict)
+  flipSession                FlipSession?               @relation(fields: [flipSessionId], references: [id], onDelete: Restrict)
+  flipAcquisitionOperation   FlipAcquisitionOperation?  @relation(fields: [flipAcquisitionOperationId], references: [id], onDelete: Restrict)
   ledgerEntries              HouseTreasuryLedgerEntry[]
 
   @@index([status, disposition, createdAt])
   @@index([duelId, createdAt])
   @@index([crashRoundId, createdAt])
+  @@index([flipSessionId, createdAt])
   @@index([custodyWallet, status])
 }
 
@@ -987,6 +1022,7 @@ model HouseTreasuryLedgerEntry {
   idempotencyKey String                    @unique
   duelId         String?
   crashRoundId   String?
+  flipSessionId  String?
   reservationId  String?
   inventoryId    String?
   type           HouseTreasuryLedgerType
@@ -997,11 +1033,13 @@ model HouseTreasuryLedgerEntry {
   createdAt      DateTime                  @default(now())
   duel           Duel?                     @relation(fields: [duelId], references: [id], onDelete: Restrict)
   crashRound     CrashRound?               @relation(fields: [crashRoundId], references: [id], onDelete: Restrict)
+  flipSession    FlipSession?              @relation(fields: [flipSessionId], references: [id], onDelete: Restrict)
   reservation    HouseTreasuryReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   inventory      HouseInventoryAsset?      @relation(fields: [inventoryId], references: [id], onDelete: Restrict)
 
   @@index([createdAt, type])
   @@index([crashRoundId, createdAt])
+  @@index([flipSessionId, createdAt])
   @@index([duelId, createdAt])
   @@index([inventoryId, createdAt])
 }
@@ -1116,10 +1154,36 @@ model FlipRuleSet {
   sealedAt               DateTime?
   createdAt              DateTime                    @default(now())
   sessionPoolCommitments FlipSessionPoolCommitment[]
+  acquisitionPolicy      FlipAcquisitionPolicy?
 
   @@unique([rulesKey, version])
   @@unique([rulesKey, rulesHash])
   @@index([poolKey, createdAt])
+}
+
+/// Reviewed acquisition/recovery policy bound one-to-one to a sealed Flip
+/// ruleset before a session pool commitment may consume it.
+model FlipAcquisitionPolicy {
+  id                             String            @id
+  rulesetId                      String            @unique
+  schemaVersion                  String
+  policyVersion                  String
+  activation                     String
+  network                        String
+  provider                       String
+  providerSourceCustodyReference String
+  houseInventoryCustodyReference String
+  failureBranches                Json
+  policyCanonicalPreimage        String
+  policyHash                     String            @unique
+  reviewReference                String
+  reviewedAt                     DateTime
+  sealedAt                       DateTime?
+  createdAt                      DateTime          @default(now())
+  ruleset                        FlipRuleSet       @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
+  acquisitions                   FlipAcquisition[]
+
+  @@index([policyVersion, createdAt])
 }
 
 /// Immutable rules-and-pool binding created before a synthetic/preview Flip session.
@@ -1189,6 +1253,9 @@ model FlipSession {
   admissionDecision        FlipTierAdmissionDecision? @relation(fields: [admissionDecisionId], references: [id], onDelete: Restrict)
   transitions              FlipSessionTransition[]
   selectionProof           FlipOutcomeSelectionProof?
+  acquisition              FlipAcquisition?
+  houseInventory           HouseInventoryAsset[]
+  houseLedgerEntries       HouseTreasuryLedgerEntry[]
 
   @@index([status, updatedAt])
   @@index([playerWalletReference, createdAt])
@@ -1299,10 +1366,90 @@ model FlipOutcomeSelectionProof {
   session                  FlipSession               @relation(fields: [sessionId], references: [id], onDelete: Restrict)
   poolCommitment           FlipSessionPoolCommitment @relation(fields: [poolCommitmentId], references: [id], onDelete: Restrict)
   terminalTransition       FlipSessionTransition?    @relation(fields: [terminalTransitionId], references: [id], onDelete: Restrict)
+  acquisition              FlipAcquisition?
 
   @@unique([sessionId, transitionKey])
   @@index([rulesHash, createdAt])
   @@index([entropyHash])
+}
+
+/// Durable deterministic purchase/transfer plan for one finalized selection.
+model FlipAcquisition {
+  id                              String                         @id
+  sessionId                       String                         @unique
+  selectionProofId                String                         @unique
+  policyId                        String
+  schemaVersion                   String
+  activationMode                  String                         @default("fixture-only")
+  network                         String
+  provider                        String
+  rulesVersion                   Int
+  rulesHash                      String
+  requestKey                      String                         @unique
+  requestHash                     String
+  status                          FlipAcquisitionStatus          @default(PENDING)
+  recoveryBranch                  FlipAcquisitionRecoveryBranch?
+  failureCode                     String?
+  selectedOrdinal                 Int
+  selectedBandLabel               String
+  selectedAssetReference          String
+  selectedListingReference        String
+  selectedValueAmount             String
+  playerWalletReference           String
+  sourceCustodyReference          String
+  houseInventoryCustodyReference  String
+  expectedOperationCount          Int                            @default(2)
+  finalizedOperationCount         Int                            @default(0)
+  receipt                         Json?
+  receiptHash                     String?
+  acquiredAt                      DateTime?
+  leaseOwner                      String?
+  leaseExpiresAt                  DateTime?
+  version                         Int                            @default(1)
+  createdAt                       DateTime                       @default(now())
+  updatedAt                       DateTime                       @updatedAt
+  session                         FlipSession                    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  selectionProof                  FlipOutcomeSelectionProof      @relation(fields: [selectionProofId], references: [id], onDelete: Restrict)
+  policy                          FlipAcquisitionPolicy          @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  operations                      FlipAcquisitionOperation[]
+
+  @@unique([sessionId, requestKey])
+  @@index([status, leaseExpiresAt, updatedAt])
+}
+
+model FlipAcquisitionOperation {
+  id                     String                          @id
+  acquisitionId          String
+  sequence               Int
+  operationKey           String
+  providerRequestKey     String                          @unique
+  requestHash            String
+  expectedSessionVersion Int
+  kind                   FlipAcquisitionOperationKind
+  status                 FlipAcquisitionOperationStatus @default(PREPARED)
+  recoveryMode           FlipAcquisitionRecoveryMode    @default(NONE)
+  assetReference         String
+  listingReference       String
+  sourceReference        String
+  destinationReference   String
+  amount                 String
+  currency               String                          @default("USDC")
+  decimals               Int                             @default(6)
+  providerReference      String?                         @unique
+  providerResultHash     String?
+  providerEvidence       Json?
+  failureCode            String?
+  submissionCount        Int                             @default(0)
+  lastAttemptedAt        DateTime?
+  finalizedAt            DateTime?
+  createdAt              DateTime                        @default(now())
+  updatedAt              DateTime                        @updatedAt
+  acquisition            FlipAcquisition                 @relation(fields: [acquisitionId], references: [id], onDelete: Restrict)
+  houseInventoryAsset    HouseInventoryAsset?
+
+  @@unique([acquisitionId, sequence])
+  @@unique([acquisitionId, operationKey])
+  @@index([status, recoveryMode, updatedAt])
 }
 
 /// One configured Collector Crypt sports pack machine.

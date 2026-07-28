@@ -280,6 +280,21 @@ changed entropy envelope, transition key, committed pool, or proof fails closed.
 This path requires `DAILYDRAFT_FLIP_FIXTURE_MODE=true` in a non-production
 environment and does not define or approve a production entropy source.
 
+Flip acquisition is also internal and fixture/devnet-only. A sealed acquisition
+policy must be bound one-to-one to the selected session's reviewed rules before
+the pool commitment is created. It commits exact provider/source custody,
+house-inventory custody, and one failure code for each reviewed `refund`,
+`reselection`, and `substitute` branch. Each selected outcome expands into one
+immutable purchase and transfer plan whose request keys and hashes are bound to
+the finalized selection proof. Recovery reconciles a provider key before any
+execution; an ambiguous or lost response is reconcile-only, while a confirmed
+rejection may enter only its pre-reviewed branch. A purchased asset retained by
+the house is written once through the canonical inventory and treasury ledger.
+The existing session database triggers reject purchase, transfer, and reveal
+transitions without the exact finalized operation/receipt. No live marketplace
+client, credential, signer, mainnet path, controller, or OpenAPI route is
+introduced.
+
 `SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every
 worker validates the official devnet genesis hash before reading transaction
 state. Funding preparation additionally requires `ESCROW_PROGRAM_ID`,
