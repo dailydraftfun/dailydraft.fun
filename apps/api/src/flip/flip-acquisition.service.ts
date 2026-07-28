@@ -167,13 +167,16 @@ export class FlipAcquisitionService {
     this.requireFixtureMode();
     const sessionId = requireIdentifier(sessionReference, 'sessionReference');
     const acquisition = await this.ensurePlan(sessionId);
+    if (acquisition.status === 'ACQUIRED') {
+      return toSnapshot(acquisition);
+    }
     if (
-      acquisition.status === 'ACQUIRED' ||
-      (acquisition.status === 'RECOVERY_REQUIRED' &&
-        acquisition.operations.some(
-          (operation) => operation.recoveryMode === DatabaseFlipAcquisitionRecoveryMode.RETRYABLE,
-        ))
+      acquisition.status === 'RECOVERY_REQUIRED' &&
+      acquisition.operations.some(
+        (operation) => operation.recoveryMode === DatabaseFlipAcquisitionRecoveryMode.RETRYABLE,
+      )
     ) {
+      await this.ensureReviewedRecoveryTransition(acquisition);
       return toSnapshot(acquisition);
     }
 
@@ -206,7 +209,11 @@ export class FlipAcquisitionService {
         )
       ) {
         await this.releaseLease(leased.id, leaseOwner);
-        return toSnapshot(await this.requireAcquisition(leased.id));
+        const durable = await this.requireAcquisition(leased.id);
+        if (durable.status === 'RECOVERY_REQUIRED') {
+          await this.ensureReviewedRecoveryTransition(durable);
+        }
+        return toSnapshot(durable);
       }
 
       const ordered = [...leased.operations].sort((left, right) => left.sequence - right.sequence);
@@ -614,12 +621,37 @@ export class FlipAcquisitionService {
         await ledgerRetainedAsset(transaction, acquisition, operation, reviewed.branch);
       }
     });
+    await this.ensureReviewedRecoveryTransition(await this.requireAcquisition(acquisition.id));
+  }
+
+  private async ensureReviewedRecoveryTransition(acquisition: AcquisitionRecord): Promise<void> {
+    if (
+      acquisition.status !== 'RECOVERY_REQUIRED' ||
+      !acquisition.failureCode ||
+      !acquisition.recoveryBranch ||
+      !acquisition.operations.some(
+        (operation) => operation.recoveryMode === DatabaseFlipAcquisitionRecoveryMode.RETRYABLE,
+      )
+    ) {
+      throw new ConflictException(
+        'Flip reviewed recovery transition requires exact durable recovery evidence',
+      );
+    }
+    const policy = storedPolicy(acquisition.policy, acquisition);
+    const reviewed = policy.failureBranches.find(
+      (candidate) => candidate.failureCode === acquisition.failureCode,
+    );
+    if (!reviewed || toDatabaseBranch(reviewed.branch) !== acquisition.recoveryBranch) {
+      throw new ConflictException('Flip durable recovery evidence changed its pre-reviewed branch');
+    }
     const session = await this.sessions.findSession(acquisition.sessionId);
     if (session.status !== 'recovery-required') {
       await this.sessions.transition(acquisition.sessionId, {
         evidence: {
-          reasonCode: `${failureCode}:${reviewed.branch.toUpperCase()}`,
-          reference: `fixture-recovery:${sha256(`${acquisition.id}:${failureCode}`).slice(0, 32)}`,
+          reasonCode: `${acquisition.failureCode}:${reviewed.branch.toUpperCase()}`,
+          reference: `fixture-recovery:${sha256(
+            `${acquisition.id}:${acquisition.failureCode}`,
+          ).slice(0, 32)}`,
           schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
           status: 'fixture-recovery-required',
         },

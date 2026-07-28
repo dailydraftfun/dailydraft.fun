@@ -160,6 +160,68 @@ describe('fixture Flip acquisition recovery', () => {
     expect(fixture.inventory).toHaveLength(0);
   });
 
+  test('reconciles a fail-once recovery transition after restart without provider replay', async () => {
+    const fixture = harness({
+      failRecoveryTransitionOnce: true,
+      provider: new ScriptedProvider({
+        failureCode: 'PROVIDER_REJECTED',
+        failKind: 'purchase',
+      }),
+    });
+
+    await expect(fixture.service.resumeFixtureAcquisition(SESSION_ID)).rejects.toThrow(
+      'test interrupted recovery transition',
+    );
+    const restarted = new FlipAcquisitionService(
+      fixture.database,
+      fixture.provider,
+      fixture.sessions,
+      FIXTURE_ENVIRONMENT,
+    );
+    const recovered = await restarted.resumeFixtureAcquisition(SESSION_ID);
+    const replay = await restarted.resumeFixtureAcquisition(SESSION_ID);
+
+    expect(recovered).toMatchObject({
+      recoveryBranch: 'refund',
+      recoveryReason: 'PROVIDER_REJECTED',
+      status: 'recovery-required',
+    });
+    expect(replay).toEqual(recovered);
+    expect(fixture.provider.executions).toBe(1);
+    expect(fixture.transitions.filter(({ kind }) => kind === 'request-recovery')).toHaveLength(1);
+  });
+
+  test('reconciles reviewed recovery that wins the acquisition lease race', async () => {
+    const fixture = harness({ recoverDuringLeaseClaim: true });
+
+    const recovered = await fixture.service.resumeFixtureAcquisition(SESSION_ID);
+
+    expect(recovered).toMatchObject({
+      recoveryBranch: 'refund',
+      recoveryReason: 'PROVIDER_REJECTED',
+      status: 'recovery-required',
+    });
+    expect(fixture.provider.executions).toBe(0);
+    expect(fixture.transitions.filter(({ kind }) => kind === 'request-recovery')).toHaveLength(1);
+  });
+
+  test('fails closed when durable recovery evidence loses its reviewed reason', async () => {
+    const fixture = harness({
+      provider: new ScriptedProvider({
+        failureCode: 'PROVIDER_REJECTED',
+        failKind: 'purchase',
+      }),
+    });
+    await fixture.service.resumeFixtureAcquisition(SESSION_ID);
+    if (!fixture.acquisition) throw new Error('Recovery fixture acquisition is absent');
+    fixture.acquisition.failureCode = null;
+
+    await expect(fixture.service.resumeFixtureAcquisition(SESSION_ID)).rejects.toThrow(
+      'requires exact durable recovery evidence',
+    );
+    expect(fixture.provider.executions).toBe(1);
+  });
+
   test('ledgers a purchased asset once when reviewed transfer recovery retains it', async () => {
     const fixture = harness({
       provider: new ScriptedProvider({
@@ -203,8 +265,10 @@ describe('fixture Flip acquisition recovery', () => {
 
 interface HarnessOptions {
   environment?: NodeJS.ProcessEnv;
+  failRecoveryTransitionOnce?: boolean;
   policyAbsent?: boolean;
   provider?: ScriptedProvider;
+  recoverDuringLeaseClaim?: boolean;
 }
 
 function policyHarness(
@@ -276,6 +340,7 @@ function harness(options: HarnessOptions = {}) {
   const ledger: Array<Record<string, unknown>> = [];
   const transitions: Array<{ kind: string; transitionKey: string }> = [];
   let leaseBusy = false;
+  let recoveryTransitionFailed = false;
 
   const sessionRow = () => ({
     id: SESSION_ID,
@@ -401,6 +466,20 @@ function harness(options: HarnessOptions = {}) {
         leaseBusy = true;
       }
       applyData(acquisition, data);
+      if (typeof data.leaseOwner === 'string' && options.recoverDuringLeaseClaim) {
+        const operation = operations()[0];
+        if (!operation) throw new Error('missing operation for lease-race recovery');
+        applyData(operation, {
+          failureCode: 'PROVIDER_REJECTED',
+          recoveryMode: 'RETRYABLE',
+          status: 'RECOVERY_REQUIRED',
+        });
+        applyData(acquisition, {
+          failureCode: 'PROVIDER_REJECTED',
+          recoveryBranch: 'REFUND',
+          status: 'RECOVERY_REQUIRED',
+        });
+      }
       return { count: 1 };
     },
   };
@@ -435,6 +514,14 @@ function harness(options: HarnessOptions = {}) {
         ({ transitionKey }) => transitionKey === action.transitionKey,
       );
       if (replay) return snapshot();
+      if (
+        action.kind === 'request-recovery' &&
+        options.failRecoveryTransitionOnce &&
+        !recoveryTransitionFailed
+      ) {
+        recoveryTransitionFailed = true;
+        throw new Error('test interrupted recovery transition');
+      }
       transitions.push({ kind: action.kind, transitionKey: action.transitionKey });
       sessionVersion += 1;
       if (action.kind === 'record-purchase') sessionStatus = 'PURCHASE_RECORDED';

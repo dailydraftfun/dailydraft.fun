@@ -173,6 +173,60 @@ describeDatabase('Flip acquisition recovery against two real Postgres connection
     ).toBe(1);
   });
 
+  test('reconciles one durable recovery transition after a fail-once restart', async () => {
+    const fixture = await prepareAcquisitionFixture(databaseA, 'recovery-transition-restart');
+    const provider = new DatabaseTestProvider({
+      failKind: 'purchase',
+      failureCode: 'PROVIDER_REJECTED',
+    });
+    const durableSessions = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    const failOnceSessions = new FailOnceRecoverySessions(durableSessions);
+    const interrupted = acquisitionService(
+      databaseA,
+      provider,
+      failOnceSessions as unknown as FlipSessionStateService,
+    );
+
+    await expect(interrupted.resumeFixtureAcquisition(fixture.sessionId)).rejects.toThrow(
+      'test interrupted recovery transition',
+    );
+    expect(
+      await databaseA.flipAcquisition.findUnique({
+        where: { sessionId: fixture.sessionId },
+      }),
+    ).toMatchObject({
+      failureCode: 'PROVIDER_REJECTED',
+      recoveryBranch: 'REFUND',
+      status: 'RECOVERY_REQUIRED',
+    });
+    expect(
+      await databaseA.flipSessionTransition.count({
+        where: { kind: 'RECOVERY_REQUESTED', sessionId: fixture.sessionId },
+      }),
+    ).toBe(0);
+
+    const restarted = acquisitionService(databaseB, provider);
+    const recovered = await restarted.resumeFixtureAcquisition(fixture.sessionId);
+    const replay = await restarted.resumeFixtureAcquisition(fixture.sessionId);
+
+    expect(recovered).toMatchObject({
+      recoveryBranch: 'refund',
+      recoveryReason: 'PROVIDER_REJECTED',
+      status: 'recovery-required',
+    });
+    expect(replay).toEqual(recovered);
+    expect(provider.executionsFor('purchase')).toBe(1);
+    expect(
+      await databaseA.flipSessionTransition.count({
+        where: { kind: 'RECOVERY_REQUESTED', sessionId: fixture.sessionId },
+      }),
+    ).toBe(1);
+  });
+
   test.each([
     ['PROVIDER_REJECTED', 'refund'],
     ['SELECTED_ASSET_UNAVAILABLE', 'reselection'],
@@ -325,13 +379,9 @@ describeDatabase('Flip acquisition recovery against two real Postgres connection
 function acquisitionService(
   database: DatabaseClient,
   provider: FlipAcquisitionProvider,
+  sessions = new FlipSessionStateService(database, new DatabaseTestClock(), FIXTURE_ENVIRONMENT),
 ): FlipAcquisitionService {
-  return new FlipAcquisitionService(
-    database,
-    provider,
-    new FlipSessionStateService(database, new DatabaseTestClock(), FIXTURE_ENVIRONMENT),
-    FIXTURE_ENVIRONMENT,
-  );
+  return new FlipAcquisitionService(database, provider, sessions, FIXTURE_ENVIRONMENT);
 }
 
 interface Deferred<T> {
@@ -670,6 +720,27 @@ class LostResponseFixtureProvider extends FlipAcquisitionProvider {
     _knownProviderReference: string | null,
   ): Promise<FlipAcquisitionProviderResult | null> {
     return null;
+  }
+}
+
+class FailOnceRecoverySessions {
+  #failed = false;
+
+  constructor(private readonly delegate: FlipSessionStateService) {}
+
+  findSession(sessionReference: string) {
+    return this.delegate.findSession(sessionReference);
+  }
+
+  transition(
+    sessionReference: string,
+    action: Parameters<FlipSessionStateService['transition']>[1],
+  ) {
+    if (action.kind === 'request-recovery' && !this.#failed) {
+      this.#failed = true;
+      throw new Error('test interrupted recovery transition');
+    }
+    return this.delegate.transition(sessionReference, action);
   }
 }
 
