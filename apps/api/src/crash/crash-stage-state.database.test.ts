@@ -9,6 +9,7 @@ import {
   hashCrashCalculatorRuleSet,
   type UnsignedCrashCalculatorRuleSet,
 } from './crash-calculators.js';
+import { CrashDecisionService } from './crash-decision.service.js';
 import {
   CRASH_CUSTODY_FIXTURE_VERSION,
   CRASH_PAYMENT_FIXTURE_VERSION,
@@ -33,6 +34,7 @@ const FIXTURE_ENVIRONMENT = {
   DAILYDRAFT_CRASH_FIXTURE_MODE: 'true',
   NODE_ENV: 'test',
 } satisfies NodeJS.ProcessEnv;
+const PLAYER_WALLET = '9xQeWvG816bUx9EPfEZvD6nGQ3xM4wzHY6zvQ3z9gJ1';
 
 describeDatabase('Crash stage state machine against a real Postgres', () => {
   let database: DatabaseClient;
@@ -116,6 +118,81 @@ describeDatabase('Crash stage state machine against a real Postgres', () => {
     expect(counts.reduce((sum, value) => sum + value, 0)).toBe(1);
 
     const stored = await service.findRound(round.id);
+    expect(stored).toMatchObject({
+      status: 'defaulted',
+      terminalReason: 'DEADLINE_DEFAULT_FORFEIT',
+      version: 2,
+    });
+    expect(stored.transitions).toHaveLength(2);
+  });
+
+  test('persists duplicate player decisions once and restores canonical reconnect state', async () => {
+    const clock = new DatabaseTestClock();
+    const state = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const decisions = new CrashDecisionService(state, RULES);
+    const round = await state.createFixtureRound({
+      initialPot: usdc('1000000'),
+      playerWalletReference: `fixture-wallet:${PLAYER_WALLET}`,
+      roundId: `${ROUND_PREFIX}-player`,
+      rules: RULES,
+    });
+    const request = {
+      action: 'cash-out' as const,
+      expectedStage: round.stage,
+      expectedVersion: round.version,
+      idempotencyKey: 'postgres-player-idempotency-0001',
+      playerWallet: PLAYER_WALLET,
+      roundId: round.id,
+    };
+
+    const [first, retry] = await Promise.all([
+      decisions.decide(request),
+      decisions.decide(request),
+    ]);
+    expect(retry).toEqual(first);
+    expect(first).toMatchObject({
+      availableActions: [],
+      status: 'cashed-out',
+      terminalReason: 'PLAYER_CASH_OUT',
+      version: 2,
+    });
+    await expect(decisions.currentStage(round.id, PLAYER_WALLET)).resolves.toEqual(first);
+    await expect(
+      decisions.decide({
+        ...request,
+        action: 'continue',
+        idempotencyKey: 'postgres-stale-decision-0002',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
+
+    const stored = await state.findRound(round.id);
+    expect(stored.transitions).toHaveLength(2);
+    expect(stored.transitions[1]).toMatchObject({
+      decision: 'cash-out',
+      fromStage: 1,
+      sequence: 2,
+    });
+  });
+
+  test('commits exactly one transition when reconnect and expiry workers race', async () => {
+    const clock = new DatabaseTestClock();
+    const state = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const decisions = new CrashDecisionService(state, RULES);
+    const round = await state.createFixtureRound({
+      initialPot: usdc('0'),
+      playerWalletReference: `fixture-wallet:${PLAYER_WALLET}`,
+      roundId: `${ROUND_PREFIX}-deadline-race`,
+      rules: RULES,
+    });
+    clock.advance(10_000);
+
+    await Promise.all([
+      decisions.currentStage(round.id, PLAYER_WALLET),
+      state.applyExpiredDefaults(),
+      state.applyExpiredDefaults(),
+    ]);
+
+    const stored = await state.findRound(round.id);
     expect(stored).toMatchObject({
       status: 'defaulted',
       terminalReason: 'DEADLINE_DEFAULT_FORFEIT',

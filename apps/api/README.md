@@ -313,11 +313,24 @@ Every mutating decision carries a transition key and a hash of its complete
 fixture evidence. Exact retries replay the durable result, changed retries are
 rejected, and a stage/version compare-and-swap permits only one concurrent
 transition. Expired stages apply their pre-disclosed synthetic `forfeit`
-default once, with a deterministic zero-payout fixture receipt. Production
-Crash stays unavailable: the module exports no controller, accepts only
-hash-committed `fixture-only` rules and `fixture-*` collaborator evidence, and
-reports `playable: false` even when the fixture contract is ready. Architecture,
-economics, custody, or provider promotion still require the separate HITL gate.
+default once, with a deterministic zero-payout fixture receipt.
+
+The authenticated player contract exposes `GET /v1/crash/rounds/:roundId` for a
+canonical reconnect snapshot and `POST /v1/crash/rounds/:roundId/decisions` for
+`continue` or `cash-out`. Decision writes require a 16–128 character
+`Idempotency-Key` and the current `expectedStage` plus `expectedVersion`.
+Responses disclose the current deadline, `forfeit` default, pot, and available
+actions without exposing fixture wallet references or internal evidence.
+Server-owned, deterministic provider/custody/payment/settlement fixtures keep
+clients from supplying outcome evidence.
+
+Both routes remain fail-closed unless `DAILYDRAFT_CRASH_FIXTURE_MODE=true` is
+set in test, local development, or a non-production Vercel preview.
+`DAILYDRAFT_CRASH_FIXTURE_RULES_JSON` must contain the complete hash-committed
+`fixture-only` state and calculator rules already bound to the round.
+Production Vercel explicitly rejects fixture mode, and the product capability
+continues to report `playable: false`. Live architecture, economics, custody,
+provider integration, and promotion remain separate HITL gates.
 
 ## AWS production runtime
 

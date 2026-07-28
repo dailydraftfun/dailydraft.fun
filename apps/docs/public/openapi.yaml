@@ -29,6 +29,8 @@ tags:
     description: Inspectable Sports Pack Gacha capabilities, inventory, odds, deposit intents, and rips.
   - name: Games
     description: Capability-derived player catalog for live and fixture-only game modes.
+  - name: Crash
+    description: Authenticated, resumable fixture-preview Crash decisions; never production playable.
   - name: RGS
     description: Versioned game-mode configs and independently verifiable round proofs.
   - name: Valuation
@@ -263,6 +265,97 @@ paths:
                 $ref: '#/components/schemas/VerifiedGameActivityPage'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /crash/rounds/{roundId}:
+    get:
+      operationId: getCrashCurrentStage
+      tags: [Crash]
+      security:
+        - walletSession: []
+      summary: Restore the canonical fixture-preview Crash stage
+      description: |
+        Reconnects the authenticated player to the durable current stage. If
+        its deadline has passed, the pre-disclosed forfeit is committed before
+        the response is returned. The response exposes no provider, custody,
+        settlement, or synthetic wallet evidence.
+      x-dailydraft-availability: preview-fixture-only
+      parameters:
+        - $ref: '#/components/parameters/CrashRoundId'
+      responses:
+        '200':
+          description: Canonical current stage, deadline, default, and available actions
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+            X-Robots-Tag:
+              schema:
+                type: string
+                const: noindex, nofollow, noarchive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrashCurrentStage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /crash/rounds/{roundId}/decisions:
+    post:
+      operationId: submitCrashDecision
+      tags: [Crash]
+      security:
+        - walletSession: []
+      summary: Continue or cash out the current fixture-preview Crash stage
+      description: |
+        Submits only the player action and the canonical stage/version pair.
+        The server owns every synthetic provider, custody, payment, and
+        settlement fixture. Exact Idempotency-Key retries return the same
+        canonical result; stale or changed retries are rejected. A deadline
+        race commits either the player decision or the disclosed forfeit,
+        never both.
+      x-dailydraft-availability: preview-fixture-only
+      parameters:
+        - $ref: '#/components/parameters/CrashRoundId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrashPlayerDecisionRequest'
+      responses:
+        '200':
+          description: Canonical stage after the accepted, replayed, or deadline-defaulted decision
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+            X-Robots-Tag:
+              schema:
+                type: string
+                const: noindex, nofollow, noarchive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrashCurrentStage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -2042,6 +2135,13 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/GachaPaymentIntentId'
+    CrashRoundId:
+      name: roundId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^crashround_[A-Za-z0-9._:-]{8,128}$'
     DuelId:
       name: duelId
       in: path
@@ -2130,6 +2230,75 @@ components:
           schema:
             $ref: '#/components/schemas/Problem'
   schemas:
+    CrashPlayerDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [action, expectedStage, expectedVersion]
+      properties:
+        action:
+          type: string
+          enum: [continue, cash-out]
+        expectedStage:
+          type: integer
+          minimum: 1
+        expectedVersion:
+          type: integer
+          minimum: 1
+    CrashCurrentStage:
+      type: object
+      additionalProperties: false
+      required:
+        - availableActions
+        - decisionDeadline
+        - defaultAction
+        - mode
+        - network
+        - pot
+        - roundId
+        - schemaVersion
+        - stage
+        - status
+        - terminalReason
+        - version
+      properties:
+        availableActions:
+          type: array
+          uniqueItems: true
+          maxItems: 2
+          items:
+            type: string
+            enum: [continue, cash-out]
+        decisionDeadline:
+          type: [string, 'null']
+          format: date-time
+        defaultAction:
+          type: string
+          const: forfeit
+        mode:
+          type: string
+          const: fixture-preview
+        network:
+          type: string
+          const: solana-devnet
+        pot:
+          $ref: '#/components/schemas/Money'
+        roundId:
+          type: string
+          pattern: '^crashround_[A-Za-z0-9._:-]{8,128}$'
+        schemaVersion:
+          type: string
+          const: dailydraft.crash-player-decision.v1
+        stage:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [active, busted, cashed-out, completed, defaulted]
+        terminalReason:
+          type: [string, 'null']
+        version:
+          type: integer
+          minimum: 1
     RgsHash:
       type: string
       pattern: '^[a-f0-9]{64}$'

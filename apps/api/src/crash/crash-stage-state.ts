@@ -388,6 +388,37 @@ export class CrashStageStateService {
     return toSnapshot(round);
   }
 
+  /**
+   * Restore the canonical player-visible state after a reconnect.
+   *
+   * An expired ACTIVE row is not a valid state to hand back to a player: the
+   * pre-disclosed default has already become the only legal transition. Resolve
+   * that transition through the same optimistic database boundary used by the
+   * expiry worker, then reload the append-only ledger. A simultaneous decision
+   * or worker can win the compare-and-set; either way the reload is canonical.
+   */
+  async resumeFixtureRound(roundId: string): Promise<CrashRoundSnapshot> {
+    this.requireFixtureMode();
+    const current = await this.findRound(roundId);
+    if (
+      current.status === 'active' &&
+      current.decisionDeadline &&
+      new Date(current.decisionDeadline) <= this.clock.now()
+    ) {
+      await this.applyDefault(
+        {
+          decisionDeadline: new Date(current.decisionDeadline),
+          id: current.id,
+          stage: current.stage,
+          version: current.version,
+        },
+        this.clock.now(),
+      );
+      return this.findRound(roundId);
+    }
+    return current;
+  }
+
   async decide(
     roundId: string,
     rulesInput: unknown,
@@ -421,7 +452,7 @@ export class CrashStageStateService {
           async (transaction) => {
             const current = await transaction.crashRound.findUnique({ where: { id: roundId } });
             if (!current) throw stateError('NOT_FOUND', `Crash round ${roundId} was not found`);
-            assertRuleBinding(current, rules);
+            assertCrashRoundRuleBinding(current, rules);
             if (current.status !== DatabaseCrashRoundStatus.ACTIVE) {
               throw stateError('INVALID_TRANSITION', 'A terminal Crash round cannot transition');
             }
@@ -478,6 +509,19 @@ export class CrashStageStateService {
     } catch (error) {
       const concurrentReplay = await this.findReplay(roundId, input.transitionKey, requestHash);
       if (concurrentReplay) return concurrentReplay;
+      if (error instanceof CrashStateMachineError) throw error;
+      const moved = await this.database.crashRound.findUnique({
+        select: { stage: true, status: true, version: true },
+        where: { id: roundId },
+      });
+      if (
+        moved &&
+        (moved.status !== DatabaseCrashRoundStatus.ACTIVE ||
+          moved.stage !== input.expectedStage ||
+          moved.version !== input.expectedVersion)
+      ) {
+        throw stateError('CONCURRENT_TRANSITION', 'Crash stage changed concurrently');
+      }
       throw error;
     }
   }
@@ -844,7 +888,20 @@ interface ResolvedTransition {
   terminalReason: string | null;
 }
 
-function assertRuleBinding(current: CrashRoundRow, rules: CrashStateRules): void {
+type CrashRoundRuleBinding = Pick<
+  CrashRoundSnapshot,
+  | 'architectureVersion'
+  | 'calculatorVersion'
+  | 'rulesHash'
+  | 'rulesVersion'
+  | 'stateMachineRulesHash'
+  | 'stateMachineVersion'
+>;
+
+export function assertCrashRoundRuleBinding(
+  current: CrashRoundRuleBinding,
+  rules: CrashStateRules,
+): void {
   if (
     current.architectureVersion !== rules.architectureVersion ||
     current.stateMachineVersion !== rules.stateMachineVersion ||
