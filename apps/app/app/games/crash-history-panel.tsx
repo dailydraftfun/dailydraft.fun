@@ -15,9 +15,10 @@ import {
   SpinnerGapIcon,
   WarningCircleIcon,
 } from '@phosphor-icons/react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWalletAuth } from '../solana/wallet-auth-provider';
 import { getCrashHistory, getCrashReceipt } from './crash-history-client';
+import { CrashHistorySessionGuard } from './crash-history-session-guard';
 
 export type CrashHistoryLoadState = 'empty' | 'error' | 'loading' | 'ready';
 
@@ -30,28 +31,37 @@ export function CrashHistoryPanel() {
   const [receipt, setReceipt] = useState<CrashReceipt | null>(null);
   const [loadState, setLoadState] = useState<CrashHistoryLoadState>('empty');
   const [receiptState, setReceiptState] = useState<CrashHistoryLoadState>('empty');
+  const requestGuard = useRef(new CrashHistorySessionGuard());
   const sessionToken = authentication.sessionToken;
 
   const refresh = useCallback(async () => {
     if (!sessionToken) {
-      setPage(null);
-      setReceipt(null);
-      setLoadState('empty');
       return;
     }
+    const request = requestGuard.current.begin('history');
     setLoadState('loading');
     try {
-      const next = await getCrashHistory(sessionToken);
+      const next = await getCrashHistory(sessionToken, null, request.signal);
+      if (!requestGuard.current.isCurrent(request)) return;
       setPage(next);
       setLoadState(next.data.length ? 'ready' : 'empty');
     } catch {
+      if (!requestGuard.current.isCurrent(request)) return;
       setLoadState('error');
     }
   }, [sessionToken]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    requestGuard.current.switchSession();
+    setPage(null);
+    setReceipt(null);
+    setLoadState('empty');
+    setReceiptState('empty');
+    if (sessionToken) void refresh();
+    return () => {
+      requestGuard.current.switchSession();
+    };
+  }, [refresh, sessionToken]);
 
   useEffect(() => {
     const reconnect = () => void refresh();
@@ -61,9 +71,11 @@ export function CrashHistoryPanel() {
 
   async function loadMore(): Promise<void> {
     if (!sessionToken || !page?.nextCursor) return;
+    const request = requestGuard.current.begin('history');
     setLoadState('loading');
     try {
-      const next = await getCrashHistory(sessionToken, page.nextCursor);
+      const next = await getCrashHistory(sessionToken, page.nextCursor, request.signal);
+      if (!requestGuard.current.isCurrent(request)) return;
       const known = new Set(page.data.map(({ roundId }) => roundId));
       setPage({
         ...next,
@@ -71,17 +83,22 @@ export function CrashHistoryPanel() {
       });
       setLoadState('ready');
     } catch {
+      if (!requestGuard.current.isCurrent(request)) return;
       setLoadState('error');
     }
   }
 
   async function openReceipt(item: CrashHistoryItem): Promise<void> {
     if (!sessionToken) return;
+    const request = requestGuard.current.begin('receipt');
     setReceiptState('loading');
     try {
-      setReceipt(await getCrashReceipt(item.roundId, sessionToken));
+      const next = await getCrashReceipt(item.roundId, sessionToken, request.signal);
+      if (!requestGuard.current.isCurrent(request)) return;
+      setReceipt(next);
       setReceiptState('ready');
     } catch {
+      if (!requestGuard.current.isCurrent(request)) return;
       setReceipt(null);
       setReceiptState('error');
     }

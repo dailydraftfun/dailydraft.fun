@@ -82,6 +82,12 @@ describe('Crash history client', () => {
         sourceWalletReference: 'fixture-wallet:secret',
       }),
     ).toThrow('malformed private history');
+    expect(() =>
+      parseCrashReceipt({
+        ...receipt(),
+        events: [{ ...receipt().events[0], reference: 'crashcustody_internal_intent' }],
+      }),
+    ).toThrow('malformed private history');
   });
 
   test('surfaces configuration and HTTP failures without fabricating cached history', async () => {
@@ -178,11 +184,15 @@ function receipt() {
       architectureVersion: 'architecture-v1',
       calculatorVersion: 'calculator-v1',
       custodyPolicyHash: 'c'.repeat(64),
+      custodyPolicyVersion: 'custody-v1',
+      inventoryPolicyHash: 'f'.repeat(64),
+      inventoryPolicyVersion: 'inventory-v1',
       riskRulesHash: 'e'.repeat(64),
       riskRulesVersion: 'risk-v1',
       rulesHash: 'b'.repeat(64),
       rulesVersion: 'rules-v1',
       settlementPolicyHash: 'd'.repeat(64),
+      settlementPolicyVersion: 'settlement-v1',
       stateMachineRulesHash: 'a'.repeat(64),
       stateMachineVersion: 'state-v1',
     },
@@ -199,7 +209,7 @@ function receipt() {
         eventId: 'transition:1',
         kind: 'round-started',
         occurredAt: '2026-07-28T18:00:00.000Z',
-        reference: 'round-started',
+        reference: `crashref_${'1'.repeat(32)}`,
         stage: 1,
         terminalReason: null,
       },
@@ -209,7 +219,7 @@ function receipt() {
         eventId: 'settlement:1',
         kind: 'settlement-recovery-required',
         occurredAt: '2026-07-28T18:00:04.000Z',
-        reference: 'operation:safe-reference',
+        reference: `crashref_${'2'.repeat(32)}`,
         stage: 1,
         terminalReason: 'PROVIDER_RESULT_AMBIGUOUS',
       },

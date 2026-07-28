@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   CRASH_HISTORY_SCHEMA_VERSION,
   CRASH_RECEIPT_SCHEMA_VERSION,
@@ -66,6 +67,7 @@ export class CrashHistoryService {
   ) {}
 
   async list(playerWallet: string, query: ListCrashHistoryQuery): Promise<CrashHistoryPage> {
+    this.state.assertFixtureModeEnabled();
     const cursor = query.cursor ? decodeCrashHistoryCursor(query.cursor) : null;
     const walletReference = fixtureWallet(playerWallet);
     const rows = await this.database.crashRound.findMany({
@@ -147,6 +149,7 @@ export class CrashHistoryService {
     if (!metadata || metadata.playerWalletReference !== fixtureWallet(playerWallet)) {
       throw new CrashStateMachineError('NOT_FOUND', `Crash round ${roundId} was not found`);
     }
+    assertReceiptMetadata(round, metadata, settlement);
 
     const settlementStatus = settlement?.status ?? round.settlementStatus;
     const custody = custodyState(metadata, settlementStatus);
@@ -161,12 +164,16 @@ export class CrashHistoryService {
         architectureVersion: round.architectureVersion,
         calculatorVersion: round.calculatorVersion,
         custodyPolicyHash: metadata.settlement?.custodyPolicyHash ?? null,
+        custodyPolicyVersion: settlement?.custodyPolicyVersion ?? null,
+        inventoryPolicyHash: settlement?.inventoryPolicyHash ?? null,
+        inventoryPolicyVersion: settlement?.inventoryPolicyVersion ?? null,
         riskRulesHash: round.riskRulesHash,
         riskRulesVersion: round.riskRulesVersion,
         rulesHash: round.rulesHash,
         rulesVersion: round.rulesVersion,
         settlementPolicyHash:
           metadata.settlement?.settlementPolicyHash ?? settlement?.settlementPolicyHash ?? null,
+        settlementPolicyVersion: settlement?.settlementPolicyVersion ?? null,
         stateMachineRulesHash: round.stateMachineRulesHash,
         stateMachineVersion: round.stateMachineVersion,
       },
@@ -268,7 +275,7 @@ function transitionEvent(transition: CrashRoundSnapshot['transitions'][number]):
     eventId: `transition:${transition.sequence}`,
     kind: kinds[transition.kind],
     occurredAt: transition.createdAt,
-    reference: transition.transitionKey,
+    reference: publicReference('transition', transition.transitionKey),
     stage: transition.toStage,
     terminalReason: transition.terminalReason,
   };
@@ -278,10 +285,10 @@ function custodyEvent(intent: CrashHistoryMetadata['custodyIntents'][number]): C
   return {
     amount: null,
     decision: null,
-    eventId: `custody:${intent.id}`,
+    eventId: `custody:${publicReference('custody-event', intent.id)}`,
     kind: intent.status === 'PREPARED' ? 'custody-prepared' : 'custody-recovery-required',
     occurredAt: intent.createdAt.toISOString(),
-    reference: intent.id,
+    reference: publicReference('custody', intent.id),
     stage: intent.stage,
     terminalReason: null,
   };
@@ -304,7 +311,7 @@ function settlementEvent(
           ? 'settlement-recovery-required'
           : 'settlement-prepared',
     occurredAt: (operation.finalizedAt ?? operation.updatedAt ?? operation.createdAt).toISOString(),
-    reference: operation.operationKey,
+    reference: publicReference('settlement', operation.operationKey),
     stage: operation.stage ?? operation.sequence,
     terminalReason: safeRecoveryReason(operation.failureCode),
   };
@@ -328,6 +335,48 @@ function custodyState(
           ? 'prepared'
           : 'not-started',
   };
+}
+
+function assertReceiptMetadata(
+  round: CrashRoundSnapshot,
+  metadata: CrashHistoryMetadata,
+  settlement: Awaited<ReturnType<CrashSettlementService['findFixtureSettlement']>>,
+): void {
+  const terminal = round.status !== 'active';
+  if (
+    (terminal && (!settlement || !metadata.settlement)) ||
+    (!terminal && (settlement !== null || metadata.settlement !== null))
+  ) {
+    throw new CrashStateMachineError(
+      'INVALID_EVIDENCE',
+      'Crash receipt settlement evidence is incomplete',
+    );
+  }
+  if (!settlement || !metadata.settlement) return;
+  const operations = [...metadata.settlement.operations].sort(
+    (left, right) => left.sequence - right.sequence,
+  );
+  if (
+    metadata.settlement.custodyPolicyHash !== settlement.custodyPolicyHash ||
+    metadata.settlement.settlementPolicyHash !== settlement.settlementPolicyHash ||
+    operations.length !== settlement.expectedOperationCount ||
+    operations.filter(({ status }) => status === 'FINALIZED').length !==
+      settlement.finalizedOperationCount ||
+    operations.some((operation, index) => {
+      const verified = settlement.operations[index];
+      return (
+        !verified ||
+        operation.sequence !== verified.sequence ||
+        operation.operationKey !== verified.operationKey ||
+        operation.status.toLowerCase().replace('_', '-') !== verified.status
+      );
+    })
+  ) {
+    throw new CrashStateMachineError(
+      'INVALID_EVIDENCE',
+      'Crash receipt metadata conflicts with verified settlement',
+    );
+  }
 }
 
 function transitionAmount(value: unknown): CrashReceiptEvent['amount'] {
@@ -366,6 +415,13 @@ function compareEvents(left: CrashReceiptEvent, right: CrashReceiptEvent): numbe
   return (
     left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId)
   );
+}
+
+function publicReference(domain: string, value: string): string {
+  return `crashref_${createHash('sha256')
+    .update(`dailydraft.crash-public-reference.v1:${domain}:${value}`)
+    .digest('hex')
+    .slice(0, 32)}`;
 }
 
 function assertPlayer(round: CrashRoundSnapshot, playerWallet: string): void {

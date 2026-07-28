@@ -196,7 +196,7 @@ function parseEvent(value: unknown): CrashReceiptEvent {
     ].includes(String(value.kind)) ||
     !isIso(value.occurredAt) ||
     typeof value.reference !== 'string' ||
-    value.reference.length > 240 ||
+    !/^crashref_[a-f0-9]{32}$/.test(value.reference) ||
     !Number.isInteger(value.stage) ||
     Number(value.stage) < 1 ||
     !(value.amount === null || isMoney(value.amount)) ||
@@ -225,16 +225,24 @@ function isSettlement(value: unknown): value is CrashReceipt['settlement'] {
 
 function isBindings(value: unknown): value is CrashReceipt['bindings'] {
   if (!isObject(value)) return false;
-  return [
-    'architectureVersion',
-    'calculatorVersion',
-    'riskRulesHash',
-    'riskRulesVersion',
-    'rulesHash',
-    'rulesVersion',
-    'stateMachineRulesHash',
-    'stateMachineVersion',
-  ].every((key) => typeof value[key] === 'string');
+  return (
+    [
+      'architectureVersion',
+      'calculatorVersion',
+      'riskRulesVersion',
+      'rulesVersion',
+      'stateMachineVersion',
+    ].every((key) => typeof value[key] === 'string') &&
+    ['riskRulesHash', 'rulesHash', 'stateMachineRulesHash'].every((key) =>
+      HASH_PATTERN.test(String(value[key])),
+    ) &&
+    ['custodyPolicyHash', 'inventoryPolicyHash', 'settlementPolicyHash'].every(
+      (key) => value[key] === null || HASH_PATTERN.test(String(value[key])),
+    ) &&
+    ['custodyPolicyVersion', 'inventoryPolicyVersion', 'settlementPolicyVersion'].every(
+      (key) => value[key] === null || typeof value[key] === 'string',
+    )
+  );
 }
 
 function isMoney(value: unknown): value is CrashReceipt['pot'] {

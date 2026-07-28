@@ -79,11 +79,15 @@ export type CrashReceipt = {
     architectureVersion: string;
     calculatorVersion: string;
     custodyPolicyHash: string | null;
+    custodyPolicyVersion: string | null;
+    inventoryPolicyHash: string | null;
+    inventoryPolicyVersion: string | null;
     riskRulesHash: string;
     riskRulesVersion: string;
     rulesHash: string;
     rulesVersion: string;
     settlementPolicyHash: string | null;
+    settlementPolicyVersion: string | null;
     stateMachineRulesHash: string;
     stateMachineVersion: string;
   };

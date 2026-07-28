@@ -2572,11 +2572,15 @@ components:
             - architectureVersion
             - calculatorVersion
             - custodyPolicyHash
+            - custodyPolicyVersion
+            - inventoryPolicyHash
+            - inventoryPolicyVersion
             - riskRulesHash
             - riskRulesVersion
             - rulesHash
             - rulesVersion
             - settlementPolicyHash
+            - settlementPolicyVersion
             - stateMachineRulesHash
             - stateMachineVersion
           properties:
@@ -2587,6 +2591,13 @@ components:
             custodyPolicyHash:
               type: [string, 'null']
               pattern: '^[a-f0-9]{64}$'
+            custodyPolicyVersion:
+              type: [string, 'null']
+            inventoryPolicyHash:
+              type: [string, 'null']
+              pattern: '^[a-f0-9]{64}$'
+            inventoryPolicyVersion:
+              type: [string, 'null']
             riskRulesHash:
               type: string
               pattern: '^[a-f0-9]{64}$'
@@ -2600,6 +2611,8 @@ components:
             settlementPolicyHash:
               type: [string, 'null']
               pattern: '^[a-f0-9]{64}$'
+            settlementPolicyVersion:
+              type: [string, 'null']
             stateMachineRulesHash:
               type: string
               pattern: '^[a-f0-9]{64}$'
@@ -2751,6 +2764,7 @@ components:
         reference:
           type: string
           maxLength: 240
+          pattern: '^crashref_[a-f0-9]{32}$'
         stage:
           type: integer
           minimum: 1
