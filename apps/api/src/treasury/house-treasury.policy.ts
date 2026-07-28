@@ -58,6 +58,8 @@ export const HOUSE_EXPOSURE_LIMIT_MESSAGES = {
   delegated_allowance: 'House tier is disabled: delegated allowance',
   minimum_liquidity: 'House tier is disabled: minimum liquidity',
   player_exposure: 'House tier is disabled: player exposure limit',
+  reconciliation_discrepancy:
+    'House tier is disabled: unresolved treasury reconciliation discrepancy',
   tier_concurrency: 'House tier is disabled: tier concurrency limit',
   total_exposure: 'House tier is disabled: total exposure limit',
 } as const;
@@ -75,12 +77,14 @@ export type HouseTierReenableBoundary =
   | 'fresh_treasury_snapshot_or_reservation_release'
   | 'next_utc_day_or_reservation_release'
   | 'reservation_release'
+  | 'successful_reconciliation'
   | 'tier_reservation_release';
 
 const HOUSE_TIER_REENABLE_BOUNDARIES: Record<HouseTierDisableReason, HouseTierReenableBoundary> = {
   daily_loss: 'next_utc_day_or_reservation_release',
   delegated_allowance: 'fresh_treasury_snapshot_or_reservation_release',
   minimum_liquidity: 'fresh_treasury_snapshot_or_reservation_release',
+  reconciliation_discrepancy: 'successful_reconciliation',
   tier_concurrency: 'tier_reservation_release',
   total_exposure: 'reservation_release',
   treasury_configuration: 'configuration_change',
@@ -207,6 +211,19 @@ export async function reserveHouseExposure(
     throw new ServiceUnavailableException('New duel exposure is paused by an operator');
   }
   const evaluatedAt = now ?? new Date();
+
+  const unresolvedDiscrepancies = await transaction.houseReconciliationDiscrepancy.count({
+    where: { resolvedAt: null },
+  });
+  if (unresolvedDiscrepancies > 0) {
+    throw disableHouseTier({
+      evaluatedAt,
+      message: HOUSE_EXPOSURE_LIMIT_MESSAGES.reconciliation_discrepancy,
+      reason: 'reconciliation_discrepancy',
+      status: HttpStatus.SERVICE_UNAVAILABLE,
+      tier: input.tier,
+    });
+  }
 
   const snapshot = await transaction.houseTreasurySnapshot.findUnique({
     where: { id: HOUSE_TREASURY_SNAPSHOT_ID },

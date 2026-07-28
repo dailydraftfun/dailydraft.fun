@@ -20,7 +20,10 @@ import {
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { PublicKey } from '@solana/web3.js';
 
-import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
+import {
+  acquireAdvisoryTransactionLock,
+  acquireNamespacedAdvisoryTransactionLock,
+} from '../database/advisory-lock.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from '../transactions/solana-rpc.client.js';
@@ -31,6 +34,7 @@ import type {
 } from './house-treasury.dto.js';
 import {
   ACTIVE_HOUSE_RESERVATION_STATUSES,
+  HOUSE_TREASURY_EXPOSURE_LOCK_KEY,
   HOUSE_TREASURY_SNAPSHOT_ID,
   type HouseTreasuryConfig,
   houseTreasuryConfigurationErrors,
@@ -40,6 +44,7 @@ import {
 
 const LIFECYCLE_BATCH_LIMIT = 100;
 const HOUSE_INVENTORY_LOCK_NAMESPACE = 1_324_771_909;
+const HOUSE_TREASURY_RECONCILIATION_LOCK_NAMESPACE = 1_324_771_910;
 
 @Injectable()
 export class HouseTreasuryService {
@@ -213,18 +218,10 @@ export class HouseTreasuryService {
     if (errors.length > 0) {
       throw new ServiceUnavailableException(`House treasury is unavailable: ${errors.join(', ')}`);
     }
-    const previousSnapshot = await this.database.houseTreasurySnapshot.findUnique({
-      where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
-    });
     await this.rpc.assertDevnet();
     const mint = await this.rpc.getLegacyMint(config.usdcMint ?? '');
     const account = await this.rpc.getLegacyTokenAccount(config.tokenAccount ?? '');
     const observedSlot = await this.rpc.getFinalizedSlot();
-    if (previousSnapshot && storedAmount(previousSnapshot.observedSlot) > observedSlot) {
-      throw new ServiceUnavailableException(
-        'Finalized treasury observation is older than recorded state',
-      );
-    }
     if (
       mint.decimals !== 6 ||
       account.mint !== config.usdcMint ||
@@ -239,69 +236,102 @@ export class HouseTreasuryService {
         'Finalized house USDC account owner or bounded delegate does not match policy',
       );
     }
+    const delegate = account.delegate;
     const verifiedAt = new Date();
-    await this.database.houseTreasurySnapshot.upsert({
-      create: {
-        balanceAmount: account.amount.toString(),
-        balanceDecimals: mint.decimals,
-        delegate: account.delegate,
-        delegatedAmount: account.delegatedAmount.toString(),
-        id: HOUSE_TREASURY_SNAPSHOT_ID,
-        mint: account.mint,
-        observedSlot: observedSlot.toString(),
-        tokenAccount: config.tokenAccount ?? '',
-        verifiedAt,
-        wallet: account.owner,
-      },
-      update: {
-        balanceAmount: account.amount.toString(),
-        balanceDecimals: mint.decimals,
-        delegate: account.delegate,
-        delegatedAmount: account.delegatedAmount.toString(),
-        mint: account.mint,
-        observedSlot: observedSlot.toString(),
-        tokenAccount: config.tokenAccount ?? '',
-        verifiedAt,
-        wallet: account.owner,
-      },
-      where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
-    });
-    let treasuryDiscrepancies = 0;
-    if (previousSnapshot) {
-      const ledgerSinceSnapshot = await this.database.houseTreasuryLedgerEntry.findMany({
-        select: { amount: true, type: true },
-        where: { createdAt: { gt: previousSnapshot.verifiedAt } },
-      });
-      const expectedBalance = ledgerSinceSnapshot.reduce(
-        (balance, entry) =>
-          entry.type === HouseTreasuryLedgerType.INVENTORY_DISPOSED
-            ? balance + storedAmount(entry.amount)
-            : entry.type === HouseTreasuryLedgerType.PLAYER_WIN_LOSS ||
-                entry.type === HouseTreasuryLedgerType.HOUSE_PACK_COST
-              ? balance - storedAmount(entry.amount)
-              : balance,
-        storedAmount(previousSnapshot.balanceAmount),
+    const treasuryDiscrepancies = await this.database.$transaction(async (transaction) => {
+      await acquireAdvisoryTransactionLock(transaction, HOUSE_TREASURY_EXPOSURE_LOCK_KEY);
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        HOUSE_TREASURY_SNAPSHOT_ID,
+        HOUSE_TREASURY_RECONCILIATION_LOCK_NAMESPACE,
       );
-      if (expectedBalance !== account.amount) {
-        treasuryDiscrepancies = 1;
-        await recordReconciliationDiscrepancy(this.database, {
-          detail: 'Finalized treasury balance differs from append-only ledger movement',
-          entityReference: HOUSE_TREASURY_SNAPSHOT_ID,
-          expectedValue: expectedBalance.toString(),
-          kind: 'treasury_balance',
-          observedSlot: observedSlot.toString(),
-          observedValue: account.amount.toString(),
-          verifiedAt,
-        });
-      } else {
-        await resolveReconciliationDiscrepancies(
-          this.database,
-          'treasury_balance',
-          HOUSE_TREASURY_SNAPSHOT_ID,
-          verifiedAt,
+      const previousSnapshot = await transaction.houseTreasurySnapshot.findUnique({
+        where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
+      });
+      if (previousSnapshot && storedAmount(previousSnapshot.observedSlot) >= observedSlot) {
+        throw new ServiceUnavailableException(
+          'Finalized treasury observation did not advance beyond recorded state',
         );
       }
-    }
+
+      let discrepancyCount = 0;
+      if (previousSnapshot) {
+        const unresolvedDiscrepancy = await transaction.houseReconciliationDiscrepancy.findFirst({
+          orderBy: [{ lastObservedAt: 'desc' }, { id: 'desc' }],
+          select: { expectedValue: true, lastObservedAt: true },
+          where: {
+            entityReference: HOUSE_TREASURY_SNAPSHOT_ID,
+            kind: 'treasury_balance',
+            resolvedAt: null,
+          },
+        });
+        const ledgerSinceSnapshot = await transaction.houseTreasuryLedgerEntry.findMany({
+          select: { amount: true, type: true },
+          where: {
+            createdAt: {
+              gt: unresolvedDiscrepancy?.lastObservedAt ?? previousSnapshot.verifiedAt,
+            },
+          },
+        });
+        const expectedBalance = ledgerSinceSnapshot.reduce(
+          (balance, entry) =>
+            entry.type === HouseTreasuryLedgerType.INVENTORY_DISPOSED
+              ? balance + storedAmount(entry.amount)
+              : entry.type === HouseTreasuryLedgerType.PLAYER_WIN_LOSS ||
+                  entry.type === HouseTreasuryLedgerType.HOUSE_PACK_COST
+                ? balance - storedAmount(entry.amount)
+                : balance,
+          storedAmount(unresolvedDiscrepancy?.expectedValue ?? previousSnapshot.balanceAmount),
+        );
+        if (expectedBalance !== account.amount) {
+          discrepancyCount = 1;
+          await recordReconciliationDiscrepancy(transaction, {
+            detail: 'Finalized treasury balance differs from append-only ledger movement',
+            entityReference: HOUSE_TREASURY_SNAPSHOT_ID,
+            expectedValue: expectedBalance.toString(),
+            kind: 'treasury_balance',
+            observedSlot: observedSlot.toString(),
+            observedValue: account.amount.toString(),
+            verifiedAt,
+          });
+        } else {
+          await resolveReconciliationDiscrepancies(
+            transaction,
+            'treasury_balance',
+            HOUSE_TREASURY_SNAPSHOT_ID,
+            verifiedAt,
+          );
+        }
+      }
+
+      await transaction.houseTreasurySnapshot.upsert({
+        create: {
+          balanceAmount: account.amount.toString(),
+          balanceDecimals: mint.decimals,
+          delegate,
+          delegatedAmount: account.delegatedAmount.toString(),
+          id: HOUSE_TREASURY_SNAPSHOT_ID,
+          mint: account.mint,
+          observedSlot: observedSlot.toString(),
+          tokenAccount: config.tokenAccount ?? '',
+          verifiedAt,
+          wallet: account.owner,
+        },
+        update: {
+          balanceAmount: account.amount.toString(),
+          balanceDecimals: mint.decimals,
+          delegate,
+          delegatedAmount: account.delegatedAmount.toString(),
+          mint: account.mint,
+          observedSlot: observedSlot.toString(),
+          tokenAccount: config.tokenAccount ?? '',
+          verifiedAt,
+          wallet: account.owner,
+        },
+        where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
+      });
+      return discrepancyCount;
+    });
 
     const inventory = await this.database.houseInventoryAsset.findMany({
       orderBy: [{ lastReconciledAt: { nulls: 'first', sort: 'asc' } }, { id: 'asc' }],
@@ -515,6 +545,7 @@ export class HouseTreasuryService {
         dailyLossLimitAmount: config.dailyLossLimit.toString(),
         disableReasons: [
           ...configurationErrors,
+          ...(discrepancies.length > 0 ? ['reconciliation_discrepancy'] : []),
           ...(!snapshotFresh ? ['treasury_snapshot_stale'] : []),
           ...(dailyLoss >= config.dailyLossLimit ? ['daily_loss_limit'] : []),
           ...(totalExposure >= config.maxTotalExposure ? ['total_exposure_limit'] : []),
@@ -532,7 +563,7 @@ export class HouseTreasuryService {
         totalExposureAmount: totalExposure.toString(),
         tiers: [...tierCounts.entries()].map(([tier, pendingGames]) => ({ pendingGames, tier })),
       },
-      ready: configurationErrors.length === 0 && snapshotFresh,
+      ready: configurationErrors.length === 0 && discrepancies.length === 0 && snapshotFresh,
     };
   }
 
@@ -610,6 +641,9 @@ export class HouseTreasuryService {
       if (row.status === HouseInventoryStatus.DISPOSED) {
         throw new ConflictException('Disposed inventory cannot be reassigned');
       }
+      if (row.listingState === HouseInventoryListingState.LISTED && input.disposition !== 'list') {
+        throw new ConflictException('Listed inventory must be delisted before reassignment');
+      }
       const decision = dispositionDecision(row, input.disposition, config.allowedDispositions);
       const now = new Date();
       const changed = await transaction.houseInventoryAsset.updateMany({
@@ -674,6 +708,12 @@ export class HouseTreasuryService {
           'Inventory disposition is not eligible for realized completion',
         );
       }
+      if (
+        row.disposition === HouseInventoryDisposition.BUYBACK &&
+        row.listingState === HouseInventoryListingState.LISTED
+      ) {
+        throw new ConflictException('Listed inventory cannot complete a buyback before delisting');
+      }
       const gross = storedAmount(input.realizedAmount);
       const fee = storedAmount(input.feeAmount);
       if (fee > gross)
@@ -686,7 +726,7 @@ export class HouseTreasuryService {
           listingState:
             row.disposition === HouseInventoryDisposition.LIST
               ? HouseInventoryListingState.SOLD
-              : row.listingState,
+              : HouseInventoryListingState.UNLISTED,
           realizedAmount: net.toString(),
           realizedCurrency: input.realizedCurrency,
           realizedDecimals: input.realizedDecimals,

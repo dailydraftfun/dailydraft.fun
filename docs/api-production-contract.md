@@ -26,9 +26,12 @@ Nest, or the database client. Both preview and production deployments require:
 - `DAILYDRAFT_NETWORK=solana-devnet`
 - `CORS_ORIGINS`, including the canonical app origin
 
-Production additionally requires `CRON_SECRET` and
-`DAILYDRAFT_PROVIDER_MODE=dailydraft-devnet`. URLs, domains, ports, and
-secrets are validated without writing their values to the conformance report.
+Production additionally requires `CRON_SECRET`,
+`DAILYDRAFT_PROVIDER_MODE=dailydraft-devnet`, and an explicit
+`DAILYDRAFT_TRUSTED_PROXIES`. The production deploy derives the last value from
+the exact `shipshit-caddy` address on the selected Docker network; it does not
+accept a potentially stale SSM override. URLs, domains, ports, and secrets are
+validated without writing their values to the conformance report.
 Every required key has a deterministic missing-value fixture.
 
 The HTTP boundary accepts browser origins only from `CORS_ORIGINS`, preserves a
@@ -38,7 +41,7 @@ metadata. Forwarded headers are trusted only from literal addresses listed in
 rejected, while forwarding from every other peer is ignored. Structured request
 logs contain route, method, status, duration, request ID, remote address, and
 rate-limit counters only—never headers, credentials, bodies, or provider
-payloads.
+payloads. Unmatched routes are logged without query strings or fragments.
 
 Preview persistence is classified as `ephemeral-preview`; it must never be
 treated as release evidence. Production persistence is classified as

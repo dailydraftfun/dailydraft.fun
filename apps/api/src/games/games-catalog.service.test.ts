@@ -258,6 +258,7 @@ function readiness({
       houseWalletConfigured: true,
       separationOfDuties: true,
       usdcTokenAccountConfigured: true,
+      unresolvedReconciliationDiscrepancies: 0,
       verified: true,
       withdrawalAuthorityConfigured: true,
     },

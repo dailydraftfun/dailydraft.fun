@@ -202,6 +202,7 @@ export function productionEnvironmentFixture(overrides: NodeJS.ProcessEnv = {}):
     DAILYDRAFT_AUTH_DOMAIN: 'dailydraft.example',
     DAILYDRAFT_NETWORK: 'solana-devnet',
     DAILYDRAFT_PROVIDER_MODE: 'dailydraft-devnet',
+    DAILYDRAFT_TRUSTED_PROXIES: '172.18.0.2',
     PORT: '33159',
     ...overrides,
   };

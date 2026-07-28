@@ -59,6 +59,14 @@ describe('public product capabilities', () => {
     expect(
       publicProductCapabilities(readiness({ treasuryEntryEnabled: false })).modes.house.reason,
     ).toBe('House admission is disabled by the reviewed runtime configuration.');
+
+    expect(
+      publicProductCapabilities(
+        readiness({ treasuryUnresolvedReconciliationDiscrepancies: 1, treasuryVerified: false }),
+      ).modes.house.reason,
+    ).toBe(
+      'House admission is blocked until all treasury reconciliation discrepancies are resolved.',
+    );
   });
 
   test('publishes one playable pack tier and explicit coming-soon alternatives', () => {
@@ -121,12 +129,14 @@ function readiness({
   providerVerified = true,
   treasuryConfigurationErrors = [],
   treasuryEntryEnabled = true,
+  treasuryUnresolvedReconciliationDiscrepancies = 0,
   treasuryVerified = true,
 }: {
   providerMode?: string;
   providerVerified?: boolean;
   treasuryConfigurationErrors?: string[];
   treasuryEntryEnabled?: boolean;
+  treasuryUnresolvedReconciliationDiscrepancies?: number | null;
   treasuryVerified?: boolean;
 } = {}) {
   return {
@@ -156,6 +166,7 @@ function readiness({
       houseWalletConfigured: true,
       separationOfDuties: true,
       usdcTokenAccountConfigured: true,
+      unresolvedReconciliationDiscrepancies: treasuryUnresolvedReconciliationDiscrepancies,
       verified: treasuryVerified,
       withdrawalAuthorityConfigured: true,
     },

@@ -122,10 +122,25 @@ describe('readiness reporting', () => {
       verified: false,
     });
   });
+
+  test('reports unresolved reconciliation evidence as a House readiness blocker', async () => {
+    const service = readinessService({
+      duel: { count: () => Promise.resolve(0) },
+      duelTransaction: { count: () => Promise.resolve(0) },
+      houseReconciliationDiscrepancy: { count: () => Promise.resolve(2) },
+      houseTreasurySnapshot: { findUnique: () => Promise.resolve(null) },
+    } as unknown as DatabaseClient);
+
+    const readiness = await service.getReadiness();
+
+    expect(readiness.database.reachable).toBe(true);
+    expect(readiness.treasury.unresolvedReconciliationDiscrepancies).toBe(2);
+    expect(readiness.treasury.verified).toBe(false);
+  });
 });
 
 // Readiness deliberately swallows every dependency failure so the probe still answers, so
 // empty stubs exercise the reporting itself without standing up Prisma or an RPC endpoint.
-function readinessService(): AdminService {
-  return new AdminService({} as unknown as DatabaseClient, {} as unknown as SolanaRpcGateway);
+function readinessService(database = {} as DatabaseClient): AdminService {
+  return new AdminService(database, {} as unknown as SolanaRpcGateway);
 }

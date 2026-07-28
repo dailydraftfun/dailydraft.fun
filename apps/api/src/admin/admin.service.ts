@@ -404,12 +404,16 @@ export class AdminService {
   async getReadiness() {
     let databaseReady = true;
     let unboundEscrowAlerts: number | null = null;
+    let unresolvedTreasuryDiscrepancies: number | null = null;
     let treasurySnapshot: HouseTreasurySnapshotEvidence | null = null;
     try {
-      const [, alertCount, snapshot] = await Promise.all([
+      const [, alertCount, discrepancyCount, snapshot] = await Promise.all([
         this.database.duel.count({ where: { id: '__readiness__' } }),
         this.database.duelTransaction.count({
           where: { recoveredAt: null, recoveryCandidateAt: { not: null } },
+        }),
+        this.database.houseReconciliationDiscrepancy.count({
+          where: { resolvedAt: null },
         }),
         this.database.houseTreasurySnapshot.findUnique({
           select: {
@@ -427,6 +431,7 @@ export class AdminService {
         }),
       ]);
       unboundEscrowAlerts = alertCount;
+      unresolvedTreasuryDiscrepancies = discrepancyCount;
       treasurySnapshot = snapshot;
     } catch {
       databaseReady = false;
@@ -485,7 +490,11 @@ export class AdminService {
             treasuryConfig.withdrawalAuthority !== treasuryConfig.fundingSigner,
         ),
         usdcTokenAccountConfigured: Boolean(treasuryConfig.tokenAccount),
-        verified: treasuryConfigurationErrors.length === 0 && treasurySnapshotFresh,
+        unresolvedReconciliationDiscrepancies: unresolvedTreasuryDiscrepancies,
+        verified:
+          treasuryConfigurationErrors.length === 0 &&
+          treasurySnapshotFresh &&
+          unresolvedTreasuryDiscrepancies === 0,
         withdrawalAuthorityConfigured: Boolean(treasuryConfig.withdrawalAuthority),
       },
       workers: { cronSecretConfigured: Boolean(process.env.CRON_SECRET) },

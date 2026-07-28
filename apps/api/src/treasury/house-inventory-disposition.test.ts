@@ -79,6 +79,55 @@ describe('house inventory dispositions', () => {
     expect(fixture.inventory.status).not.toBe(HouseInventoryStatus.DISPOSED);
   });
 
+  test.each([
+    'hold',
+    'buyback',
+    'manual_review',
+  ] as const)('rejects listed inventory reassignment to %s until an explicit delist is reconciled', async (disposition) => {
+    const fixture = new DispositionDatabase({
+      disposition: HouseInventoryDisposition.LIST,
+      listingState: HouseInventoryListingState.LISTED,
+      status: HouseInventoryStatus.LISTED,
+    });
+    const service = new HouseTreasuryService(fixture as never, {} as never);
+
+    await expect(
+      service.setDisposition(fixture.inventory.id, {
+        disposition,
+        operationKey: `operation-listed-${disposition}`,
+        reason: 'Attempt reassignment while provider listing remains live',
+      }),
+    ).rejects.toThrow('Listed inventory must be delisted before reassignment');
+    expect(fixture.inventory).toMatchObject({
+      disposition: HouseInventoryDisposition.LIST,
+      listingState: HouseInventoryListingState.LISTED,
+      status: HouseInventoryStatus.LISTED,
+    });
+    expect(fixture.ledger).toEqual([]);
+  });
+
+  test('rejects completion of a legacy buyback state while the provider listing remains live', async () => {
+    const fixture = new DispositionDatabase({
+      disposition: HouseInventoryDisposition.BUYBACK,
+      listingState: HouseInventoryListingState.LISTED,
+      status: HouseInventoryStatus.LISTED,
+    });
+    const service = new HouseTreasuryService(fixture as never, {} as never);
+
+    await expect(
+      service.completeDisposition(fixture.inventory.id, {
+        feeAmount: '0',
+        operationKey: 'completion-listed-buyback',
+        realizedAmount: '55000000',
+        realizedCurrency: 'USDC',
+        realizedDecimals: 6,
+        reason: 'Unsafe legacy transition',
+      }),
+    ).rejects.toThrow('Listed inventory cannot complete a buyback before delisting');
+    expect(fixture.inventory.status).toBe(HouseInventoryStatus.LISTED);
+    expect(fixture.ledger).toEqual([]);
+  });
+
   test('records net proceeds, fees, and gain or loss with exact completion replay', async () => {
     const fixture = new DispositionDatabase({ acquisitionValueAmount: '80000000' });
     const service = new HouseTreasuryService(fixture as never, {} as never);

@@ -95,6 +95,7 @@ closed unless all three server-only values below are configured. None may use a
 | `DAILYDRAFT_HOUSE_MAX_CONCURRENT_PER_TIER` | House reservation limit per tier; defaults to 1. |
 | `DAILYDRAFT_HOUSE_ALLOWED_DISPOSITIONS` | Operator inventory workflow allowlist; defaults to `hold,manual_review`. |
 | `CORS_ORIGINS` | Explicit allowed browser origins. |
+| `DAILYDRAFT_TRUSTED_PROXIES` | Exact reverse-proxy peer IPs trusted for forwarded client identity. Production derives the Caddy address from the selected Docker network at deploy time; do not maintain a separate SSM override. |
 
 ## House treasury authority and operating procedure
 

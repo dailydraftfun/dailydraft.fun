@@ -15,6 +15,7 @@ type ProductReadiness = {
     configurationErrors: string[];
     entryEnabled: boolean;
     finalizedBalanceSnapshotFresh: boolean;
+    unresolvedReconciliationDiscrepancies: number | null;
     verified: boolean;
   };
 };
@@ -125,6 +126,12 @@ function houseUnavailableReason(readiness: ProductReadiness, duelReason: string 
     return `House admission is blocked by treasury configuration: ${readiness.treasury.configurationErrors
       .map((error) => error.replaceAll('_', ' '))
       .join(', ')}.`;
+  }
+  if (
+    readiness.treasury.unresolvedReconciliationDiscrepancies === null ||
+    readiness.treasury.unresolvedReconciliationDiscrepancies > 0
+  ) {
+    return 'House admission is blocked until all treasury reconciliation discrepancies are resolved.';
   }
   if (!readiness.treasury.finalizedBalanceSnapshotFresh) {
     return 'House admission is blocked until a fresh finalized treasury balance is verified.';

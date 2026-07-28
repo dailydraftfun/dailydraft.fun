@@ -132,7 +132,7 @@ export function registerRequestBoundary(
       rateLimit: { limit, remaining, resetSeconds },
       remoteAddress: request.ip,
       requestId: request.id,
-      route: request.routeOptions.url ?? request.url,
+      route: request.routeOptions.url ?? requestPath(request.url),
       status: response.statusCode,
     });
     done();
@@ -251,4 +251,11 @@ function boundedInteger(
 function numberHeader(value: string | number | string[] | undefined, fallback: number): number {
   const parsed = Number(Array.isArray(value) ? value[0] : value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function requestPath(value: string): string {
+  const query = value.indexOf('?');
+  const fragment = value.indexOf('#');
+  const boundary = query === -1 ? fragment : fragment === -1 ? query : Math.min(query, fragment);
+  return boundary === -1 ? value : value.slice(0, boundary);
 }

@@ -70,11 +70,14 @@ while IFS=$'\t' read -r parameter_name parameter_value; do
     DB_MASTER_PASSWORD|API_DOMAIN)
       continue
       ;;
-    CADDY_NETWORK)
+    CADDY_NETWORK|DAILYDRAFT_TRUSTED_PROXIES)
       # Host-side routing control, not application configuration. Kept out of the
-      # container environment and used only to disambiguate the Docker network
-      # when shipshit-caddy fronts more than one tenant network.
-      caddy_network_override="$parameter_value"
+      # container environment. The trusted proxy address is derived from Docker
+      # after selecting the exact network, so a stale SSM value cannot collapse
+      # all per-client rate-limit buckets onto the Caddy peer address.
+      if [[ "$parameter_key" == "CADDY_NETWORK" ]]; then
+        caddy_network_override="$parameter_value"
+      fi
       continue
       ;;
   esac
@@ -82,17 +85,18 @@ while IFS=$'\t' read -r parameter_name parameter_value; do
   printf '%s=%s\n' "$parameter_key" "$parameter_value" >>"$temporary_environment"
 done <<<"$parameter_rows"
 
-printf '%s\n' "NODE_ENV=production" "PORT=3000" >>"$temporary_environment"
-install -m 600 "$temporary_environment" "$environment_file"
-
 # One network name per line. A bare {{$k}} range concatenates every name into a
 # single unusable string as soon as shipshit-caddy fronts a second tenant network.
 caddy_networks=()
-while IFS= read -r caddy_network; do
-  [[ -n "$caddy_network" ]] && caddy_networks+=("$caddy_network")
+declare -A caddy_network_addresses=()
+while IFS=$'\t' read -r caddy_network caddy_address; do
+  if [[ -n "$caddy_network" && -n "$caddy_address" ]]; then
+    caddy_networks+=("$caddy_network")
+    caddy_network_addresses["$caddy_network"]="$caddy_address"
+  fi
 done < <(
   docker inspect \
-    -f '{{range $k,$_ := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' \
+    -f '{{range $name,$settings := .NetworkSettings.Networks}}{{$name}}{{"\t"}}{{$settings.IPAddress}}{{"\n"}}{{end}}' \
     shipshit-caddy
 )
 
@@ -121,6 +125,19 @@ elif [[ ${#caddy_networks[@]} -gt 1 ]]; then
 else
   network="${caddy_networks[0]}"
 fi
+
+trusted_proxy="${caddy_network_addresses[$network]:-}"
+if [[ -z "$trusted_proxy" ]]; then
+  echo "shipshit-caddy has no IPv4 address on Docker network ${network}" >&2
+  exit 1
+fi
+
+printf '%s\n' \
+  "NODE_ENV=production" \
+  "PORT=3000" \
+  "DAILYDRAFT_TRUSTED_PROXIES=${trusted_proxy}" \
+  >>"$temporary_environment"
+install -m 600 "$temporary_environment" "$environment_file"
 
 aws s3 cp \
   "s3://${artifact_bucket}/${image_key}" \

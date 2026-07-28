@@ -79,7 +79,7 @@ describe('API production artifact contract', () => {
 
   test('exercises one fail-closed fixture for every required production key', () => {
     expect(evaluateEnvironmentNegativeFixtures()).toEqual({
-      detail: '8 required-key negative fixtures rejected',
+      detail: '9 required-key negative fixtures rejected',
       name: 'environment-negative-fixtures',
       passed: true,
     });

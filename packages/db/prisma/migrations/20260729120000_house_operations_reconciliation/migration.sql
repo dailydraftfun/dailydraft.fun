@@ -35,7 +35,7 @@ CREATE TABLE "HouseReconciliationDiscrepancy" (
 CREATE UNIQUE INDEX "HouseReconciliationDiscrepancy_idempotencyKey_key"
 ON "HouseReconciliationDiscrepancy"("idempotencyKey");
 
-CREATE INDEX "HouseReconciliationDiscrepancy_resolvedAt_kind_firstObservedAt_idx"
+CREATE INDEX "HouseReconciliationDiscrepancy_resolvedAt_kind_firstObserve_idx"
 ON "HouseReconciliationDiscrepancy"("resolvedAt", "kind", "firstObservedAt");
 
 CREATE INDEX "HouseReconciliationDiscrepancy_entityReference_resolvedAt_idx"
@@ -44,6 +44,17 @@ ON "HouseReconciliationDiscrepancy"("entityReference", "resolvedAt");
 ALTER TABLE "HouseTreasurySnapshot"
 ADD CONSTRAINT "HouseTreasurySnapshot_observed_slot_check"
 CHECK ("observedSlot" ~ '^[0-9]+$');
+
+-- Legacy disposition completions stored proceeds directly in realizedAmount
+-- without a fee field. Preserve those proceeds as zero-fee net proceeds and
+-- derive their gain/loss before validating the expanded accounting contract.
+UPDATE "HouseInventoryAsset"
+SET
+  "realizedFeeAmount" = '0',
+  "realizedGainLossAmount" = (
+    "realizedAmount"::NUMERIC - "acquisitionValueAmount"::NUMERIC
+  )::TEXT
+WHERE "realizedAmount" IS NOT NULL;
 
 ALTER TABLE "HouseInventoryAsset"
 ADD CONSTRAINT "HouseInventoryAsset_disposition_request_check" CHECK (
@@ -61,9 +72,12 @@ ADD CONSTRAINT "HouseInventoryAsset_realized_accounting_check" CHECK (
     AND "realizedFeeAmount" ~ '^[0-9]+$'
     AND "realizedGainLossAmount" ~ '^-?[0-9]+$'
   )
-),
+) NOT VALID,
 ADD CONSTRAINT "HouseInventoryAsset_reconciled_slot_check"
 CHECK ("lastReconciledSlot" IS NULL OR "lastReconciledSlot" ~ '^[0-9]+$');
+
+ALTER TABLE "HouseInventoryAsset"
+VALIDATE CONSTRAINT "HouseInventoryAsset_realized_accounting_check";
 
 ALTER TABLE "HouseReconciliationDiscrepancy"
 ADD CONSTRAINT "HouseReconciliationDiscrepancy_slot_check"

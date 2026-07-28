@@ -109,6 +109,48 @@ describe('request boundary', () => {
     }
   });
 
+  test('keys production rate limits by the forwarded client behind one trusted proxy', async () => {
+    const app = fixtureApp({ rateLimit: 1, trustedProxies: ['127.0.0.1'] });
+    try {
+      const firstClient = await app.inject({
+        headers: { 'x-forwarded-for': '203.0.113.8' },
+        url: '/fixture',
+      });
+      const secondClient = await app.inject({
+        headers: { 'x-forwarded-for': '203.0.113.9' },
+        url: '/fixture',
+      });
+      const repeatedClient = await app.inject({
+        headers: { 'x-forwarded-for': '203.0.113.8' },
+        url: '/fixture',
+      });
+
+      expect(firstClient.statusCode).toBe(200);
+      expect(secondClient.statusCode).toBe(200);
+      expect(repeatedClient.statusCode).toBe(429);
+    } finally {
+      await app.close();
+    }
+  });
+
+  test('redacts query secrets from unmatched-route logs', async () => {
+    const logs: RequestBoundaryLog[] = [];
+    const app = fixtureApp({ log: (entry) => logs.push(entry) });
+    try {
+      const response = await app.inject({
+        url: '/missing?token=top-secret#ignored',
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(logs).toHaveLength(1);
+      expect(logs[0]?.route).toBe('/missing');
+      expect(JSON.stringify(logs)).not.toContain('top-secret');
+      expect(JSON.stringify(logs)).not.toContain('token=');
+    } finally {
+      await app.close();
+    }
+  });
+
   test('validates bounded environment configuration', () => {
     expect(
       resolveRequestBoundaryConfig({
