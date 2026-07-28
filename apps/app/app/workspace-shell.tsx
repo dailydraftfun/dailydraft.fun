@@ -22,7 +22,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   return (
     <AudioHapticsProvider>
       <div className="min-h-screen bg-primary text-primary">
-        <header className="sticky top-0 z-50 border-b border-border bg-primary/90 backdrop-blur-xl">
+        <header className="sticky top-0 z-50 border-b border-border bg-primary">
           <div className="mx-auto flex h-16 max-w-[1500px] items-center gap-4 px-4 sm:px-6">
             <a
               href="/games"

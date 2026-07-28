@@ -55,6 +55,7 @@ test('reports no serious or critical violations across the deterministic duel jo
   await page.getByTestId(journeyTestIds.walletMenu).click();
   await page.getByTestId(journeyTestIds.walletAuthenticationPrepare).click();
   await expect(page.getByTestId(journeyTestIds.walletAuthenticationSign)).toBeVisible();
+  await expectViewportDialog(page, journeyTestIds.walletDialog);
   await expectNoSeriousOrCriticalViolations(page, 'wallet review');
 
   await page.getByTestId(journeyTestIds.walletAuthenticationSign).click();
@@ -68,6 +69,7 @@ test('reports no serious or critical violations across the deterministic duel jo
   await expect(page.getByTestId('duel-entry-stepper')).toHaveAttribute('data-stage', 'review');
   await page.getByTestId('duel-entry-prepare-funding').click();
   await expect(page.getByTestId('duel-entry-confirm-funding')).toBeVisible();
+  await expectViewportDialog(page, 'duel-entry-stepper');
   await expectNoSeriousOrCriticalViolations(page, 'transaction review');
 
   await page.getByTestId('duel-entry-confirm-funding').click();
@@ -104,6 +106,19 @@ test('reports no serious or critical violations across the deterministic duel jo
   await expect(page.getByRole('heading', { name: /won the vault/i })).toBeVisible();
   await expectNoSeriousOrCriticalViolations(page, 'receipt');
 });
+
+async function expectViewportDialog(page: Page, testId: string): Promise<void> {
+  const dialog = page.getByTestId(testId);
+  const box = await dialog.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box, `${testId} must have measurable viewport geometry`).not.toBeNull();
+  expect(viewport, 'the journey must declare a viewport').not.toBeNull();
+  if (!box || !viewport) return;
+
+  expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+}
 
 for (const surface of [
   {

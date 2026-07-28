@@ -13,15 +13,13 @@ describe('flip machine catalog', () => {
     expect(FLIP_MACHINES).toHaveLength(FLIP_SPORTS.length * FLIP_TIERS.length);
     expect(FLIP_MACHINES).toHaveLength(12);
     expect(FLIP_MACHINES[0]).toEqual({
-      machineKey: 'dailydraft-devnet-football-50000000',
+      machineKey: 'dailydraft-devnet-football-10000',
       sport: 'football',
       sportLabel: 'Football',
-      tierLabel: '$50',
-      tierPriceMinor: '50000000',
+      tierLabel: '$0.01',
+      tierPriceMinor: '10000',
     });
-    expect(flipMachineKey('basketball', '250000000')).toBe(
-      'dailydraft-devnet-basketball-250000000',
-    );
+    expect(flipMachineKey('basketball', '1000000')).toBe('dailydraft-devnet-basketball-1000000');
   });
 
   test('emits keys the server machine-key validator accepts', () => {
@@ -41,14 +39,14 @@ describe('flip machine catalog', () => {
   });
 
   test('resolves a machine by sport and tier and rejects a combination that does not exist', () => {
-    expect(findFlipMachine('soccer', '100000000')).toMatchObject({
-      machineKey: 'dailydraft-devnet-soccer-100000000',
-      tierLabel: '$100',
+    expect(findFlipMachine('soccer', '100000')).toMatchObject({
+      machineKey: 'dailydraft-devnet-soccer-100000',
+      tierLabel: '$0.10',
     });
-    expect(findFlipMachine('soccer', '75000000')).toBeUndefined();
+    expect(findFlipMachine('soccer', '75000')).toBeUndefined();
   });
 
   test('defaults to the cheapest football machine so the first render is priced', () => {
-    expect(DEFAULT_FLIP_MACHINE).toMatchObject({ sport: 'football', tierPriceMinor: '50000000' });
+    expect(DEFAULT_FLIP_MACHINE).toMatchObject({ sport: 'football', tierPriceMinor: '10000' });
   });
 });

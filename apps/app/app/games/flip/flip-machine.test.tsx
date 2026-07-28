@@ -29,7 +29,7 @@ describe('flip machine controller', () => {
     await expect(
       session.prepareFlipRip({
         address: 'payer',
-        machineKey: 'dailydraft-devnet-football-50000000',
+        machineKey: 'dailydraft-devnet-football-10000',
       }),
     ).resolves.toEqual({
       message: 'The Sports Pack Gacha API is not configured.',
@@ -100,7 +100,7 @@ describe('flip machine controller', () => {
     const record = createUnknownFlipPaymentRecovery({
       commitmentId: 'gachaseed_123',
       intentId: 'gachapay_123',
-      machineKey: 'dailydraft-devnet-football-50000000',
+      machineKey: 'dailydraft-devnet-football-10000',
       mint: 'M'.repeat(32),
       oddsVersion: 3,
       payerWallet: 'P'.repeat(32),
@@ -142,7 +142,7 @@ describe('flip machine controller', () => {
       createUnknownFlipPaymentRecovery({
         commitmentId: 'gachaseed_123',
         intentId: 'gachapay_123',
-        machineKey: 'dailydraft-devnet-football-50000000',
+        machineKey: 'dailydraft-devnet-football-10000',
         mint: 'M'.repeat(32),
         oddsVersion: 3,
         payerWallet: 'P'.repeat(32),

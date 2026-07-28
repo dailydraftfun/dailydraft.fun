@@ -254,8 +254,18 @@ sealed, append-only revision.
 The snapshot service accepts provider fixtures only and has no HTTP controller
 or live marketplace client. It also requires
 `DAILYDRAFT_FLIP_FIXTURE_MODE=true` in tests, local development, or an
-explicit non-production preview. Production remains fail-closed until the separate
-reviewed rules, acquisition, legal, and promotion gates are complete.
+explicit non-production preview. Before the fixture lifecycle accepts a stake,
+`DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE` must contain the exact JSON health
+contract from `src/providers/fixtures/flip-provider-health-contract.v1.json`.
+Admission rechecks the sealed #116 inventory snapshot against its reviewed
+freshness, eligible-count, exposure, and #117 outcome-band bindings. Missing,
+stale, malformed, degraded, or outage evidence suspends that stake tier with a
+stable reason while already-funded sessions retain settlement and recovery.
+Every admission decision is append-only and binds the accepted session to the
+exact pool, rules, inventory-policy, and provider-health hashes. This is
+fixture/preview evidence only; it adds no live provider health capability.
+Production remains fail-closed until the separate reviewed rules, acquisition,
+legal, and promotion gates are complete.
 
 Flip outcome selection is likewise an internal fixture service with no public
 HTTP or OpenAPI surface. It selects only from the sealed outcome space committed

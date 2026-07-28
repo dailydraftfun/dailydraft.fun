@@ -31,6 +31,7 @@ import {
   type FlipSessionSnapshot,
   FlipSessionStateService,
 } from './flip-session-state.service.js';
+import { admitFlipStake } from './flip-tier-admission.service.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (process.env.REQUIRE_DB_INTEGRATION === '1' && !databaseUrl) {
@@ -40,6 +41,13 @@ const describeDatabase =
   process.env.REQUIRE_DB_INTEGRATION === '1' && databaseUrl ? describe : describe.skip;
 const FIXTURE_ENVIRONMENT = {
   DAILYDRAFT_FLIP_FIXTURE_MODE: 'true',
+  DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE: JSON.stringify({
+    observedAt: '2026-08-03T12:02:30.000Z',
+    poolKey: 'fixture-pool-pending',
+    provider: 'fixture-marketplace',
+    schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+    status: 'healthy',
+  }),
   NODE_ENV: 'test',
 } satisfies NodeJS.ProcessEnv;
 
@@ -98,6 +106,25 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     if (!staked) throw new Error('concurrent stake transition returned no session');
     session = staked;
     expect(session).toMatchObject({ status: 'stake-confirmed', version: 2 });
+    const admitted = await databaseA.flipSession.findUnique({
+      include: { admissionDecision: true },
+      where: { id: session.id },
+    });
+    expect(admitted?.admissionDecision).toMatchObject({
+      allowed: true,
+      poolCommitmentId: fixture.commitmentId,
+      reason: null,
+      sessionReference: session.id,
+      tierKey: 'USDC:6:50000000',
+    });
+    await expect(
+      Promise.resolve(
+        databaseA.flipTierAdmissionDecision.updateMany({
+          data: { policyHash: '0'.repeat(64) },
+          where: { sessionReference: session.id },
+        }),
+      ),
+    ).rejects.toThrow('Flip tier admission decisions are append-only');
 
     session = await serviceB.transition(session.id, {
       evidence: { poolCommitmentId: fixture.commitmentId },
@@ -197,6 +224,291 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     ).rejects.toThrow('Flip session transitions are append-only');
   });
 
+  test('persists a denied tier suspension and re-enables it on fresh provider recovery', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'tier-suspension');
+    const clock = new DatabaseTestClock();
+    setProviderHealthFixture(fixture.poolKey, 'outage');
+    const service = new FlipSessionStateService(databaseA, clock, FIXTURE_ENVIRONMENT);
+    const created = await service.createFixtureSession({
+      playerWalletReference: 'fixture-wallet:postgres-suspension',
+      sessionReference: fixture.sessionReference,
+    });
+    const stake = {
+      evidence: {
+        amount: usdc('50000000'),
+        reference: 'fixture-stake:suspension',
+        schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+        status: 'fixture-confirmed' as const,
+      },
+      expectedVersion: created.version,
+      kind: 'confirm-stake' as const,
+      transitionKey: 'stake-suspension',
+    };
+
+    await expect(service.transition(created.id, stake)).rejects.toMatchObject({
+      code: 'TIER_SUSPENDED',
+      decision: { reason: 'provider_outage' },
+    });
+    await expect(service.findSession(created.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: 1,
+    });
+    await expect(
+      Promise.resolve(
+        databaseA.flipTierAdmissionState.findUnique({
+          where: { tierKey: 'USDC:6:50000000' },
+        }),
+      ),
+    ).resolves.toMatchObject({
+      disabled: true,
+      reason: 'provider_outage',
+      reenableBoundary: 'fresh_provider_health',
+    });
+
+    setProviderHealthFixture(fixture.poolKey, 'healthy');
+    await expect(service.transition(created.id, stake)).resolves.toMatchObject({
+      status: 'stake-confirmed',
+      version: 2,
+    });
+    await expect(
+      Promise.resolve(
+        databaseA.flipTierAdmissionState.findUnique({
+          where: { tierKey: 'USDC:6:50000000' },
+        }),
+      ),
+    ).resolves.toMatchObject({
+      disabled: false,
+      reason: null,
+    });
+    await expect(
+      Promise.resolve(
+        databaseA.flipTierAdmissionState.updateMany({
+          data: {
+            evaluatedAt: new Date('2026-08-03T12:02:29.999Z'),
+            version: { increment: 1 },
+          },
+          where: { tierKey: 'USDC:6:50000000' },
+        }),
+      ),
+    ).rejects.toThrow('Flip tier admission state may only advance monotonically');
+  });
+
+  test('rejects raw allowed admission decisions that forge provider, freshness, or policy meaning', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'raw-admission-semantics');
+    const { session } = await createDatabaseSessionAt(databaseA, fixture, 'stake-confirmed');
+    const stored = await databaseA.flipTierAdmissionDecision.findFirstOrThrow({
+      where: { allowed: true, sessionReference: session.id },
+    });
+    const commitment = await databaseA.flipSessionPoolCommitment.findUniqueOrThrow({
+      include: { ruleset: true, snapshot: true },
+      where: { id: fixture.commitmentId },
+    });
+    if (
+      !stored.providerHealth ||
+      typeof stored.providerHealth !== 'object' ||
+      Array.isArray(stored.providerHealth)
+    ) {
+      throw new Error('stored admission decision has no provider health');
+    }
+    const healthy = stored.providerHealth as Record<string, string>;
+    const changedHealth = (overrides: Record<string, string>) => {
+      const providerHealth = { ...healthy, ...overrides };
+      return {
+        providerHealth: providerHealth as Prisma.InputJsonValue,
+        providerHealthHash: hash(stableStringify(providerHealth)),
+      };
+    };
+    const policyHash = (tierKey: string) =>
+      hash(
+        stableStringify({
+          inventoryPolicyHash: commitment.snapshot.policyHash,
+          maximumEligibleItems: commitment.snapshot.maximumEligibleItems,
+          maximumExposureAmount: commitment.snapshot.maximumExposureAmount,
+          maximumFutureSkewMs: commitment.snapshot.maximumFutureSkewMs,
+          maximumSourceAgeMs: commitment.snapshot.maximumSourceAgeMs,
+          minimumEligibleItems: commitment.snapshot.minimumEligibleItems,
+          policyVersion: stored.policyVersion,
+          poolCommitmentHash: commitment.poolCommitmentHash,
+          rulesHash: commitment.rulesHash,
+          snapshotContentHash: commitment.snapshotContentHash,
+          tierKey,
+        }),
+      );
+    const staleEvaluation = new Date('2026-08-03T12:03:00.001Z');
+    const forgedTierKey = 'USDC:6:50000001';
+    const vectors: Array<{
+      label: string;
+      overrides: Partial<Prisma.FlipTierAdmissionDecisionUncheckedCreateInput>;
+    }> = [
+      { label: 'provider outage', overrides: changedHealth({ status: 'outage' }) },
+      {
+        label: 'wrong provider',
+        overrides: changedHealth({ provider: 'different-marketplace' }),
+      },
+      { label: 'wrong pool', overrides: changedHealth({ poolKey: 'different-pool' }) },
+      {
+        label: 'stale provider health',
+        overrides: changedHealth({ observedAt: '2026-08-03T12:01:29.999Z' }),
+      },
+      {
+        label: 'future provider health',
+        overrides: changedHealth({ observedAt: '2026-08-03T12:02:31.001Z' }),
+      },
+      {
+        label: 'stale inventory snapshot',
+        overrides: {
+          evaluatedAt: staleEvaluation,
+          ...changedHealth({ observedAt: staleEvaluation.toISOString() }),
+        },
+      },
+      { label: 'wrong admission policy hash', overrides: { policyHash: '0'.repeat(64) } },
+      {
+        label: 'tier that disagrees with rules stake',
+        overrides: {
+          policyHash: policyHash(forgedTierKey),
+          tierKey: forgedTierKey,
+        },
+      },
+    ];
+
+    for (const vector of vectors) {
+      await expect(
+        Promise.resolve(
+          databaseA.flipTierAdmissionDecision.create({
+            data: {
+              allowed: true,
+              evaluatedAt: stored.evaluatedAt,
+              id: `flipadmission_${crypto.randomUUID().replaceAll('-', '')}`,
+              inventoryPolicyHash: stored.inventoryPolicyHash,
+              policyHash: stored.policyHash,
+              policyVersion: stored.policyVersion,
+              poolCommitmentHash: stored.poolCommitmentHash,
+              poolCommitmentId: stored.poolCommitmentId,
+              providerHealth: stored.providerHealth as Prisma.InputJsonValue,
+              providerHealthHash: stored.providerHealthHash,
+              reason: null,
+              reenableBoundary: null,
+              rulesHash: stored.rulesHash,
+              sessionReference: stored.sessionReference,
+              snapshotContentHash: stored.snapshotContentHash,
+              tierKey: stored.tierKey,
+              ...vector.overrides,
+            },
+          }),
+        ),
+        vector.label,
+      ).rejects.toThrow('Flip allowed tier admission decision is semantically invalid');
+    }
+  });
+
+  test('rejects an allowed decision after its immediate stake transaction boundary closes', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'expired-admission-binding');
+    const { service, session } = await createDatabaseSessionAt(
+      databaseA,
+      fixture,
+      'awaiting-stake',
+    );
+    const admissionDecisionId = await databaseA.$transaction((transaction) =>
+      admitRawStake(transaction, fixture),
+    );
+    await expect(
+      Promise.resolve(
+        databaseA.flipTierAdmissionDecision.findUniqueOrThrow({
+          where: { id: admissionDecisionId },
+        }),
+      ),
+    ).resolves.toMatchObject({
+      allowed: true,
+      stakeBindingTransactionId: expect.stringMatching(/^[1-9][0-9]*$/),
+    });
+
+    await expect(
+      databaseA.$transaction((transaction) =>
+        bindRawStakeDecision(
+          transaction,
+          session,
+          admissionDecisionId,
+          'expired-admission-binding',
+        ),
+      ),
+    ).rejects.toThrow('Flip stake requires a current allowed admission decision');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: session.version,
+    });
+  });
+
+  test('rejects an allowed decision superseded by a newer disabled tier state', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'superseded-admission-binding');
+    const { service, session } = await createDatabaseSessionAt(
+      databaseA,
+      fixture,
+      'awaiting-stake',
+    );
+
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
+        const allowed = await transaction.flipTierAdmissionDecision.findUniqueOrThrow({
+          where: { id: admissionDecisionId },
+        });
+        const providerHealth = {
+          observedAt: '2026-08-03T12:02:30.000Z',
+          poolKey: fixture.poolKey,
+          provider: 'fixture-marketplace',
+          schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+          status: 'outage',
+        };
+        const providerHealthHash = hash(stableStringify(providerHealth));
+        const deniedAt = new Date(allowed.evaluatedAt.getTime() + 1);
+        await transaction.flipTierAdmissionDecision.create({
+          data: {
+            allowed: false,
+            evaluatedAt: deniedAt,
+            id: `flipadmission_${crypto.randomUUID().replaceAll('-', '')}`,
+            inventoryPolicyHash: allowed.inventoryPolicyHash,
+            policyHash: allowed.policyHash,
+            policyVersion: allowed.policyVersion,
+            poolCommitmentHash: allowed.poolCommitmentHash,
+            poolCommitmentId: allowed.poolCommitmentId,
+            providerHealth,
+            providerHealthHash,
+            reason: 'provider_outage',
+            reenableBoundary: 'fresh_provider_health',
+            rulesHash: allowed.rulesHash,
+            sessionReference: allowed.sessionReference,
+            snapshotContentHash: allowed.snapshotContentHash,
+            tierKey: allowed.tierKey,
+          },
+        });
+        await transaction.flipTierAdmissionState.update({
+          data: {
+            disabled: true,
+            evaluatedAt: deniedAt,
+            policyHash: allowed.policyHash,
+            providerHealthHash,
+            reason: 'provider_outage',
+            reenableBoundary: 'fresh_provider_health',
+            rulesHash: allowed.rulesHash,
+            snapshotContentHash: allowed.snapshotContentHash,
+            version: { increment: 1 },
+          },
+          where: { tierKey: allowed.tierKey },
+        });
+        await bindRawStakeDecision(
+          transaction,
+          session,
+          admissionDecisionId,
+          'superseded-admission-binding',
+        );
+      }),
+    ).rejects.toThrow('Flip stake requires a current allowed admission decision');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: session.version,
+    });
+  });
+
   test('database and service both prevent reveal finality before acquisition and transfer', async () => {
     const fixture = await prepareDatabaseFixture(databaseA, 'reveal-guard');
     const clock = new DatabaseTestClock();
@@ -294,6 +606,103 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     });
   });
 
+  test('settles and recovers populated legacy funded rows without admission bindings', async () => {
+    const settlementFixture = await prepareDatabaseFixture(databaseA, 'legacy-settlement');
+    const { session: revealReady } = await createDatabaseSessionAt(
+      databaseA,
+      settlementFixture,
+      'reveal-ready',
+    );
+    await clearAdmissionForLegacySession(databaseA, revealReady.id);
+    await expect(
+      Promise.resolve(
+        databaseA.flipSession.findUniqueOrThrow({
+          where: { id: revealReady.id },
+        }),
+      ),
+    ).resolves.toMatchObject({ admissionDecisionId: null, status: 'REVEAL_READY' });
+    setProviderHealthFixture(settlementFixture.poolKey, 'outage');
+    const settlementService = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    await expect(
+      settlementService.transition(revealReady.id, {
+        evidence: {
+          payout: usdc('0'),
+          providerAssetReference: settlementFixture.selected.providerAssetReference,
+          reference: 'fixture-settlement:legacy',
+          resultHash: hash('settlement:legacy'),
+          schemaVersion: FLIP_SETTLEMENT_FIXTURE_VERSION,
+          status: 'fixture-recorded',
+        },
+        expectedVersion: revealReady.version,
+        kind: 'settle',
+        transitionKey: 'settlement-legacy',
+      }),
+    ).resolves.toMatchObject({
+      status: 'settled',
+      terminalReason: 'FIXTURE_SETTLED',
+    });
+
+    const recoveryFixture = await prepareDatabaseFixture(databaseA, 'legacy-recovery');
+    const { session: poolCommitted } = await createDatabaseSessionAt(
+      databaseA,
+      recoveryFixture,
+      'pool-committed',
+    );
+    await clearAdmissionForLegacySession(databaseA, poolCommitted.id);
+    await expect(
+      Promise.resolve(
+        databaseA.flipSession.findUniqueOrThrow({
+          where: { id: poolCommitted.id },
+        }),
+      ),
+    ).resolves.toMatchObject({ admissionDecisionId: null, status: 'POOL_COMMITTED' });
+    setProviderHealthFixture(recoveryFixture.poolKey, 'outage');
+    const recoveryService = new FlipSessionStateService(
+      databaseB,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    const recoveryRequired = await recoveryService.transition(poolCommitted.id, {
+      evidence: {
+        reasonCode: 'FIXTURE_PROVIDER_OUTAGE',
+        reference: 'fixture-recovery:legacy-request',
+        schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+        status: 'fixture-recovery-required',
+      },
+      expectedVersion: poolCommitted.version,
+      kind: 'request-recovery',
+      transitionKey: 'recovery-legacy-request',
+    });
+    await expect(
+      recoveryService.transition(recoveryRequired.id, {
+        evidence: {
+          payout: usdc('0'),
+          reference: 'fixture-recovery:legacy-complete',
+          resultHash: hash('recovery:legacy'),
+          schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+          status: 'fixture-recovered',
+        },
+        expectedVersion: recoveryRequired.version,
+        kind: 'complete-recovery',
+        transitionKey: 'recovery-legacy-complete',
+      }),
+    ).resolves.toMatchObject({
+      status: 'recovered',
+      terminalReason: 'FIXTURE_RECOVERY_COMPLETED',
+    });
+    await expect(
+      Promise.resolve(
+        databaseA.flipSession.findUniqueOrThrow({
+          where: { id: recoveryRequired.id },
+        }),
+      ),
+    ).resolves.toMatchObject({ admissionDecisionId: null, status: 'RECOVERED' });
+  });
+
   test('rejects aggregate advancement without its matching append-only transition', async () => {
     const fixture = await prepareDatabaseFixture(databaseA, 'missing-ledger');
     const service = new FlipSessionStateService(
@@ -308,20 +717,23 @@ describeDatabase('Flip session state machine against two real Postgres connectio
 
     await expect(
       databaseA.$transaction((transaction) =>
-        transaction.flipSession.updateMany({
-          data: {
-            stakeAmount: '50000000',
-            stakeCurrency: 'USDC',
-            stakeDecimals: 6,
-            status: FlipSessionStatus.STAKE_CONFIRMED,
-            version: { increment: 1 },
-          },
-          where: {
-            id: session.id,
-            status: FlipSessionStatus.AWAITING_STAKE,
-            version: session.version,
-          },
-        }),
+        admitRawStake(transaction, fixture).then((admissionDecisionId) =>
+          transaction.flipSession.updateMany({
+            data: {
+              admissionDecisionId,
+              stakeAmount: '50000000',
+              stakeCurrency: 'USDC',
+              stakeDecimals: 6,
+              status: FlipSessionStatus.STAKE_CONFIRMED,
+              version: { increment: 1 },
+            },
+            where: {
+              id: session.id,
+              status: FlipSessionStatus.AWAITING_STAKE,
+              version: session.version,
+            },
+          }),
+        ),
       ),
     ).rejects.toThrow('requires matching append-only evidence');
     await expect(service.findSession(session.id)).resolves.toMatchObject({
@@ -331,11 +743,31 @@ describeDatabase('Flip session state machine against two real Postgres connectio
   });
 
   test.each([
-    { label: 'awaiting stake', status: FlipSessionStatus.AWAITING_STAKE },
-    { label: 'stake confirmed', status: FlipSessionStatus.STAKE_CONFIRMED },
-    { label: 'reveal ready', status: FlipSessionStatus.REVEAL_READY },
-    { label: 'recovery required', status: FlipSessionStatus.RECOVERY_REQUIRED },
-    { label: 'failed', status: FlipSessionStatus.FAILED },
+    {
+      error: 'insert requires exact session-started evidence',
+      label: 'awaiting stake',
+      status: FlipSessionStatus.AWAITING_STAKE,
+    },
+    {
+      error: 'requires a current allowed admission decision',
+      label: 'stake confirmed',
+      status: FlipSessionStatus.STAKE_CONFIRMED,
+    },
+    {
+      error: 'requires a current allowed admission decision',
+      label: 'reveal ready',
+      status: FlipSessionStatus.REVEAL_READY,
+    },
+    {
+      error: 'insert requires exact session-started evidence',
+      label: 'recovery required',
+      status: FlipSessionStatus.RECOVERY_REQUIRED,
+    },
+    {
+      error: 'insert requires exact session-started evidence',
+      label: 'failed',
+      status: FlipSessionStatus.FAILED,
+    },
   ])('rejects a direct $label insert without its initial transition ledger', async (vector) => {
     const data = await directFlipSessionInsertData(
       databaseA,
@@ -344,7 +776,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     );
 
     await expect(Promise.resolve(databaseA.flipSession.create({ data }))).rejects.toThrow(
-      'insert requires exact session-started evidence',
+      vector.error,
     );
     await expect(
       Promise.resolve(databaseA.flipSession.findUnique({ where: { id: data.id } })),
@@ -493,8 +925,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
 
     await expect(
       databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.updateMany({
           data: {
+            admissionDecisionId,
             stakeAmount: '50000000',
             stakeCurrency: 'USDC',
             stakeDecimals: 6,
@@ -615,8 +1049,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
 
     await expect(
       databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.updateMany({
           data: {
+            admissionDecisionId,
             stakeAmount: '50000000',
             stakeCurrency: 'USDC',
             stakeDecimals: 6,
@@ -675,8 +1111,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
 
     await expect(
       databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.update({
           data: {
+            admissionDecisionId,
             stakeAmount: '50000000',
             stakeCurrency: 'USDC',
             stakeDecimals: 6,
@@ -953,7 +1391,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     const { service, session } = await createDatabaseSessionAt(
       databaseA,
       fixture,
-      'awaiting-stake',
+      'stake-confirmed',
     );
     const recoveryEvidence = {
       reasonCode: 'FIXTURE_RECOVERY',
@@ -974,9 +1412,8 @@ describeDatabase('Flip session state machine against two real Postgres connectio
       databaseA.$transaction(async (transaction) => {
         await transaction.flipSession.update({
           data: {
-            stakeAmount: '50000000',
-            stakeCurrency: 'USDC',
-            stakeDecimals: 6,
+            purchasedAt: new Date('2026-07-28T16:00:00.000Z'),
+            purchaseReference: 'fixture-purchase:injected-recovery',
             status: FlipSessionStatus.RECOVERY_REQUIRED,
             version: { increment: 1 },
           },
@@ -985,7 +1422,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
         await transaction.flipSessionTransition.create({
           data: {
             evidence: recoveryEvidence,
-            fromStatus: FlipSessionStatus.AWAITING_STAKE,
+            fromStatus: FlipSessionStatus.STAKE_CONFIRMED,
             id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
             kind: FlipSessionTransitionKind.RECOVERY_REQUESTED,
             poolCommitmentHash: null,
@@ -1002,7 +1439,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
       }),
     ).rejects.toThrow('exact lifecycle action');
     await expect(service.findSession(session.id)).resolves.toMatchObject({
-      status: 'awaiting-stake',
+      status: 'stake-confirmed',
       version: session.version,
     });
   });
@@ -1090,8 +1527,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     });
     await expect(
       databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.update({
           data: {
+            admissionDecisionId,
             stakeAmount: evidence.amount.amount,
             stakeCurrency: evidence.amount.currency,
             stakeDecimals: evidence.amount.decimals,
@@ -1300,8 +1739,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
 
     await expect(
       databaseA.$transaction(async (transaction) => {
+        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.update({
           data: {
+            admissionDecisionId,
             stakeAmount: '50000000',
             stakeCurrency: 'USDC',
             stakeDecimals: 6,
@@ -1546,14 +1987,21 @@ async function directFlipSessionInsertData(
   switch (status) {
     case FlipSessionStatus.AWAITING_STAKE:
       return { ...base, version: 1 };
-    case FlipSessionStatus.STAKE_CONFIRMED:
+    case FlipSessionStatus.STAKE_CONFIRMED: {
+      const fixture = await prepareDatabaseFixture(database, label);
+      const admissionDecisionId = await database.$transaction((transaction) =>
+        admitRawStake(transaction, fixture),
+      );
       return {
         ...base,
+        admissionDecisionId,
+        id: fixture.sessionReference,
         stakeAmount: '50000000',
         stakeCurrency: 'USDC',
         stakeDecimals: 6,
         version: 2,
       };
+    }
     case FlipSessionStatus.RECOVERY_REQUIRED:
       return { ...base, version: 2 };
     case FlipSessionStatus.FAILED:
@@ -1565,11 +2013,15 @@ async function directFlipSessionInsertData(
       };
     case FlipSessionStatus.REVEAL_READY: {
       const fixture = await prepareDatabaseFixture(database, label);
+      const admissionDecisionId = await database.$transaction((transaction) =>
+        admitRawStake(transaction, fixture),
+      );
       const commitment = await database.flipSessionPoolCommitment.findUniqueOrThrow({
         where: { id: fixture.commitmentId },
       });
       return {
         ...base,
+        admissionDecisionId,
         id: fixture.sessionReference,
         poolCommitmentHash: commitment.poolCommitmentHash,
         poolCommitmentId: commitment.id,
@@ -1603,6 +2055,13 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
   const poolKey = `dbtest-flip-pool-${suffix}`;
   const policyVersion = `dbtest-flip-policy-${suffix}`;
   const rulesKey = `dbtest-flip-rules-${suffix}`;
+  FIXTURE_ENVIRONMENT.DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE = JSON.stringify({
+    observedAt: '2026-08-03T12:02:30.000Z',
+    poolKey,
+    provider: 'fixture-marketplace',
+    schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+    status: 'healthy',
+  });
   const inventory = new FlipInventorySnapshotService(database);
   const snapshot = await inventory.createFixtureSnapshot({
     candidates: [
@@ -1610,7 +2069,7 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
       candidate('plus', '30000000'),
       candidate('chase', '60000000'),
     ],
-    evaluatedAt: new Date('2026-08-03T12:00:00.000Z'),
+    evaluatedAt: new Date('2026-08-03T12:02:00.000Z'),
     policy: policy(poolKey, policyVersion),
   });
   const rulesService = new FlipRulesService(database);
@@ -1629,6 +2088,7 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
   });
   return {
     commitmentId: commitment.id,
+    poolKey,
     selected: {
       bandLabel: 'plus',
       listingValueAmount: '30000000',
@@ -1640,7 +2100,108 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
   };
 }
 
+function setProviderHealthFixture(poolKey: string, status: 'healthy' | 'outage'): void {
+  FIXTURE_ENVIRONMENT.DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE = JSON.stringify({
+    observedAt: '2026-08-03T12:02:30.000Z',
+    poolKey,
+    provider: 'fixture-marketplace',
+    schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+    status,
+  });
+}
+
 type DatabaseFixture = Awaited<ReturnType<typeof prepareDatabaseFixture>>;
+
+function admitRawStake(
+  transaction: Prisma.TransactionClient,
+  fixture: DatabaseFixture,
+  stakeAmount = '50000000',
+): Promise<string> {
+  return admitFlipStake(transaction, {
+    evaluatedAt: new DatabaseTestClock().now(),
+    providerHealth: {
+      observedAt: '2026-08-03T12:02:30.000Z',
+      poolKey: fixture.poolKey,
+      provider: 'fixture-marketplace',
+      schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+      status: 'healthy',
+    },
+    sessionReference: fixture.sessionReference,
+    stakeAmount,
+    stakeCurrency: 'USDC',
+    stakeDecimals: 6,
+  });
+}
+
+async function bindRawStakeDecision(
+  transaction: Prisma.TransactionClient,
+  session: FlipSessionSnapshot,
+  admissionDecisionId: string,
+  transitionKey: string,
+): Promise<void> {
+  const evidence = {
+    amount: usdc('50000000'),
+    reference: `fixture-stake:${transitionKey}`,
+    schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+    status: 'fixture-confirmed' as const,
+  };
+  const requestPayload = stableStringify({
+    action: {
+      evidence,
+      expectedVersion: session.version,
+      kind: 'confirm-stake',
+      transitionKey,
+    },
+    stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+  });
+  await transaction.flipSession.update({
+    data: {
+      admissionDecisionId,
+      stakeAmount: evidence.amount.amount,
+      stakeCurrency: evidence.amount.currency,
+      stakeDecimals: evidence.amount.decimals,
+      status: FlipSessionStatus.STAKE_CONFIRMED,
+      version: { increment: 1 },
+    },
+    where: { id: session.id },
+  });
+  await transaction.flipSessionTransition.create({
+    data: {
+      evidence: evidence as unknown as Prisma.InputJsonValue,
+      fromStatus: FlipSessionStatus.AWAITING_STAKE,
+      id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+      kind: FlipSessionTransitionKind.STAKE_CONFIRMED,
+      poolCommitmentHash: null,
+      requestHash: hash(requestPayload),
+      requestPayload,
+      selectedAssetReference: null,
+      sequence: session.version + 1,
+      sessionId: session.id,
+      terminalReason: null,
+      toStatus: FlipSessionStatus.STAKE_CONFIRMED,
+      transitionKey,
+    },
+  });
+}
+
+async function clearAdmissionForLegacySession(
+  database: DatabaseClient,
+  sessionReference: string,
+): Promise<void> {
+  await database.$transaction(async (transaction) => {
+    // Reproduce the row shape present before the admission migration without
+    // weakening trigger enforcement for any other database connection.
+    await transaction.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
+    const updated = await transaction.$executeRawUnsafe(
+      `UPDATE "FlipSession"
+       SET "admissionDecisionId" = NULL
+       WHERE "id" = $1`,
+      sessionReference,
+    );
+    if (updated !== 1) throw new Error(`legacy Flip session ${sessionReference} was not found`);
+  });
+}
+
 type DatabaseSessionTarget =
   | 'awaiting-stake'
   | 'stake-confirmed'
@@ -1878,7 +2439,7 @@ function policy(poolKey: string, policyVersion: string): FlipInventorySnapshotPo
 }
 
 function candidate(reference: string, amount: string): FlipInventoryCandidate {
-  const sourceTimestamp = new Date('2026-08-03T11:59:30.000Z');
+  const sourceTimestamp = new Date('2026-08-03T12:01:30.000Z');
   return {
     buybackValue: null,
     displayedValue: null,
@@ -1919,7 +2480,7 @@ function restoreEnvironment(key: string, value: string | undefined): void {
 }
 
 class DatabaseTestClock {
-  #current = new Date('2026-07-28T16:00:00.000Z');
+  #current = new Date('2026-08-03T12:02:30.000Z');
 
   advance(milliseconds: number): void {
     this.#current = new Date(this.#current.getTime() + milliseconds);

@@ -30,10 +30,8 @@ afterEach(() => {
 
 describe('Devnet Sports Pack Gacha provider', () => {
   test('derives a stable machine key per sport and tier', () => {
-    expect(devnetMachineKey('football', '50000000')).toBe('dailydraft-devnet-football-50000000');
-    expect(devnetMachineKey('basketball', '250000000')).toBe(
-      'dailydraft-devnet-basketball-250000000',
-    );
+    expect(devnetMachineKey('football', '10000')).toBe('dailydraft-devnet-football-10000');
+    expect(devnetMachineKey('basketball', '1000000')).toBe('dailydraft-devnet-basketball-1000000');
   });
 
   test('gives each machine its own committed window and wraps at the pool edge', () => {
@@ -50,6 +48,11 @@ describe('Devnet Sports Pack Gacha provider', () => {
 
     const machines = await provider.listMachines();
     expect(machines).toHaveLength(12);
+    expect(
+      [...new Set(machines.map((machine) => machine.tierPriceMinor))].sort(
+        (left, right) => Number(left) - Number(right),
+      ),
+    ).toEqual(['10000', '100000', '1000000']);
 
     const machine = machines[0];
     if (!machine) throw new Error('Expected a devnet machine');
@@ -159,7 +162,7 @@ describe('Devnet Sports Pack Gacha provider', () => {
 
     const disabled = 'disabled outside dailydraft-devnet provider mode';
     await expect(provider.listMachines()).rejects.toThrow(disabled);
-    await expect(provider.getEligibleCards('dailydraft-devnet-football-50000000')).rejects.toThrow(
+    await expect(provider.getEligibleCards('dailydraft-devnet-football-10000')).rejects.toThrow(
       disabled,
     );
     await expect(
@@ -186,7 +189,7 @@ describe('Devnet Sports Pack Gacha provider', () => {
     enableDevnet();
 
     const acquired = await provider.acquireCard({
-      assetReference: 'devnet:sports-pack:dailydraft-devnet-football-50000000:base1-1:mac',
+      assetReference: 'devnet:sports-pack:dailydraft-devnet-football-10000:base1-1:mac',
       recipientWallet: SIGNER_PUBLIC_KEY,
       ripId: 'gacharip_1',
     });
@@ -197,7 +200,7 @@ describe('Devnet Sports Pack Gacha provider', () => {
 
     // A different rip must never reuse another rip's custody attestation.
     const other = await provider.acquireCard({
-      assetReference: 'devnet:sports-pack:dailydraft-devnet-football-50000000:base1-1:mac',
+      assetReference: 'devnet:sports-pack:dailydraft-devnet-football-10000:base1-1:mac',
       recipientWallet: SIGNER_PUBLIC_KEY,
       ripId: 'gacharip_2',
     });
