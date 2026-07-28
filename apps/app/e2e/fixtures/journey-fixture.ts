@@ -1,3 +1,4 @@
+import type { VerifiedGameActivityPage } from '@dailydraft/contracts/game-lobby';
 import type { JourneyFixtureBootstrap } from '../../app/e2e/journey-wallet';
 import type {
   DuelReconciliationResult,
@@ -202,6 +203,9 @@ export class DuelJourneyFixture {
 
     if (method === 'GET' && path === '/health/capabilities') {
       return ok(capabilities());
+    }
+    if (method === 'GET' && path === '/games/activity') {
+      return ok(verifiedActivity(this.seed));
     }
     if (method === 'POST' && path === '/analytics/events') {
       return { body: { accepted: true }, status: 202 };
@@ -556,6 +560,34 @@ function capabilities(): ProductCapabilities {
       },
     ],
     provider: { mode: 'journey-fixture', ready: true },
+  };
+}
+
+function verifiedActivity(seed: string): VerifiedGameActivityPage {
+  const duelId = `duel_activity_${stableHex(seed, 'activity', 16)}`;
+  return {
+    asOf: '2099-01-01T00:05:00.000Z',
+    data: [
+      {
+        activityId: `duel:${duelId}`,
+        mode: 'duel',
+        occurredAt: '2099-01-01T00:04:00.000Z',
+        participants: [
+          { label: 'Player 7K2M', role: 'player' },
+          { label: 'Player P4Q9', role: 'player' },
+        ],
+        receiptHref: `/v1/duels/${duelId}/receipt`,
+        result: 'winner-verified',
+        resultHref: `/v1/rgs/rounds/duel/${duelId}/proof`,
+        resultSummary: 'Player 7K2M won a verified Sports Pack Duel.',
+        tier: { amount: '50000000', currency: 'USDC', decimals: 6 },
+        title: 'Sports Pack Duel settled',
+        verification: 'settled-rgs-proof',
+      },
+    ],
+    hasMore: false,
+    nextCursor: null,
+    schemaVersion: 'dailydraft.verified-game-activity.v1',
   };
 }
 

@@ -2,7 +2,7 @@ import {
   GAME_CATALOG_SCHEMA_VERSION,
   type GameCatalog,
   type GameCatalogMode,
-} from '@dailydraft/contracts';
+} from '@dailydraft/contracts/game-catalog';
 
 export type { GameCatalog, GameCatalogMode };
 

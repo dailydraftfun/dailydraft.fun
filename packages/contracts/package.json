@@ -9,6 +9,18 @@
       "bun": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./game-catalog": {
+      "types": "./src/game-catalog.ts",
+      "bun": "./src/game-catalog.ts",
+      "import": "./src/game-catalog.ts",
+      "default": "./dist/game-catalog.js"
+    },
+    "./game-lobby": {
+      "types": "./src/game-lobby.ts",
+      "bun": "./src/game-lobby.ts",
+      "import": "./src/game-lobby.ts",
+      "default": "./dist/game-lobby.js"
+    },
     "./pull-rarity": {
       "types": "./src/pull-rarity.ts",
       "bun": "./src/pull-rarity.ts",
@@ -29,7 +41,7 @@
     }
   },
   "scripts": {
-    "build": "bun build src/index.ts src/pull-rarity.ts src/rgs.ts src/theme-pack.ts --target=bun --outdir=dist",
+    "build": "bun build src/index.ts src/game-catalog.ts src/game-lobby.ts src/pull-rarity.ts src/rgs.ts src/theme-pack.ts --target=bun --outdir=dist",
     "clean": "rm -rf dist",
     "lint": "biome check src/",
     "test": "bun test",

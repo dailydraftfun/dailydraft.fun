@@ -2,8 +2,9 @@ import type { Metadata } from 'next';
 import { ActivityPreview } from '../activity-preview';
 
 export const metadata: Metadata = {
-  title: 'Activity receipt lab — DailyDraft Devnet',
-  description: 'Preview explicit receipt examples and fixture-backed DailyDraft game activity.',
+  title: 'Verified game activity — DailyDraft Devnet',
+  description:
+    'Inspect bounded, settled DailyDraft game outcomes with canonical public receipts and RGS proofs.',
   robots: { follow: false, index: false, nocache: true },
 };
 

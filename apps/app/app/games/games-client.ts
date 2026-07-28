@@ -7,7 +7,7 @@ import {
   type GameCatalog,
   type GameCatalogAction,
   type GameCatalogMode,
-} from '@dailydraft/contracts';
+} from '@dailydraft/contracts/game-catalog';
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_DUEL_API_URL?.replace(/\/$/, '');
 const CATALOG_CACHE_KEY = 'dailydraft.games-catalog.v1';
