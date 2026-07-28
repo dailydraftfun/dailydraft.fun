@@ -1,3 +1,4 @@
+import { PUBLIC_GAME_TAXONOMY } from '@dailydraft/contracts/public-game-taxonomy';
 import {
   ArrowRightIcon,
   CheckCircleIcon,
@@ -61,27 +62,12 @@ const principles = [
   },
 ] as const;
 
-const ruleSurfaces = [
-  {
-    href: rulesUrl('/games/duel#rules'),
-    label: 'Runtime checked · devnet',
-    title: 'Card Duel',
-    detail: 'Comparison, wallet approval, custody, tie, refund, and receipt boundaries.',
-  },
-  {
-    href: rulesUrl('/games/marketplace-flip#rules'),
-    label: 'Fixture preview',
-    title: 'Marketplace Flip',
-    detail:
-      'Scripted local marketplace UX with a fixed result and no draw, purchase, or ownership change.',
-  },
-  {
-    href: rulesUrl('/games/crash#rules'),
-    label: 'Fixture preview',
-    title: 'Card Streak',
-    detail: 'Continue-or-stop rhythm without invented live odds, custody, or payout claims.',
-  },
-] as const;
+const ruleSurfaces = PUBLIC_GAME_TAXONOMY.map((mode) => ({
+  detail: mode.description,
+  href: rulesUrl(mode.rulesHref),
+  label: mode.statusLabel,
+  title: mode.name,
+}));
 
 export default function LandingPage() {
   return (

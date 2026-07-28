@@ -1,4 +1,5 @@
 import type { VerifiedGameActivityPage } from '@dailydraft/contracts/game-lobby';
+import { GAME_CATALOG_SCHEMA_VERSION, type GameCatalog } from '@dailydraft/contracts/game-catalog';
 import type { JourneyFixtureBootstrap } from '../../app/e2e/journey-wallet';
 import type {
   DuelReconciliationResult,
@@ -31,6 +32,8 @@ export type JourneyFixtureSnapshot = {
 };
 
 type JourneyFixtureOptions = {
+  houseEnabled?: boolean;
+  houseWinner?: 'house' | 'player';
   walletTransactionRejections?: number;
 };
 
@@ -44,6 +47,8 @@ export class DuelJourneyFixture {
   readonly seed: string;
   readonly #challengeId: string;
   readonly #duelId: string;
+  readonly #houseEnabled: boolean;
+  readonly #houseWinner: 'house' | 'player';
   readonly #resultHash: string;
   readonly #sessionToken: string;
   readonly #transactionSignature: string;
@@ -51,10 +56,12 @@ export class DuelJourneyFixture {
   #authenticated = false;
   #duel: DurableDuel | null = null;
   #fundingState: 'none' | 'submitted' | 'finalized' = 'none';
+  #houseAdmissionReason: string | null = null;
   #intentSequence = 0;
   #lifecycleHold: ReloadCheckpoint | null = null;
   #matchmakingState: MatchmakingSession['state'] = 'matched';
   #reconciliationFailures = 0;
+  #refundOnOpen = false;
   #requests: string[] = [];
   #submittedIntentIds = new Set<string>();
 
@@ -65,6 +72,8 @@ export class DuelJourneyFixture {
     this.seed = seed;
     this.#challengeId = `authc_${stableHex(seed, 'challenge', 32)}`;
     this.#duelId = `duel_fixture_${stableHex(seed, 'duel', 16)}`;
+    this.#houseEnabled = options.houseEnabled ?? false;
+    this.#houseWinner = options.houseWinner ?? 'player';
     this.#resultHash = stableHex(seed, 'result', 64);
     this.#sessionToken = `fixture_session_${stableHex(seed, 'session', 24)}`;
     this.#transactionSignature = stableHex(seed, 'transaction', 64);
@@ -92,10 +101,12 @@ export class DuelJourneyFixture {
     this.#authenticated = false;
     this.#duel = null;
     this.#fundingState = 'none';
+    this.#houseAdmissionReason = null;
     this.#intentSequence = 0;
     this.#lifecycleHold = null;
     this.#matchmakingState = 'matched';
     this.#reconciliationFailures = 0;
+    this.#refundOnOpen = false;
     this.#requests = [];
     this.#submittedIntentIds.clear();
   }
@@ -103,6 +114,15 @@ export class DuelJourneyFixture {
   failNextReconciliations(count = 1): void {
     assertCount(count, 'reconciliation failure');
     this.#reconciliationFailures = count;
+  }
+
+  disableHouseAdmission(reason: string): void {
+    if (!reason.trim()) throw new Error('House admission fixture reason is required.');
+    this.#houseAdmissionReason = reason;
+  }
+
+  refundHouseOnOpen(): void {
+    this.#refundOnOpen = true;
   }
 
   holdLifecycleAt(checkpoint: ReloadCheckpoint): void {
@@ -202,10 +222,13 @@ export class DuelJourneyFixture {
     this.#requests.push(`${method} ${path}`);
 
     if (method === 'GET' && path === '/health/capabilities') {
-      return ok(capabilities());
+      return ok(capabilities(this.#houseEnabled, this.#houseAdmissionReason));
     }
     if (method === 'GET' && path === '/games/activity') {
       return ok(verifiedActivity(this.seed));
+    }
+    if (method === 'GET' && path === '/games/catalog') {
+      return ok(journeyGameCatalog());
     }
     if (method === 'POST' && path === '/analytics/events') {
       return { body: { accepted: true }, status: 202 };
@@ -349,7 +372,21 @@ export class DuelJourneyFixture {
         return ok(this.#reconciliation());
       }
       if (method === 'POST' && suffix === '/open-packs') {
-        if (['opening', 'settling', 'settled'].includes(this.#duel.status)) return ok(this.#duel);
+        if (['opening', 'settling', 'settled', 'refunded'].includes(this.#duel.status)) {
+          return ok(this.#duel);
+        }
+        if (this.#refundOnOpen && this.#duel.houseOpponent) {
+          this.#duel = {
+            ...this.#duel,
+            result: null,
+            status: 'refunded',
+            transactionSignature: this.#transactionSignature,
+            version: this.#duel.version + 1,
+            winnerWallet: null,
+          };
+          this.#refundOnOpen = false;
+          return ok(this.#duel);
+        }
         this.#duel =
           this.#lifecycleHold === 'opening'
             ? this.#openingDuel(this.#duel)
@@ -404,6 +441,9 @@ export class DuelJourneyFixture {
   }
 
   #settledDuel(duel: DurableDuel): DurableDuel {
+    const houseWins = duel.houseOpponent && this.#houseWinner === 'house';
+    const creatorValue = houseWins ? '41000000' : '72500000';
+    const opponentValue = houseWins ? '72500000' : '41000000';
     return {
       ...duel,
       result: {
@@ -413,7 +453,7 @@ export class DuelJourneyFixture {
             assetReference: `fixture-asset-creator-${this.seed}`,
             displayName: 'Charizard fixture pull',
             imageUrl: 'https://images.pokemontcg.io/base1/4_hires.png',
-            insuredValue: { amount: '72500000', currency: 'USDC', decimals: 6 },
+            insuredValue: { amount: creatorValue, currency: 'USDC', decimals: 6 },
             isMock: false,
             provider: 'journey-fixture',
             providerReference: `fixture-provider-creator-${this.seed}`,
@@ -424,7 +464,7 @@ export class DuelJourneyFixture {
             assetReference: `fixture-asset-opponent-${this.seed}`,
             displayName: 'Blastoise fixture pull',
             imageUrl: 'https://images.pokemontcg.io/base1/2_hires.png',
-            insuredValue: { amount: '41000000', currency: 'USDC', decimals: 6 },
+            insuredValue: { amount: opponentValue, currency: 'USDC', decimals: 6 },
             isMock: false,
             provider: 'journey-fixture',
             providerReference: `fixture-provider-opponent-${this.seed}`,
@@ -435,12 +475,12 @@ export class DuelJourneyFixture {
         resultHash: this.#resultHash,
         settlementReady: true,
         valuationPolicyHash: stableHex(this.seed, 'valuation-policy', 64),
-        winnerSide: 'creator',
+        winnerSide: houseWins ? 'opponent' : 'creator',
       },
       status: 'settled',
       transactionSignature: this.#transactionSignature,
       version: duel.version + 1,
-      winnerWallet: CREATOR_WALLET,
+      winnerWallet: houseWins ? journeyOpponentWallet : CREATOR_WALLET,
     };
   }
 
@@ -538,11 +578,41 @@ export class DuelJourneyFixture {
   }
 }
 
-function capabilities(): ProductCapabilities {
+function capabilities(
+  houseEnabled = false,
+  houseAdmissionReason: string | null = null,
+): ProductCapabilities {
+  const houseAvailable = houseEnabled && houseAdmissionReason === null;
   return {
     modes: {
       direct: { enabled: true, reason: null },
-      house: { enabled: false, reason: 'House mode is disabled in deterministic journeys.' },
+      house: {
+        admission: {
+          approvalStatus: 'devnet-preview-no-legal-or-live-provider-approval',
+          currency: 'USDC',
+          decimals: 6,
+          limits: {
+            dailyLossAmount: '100000000',
+            maxActivePerWallet: 1,
+            maxConcurrentPerTier: 2,
+            maxTotalExposureAmount: '200000000',
+            minimumLiquidityAmount: '50000000',
+          },
+          network: 'solana-devnet',
+          opponent: { label: 'DailyDraft House', wallet: null },
+          preFundingRecheck: 'immediately-before-duel-creation',
+          valuation: {
+            comparisonMetric: 'insured-value',
+            policyHash: stableHex('journey', 'valuation-policy', 64),
+            policyVersion: 'journey-policy-v1',
+            tieRule: 'return-original-assets-and-refund-platform-fees',
+          },
+        },
+        enabled: houseAvailable,
+        reason:
+          houseAdmissionReason ??
+          (houseAvailable ? null : 'House mode is disabled in deterministic journeys.'),
+      },
       open: { enabled: true, reason: null },
     },
     network: 'solana-devnet',
@@ -598,6 +668,63 @@ function verifiedActivity(seed: string): VerifiedGameActivityPage {
     hasMore: false,
     nextCursor: null,
     schemaVersion: 'dailydraft.verified-game-activity.v1',
+  };
+}
+
+export function journeyGameCatalog(): GameCatalog {
+  return {
+    asOf: '2099-01-01T00:05:00.000Z',
+    modes: [
+      {
+        availableActions: [
+          { href: '/games/duel', id: 'direct-challenge', label: 'Challenge a wallet' },
+          { href: '/games/duel', id: 'open-matchmaking', label: 'Find a rival' },
+        ],
+        capabilitySource: { kind: 'runtime', name: 'duel-readiness', status: 'verified' },
+        description: 'Compare server-committed card outcomes on Solana devnet.',
+        id: 'duel',
+        name: 'Card Duel',
+        reason: 'Direct challenges and matchmaking are verified for this fixture.',
+        state: 'playable',
+      },
+      {
+        availableActions: [{ href: '/games/gacha', id: 'rip-pack', label: 'Rip a sports pack' }],
+        capabilitySource: { kind: 'runtime', name: 'gacha-capability', status: 'verified' },
+        description: 'Rip from a server-committed sports pack pool on Solana devnet.',
+        id: 'gacha',
+        name: 'Sports Pack Gacha',
+        reason: 'Provider, payment, acquisition, and settlement checks are verified.',
+        state: 'playable',
+      },
+      {
+        availableActions: [
+          {
+            href: '/games/marketplace-flip',
+            id: 'view-preview',
+            label: 'View fixture preview',
+          },
+        ],
+        capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
+        description: 'Inspect the fixed no-value marketplace walkthrough.',
+        id: 'flip',
+        name: 'Marketplace Flip',
+        reason: 'Fixture preview only.',
+        state: 'preview',
+      },
+      {
+        availableActions: [
+          { href: '/games/crash', id: 'view-preview', label: 'View fixture preview' },
+        ],
+        capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
+        description: 'Inspect the fixed four-stage no-value card sequence.',
+        id: 'crash',
+        name: 'Card Streak',
+        reason: 'Fixture preview only.',
+        state: 'preview',
+      },
+    ],
+    network: 'solana-devnet',
+    schemaVersion: GAME_CATALOG_SCHEMA_VERSION,
   };
 }
 

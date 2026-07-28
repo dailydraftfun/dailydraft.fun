@@ -23,6 +23,9 @@ export class HouseDispositionRequest {
   @IsIn(['buyback', 'hold', 'list', 'manual_review', 'promotion'])
   disposition!: 'buyback' | 'hold' | 'list' | 'manual_review' | 'promotion';
 
+  @Matches(/^[A-Za-z0-9:_-]{8,160}$/)
+  operationKey!: string;
+
   @IsString()
   @MaxLength(160)
   @Matches(/^[A-Za-z0-9 _:-]{3,160}$/)
@@ -30,6 +33,12 @@ export class HouseDispositionRequest {
 }
 
 export class CompleteHouseDispositionRequest {
+  @Matches(/^\d+$/)
+  feeAmount!: string;
+
+  @Matches(/^[A-Za-z0-9:_-]{8,160}$/)
+  operationKey!: string;
+
   @Matches(/^\d+$/)
   realizedAmount!: string;
 

@@ -68,7 +68,8 @@ describe('duel lobby capability controls', () => {
 
     expect(markup).toContain('Selected automatically');
     expect(markup).toContain('Playable now');
-    expect(markup.match(/Coming soon/g)?.length).toBe(3);
+    expect(markup.match(/Coming soon/g)?.length).toBe(2);
+    expect(markup).toContain('House play is not ready on Solana devnet.');
     const selectedButton = markup.match(/<button[^>]*tier-card-selected[^>]*>/)?.[0];
     expect(selectedButton).toContain('aria-pressed="true"');
     expect(selectedButton).toContain('disabled=""');
@@ -89,7 +90,7 @@ describe('duel lobby capability controls', () => {
 
   test('never auto-selects house play when it is the only enabled mode', () => {
     const capabilities = capabilityFixture({ coreEnabled: false, houseEnabled: true });
-    capabilities.modes.house = { enabled: true, reason: null };
+    capabilities.modes.house = { ...capabilities.modes.house, enabled: true, reason: null };
     const markup = renderToStaticMarkup(
       <DuelModeTabs
         capabilities={capabilities}
@@ -174,6 +175,13 @@ describe('duel lobby capability controls', () => {
         ...valid,
         modes: { ...valid.modes, direct: { enabled: true, reason: 503 } },
       },
+      {
+        ...valid,
+        modes: {
+          ...valid.modes,
+          house: { enabled: false, reason: 'Unavailable.' },
+        },
+      },
       { ...valid, network: 'solana-mainnet' },
       { ...valid, provider: { mode: 'dailydraft-devnet' } },
       {
@@ -208,6 +216,27 @@ function capabilityFixture({
     modes: {
       direct: { enabled: coreEnabled, reason: coreReason },
       house: {
+        admission: {
+          approvalStatus: 'devnet-preview-no-legal-or-live-provider-approval',
+          currency: 'USDC',
+          decimals: 6,
+          limits: {
+            dailyLossAmount: '100000000',
+            maxActivePerWallet: 1,
+            maxConcurrentPerTier: 2,
+            maxTotalExposureAmount: '200000000',
+            minimumLiquidityAmount: '50000000',
+          },
+          network: 'solana-devnet',
+          opponent: { label: 'DailyDraft House', wallet: null },
+          preFundingRecheck: 'immediately-before-duel-creation',
+          valuation: {
+            comparisonMetric: 'insured-value',
+            policyHash: 'policy-hash',
+            policyVersion: 'policy-v1',
+            tieRule: 'return-original-assets-and-refund-platform-fees',
+          },
+        },
         enabled: coreEnabled && houseEnabled,
         reason: coreEnabled && houseEnabled ? null : 'House play is not ready on Solana devnet.',
       },

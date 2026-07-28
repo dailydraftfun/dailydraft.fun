@@ -42,6 +42,11 @@ export interface SolanaAccountInfo {
 export abstract class SolanaRpcGateway {
   abstract assertDevnet(): Promise<void>;
   abstract getBlockHeight(): Promise<bigint>;
+  getFinalizedSlot(): Promise<bigint> {
+    // Compatibility fallback for deterministic test gateways. The production
+    // client overrides this with Solana's finalized slot observation.
+    return this.getBlockHeight();
+  }
   abstract getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: bigint }>;
   isBlockhashValid(_blockhash: string, _commitment: 'confirmed' | 'finalized'): Promise<boolean> {
     throw new SolanaRpcUnavailableError('Blockhash validity reads are not implemented');
@@ -80,6 +85,12 @@ export class SolanaRpcClient extends SolanaRpcGateway {
 
   async getBlockHeight(): Promise<bigint> {
     const result = await this.request('getBlockHeight', [{ commitment: 'finalized' }]);
+    if (!Number.isSafeInteger(result) || Number(result) < 0) throw new SolanaRpcUnavailableError();
+    return BigInt(Number(result));
+  }
+
+  override async getFinalizedSlot(): Promise<bigint> {
+    const result = await this.request('getSlot', [{ commitment: 'finalized' }]);
     if (!Number.isSafeInteger(result) || Number(result) < 0) throw new SolanaRpcUnavailableError();
     return BigInt(Number(result));
   }

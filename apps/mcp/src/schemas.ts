@@ -1,4 +1,57 @@
+import { GAME_CATALOG_SCHEMA_VERSION, GAME_MODE_IDS } from '@dailydraft/contracts/game-catalog';
+import {
+  GAME_AVAILABILITY_SCHEMA_VERSION,
+  PUBLIC_GAME_MODE_IDS,
+} from '@dailydraft/contracts/game-lobby';
+import { PUBLIC_GAME_READINESS_STATES } from '@dailydraft/contracts/public-game-taxonomy';
 import * as z from 'zod/v4';
+
+const gameCapabilitySourceSchema = z.object({
+  kind: z.enum(['fixture', 'runtime']),
+  name: z.enum(['duel-readiness', 'gacha-capability', 'rgs-fixture']),
+  status: z.enum(['degraded', 'gated', 'verified']),
+});
+
+const gameCatalogActionSchema = z.object({
+  href: z.string().regex(/^\/games\/[a-z0-9-]+$/),
+  id: z.string().min(1).max(80),
+  label: z.string().min(1).max(120),
+});
+
+const gameModeStateSchema = z.enum(PUBLIC_GAME_READINESS_STATES);
+
+export const gameCatalogSchema = z.object({
+  asOf: z.iso.datetime(),
+  modes: z.array(
+    z.object({
+      availableActions: z.array(gameCatalogActionSchema),
+      capabilitySource: gameCapabilitySourceSchema,
+      description: z.string().min(1).max(1_000),
+      id: z.enum(GAME_MODE_IDS),
+      name: z.string().min(1).max(120),
+      reason: z.string().min(1).max(1_000),
+      state: gameModeStateSchema,
+    }),
+  ),
+  network: z.literal('solana-devnet'),
+  schemaVersion: z.literal(GAME_CATALOG_SCHEMA_VERSION),
+});
+
+export const gameAvailabilitySchema = z.object({
+  asOf: z.iso.datetime(),
+  modes: z.array(
+    z.object({
+      asOf: z.iso.datetime(),
+      availableActions: z.array(gameCatalogActionSchema),
+      capabilitySource: gameCapabilitySourceSchema,
+      id: z.enum(PUBLIC_GAME_MODE_IDS),
+      reason: z.string().min(1).max(1_000),
+      state: gameModeStateSchema,
+    }),
+  ),
+  network: z.literal('solana-devnet'),
+  schemaVersion: z.literal(GAME_AVAILABILITY_SCHEMA_VERSION),
+});
 
 export const moneySchema = z.object({
   amount: z.string().regex(/^\d+$/),
@@ -186,6 +239,8 @@ export const preparedWalletTransactionSchema = z.object({
 export type Duel = z.infer<typeof duelSchema>;
 export type DuelList = z.infer<typeof duelListSchema>;
 export type DuelProof = z.infer<typeof duelProofSchema>;
+export type GameAvailability = z.infer<typeof gameAvailabilitySchema>;
+export type GameCatalog = z.infer<typeof gameCatalogSchema>;
 export type Pack = z.infer<typeof packSchema>;
 export type PackList = z.infer<typeof packListSchema>;
 export type PreparedTransaction = z.infer<typeof preparedTransactionSchema>;

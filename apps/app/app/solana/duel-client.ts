@@ -91,7 +91,11 @@ export type DurableDuel = {
 export type ProductCapabilities = {
   modes: {
     direct: { enabled: boolean; reason: string | null };
-    house: { enabled: boolean; reason: string | null };
+    house: {
+      admission: HouseAdmissionDisclosure;
+      enabled: boolean;
+      reason: string | null;
+    };
     open: { enabled: boolean; reason: string | null };
   };
   network: 'solana-devnet';
@@ -103,6 +107,31 @@ export type ProductCapabilities = {
     tier: 25 | 50 | 100;
   }>;
   provider: { mode: string; ready: boolean };
+};
+
+export type HouseAdmissionDisclosure = {
+  approvalStatus: 'devnet-preview-no-legal-or-live-provider-approval';
+  currency: 'USDC';
+  decimals: 6;
+  limits: {
+    dailyLossAmount: string;
+    maxActivePerWallet: number;
+    maxConcurrentPerTier: number;
+    maxTotalExposureAmount: string;
+    minimumLiquidityAmount: string;
+  };
+  network: 'solana-devnet';
+  opponent: {
+    label: 'DailyDraft House';
+    wallet: string | null;
+  };
+  preFundingRecheck: 'immediately-before-duel-creation';
+  valuation: {
+    comparisonMetric: string;
+    policyHash: string;
+    policyVersion: string;
+    tieRule: string;
+  };
 };
 
 export type MatchmakingSession = {
@@ -352,7 +381,7 @@ function isCapabilityModes(value: unknown): value is ProductCapabilities['modes'
   const modes = value as Partial<ProductCapabilities['modes']>;
   return (
     isCapabilityState(modes.direct) &&
-    isCapabilityState(modes.house) &&
+    isHouseCapabilityState(modes.house) &&
     isCapabilityState(modes.open)
   );
 }
@@ -366,6 +395,46 @@ function isCapabilityState(
     typeof state.enabled === 'boolean' &&
     (state.reason === null || typeof state.reason === 'string')
   );
+}
+
+function isHouseCapabilityState(value: unknown): value is ProductCapabilities['modes']['house'] {
+  if (!isCapabilityState(value)) return false;
+  return isHouseAdmissionDisclosure((value as { admission?: unknown }).admission);
+}
+
+function isHouseAdmissionDisclosure(value: unknown): value is HouseAdmissionDisclosure {
+  if (!value || typeof value !== 'object') return false;
+  const admission = value as Partial<HouseAdmissionDisclosure>;
+  const limits = admission.limits as Partial<HouseAdmissionDisclosure['limits']> | undefined;
+  const opponent = admission.opponent as Partial<HouseAdmissionDisclosure['opponent']> | undefined;
+  const valuation = admission.valuation as
+    | Partial<HouseAdmissionDisclosure['valuation']>
+    | undefined;
+  return (
+    admission.approvalStatus === 'devnet-preview-no-legal-or-live-provider-approval' &&
+    admission.currency === 'USDC' &&
+    admission.decimals === 6 &&
+    admission.network === 'solana-devnet' &&
+    admission.preFundingRecheck === 'immediately-before-duel-creation' &&
+    Boolean(limits) &&
+    isUnsignedAmount(limits?.dailyLossAmount) &&
+    typeof limits.maxActivePerWallet === 'number' &&
+    typeof limits.maxConcurrentPerTier === 'number' &&
+    isUnsignedAmount(limits.maxTotalExposureAmount) &&
+    isUnsignedAmount(limits.minimumLiquidityAmount) &&
+    Boolean(opponent) &&
+    opponent?.label === 'DailyDraft House' &&
+    (opponent.wallet === null || typeof opponent.wallet === 'string') &&
+    Boolean(valuation) &&
+    typeof valuation?.comparisonMetric === 'string' &&
+    typeof valuation.policyHash === 'string' &&
+    typeof valuation.policyVersion === 'string' &&
+    typeof valuation.tieRule === 'string'
+  );
+}
+
+function isUnsignedAmount(value: unknown): value is string {
+  return typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value);
 }
 
 function isCapabilityPack(value: unknown): value is ProductCapabilities['packs'][number] {

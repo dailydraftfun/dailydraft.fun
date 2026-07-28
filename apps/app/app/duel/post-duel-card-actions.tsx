@@ -40,6 +40,7 @@ export function CardActionState({ state }: { state: PostDuelCardCapabilityState 
   const list = state.actions.find((action) => action.action === 'list');
   const sellBack = state.actions.find((action) => action.action === 'sell-back');
   const idPrefix = domId(state.actionStateId);
+  const receiptHref = safeRelativeTarget(state.receiptHref);
 
   return (
     <section className="receipt-card-actions" aria-labelledby={`${idPrefix}-title`}>
@@ -69,15 +70,39 @@ export function CardActionState({ state }: { state: PostDuelCardCapabilityState 
       <p className="receipt-card-settlement">
         Settlement reference: {state.ownership.settlementSignature}
       </p>
+      {receiptHref ? (
+        <a
+          aria-label={`View source receipt for ${state.displayName}`}
+          className="proof-secondary-action"
+          href={receiptHref}
+        >
+          View source receipt
+        </a>
+      ) : null}
     </section>
   );
 }
 
-export function CardActionGate({ reason }: { reason: PublicDuelReceipt['cardActions']['reason'] }) {
+export function CardActionGate({
+  reason,
+  receiptHref,
+}: {
+  reason: PublicDuelReceipt['cardActions']['reason'];
+  receiptHref?: string;
+}) {
+  const target = safeRelativeTarget(receiptHref);
   return (
-    <p className="receipt-action-gate" role={reason === 'ownership-mismatch' ? 'alert' : 'status'}>
-      {cardActionGateMessage(reason)}
-    </p>
+    <div
+      className="receipt-action-gate"
+      role={reason === 'ownership-mismatch' ? 'alert' : 'status'}
+    >
+      <p>{cardActionGateMessage(reason)}</p>
+      {target ? (
+        <a className="proof-secondary-action" href={target}>
+          View source receipt
+        </a>
+      ) : null}
+    </div>
   );
 }
 
@@ -166,16 +191,22 @@ function actionTarget(action: PostDuelCardActionCapability): string | null {
   ) {
     return null;
   }
+  return safeRelativeTarget(action.href);
+}
+
+function safeRelativeTarget(value: unknown): string | null {
   if (
-    !action.href.startsWith('/') ||
-    action.href.startsWith('//') ||
-    action.href.includes('\\') ||
-    hasControlCharacter(action.href)
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    !value.startsWith('/') ||
+    value.startsWith('//') ||
+    value.includes('\\') ||
+    hasControlCharacter(value)
   ) {
     return null;
   }
   const base = new URL('https://dailydraft.invalid');
-  const target = new URL(action.href, base);
+  const target = new URL(value, base);
   if (target.origin !== base.origin) return null;
   return `${target.pathname}${target.search}${target.hash}`;
 }

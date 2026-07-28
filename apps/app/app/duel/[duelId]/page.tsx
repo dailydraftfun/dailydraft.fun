@@ -201,7 +201,7 @@ function ResultArtifact({
           const outcomeState = presentation.outcomeStates.find(
             (candidate) => candidate.side === outcome.side,
           );
-          const actionState = receipt.cardActions.cards.find(
+          const actionStates = receipt.cardActions.cards.filter(
             (candidate) => candidate.side === outcome.side,
           );
           return (
@@ -238,14 +238,22 @@ function ResultArtifact({
                 </div>
               )}
               <h2>{outcome.displayName}</h2>
-              {actionState ? <CardActionState state={toCardActionState(actionState)} /> : null}
+              {actionStates.map((actionState) => (
+                <CardActionState
+                  key={actionState.actionStateId}
+                  state={toCardActionState(actionState)}
+                />
+              ))}
             </article>
           );
         })}
       </div>
 
       {receipt.cardActions.availability === 'hidden' ? (
-        <CardActionGate reason={receipt.cardActions.reason} />
+        <CardActionGate
+          reason={receipt.cardActions.reason}
+          receiptHref={receipt.cardActions.receiptHref}
+        />
       ) : null}
     </section>
   );

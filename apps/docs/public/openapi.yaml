@@ -3301,7 +3301,7 @@ components:
           const: dailydraft.game-catalog.v1
     PublicGameModeId:
       type: string
-      enum: [duel, flip, crash]
+      enum: [duel, gacha, flip, crash]
     PublicGameAvailabilityMode:
       type: object
       additionalProperties: false
@@ -3334,8 +3334,8 @@ components:
           format: date-time
         modes:
           type: array
-          minItems: 3
-          maxItems: 3
+          minItems: 4
+          maxItems: 4
           items:
             $ref: '#/components/schemas/PublicGameAvailabilityMode'
         network:
@@ -3362,7 +3362,7 @@ components:
       properties:
         activityId:
           type: string
-          pattern: '^(duel|flip|crash):[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$'
+          pattern: '^(duel|gacha|flip|crash):[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$'
         mode:
           $ref: '#/components/schemas/PublicGameModeId'
         occurredAt:
@@ -3393,7 +3393,7 @@ components:
           pattern: '^[a-z][a-z0-9-]{1,63}$'
         resultHref:
           type: string
-          pattern: '^/v1/rgs/rounds/(duel|flip|crash)/[A-Za-z0-9][A-Za-z0-9._:-]{0,239}/proof$'
+          pattern: '^/v1/rgs/rounds/(duel|gacha|flip|crash)/[A-Za-z0-9][A-Za-z0-9._:-]{0,239}/proof$'
         resultSummary:
           type: string
           minLength: 1

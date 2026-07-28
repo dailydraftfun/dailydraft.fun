@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import { journeyTestIds } from '../../app/e2e/journey-test-ids';
 import { parseProductCapabilities } from '../../app/solana/duel-client';
-import { DuelJourneyFixture, journeyOpponentWallet } from './journey-fixture';
+import { parseGameCatalog } from '../../app/games/games-client';
+import { DuelJourneyFixture, journeyGameCatalog, journeyOpponentWallet } from './journey-fixture';
 
 describe('deterministic duel journey fixture', () => {
   test('replays the same wallet, RPC, duel, and provider contract for a seed', () => {
@@ -63,6 +64,20 @@ describe('deterministic duel journey fixture', () => {
         ]),
       }),
     );
+  });
+
+  test('serves the complete canonical Games hub catalog', () => {
+    const fixture = new DuelJourneyFixture('games-hub');
+    const response = fixture.handleApi({ method: 'GET', path: '/games/catalog' });
+
+    expect(response.status).toBe(200);
+    expect(parseGameCatalog(response.body)).toEqual(journeyGameCatalog());
+    expect(journeyGameCatalog().modes.map((mode) => mode.id)).toEqual([
+      'duel',
+      'gacha',
+      'flip',
+      'crash',
+    ]);
   });
 
   test('validates the seeded wallet session used by refresh journeys', () => {
@@ -335,6 +350,85 @@ describe('deterministic duel journey fixture', () => {
     }
   });
 
+  test('covers the deterministic House terminal and fail-closed journey matrix', () => {
+    for (const winner of ['player', 'house'] as const) {
+      const fixture = new DuelJourneyFixture(`house-${winner}`, {
+        houseEnabled: true,
+        houseWinner: winner,
+      });
+      const authorization = authenticate(fixture);
+      const duel = createHouseDuel(fixture, authorization);
+      submitFunding(fixture, duel.id, authorization);
+      reconcileFunding(fixture, duel.id, authorization);
+      const terminal = settle(fixture, duel.id, authorization);
+
+      expect(terminal).toEqual(
+        expect.objectContaining({
+          houseOpponent: true,
+          matchmakingMode: 'house',
+          result: expect.objectContaining({
+            comparisonMetric: 'insured-value',
+            winnerSide: winner === 'player' ? 'creator' : 'opponent',
+          }),
+          status: 'settled',
+        }),
+      );
+      expect(requestsEndingWith(fixture.snapshot().requests, '/submissions')).toHaveLength(1);
+    }
+
+    const rejected = new DuelJourneyFixture('house-limit', { houseEnabled: true });
+    rejected.disableHouseAdmission('House tier is disabled: minimum liquidity');
+    const capability = rejected.handleApi({ method: 'GET', path: '/health/capabilities' });
+    expect(capability.body).toMatchObject({
+      modes: {
+        house: {
+          enabled: false,
+          reason: 'House tier is disabled: minimum liquidity',
+        },
+      },
+    });
+    expect(requestsEndingWith(rejected.snapshot().requests, '/transactions')).toHaveLength(0);
+    expect(requestsEndingWith(rejected.snapshot().requests, '/submissions')).toHaveLength(0);
+
+    const paused = fundedHouseFixture('house-pause');
+    paused.fixture.disableHouseAdmission('New duel exposure is paused by an operator');
+    expect(
+      (
+        paused.fixture.handleApi({ method: 'GET', path: '/health/capabilities' }).body as {
+          modes: { house: { enabled: boolean } };
+        }
+      ).modes.house.enabled,
+    ).toBe(false);
+    expect(settle(paused.fixture, paused.duelId, paused.authorization).status).toBe('settled');
+    expect(requestsEndingWith(paused.fixture.snapshot().requests, '/submissions')).toHaveLength(1);
+
+    const refunded = fundedHouseFixture('house-refund');
+    refunded.fixture.refundHouseOnOpen();
+    expect(settle(refunded.fixture, refunded.duelId, refunded.authorization).status).toBe(
+      'refunded',
+    );
+    expect(settle(refunded.fixture, refunded.duelId, refunded.authorization).status).toBe(
+      'refunded',
+    );
+    expect(requestsEndingWith(refunded.fixture.snapshot().requests, '/submissions')).toHaveLength(
+      1,
+    );
+
+    const resumable = fundedHouseFixture('house-resumable');
+    resumable.fixture.holdLifecycleAt('settling');
+    const held = settle(resumable.fixture, resumable.duelId, resumable.authorization);
+    const committedHash = held.result?.resultHash;
+    expect(held.status).toBe('settling');
+    resumable.fixture.releaseLifecycle();
+    expect(resumable.fixture.snapshot().duel).toMatchObject({
+      result: { resultHash: committedHash },
+      status: 'settled',
+    });
+    expect(requestsEndingWith(resumable.fixture.snapshot().requests, '/submissions')).toHaveLength(
+      1,
+    );
+  });
+
   test('fails incomplete and unsupported setup with targeted errors', () => {
     expect(() => new DuelJourneyFixture('INVALID SEED')).toThrow(
       'Journey fixture seed must use 1-32 lowercase letters, numbers, or hyphens.',
@@ -438,6 +532,20 @@ function createDirectDuel(fixture: DuelJourneyFixture, authorization: string) {
   return response.body as NonNullable<ReturnType<DuelJourneyFixture['snapshot']>['duel']>;
 }
 
+function createHouseDuel(fixture: DuelJourneyFixture, authorization: string) {
+  const response = fixture.handleApi({
+    authorization,
+    body: {
+      creatorWallet: fixture.bootstrap().wallet.address,
+      matchmakingMode: 'house',
+    },
+    method: 'POST',
+    path: '/duels',
+  });
+  expect(response.status).toBe(200);
+  return response.body as NonNullable<ReturnType<DuelJourneyFixture['snapshot']>['duel']>;
+}
+
 function settle(fixture: DuelJourneyFixture, duelId: string, authorization: string) {
   const response = fixture.handleApi({
     authorization,
@@ -463,6 +571,34 @@ function submitFunding(fixture: DuelJourneyFixture, duelId: string, authorizatio
     path: `/duels/${duelId}/transactions/${intent.id}/submissions`,
   });
   expect(submission.status).toBe(200);
+}
+
+function reconcileFunding(
+  fixture: DuelJourneyFixture,
+  duelId: string,
+  authorization: string,
+): void {
+  const response = fixture.handleApi({
+    authorization,
+    body: {},
+    method: 'POST',
+    path: `/duels/${duelId}/transactions/reconciliation`,
+  });
+  expect(response.status).toBe(200);
+  expect(fixture.snapshot().duel?.status).toBe('funded');
+}
+
+function fundedHouseFixture(seed: string): {
+  authorization: string;
+  duelId: string;
+  fixture: DuelJourneyFixture;
+} {
+  const fixture = new DuelJourneyFixture(seed, { houseEnabled: true });
+  const authorization = authenticate(fixture);
+  const duel = createHouseDuel(fixture, authorization);
+  submitFunding(fixture, duel.id, authorization);
+  reconcileFunding(fixture, duel.id, authorization);
+  return { authorization, duelId: duel.id, fixture };
 }
 
 function requestsEndingWith(requests: string[], suffix: string): string[] {

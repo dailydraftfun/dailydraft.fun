@@ -141,8 +141,10 @@ describe('public duel page contract', () => {
       expect(availableMarkup).toContain('Charizard fixture pull supported actions');
       expect(availableMarkup).toContain('Keep card');
       expect(availableMarkup).toContain('List card unavailable for Charizard fixture pull');
+      expect(availableMarkup).toContain('View source receipt for Charizard fixture pull');
       expect(availableMarkup).toContain('receipt-pull-image');
       expect(hiddenMarkup).toContain('finalized settlement reference reconciles ownership');
+      expect(hiddenMarkup).toContain('View source receipt');
       expect(hiddenMarkup).toContain('receipt-pull-placeholder');
       expect(hiddenMarkup).toContain('DAILYDRAFT');
     } finally {

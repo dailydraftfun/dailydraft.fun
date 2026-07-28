@@ -1,11 +1,17 @@
 import 'reflect-metadata';
 
+import type { IncomingMessage } from 'node:http';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 
 import { AppModule } from './app.module.js';
 import { ProblemDetailsFilter } from './common/problem-details.filter.js';
+import {
+  registerRequestBoundary,
+  resolveRequestBoundaryConfig,
+  resolveRequestId,
+} from './common/request-boundary.js';
 import { validateDeploymentEnvironment } from './config/deployment-environment.js';
 import { GachaRipService } from './gacha/gacha-rip.service.js';
 
@@ -15,11 +21,13 @@ export interface CreateAppOptions {
 
 export async function createApp(options: CreateAppOptions = {}): Promise<NestFastifyApplication> {
   validateDeploymentEnvironment();
-  const adapter = new FastifyAdapter({ trustProxy: true });
-  adapter.getInstance().addHook('onRequest', (request, response, done) => {
-    response.header('x-request-id', request.id);
-    done();
+  const requestBoundary = resolveRequestBoundaryConfig();
+  const adapter = new FastifyAdapter({
+    genReqId: (request: IncomingMessage) => resolveRequestId(request.headers['x-request-id']),
+    trustProxy:
+      requestBoundary.trustedProxies.length > 0 ? [...requestBoundary.trustedProxies] : false,
   });
+  registerRequestBoundary(adapter.getInstance(), requestBoundary);
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter);
   await app.get(GachaRipService).bootstrapConfiguredMachines();
@@ -32,12 +40,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<NestFas
       whitelist: true,
     }),
   );
-
-  const origins = (process.env.CORS_ORIGINS ?? '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-  if (origins.length > 0) app.enableCors({ origin: origins });
 
   if (options.enableShutdownHooks ?? true) app.enableShutdownHooks();
   return app;

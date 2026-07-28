@@ -17,7 +17,12 @@ import { useDialogFocus } from '../accessibility/use-dialog-focus';
 import { resolveFundingPreflight } from '../solana/balance';
 import { getExplorerAddressUrl, getExplorerTransactionUrl } from '../solana/config';
 import { type ConfirmationPhase, describeConfirmation } from '../solana/confirmation';
-import type { DuelOpponentType, DuelTransactionIntent, DurableDuel } from '../solana/duel-client';
+import type {
+  DuelOpponentType,
+  DuelTransactionIntent,
+  DurableDuel,
+  HouseAdmissionDisclosure,
+} from '../solana/duel-client';
 import { useWalletAuth } from '../solana/wallet-auth-provider';
 import { useSolanaWallet } from '../solana/wallet-provider';
 import { getDuelEntryStage, getPlainMoneySummary } from './duel-entry-flow';
@@ -28,6 +33,7 @@ type DuelEntryStepperProps = {
   error: string | null;
   fundingPhase: 'idle' | 'signing' | 'confirming' | 'recovering';
   fundingSignature: string | null;
+  houseAdmission: HouseAdmissionDisclosure | null;
   intent: DuelTransactionIntent | null;
   mode: DuelOpponentType;
   notice: string | null;
@@ -46,6 +52,7 @@ export function DuelEntryStepper({
   error,
   fundingPhase,
   fundingSignature,
+  houseAdmission,
   intent,
   mode,
   notice,
@@ -150,6 +157,7 @@ export function DuelEntryStepper({
           {stage === 'authenticate' ? <AuthenticateStep /> : null}
           {stage === 'review' ? (
             <ReviewStep
+              houseAdmission={houseAdmission}
               mode={mode}
               tier={tier}
               pending={pending}
@@ -364,12 +372,14 @@ function AuthenticateStep() {
 }
 
 function ReviewStep({
+  houseAdmission,
   mode,
   networkChecking,
   onPrepare,
   pending,
   tier,
 }: {
+  houseAdmission: HouseAdmissionDisclosure | null;
   mode: DuelOpponentType;
   networkChecking: boolean;
   onPrepare: () => Promise<void>;
@@ -397,6 +407,26 @@ function ReviewStep({
           The pool value is not charged or purchased. Continue to calculate the exact test-SOL
           platform fee before any transaction wallet prompt.
         </p>
+        {mode === 'house' && houseAdmission ? (
+          <div data-testid="house-admission-disclosure">
+            <strong>{houseAdmission.opponent.label} admission</strong>
+            <p>
+              Solana devnet only. Readiness is checked again immediately before duel creation. This
+              preview does not imply legal approval or live-provider approval.
+            </p>
+            <p>
+              Policy {houseAdmission.valuation.policyVersion} compares{' '}
+              {houseAdmission.valuation.comparisonMetric}. Ties{' '}
+              {houseAdmission.valuation.tieRule.replaceAll('-', ' ')}.
+            </p>
+            <p>
+              Limits: {houseAdmission.limits.maxActivePerWallet} active per wallet,{' '}
+              {houseAdmission.limits.maxConcurrentPerTier} concurrent per tier,{' '}
+              {formatMicroUsdc(houseAdmission.limits.maxTotalExposureAmount)} maximum exposure, and{' '}
+              {formatMicroUsdc(houseAdmission.limits.minimumLiquidityAmount)} minimum liquidity.
+            </p>
+          </div>
+        ) : null}
       </div>
       <Button
         type="button"
@@ -414,6 +444,13 @@ function ReviewStep({
       </Button>
     </div>
   );
+}
+
+function formatMicroUsdc(value: string): string {
+  const amount = BigInt(value);
+  const whole = amount / 1_000_000n;
+  const fraction = (amount % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
+  return `${whole.toLocaleString('en-US')}${fraction ? `.${fraction}` : ''} USDC`;
 }
 
 function FundingReviewStep({

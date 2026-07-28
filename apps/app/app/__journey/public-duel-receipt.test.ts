@@ -39,4 +39,39 @@ describe('public surface journey receipt', () => {
     expect(createPublicSurfaceReceipt('duel_fixture_custom')?.duel.status).toBe('settled');
     expect(createPublicSurfaceReceipt('duel_unknown')).toBeNull();
   });
+
+  test('publishes deterministic multi-card action availability and stable receipt links', () => {
+    const receipt = createPublicSurfaceReceipt('duel_fixture_card_actions');
+
+    expect(receipt?.cardActions.availability).toBe('available');
+    expect(receipt?.cardActions.cards).toHaveLength(2);
+    expect(receipt?.cardActions.cards.map((card) => card.receiptHref)).toEqual([
+      '/v1/duels/duel_fixture_card_actions/receipt',
+      '/v1/duels/duel_fixture_card_actions/receipt',
+    ]);
+    expect(
+      receipt?.cardActions.cards.flatMap((card) =>
+        card.actions.map((action) => [action.action, action.availability, action.reason]),
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        ['list', 'available', null],
+        ['list', 'pending', 'ownership-pending'],
+        ['sell-back', 'expired', 'buyback-expired'],
+        ['redeem', 'unavailable', 'unsupported'],
+      ]),
+    );
+  });
+
+  test('publishes ownership mismatch as an alertable hidden state with its source receipt', () => {
+    const receipt = createPublicSurfaceReceipt('duel_fixture_ownership_mismatch');
+
+    expect(receipt?.cardActions).toEqual({
+      availability: 'hidden',
+      cards: [],
+      reason: 'ownership-mismatch',
+      receiptHref: '/v1/duels/duel_fixture_ownership_mismatch/receipt',
+      schemaVersion: 'dailydraft.card-actions.v1',
+    });
+  });
 });

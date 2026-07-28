@@ -33,6 +33,7 @@ import {
 } from '../components/choreography';
 import choreographyStyles from '../components/choreography/choreography.module.css';
 import { CrashHistoryPanel } from './crash-history-panel';
+import { FlipReceiptHistory } from './flip-receipt-history';
 import {
   type PreviewCard,
   type PreviewMode,
@@ -155,6 +156,7 @@ export function GameModePreview({
       </div>
 
       {mode === 'crash' ? <CrashHistoryPanel /> : null}
+      {mode === 'flip' ? <FlipReceiptHistory /> : null}
 
       <div className="flex flex-wrap gap-3">
         <Link className="proof-secondary-action" href="/games">

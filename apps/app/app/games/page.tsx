@@ -4,7 +4,7 @@ import { GameLobby } from './game-lobby';
 export const metadata: Metadata = {
   title: 'Card games — DailyDraft Devnet',
   description:
-    'Explore Card Duels, Sports Pack Gacha, Fantasy Tournaments, and Card Streak as capability-gated sports card games on Solana devnet.',
+    'Explore Card Duel, Sports Pack Gacha, Marketplace Flip, and Card Streak through one capability-gated game hub on Solana devnet.',
   robots: { follow: false, index: false, nocache: true },
 };
 

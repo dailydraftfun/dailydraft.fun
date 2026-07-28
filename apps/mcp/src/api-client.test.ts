@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-
+import {
+  GAME_AVAILABILITY_SCHEMA_VERSION,
+  GAME_CATALOG_SCHEMA_VERSION,
+} from '@dailydraft/contracts';
 import { DailyDraftApiClient, DailyDraftApiError } from './api-client.js';
 
 const pack = {
@@ -25,6 +28,71 @@ afterEach(() => {
 });
 
 describe('DailyDraftApiClient', () => {
+  test('reads catalog and fail-closed public availability without authentication', async () => {
+    const requests: Request[] = [];
+    const client = new DailyDraftApiClient({
+      baseUrl: 'https://api.example.test/v1',
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        requests.push(request);
+        const common = {
+          asOf: '2026-07-29T10:00:00.000Z',
+          network: 'solana-devnet',
+        } as const;
+        if (request.url.endsWith('/games/catalog')) {
+          return Response.json({
+            ...common,
+            modes: [
+              {
+                availableActions: [
+                  { href: '/games/duel', id: 'direct-challenge', label: 'Challenge a wallet' },
+                ],
+                capabilitySource: {
+                  kind: 'runtime',
+                  name: 'duel-readiness',
+                  status: 'verified',
+                },
+                description: 'Committed card comparison.',
+                id: 'duel',
+                name: 'Card Duel',
+                reason: 'Devnet capability is verified.',
+                state: 'playable',
+              },
+            ],
+            schemaVersion: GAME_CATALOG_SCHEMA_VERSION,
+          });
+        }
+        return Response.json({
+          ...common,
+          modes: [
+            {
+              asOf: common.asOf,
+              availableActions: [],
+              capabilitySource: {
+                kind: 'fixture',
+                name: 'rgs-fixture',
+                status: 'gated',
+              },
+              id: 'flip',
+              reason: 'Fixture preview only.',
+              state: 'preview',
+            },
+          ],
+          schemaVersion: GAME_AVAILABILITY_SCHEMA_VERSION,
+        });
+      },
+    });
+
+    expect((await client.getGameCatalog()).modes[0]?.id).toBe('duel');
+    expect((await client.getGameAvailability()).modes[0]?.id).toBe('flip');
+    expect(requests.map((request) => request.url)).toEqual([
+      'https://api.example.test/v1/games/catalog',
+      'https://api.example.test/v1/games/availability',
+    ]);
+    expect(requests.every((request) => request.method === 'GET')).toBe(true);
+    expect(requests.every((request) => request.headers.get('authorization') === null)).toBe(true);
+  });
+
   test('encodes filters and authenticates without exposing the key', async () => {
     let request: Request | undefined;
     const client = new DailyDraftApiClient({

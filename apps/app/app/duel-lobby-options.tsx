@@ -297,7 +297,9 @@ function ModeTab({
       {icon}
       <span className="mode-tab-copy">
         <strong className="mode-tab-title">{label}</strong>
-        <small className="mode-tab-caption">{capability.enabled ? caption : 'Coming soon'}</small>
+        <small className="mode-tab-caption">
+          {capability.enabled ? caption : (capability.reason ?? 'Unavailable')}
+        </small>
       </span>
     </button>
   );

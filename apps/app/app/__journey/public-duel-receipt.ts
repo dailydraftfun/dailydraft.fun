@@ -21,7 +21,20 @@ export function createPublicSurfaceReceipt(duelId: string): PublicDuelReceipt | 
   const status = statusMatch?.[1] as (typeof publicSurfaceStatuses)[number] | undefined;
   if (!status && !duelId.startsWith('duel_fixture_')) return null;
 
-  return receipt(duelId, status ?? 'settled');
+  const fixture = receipt(duelId, status ?? 'settled');
+  if (duelId === 'duel_fixture_card_actions') {
+    fixture.cardActions = availableCardActions(duelId, fixture);
+  }
+  if (duelId === 'duel_fixture_ownership_mismatch') {
+    fixture.cardActions = {
+      availability: 'hidden',
+      cards: [],
+      reason: 'ownership-mismatch',
+      receiptHref: `/v1/duels/${duelId}/receipt`,
+      schemaVersion: 'dailydraft.card-actions.v1',
+    };
+  }
+  return fixture;
 }
 
 function receipt(
@@ -202,4 +215,109 @@ function receipt(
       : null,
     schemaVersion: 'dailydraft.receipt.v1',
   };
+}
+
+function availableCardActions(
+  duelId: string,
+  fixture: PublicDuelReceipt,
+): PublicDuelReceipt['cardActions'] {
+  const owner = fixture.participants.creator;
+  const receiptHref = `/v1/duels/${duelId}/receipt`;
+  const baseState = {
+    duelId,
+    imageUrl: null,
+    owner,
+    ownership: {
+      basis: 'finalized-settlement-reference',
+      settlementSignature: privateFixtureSignature,
+      status: 'reconciled',
+    },
+    receiptHref,
+    side: 'creator',
+  } as const;
+
+  return {
+    availability: 'available',
+    cards: [
+      {
+        ...baseState,
+        actionStateId: `card-action:${duelId}:charizard`,
+        actions: [
+          cardAction('keep', 'available'),
+          cardAction('list', 'available', {
+            href: `/cards/${duelId}/charizard/list`,
+            value: money('68000000'),
+          }),
+          cardAction('sell-back', 'expired', {
+            expiresAt: '2026-07-23T10:00:00.000Z',
+            reason: 'buyback-expired',
+            value: money('61000000'),
+          }),
+          cardAction('redeem', 'unavailable', { reason: 'unsupported' }),
+        ],
+        assetReference: 'fixture-asset-creator',
+        displayName: 'Charizard action card',
+        insuredValue: money('72500000'),
+        providerReference: 'fixture-provider-reference-charizard',
+      },
+      {
+        ...baseState,
+        actionStateId: `card-action:${duelId}:pikachu`,
+        actions: [
+          cardAction('keep', 'available'),
+          cardAction('list', 'pending', { reason: 'ownership-pending' }),
+          cardAction('sell-back', 'available', {
+            href: `/cards/${duelId}/pikachu/sell-back`,
+            value: money('25000000'),
+          }),
+          cardAction('redeem', 'unavailable', {
+            reason: 'partner-onboarding-required',
+          }),
+        ],
+        assetReference: 'fixture-asset-creator-bonus',
+        displayName: 'Pikachu action card',
+        insuredValue: money('28000000'),
+        providerReference: 'fixture-provider-reference-pikachu',
+      },
+    ],
+    reason: null,
+    receiptHref,
+    schemaVersion: 'dailydraft.card-actions.v1',
+  };
+}
+
+function cardAction(
+  action: PublicDuelReceipt['cardActions']['cards'][number]['actions'][number]['action'],
+  availability: PublicDuelReceipt['cardActions']['cards'][number]['actions'][number]['availability'],
+  overrides: Partial<PublicDuelReceipt['cardActions']['cards'][number]['actions'][number]> = {},
+): PublicDuelReceipt['cardActions']['cards'][number]['actions'][number] {
+  const capability = {
+    keep: 'ownership-receipt',
+    list: 'collector-crypt-marketplace-listing',
+    redeem: 'collector-crypt-shipping',
+    'sell-back': 'collector-crypt-buyback',
+  } as const;
+  const label = {
+    keep: 'Keep card',
+    list: 'List card',
+    redeem: 'Redeem physical card',
+    'sell-back': 'Sell back',
+  } as const;
+
+  return {
+    action,
+    alternative: action === 'keep' ? null : { action: 'keep', label: 'Keep card' },
+    availability,
+    capability: capability[action],
+    detail: `${label[action]} capability evidence for this deterministic devnet receipt.`,
+    label: label[action],
+    reason: availability === 'available' ? null : 'partner-onboarding-required',
+    requiresSignature: false,
+    transaction: null,
+    ...overrides,
+  };
+}
+
+function money(amount: string) {
+  return { amount, currency: 'USDC' as const, decimals: 6 as const };
 }

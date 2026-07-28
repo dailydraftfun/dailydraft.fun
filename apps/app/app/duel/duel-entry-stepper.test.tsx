@@ -103,6 +103,45 @@ describe('duel entry stepper', () => {
     expect(html).not.toContain('Selected pack');
   });
 
+  test('discloses live House admission evidence before duel creation', () => {
+    walletState = wallet();
+    authenticationState = authentication({
+      sessionToken: 'session',
+      status: 'authenticated',
+    });
+
+    const html = renderStepper({
+      houseAdmission: {
+        approvalStatus: 'devnet-preview-no-legal-or-live-provider-approval',
+        currency: 'USDC',
+        decimals: 6,
+        limits: {
+          dailyLossAmount: '100000000',
+          maxActivePerWallet: 1,
+          maxConcurrentPerTier: 2,
+          maxTotalExposureAmount: '200000000',
+          minimumLiquidityAmount: '50000000',
+        },
+        network: 'solana-devnet',
+        opponent: { label: 'DailyDraft House', wallet: null },
+        preFundingRecheck: 'immediately-before-duel-creation',
+        valuation: {
+          comparisonMetric: 'insured-value',
+          policyHash: 'policy-hash',
+          policyVersion: 'policy-v1',
+          tieRule: 'return-original-assets-and-refund-platform-fees',
+        },
+      },
+      mode: 'house',
+    });
+
+    expect(html).toContain('DailyDraft House admission');
+    expect(html).toContain('Readiness is checked again immediately before duel creation.');
+    expect(html).toContain('does not imply legal approval or live-provider approval');
+    expect(html).toContain('200 USDC maximum exposure');
+    expect(html).toContain('data-testid="house-admission-disclosure"');
+  });
+
   test('keeps a rejected funding intent available for an explicit retry', () => {
     walletState = wallet();
     authenticationState = authentication({
@@ -257,6 +296,7 @@ function renderStepper(
       error={null}
       fundingPhase="idle"
       fundingSignature={null}
+      houseAdmission={null}
       intent={null}
       mode="direct"
       notice={null}

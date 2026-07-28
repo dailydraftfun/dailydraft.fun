@@ -1293,6 +1293,24 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           );
           return;
         }
+        if (nextMode === 'house') {
+          const refreshedCapabilities = await getProductCapabilities();
+          setCapabilityState({ status: 'ready', value: refreshedCapabilities });
+          const refreshedHouse = refreshedCapabilities.modes.house;
+          if (!refreshedHouse.enabled) {
+            setActionError(
+              refreshedHouse.reason ??
+                'House admission changed before funding. No duel was created or funded.',
+            );
+            return;
+          }
+          if (!enabledPackForTier(refreshedCapabilities, nextTier)) {
+            setActionError(
+              'This House tier changed before funding. No duel was created or funded.',
+            );
+            return;
+          }
+        }
         const duel =
           activeEntry?.action === 'accept'
             ? await joinDuel(
@@ -2404,6 +2422,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       </details>
       {entryFlowOpen ? (
         <DuelEntryStepper
+          houseAdmission={
+            capabilityState.status === 'ready' ? capabilityState.value.modes.house.admission : null
+          }
           mode={mode}
           tier={tier}
           intent={intent}

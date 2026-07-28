@@ -85,19 +85,16 @@ export class GamesLobbyService {
     environment: NodeJS.ProcessEnv = process.env,
   ): Promise<PublicGameAvailability> {
     const catalog = await this.catalog.getCatalog(asOf);
-    const modes = catalog.modes.flatMap((mode): PublicGameAvailabilityMode[] => {
-      if (mode.id === 'gacha') return [];
+    const modes = catalog.modes.map((mode): PublicGameAvailabilityMode => {
       const resolved = mode.id === 'duel' ? applyDuelPolicyGates(mode, environment) : mode;
-      return [
-        {
-          asOf: catalog.asOf,
-          availableActions: resolved.availableActions,
-          capabilitySource: resolved.capabilitySource,
-          id: mode.id,
-          reason: resolved.reason,
-          state: resolved.state,
-        },
-      ];
+      return {
+        asOf: catalog.asOf,
+        availableActions: resolved.availableActions,
+        capabilitySource: resolved.capabilitySource,
+        id: mode.id,
+        reason: resolved.reason,
+        state: resolved.state,
+      };
     });
 
     return {

@@ -148,6 +148,24 @@ describe('duel arena contract', () => {
     expect(tracker).toBeGreaterThan(walletPrompt);
     expect(approveIntent.match(/confirmationScope\.current\.begin\(\)/g)).toHaveLength(1);
   });
+
+  test('rechecks House admission immediately before creation without blocking funded recovery', () => {
+    const source = readFileSync(new URL('./duel-arena.tsx', import.meta.url), 'utf8');
+    const reviewStart = source.indexOf('async function reviewDuel(');
+    const reviewEnd = source.indexOf('async function reviewPersistedFunding', reviewStart);
+    const reviewDuel = source.slice(reviewStart, reviewEnd);
+    const houseCheck = reviewDuel.indexOf("if (nextMode === 'house')");
+    const refresh = reviewDuel.indexOf('await getProductCapabilities()', houseCheck);
+    const create = reviewDuel.indexOf('await createDuel(', houseCheck);
+    const recoveryStart = source.indexOf('async function reviewPersistedFunding');
+    const recoveryEnd = source.indexOf('async function cancelPersistedDuel', recoveryStart);
+
+    expect(houseCheck).toBeGreaterThanOrEqual(0);
+    expect(refresh).toBeGreaterThan(houseCheck);
+    expect(create).toBeGreaterThan(refresh);
+    expect(reviewDuel).toContain('No duel was created or funded.');
+    expect(source.slice(recoveryStart, recoveryEnd)).not.toContain('getProductCapabilities');
+  });
 });
 
 describe('duel card stages', () => {

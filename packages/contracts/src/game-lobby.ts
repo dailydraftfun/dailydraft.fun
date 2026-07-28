@@ -4,7 +4,7 @@ export const GAME_AVAILABILITY_SCHEMA_VERSION = 'dailydraft.game-availability.v1
 export const VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION =
   'dailydraft.verified-game-activity.v1' as const;
 
-export const PUBLIC_GAME_MODE_IDS = ['duel', 'flip', 'crash'] as const;
+export const PUBLIC_GAME_MODE_IDS = ['duel', 'gacha', 'flip', 'crash'] as const;
 
 export type PublicGameModeId = (typeof PUBLIC_GAME_MODE_IDS)[number];
 
@@ -73,6 +73,19 @@ export const verifiedGameActivityContractFixtures = {
     resultSummary: '9xQe…9gJ1 won a verified Sports Pack Duel.',
     tier: { amount: '50000000', currency: 'USDC', decimals: 6 },
     title: 'Sports Pack Duel settled',
+    verification: 'settled-rgs-proof',
+  },
+  gacha: {
+    activityId: 'gacha:gacharip_contract0001',
+    mode: 'gacha',
+    occurredAt: '2026-07-28T11:58:30.000Z',
+    participants: [{ label: 'Player G8K4', role: 'player' }],
+    receiptHref: '/v1/rgs/rounds/gacha/gacharip_contract0001/proof',
+    result: 'pack-opened',
+    resultHref: '/v1/rgs/rounds/gacha/gacharip_contract0001/proof',
+    resultSummary: 'Player G8K4 opened a verified Sports Pack Gacha round.',
+    tier: { amount: '50000000', currency: 'USDC', decimals: 6 },
+    title: 'Sports Pack Gacha round settled',
     verification: 'settled-rgs-proof',
   },
   flip: {

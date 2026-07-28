@@ -31,6 +31,15 @@ Production additionally requires `CRON_SECRET` and
 secrets are validated without writing their values to the conformance report.
 Every required key has a deterministic missing-value fixture.
 
+The HTTP boundary accepts browser origins only from `CORS_ORIGINS`, preserves a
+canonical `x-request-id` or assigns one, and publishes bounded rate-limit
+metadata. Forwarded headers are trusted only from literal addresses listed in
+`DAILYDRAFT_TRUSTED_PROXIES`; malformed forwarding from a trusted proxy is
+rejected, while forwarding from every other peer is ignored. Structured request
+logs contain route, method, status, duration, request ID, remote address, and
+rate-limit counters only—never headers, credentials, bodies, or provider
+payloads.
+
 Preview persistence is classified as `ephemeral-preview`; it must never be
 treated as release evidence. Production persistence is classified as
 `durable-postgresql` and requires an explicit PostgreSQL connection string.

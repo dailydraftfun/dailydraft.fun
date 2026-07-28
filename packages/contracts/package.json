@@ -33,6 +33,12 @@
       "import": "./src/pull-rarity.ts",
       "default": "./dist/pull-rarity.js"
     },
+    "./public-game-taxonomy": {
+      "types": "./src/public-game-taxonomy.ts",
+      "bun": "./src/public-game-taxonomy.ts",
+      "import": "./src/public-game-taxonomy.ts",
+      "default": "./dist/public-game-taxonomy.js"
+    },
     "./rgs": {
       "types": "./src/rgs.ts",
       "bun": "./src/rgs.ts",
@@ -47,7 +53,7 @@
     }
   },
   "scripts": {
-    "build": "bun build src/index.ts src/crash-history.ts src/game-catalog.ts src/game-lobby.ts src/pull-rarity.ts src/rgs.ts src/theme-pack.ts --target=bun --outdir=dist",
+    "build": "bun build src/index.ts src/crash-history.ts src/game-catalog.ts src/game-lobby.ts src/pull-rarity.ts src/public-game-taxonomy.ts src/rgs.ts src/theme-pack.ts --target=bun --outdir=dist",
     "clean": "rm -rf dist",
     "lint": "biome check src/",
     "test": "bun test",

@@ -101,6 +101,82 @@ describe('HouseTreasuryService', () => {
     expect(harness.ledger).toEqual([
       expect.objectContaining({ type: HouseTreasuryLedgerType.RECONCILIATION_ALERT }),
     ]);
+    expect(harness.discrepancies).toEqual([
+      expect.objectContaining({
+        entityReference: 'hinv_mismatched_custody',
+        kind: 'inventory_custody',
+        observedSlot: '1',
+      }),
+    ]);
+    expect(harness.inventory.every((asset) => asset.lastReconciledSlot === '1')).toBe(true);
+  });
+
+  test('records a slot-bound treasury discrepancy without rewriting prior ledger evidence', async () => {
+    const harness = treasuryBalanceReconciliationDatabase({
+      balanceAmount: '150000000',
+      observedSlot: '40',
+      verifiedAt: new Date('2026-07-29T10:00:00.000Z'),
+    });
+    harness.ledger.push({
+      amount: '10000000',
+      createdAt: new Date('2026-07-29T10:01:00.000Z'),
+      type: HouseTreasuryLedgerType.HOUSE_PACK_COST,
+    });
+    const service = new HouseTreasuryService(
+      harness.database as never,
+      new TreasuryRpc(
+        {
+          amount: 130_000_000n,
+          delegate: HOT_WALLET,
+          delegatedAmount: 100_000_000n,
+          mint: USDC_MINT,
+          owner: COLD_OWNER,
+        },
+        41n,
+      ),
+    );
+
+    const result = await withHouseEnvironment(() => service.reconcileOnChain());
+
+    expect(result).toMatchObject({ observedSlot: '41', treasuryDiscrepancies: 1 });
+    expect(harness.discrepancies).toEqual([
+      expect.objectContaining({
+        expectedValue: '140000000',
+        kind: 'treasury_balance',
+        observedSlot: '41',
+        observedValue: '130000000',
+      }),
+    ]);
+    expect(harness.snapshots.at(-1)).toMatchObject({
+      balanceAmount: '130000000',
+      observedSlot: '41',
+    });
+  });
+
+  test('rejects a stale finalized observation before replacing the recorded snapshot', async () => {
+    const harness = treasuryBalanceReconciliationDatabase({
+      balanceAmount: '150000000',
+      observedSlot: '50',
+      verifiedAt: new Date('2026-07-29T10:00:00.000Z'),
+    });
+    const service = new HouseTreasuryService(
+      harness.database as never,
+      new TreasuryRpc(
+        {
+          amount: 150_000_000n,
+          delegate: HOT_WALLET,
+          delegatedAmount: 100_000_000n,
+          mint: USDC_MINT,
+          owner: COLD_OWNER,
+        },
+        49n,
+      ),
+    );
+
+    await expect(withHouseEnvironment(() => service.reconcileOnChain())).rejects.toThrow(
+      'older than recorded state',
+    );
+    expect(harness.snapshots).toHaveLength(1);
   });
 
   test('rotates unchanged lifecycle rows so a later release cannot starve beyond one batch', async () => {
@@ -334,6 +410,8 @@ interface SnapshotWrite {
   balanceAmount: string;
   delegate: string;
   delegatedAmount: string;
+  observedSlot: string;
+  verifiedAt: Date;
   wallet: string;
 }
 
@@ -346,19 +424,27 @@ interface ReconciliationInventoryRow {
   duelId: string;
   id: string;
   listingState: HouseInventoryListingState;
+  lastReconciledAt?: Date;
+  lastReconciledSlot?: string;
   reconciliationError: string | null;
   status: HouseInventoryStatus;
   version: number;
 }
 
 class TreasuryRpc extends SolanaRpcGateway {
-  constructor(private readonly account: LegacyTokenAccountFixture) {
+  constructor(
+    private readonly account: LegacyTokenAccountFixture,
+    private readonly slot = 1n,
+  ) {
     super();
   }
 
   async assertDevnet(): Promise<void> {}
   async getBlockHeight(): Promise<bigint> {
     return 1n;
+  }
+  override async getFinalizedSlot(): Promise<bigint> {
+    return this.slot;
   }
   async getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: bigint }> {
     return { blockhash: HOT_WALLET, lastValidBlockHeight: 2n };
@@ -428,9 +514,13 @@ class InventoryReconciliationRpc extends SolanaRpcGateway {
 }
 
 function treasuryDatabase(snapshots: SnapshotWrite[]) {
+  const discrepancies: unknown[] = [];
   return {
     houseInventoryAsset: { findMany: () => Promise.resolve([]) },
+    houseReconciliationDiscrepancy: reconciliationDiscrepancyStore(discrepancies),
+    houseTreasuryLedgerEntry: { findMany: () => Promise.resolve([]) },
     houseTreasurySnapshot: {
+      findUnique: () => Promise.resolve(snapshots.at(-1) ?? null),
       upsert: ({ create }: { create: SnapshotWrite }) => {
         snapshots.push(create);
         return Promise.resolve(create);
@@ -469,6 +559,7 @@ function inventoryReconciliationDatabase() {
     },
   ];
   const ledger: LedgerWrite[] = [];
+  const discrepancies: unknown[] = [];
   const transaction = {
     houseInventoryAsset: {
       updateMany: ({
@@ -476,6 +567,8 @@ function inventoryReconciliationDatabase() {
         where,
       }: {
         data: {
+          lastReconciledAt: Date;
+          lastReconciledSlot: string;
           reconciliationError: string | null;
           status: HouseInventoryStatus;
           version: { increment: number };
@@ -486,6 +579,8 @@ function inventoryReconciliationDatabase() {
           (candidate) => candidate.id === where.id && candidate.version === where.version,
         );
         if (!row) return Promise.resolve({ count: 0 });
+        row.lastReconciledAt = data.lastReconciledAt;
+        row.lastReconciledSlot = data.lastReconciledSlot;
         row.reconciliationError = data.reconciliationError;
         row.status = data.status;
         row.version += data.version.increment;
@@ -502,14 +597,21 @@ function inventoryReconciliationDatabase() {
           ledger.find((entry) => entry.idempotencyKey === where.idempotencyKey) ?? null,
         ),
     },
+    houseReconciliationDiscrepancy: reconciliationDiscrepancyStore(discrepancies),
   };
   return {
     database: {
       $transaction: (operation: (client: typeof transaction) => Promise<boolean>) =>
         operation(transaction),
       houseInventoryAsset: { findMany: () => Promise.resolve(inventory) },
-      houseTreasurySnapshot: { upsert: () => Promise.resolve({}) },
+      houseReconciliationDiscrepancy: reconciliationDiscrepancyStore(discrepancies),
+      houseTreasuryLedgerEntry: { findMany: () => Promise.resolve([]) },
+      houseTreasurySnapshot: {
+        findUnique: () => Promise.resolve(null),
+        upsert: () => Promise.resolve({}),
+      },
     },
+    discrepancies,
     inventory,
     ledger,
   };
@@ -534,6 +636,7 @@ function summaryDatabase() {
   ];
   return {
     houseInventoryAsset: { findMany: () => Promise.resolve([]) },
+    houseReconciliationDiscrepancy: { findMany: () => Promise.resolve([]) },
     houseTierAdmissionState: {
       findMany: () =>
         Promise.resolve([
@@ -558,10 +661,80 @@ function summaryDatabase() {
           delegatedAmount: '100000000',
           mint: USDC_MINT,
           network: 'DEVNET',
+          observedSlot: '1',
           tokenAccount: TOKEN_ACCOUNT,
           verifiedAt: new Date(),
           wallet: COLD_OWNER,
         }),
+    },
+  };
+}
+
+function treasuryBalanceReconciliationDatabase(
+  previous: Pick<SnapshotWrite, 'balanceAmount' | 'observedSlot' | 'verifiedAt'>,
+) {
+  const snapshots = [
+    {
+      ...previous,
+      delegate: HOT_WALLET,
+      delegatedAmount: '100000000',
+      wallet: COLD_OWNER,
+    },
+  ];
+  const ledger: Array<{
+    amount: string;
+    createdAt: Date;
+    type: HouseTreasuryLedgerType;
+  }> = [];
+  const discrepancies: unknown[] = [];
+  return {
+    database: {
+      houseInventoryAsset: { findMany: () => Promise.resolve([]) },
+      houseReconciliationDiscrepancy: reconciliationDiscrepancyStore(discrepancies),
+      houseTreasuryLedgerEntry: {
+        findMany: ({ where }: { where: { createdAt: { gt: Date } } }) =>
+          Promise.resolve(ledger.filter((entry) => entry.createdAt > where.createdAt.gt)),
+      },
+      houseTreasurySnapshot: {
+        findUnique: () => Promise.resolve(snapshots.at(-1) ?? null),
+        upsert: ({
+          create,
+          update,
+        }: {
+          create: (typeof snapshots)[number];
+          update: (typeof snapshots)[number];
+        }) => {
+          const next = snapshots.length === 0 ? create : update;
+          snapshots.push(next);
+          return Promise.resolve(next);
+        },
+      },
+    },
+    discrepancies,
+    ledger,
+    snapshots,
+  };
+}
+
+function reconciliationDiscrepancyStore(rows: unknown[]) {
+  return {
+    updateMany: () => Promise.resolve({ count: 0 }),
+    upsert: ({
+      create,
+      where,
+    }: {
+      create: { idempotencyKey: string };
+      where: { idempotencyKey: string };
+    }) => {
+      const existing = rows.find(
+        (row) =>
+          typeof row === 'object' &&
+          row !== null &&
+          'idempotencyKey' in row &&
+          row.idempotencyKey === where.idempotencyKey,
+      );
+      if (!existing) rows.push(create);
+      return Promise.resolve(existing ?? create);
     },
   };
 }

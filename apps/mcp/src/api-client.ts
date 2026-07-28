@@ -7,6 +7,10 @@ import {
   duelListSchema,
   duelProofSchema,
   duelSchema,
+  type GameAvailability,
+  type GameCatalog,
+  gameAvailabilitySchema,
+  gameCatalogSchema,
   type Pack,
   type PackList,
   type PreparedTransaction,
@@ -94,6 +98,14 @@ export class DailyDraftApiClient {
 
   getPack(packId: string): Promise<Pack> {
     return this.#get(`packs/${encodeURIComponent(packId)}`, packSchema);
+  }
+
+  getGameCatalog(): Promise<GameCatalog> {
+    return this.#get('games/catalog', gameCatalogSchema);
+  }
+
+  getGameAvailability(): Promise<GameAvailability> {
+    return this.#get('games/availability', gameAvailabilitySchema);
   }
 
   listDuels(input: DuelListInput = {}): Promise<DuelList> {

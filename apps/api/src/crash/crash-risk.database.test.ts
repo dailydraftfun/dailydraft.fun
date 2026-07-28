@@ -77,6 +77,7 @@ describeDatabase('Crash risk admission against the canonical Postgres treasury l
         delegatedAmount: '20000000',
         id: 'solana-devnet-usdc',
         mint: MINT,
+        observedSlot: '0',
         tokenAccount: TOKEN_ACCOUNT,
         verifiedAt: NOW,
         wallet: WITHDRAWAL,

@@ -1,6 +1,10 @@
 'use client';
 
 import {
+  isPublicGameTaxonomyId,
+  PUBLIC_GAME_TAXONOMY,
+} from '@dailydraft/contracts/public-game-taxonomy';
+import {
   ArrowRightIcon,
   CardsThreeIcon,
   ChartLineUpIcon,
@@ -22,6 +26,7 @@ import {
   gateRuntimeActions,
   roadmapGameModes,
 } from './game-catalog';
+import { trackGameDiscovery } from './game-discovery-analytics';
 import { canonicalRulesHref, type GameRulesMode } from './game-rules';
 import { getGameCatalog, readCachedGameCatalog, writeCachedGameCatalog } from './games-client';
 import { VerifiedActivity } from './verified-activity';
@@ -87,14 +92,21 @@ export function GameLobby({
     };
   }, [initialCatalog, loadCatalog]);
 
+  useEffect(() => {
+    trackGameDiscovery({ stage: 'hub-view' });
+  }, []);
+
   const { catalog, freshness } = catalogState;
   const visibleCatalog = gateRuntimeActions(catalog, freshness);
-  const actionableModes = visibleCatalog.modes.filter(
+  const publicModes = visibleCatalog.modes.filter((mode) => isPublicGameTaxonomyId(mode.id));
+  const actionableModes = publicModes.filter(
     (mode) => mode.capabilitySource.kind === 'runtime' && mode.availableActions.length > 0,
   );
   const primaryMode =
     actionableModes.find((mode) => mode.state === 'playable') ?? actionableModes[0] ?? null;
-  const roadmap = roadmapGameModes(visibleCatalog).filter((mode) => mode.id !== primaryMode?.id);
+  const roadmap = roadmapGameModes({ ...visibleCatalog, modes: publicModes }).filter(
+    (mode) => mode.id !== primaryMode?.id,
+  );
 
   return (
     <main className="mx-auto flex min-h-[calc(100svh-7rem)] max-w-[1400px] flex-col gap-7 px-4 py-8 sm:px-6 sm:py-12">
@@ -172,6 +184,13 @@ export function GameLobby({
                   }
                   href={action.href}
                   key={action.id}
+                  onClick={() =>
+                    trackGameDiscovery({
+                      actionId: action.id,
+                      mode: primaryMode.id,
+                      stage: 'play-or-preview',
+                    })
+                  }
                 >
                   {action.label}
                   <ArrowRightIcon size={16} weight="bold" />
@@ -181,6 +200,13 @@ export function GameLobby({
                 <Link
                   className="proof-secondary-action gap-2"
                   href={canonicalRulesHref(primaryMode.id)}
+                  onClick={() =>
+                    trackGameDiscovery({
+                      actionId: 'read-rules',
+                      mode: primaryMode.id,
+                      stage: 'mode-detail',
+                    })
+                  }
                 >
                   Read rules first
                   <ReceiptIcon size={16} />
@@ -201,7 +227,7 @@ export function GameLobby({
           <aside className="border-t border-border bg-primary/45 p-6 sm:p-8 lg:border-t-0 lg:border-l">
             <p className="proof-label">Arena lanes</p>
             <div className="mt-5 grid gap-3">
-              {visibleCatalog.modes
+              {publicModes
                 .filter((mode) => mode.capabilitySource.kind === 'runtime')
                 .map((mode) => (
                   <RuntimeLane mode={mode} key={mode.id} />
@@ -257,7 +283,7 @@ export function GameLobby({
         <TrustCard
           icon={<ShieldCheckIcon size={22} weight="fill" />}
           label="Routes stay canonical"
-          copy="Duel, Gacha, Marketplace Flip, and Card Streak have one stable identity each."
+          copy={`${PUBLIC_GAME_TAXONOMY.map((mode) => mode.name).join(', ')} share one stable public identity.`}
         />
         <TrustCard
           icon={<ReceiptIcon size={22} weight="fill" />}
@@ -339,6 +365,13 @@ function RuntimeLane({ mode }: { mode: GameCatalogMode }) {
           <Link
             className="inline-flex min-h-10 items-center gap-2 text-xs font-semibold text-lime"
             href={firstAction.href}
+            onClick={() =>
+              trackGameDiscovery({
+                actionId: firstAction.id,
+                mode: mode.id,
+                stage: 'play-or-preview',
+              })
+            }
           >
             {firstAction.label}
             <ArrowRightIcon size={13} weight="bold" />
@@ -347,6 +380,13 @@ function RuntimeLane({ mode }: { mode: GameCatalogMode }) {
             <Link
               className="inline-flex min-h-10 items-center gap-2 text-xs font-semibold text-primary"
               href={canonicalRulesHref(mode.id)}
+              onClick={() =>
+                trackGameDiscovery({
+                  actionId: 'read-rules',
+                  mode: mode.id,
+                  stage: 'mode-detail',
+                })
+              }
             >
               Read rules
             </Link>
@@ -357,6 +397,13 @@ function RuntimeLane({ mode }: { mode: GameCatalogMode }) {
         <Link
           className="mt-3 inline-flex min-h-10 items-center gap-2 text-xs font-semibold text-primary"
           href={canonicalRulesHref(mode.id)}
+          onClick={() =>
+            trackGameDiscovery({
+              actionId: 'read-rules',
+              mode: mode.id,
+              stage: 'mode-detail',
+            })
+          }
         >
           Read rules
         </Link>
@@ -383,6 +430,13 @@ function RoadmapMode({ mode }: { mode: GameCatalogMode }) {
           <Link
             className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-lime"
             href={canonicalRulesHref(mode.id)}
+            onClick={() =>
+              trackGameDiscovery({
+                actionId: previewAction ? 'view-preview' : 'read-rules',
+                mode: mode.id,
+                stage: previewAction ? 'play-or-preview' : 'mode-detail',
+              })
+            }
           >
             {previewAction ? 'Read rules & open fixture' : 'Read rules'}
             <ArrowRightIcon size={14} weight="bold" />
@@ -391,6 +445,13 @@ function RoadmapMode({ mode }: { mode: GameCatalogMode }) {
           <Link
             className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-lime"
             href={previewAction.href}
+            onClick={() =>
+              trackGameDiscovery({
+                actionId: previewAction.id,
+                mode: mode.id,
+                stage: 'play-or-preview',
+              })
+            }
           >
             {previewAction.label}
             <ArrowRightIcon size={14} weight="bold" />

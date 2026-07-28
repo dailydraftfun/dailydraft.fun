@@ -32,17 +32,25 @@ export type PublicParticipant = {
 export type PublicPostDuelCardAction = {
   action: 'keep' | 'list' | 'redeem' | 'sell-back';
   alternative: { action: 'keep'; label: 'Keep card' } | null;
-  availability: 'available' | 'unavailable';
+  availability: 'available' | 'expired' | 'pending' | 'unavailable';
   capability:
     | 'collector-crypt-buyback'
     | 'collector-crypt-marketplace-listing'
     | 'collector-crypt-shipping'
     | 'ownership-receipt';
   detail: string;
+  expiresAt?: string | null;
+  href?: string | null;
   label: string;
-  reason: 'partner-onboarding-required' | null;
+  reason:
+    | 'buyback-expired'
+    | 'ownership-pending'
+    | 'partner-onboarding-required'
+    | 'unsupported'
+    | null;
   requiresSignature: false;
   transaction: null;
+  value?: PublicMoney | null;
 };
 
 export type PublicPostDuelCardActionState = {

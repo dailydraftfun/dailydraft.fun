@@ -10,6 +10,23 @@ on:
       - "apps/web/**"
       - "bun.lock"
       - "package.json"
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      run_public_smoke:
+        description: Run the read-only smoke against a deployed devnet/preview URL
+        type: boolean
+        default: false
+      devnet_base_url:
+        description: HTTPS DailyDraft devnet/preview app origin (required for public smoke)
+        type: string
+        required: false
+      devnet_api_url:
+        description: Optional HTTPS devnet API v1 origin for catalog verification
+        type: string
+        required: false
+  deployment_status:
 
 permissions:
   contents: read
@@ -20,6 +37,7 @@ concurrency:
 
 jobs:
   smoke:
+    if: github.event_name != 'deployment_status'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -33,6 +51,20 @@ jobs:
       # npm registry and installs whatever chromium build latest ships rather than
       # the one the pinned @playwright/test runner expects.
       - run: bun --filter @dailydraft/app test:e2e:install
+      - name: Record journey context
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/journey-context"
+          {
+            echo "event=${EVENT_NAME}"
+            echo "head_sha=${HEAD_SHA}"
+            echo "ref=${REF_NAME}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+          } > "${RUNNER_TEMP}/journey-context/context.txt"
       - run: bun --filter @dailydraft/app test:e2e
       - name: Upload browser failure evidence
         if: failure() && !cancelled()
@@ -42,6 +74,92 @@ jobs:
           path: |
             apps/app/test-results
             apps/app/e2e/visual-states.journey.ts-snapshots
+            ${{ runner.temp }}/journey-context
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 9
+
+  public-devnet-smoke:
+    if: >-
+      (github.event_name == 'deployment_status' &&
+       github.event.deployment_status.state == 'success' &&
+       (contains(github.event.deployment.environment, 'devnet') ||
+        contains(github.event.deployment.environment, 'preview') ||
+        contains(github.event.deployment.environment, 'development'))) ||
+      (github.event_name == 'workflow_dispatch' && inputs.run_public_smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEVNET_BASE_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.devnet_base_url || github.event.deployment_status.environment_url }}
+      DEVNET_API_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.devnet_api_url || '' }}
+      DEPLOYMENT_ENVIRONMENT: ${{ github.event.deployment.environment || 'manual-devnet' }}
+    steps:
+      - name: Read-only devnet smoke
+        env:
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/devnet-smoke"
+          mkdir -p "${evidence}"
+          {
+            echo "event=${GITHUB_EVENT_NAME}"
+            echo "environment=${DEPLOYMENT_ENVIRONMENT}"
+            echo "head_sha=${HEAD_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+          } > "${evidence}/context.txt"
+
+          node -e '
+            const value = process.env.DEVNET_BASE_URL;
+            if (!value) throw new Error("A devnet/preview base URL is required.");
+            const url = new URL(value);
+            if (url.protocol !== "https:") throw new Error("Public smoke requires HTTPS.");
+            if (/mainnet|production/i.test(url.hostname + url.pathname)) {
+              throw new Error("Mainnet/production targets are forbidden.");
+            }
+          '
+
+          base="${DEVNET_BASE_URL%/}"
+          curl --fail --silent --show-error --location \
+            --max-time 20 \
+            --header "accept: text/html" \
+            "${base}/games" \
+            --output "${evidence}/games.html"
+          grep -Eiq 'devnet|test assets only' "${evidence}/games.html"
+          if grep -Eiq 'mainnet funds enabled|production funds enabled' "${evidence}/games.html"; then
+            echo "The deployed page claims mainnet or production funds are enabled." >&2
+            exit 1
+          fi
+
+          if [[ -n "${DEVNET_API_URL}" ]]; then
+            node -e '
+              const url = new URL(process.env.DEVNET_API_URL);
+              if (url.protocol !== "https:") throw new Error("Devnet API smoke requires HTTPS.");
+              if (/mainnet|production/i.test(url.hostname + url.pathname)) {
+                throw new Error("Mainnet/production API targets are forbidden.");
+              }
+            '
+            api="${DEVNET_API_URL%/}"
+            curl --fail --silent --show-error --location \
+              --max-time 20 \
+              --header "accept: application/json" \
+              "${api}/games/catalog" \
+              --output "${evidence}/catalog.json"
+            node -e '
+              const fs = require("node:fs");
+              const catalog = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/devnet-smoke/catalog.json", "utf8"));
+              if (catalog.network !== "solana-devnet") throw new Error("Catalog is not Solana devnet.");
+              const ids = catalog.modes?.map((mode) => mode.id).sort().join(",");
+              if (ids !== "crash,duel,flip,gacha") throw new Error("Catalog mode set drifted.");
+            '
+          fi
+
+      - name: Upload public smoke failure evidence
+        if: failure() && !cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: devnet-smoke-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/devnet-smoke
           if-no-files-found: warn
           retention-days: 7
           compression-level: 9

@@ -1,4 +1,9 @@
-export type GameRulesMode = 'crash' | 'duel' | 'flip';
+import {
+  PUBLIC_GAME_TAXONOMY_BY_ID,
+  type PublicGameTaxonomyId,
+} from '@dailydraft/contracts/public-game-taxonomy';
+
+export type GameRulesMode = Exclude<PublicGameTaxonomyId, 'gacha'>;
 
 type RuleFact = {
   detail: string;
@@ -32,7 +37,7 @@ export type GameRules = {
 
 export const gameRules = {
   crash: {
-    canonicalHref: '/games/crash#rules',
+    canonicalHref: PUBLIC_GAME_TAXONOMY_BY_ID.crash.rulesHref,
     custody:
       'No cards or funds enter custody in this preview. The displayed pot is a fixture, not an entitlement.',
     eyebrow: 'Card Streak · rules docket 03',
@@ -78,7 +83,7 @@ export const gameRules = {
         detail: 'Review the terminal reason and fixture receipt without any asset movement.',
       },
     ],
-    name: 'Card Streak',
+    name: PUBLIC_GAME_TAXONOMY_BY_ID.crash.name,
     previewHref: '#preview-lab',
     previewLabel: 'Run no-value fixture',
     receipt:
@@ -110,7 +115,7 @@ export const gameRules = {
       'No wallet is needed for the fixture. Live Crash will require an approved wallet, funding, custody, and recovery contract; those requirements are intentionally not invented here.',
   },
   duel: {
-    canonicalHref: '/games/duel#rules',
+    canonicalHref: PUBLIC_GAME_TAXONOMY_BY_ID.duel.rulesHref,
     custody:
       'Each participant separately escrows only the displayed test-SOL platform fee. The tier’s demo-pool value is not charged or purchased.',
     eyebrow: 'Card Duel · rules docket 01',
@@ -159,7 +164,7 @@ export const gameRules = {
           'The receipt exposes the comparison outcome separately from payment, demo-asset, and refund finality.',
       },
     ],
-    name: 'Card Duel',
+    name: PUBLIC_GAME_TAXONOMY_BY_ID.duel.name,
     previewHref: '#duel-lobby',
     previewLabel: 'Check live duel options',
     receipt:
@@ -191,7 +196,7 @@ export const gameRules = {
       'Browsing needs no wallet. To enter, use a Wallet Standard Solana wallet on devnet, sign a no-value ownership message, then separately approve the exact displayed test-SOL transaction.',
   },
   flip: {
-    canonicalHref: '/games/marketplace-flip#rules',
+    canonicalHref: PUBLIC_GAME_TAXONOMY_BY_ID.flip.rulesHref,
     custody:
       'No marketplace card is reserved, bought, escrowed, or transferred. Every image and value belongs to the fixture.',
     eyebrow: 'Marketplace Flip · rules docket 02',
@@ -239,7 +244,7 @@ export const gameRules = {
         detail: 'Review selection, purchase, ownership, and finality as separate receipt facts.',
       },
     ],
-    name: 'Marketplace Flip',
+    name: PUBLIC_GAME_TAXONOMY_BY_ID.flip.name,
     previewHref: '#preview-lab',
     previewLabel: 'Run no-value fixture',
     receipt:

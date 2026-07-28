@@ -105,11 +105,11 @@
         "dailydraft-mcp": "./src/index.ts",
       },
       "dependencies": {
+        "@dailydraft/contracts": "workspace:*",
         "@modelcontextprotocol/sdk": "1.29.0",
         "zod": "4.4.3",
       },
       "devDependencies": {
-        "@dailydraft/contracts": "workspace:*",
         "@types/bun": "1.3.8",
         "typescript": "6.0.3",
       },
@@ -118,6 +118,7 @@
       "name": "@dailydraft/web",
       "version": "0.0.1",
       "dependencies": {
+        "@dailydraft/contracts": "workspace:*",
         "@fontsource/dm-sans": "5.2.8",
         "@phosphor-icons/react": "2.1.10",
         "@shipshitdev/ui": "^0.6.0",
