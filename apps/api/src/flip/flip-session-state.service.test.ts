@@ -620,6 +620,12 @@ describe('durable fixture-only Flip session state machine', () => {
     expect(admissionMigration).toContain('FlipSession_admission_binding_immutable');
     expect(admissionMigration).toContain('Flip stake requires an allowed admission decision');
     expect(admissionMigration).toContain(
+      'Flip stake requires a current allowed admission decision',
+    );
+    expect(admissionMigration).toContain('pg_current_xact_id()::TEXT');
+    expect(admissionMigration).toContain('FOR SHARE');
+    expect(admissionMigration).toContain('current_state."disabled"');
+    expect(admissionMigration).toContain(
       'Flip allowed tier admission decision is semantically invalid',
     );
     expect(admissionMigration).toContain(`NEW."providerHealth"->>'status' <> 'healthy'`);

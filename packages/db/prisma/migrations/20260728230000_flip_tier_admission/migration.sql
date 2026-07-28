@@ -14,6 +14,7 @@ CREATE TABLE "FlipTierAdmissionDecision" (
   "rulesHash" TEXT,
   "snapshotContentHash" TEXT,
   "inventoryPolicyHash" TEXT,
+  "stakeBindingTransactionId" TEXT,
   "evaluatedAt" TIMESTAMP(3) NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "FlipTierAdmissionDecision_pkey" PRIMARY KEY ("id"),
@@ -29,6 +30,10 @@ CREATE TABLE "FlipTierAdmissionDecision" (
     AND ("snapshotContentHash" IS NULL OR "snapshotContentHash" ~ '^[a-f0-9]{64}$')
     AND ("inventoryPolicyHash" IS NULL OR "inventoryPolicyHash" ~ '^[a-f0-9]{64}$')
     AND (
+      "stakeBindingTransactionId" IS NULL
+      OR "stakeBindingTransactionId" ~ '^[1-9][0-9]*$'
+    )
+    AND (
       (
         "allowed"
         AND "reason" IS NULL
@@ -40,9 +45,11 @@ CREATE TABLE "FlipTierAdmissionDecision" (
         AND "rulesHash" IS NOT NULL
         AND "snapshotContentHash" IS NOT NULL
         AND "inventoryPolicyHash" IS NOT NULL
+        AND "stakeBindingTransactionId" IS NOT NULL
       )
       OR (
         NOT "allowed"
+        AND "stakeBindingTransactionId" IS NULL
         AND (
           ("reason" = 'configuration_invalid' AND "reenableBoundary" = 'configuration_change')
           OR ("reason" = 'inventory_degraded' AND "reenableBoundary" = 'reviewed_pool_recovery')
@@ -165,6 +172,14 @@ DECLARE
   ruleset "FlipRuleSet"%ROWTYPE;
   snapshot "FlipInventorySnapshot"%ROWTYPE;
 BEGIN
+  -- Allowed decisions are consumable only by the stake transition in the
+  -- transaction that evaluated them. Callers cannot precompute or replay one
+  -- after the health or inventory evidence changes.
+  NEW."stakeBindingTransactionId" := CASE
+    WHEN NEW."allowed" THEN pg_current_xact_id()::TEXT
+    ELSE NULL
+  END;
+
   IF NEW."poolCommitmentId" IS NULL THEN
     IF
       NEW."poolCommitmentHash" IS NOT NULL
@@ -331,6 +346,7 @@ FOR EACH ROW EXECUTE FUNCTION "protect_flip_tier_admission_state"();
 
 CREATE FUNCTION "protect_flip_session_admission_binding"() RETURNS trigger AS $$
 DECLARE
+  current_state "FlipTierAdmissionState"%ROWTYPE;
   decision "FlipTierAdmissionDecision"%ROWTYPE;
 BEGIN
   IF TG_OP = 'INSERT' THEN
@@ -367,13 +383,25 @@ BEGIN
   SELECT * INTO decision
   FROM "FlipTierAdmissionDecision"
   WHERE "id" = NEW."admissionDecisionId";
+  SELECT * INTO current_state
+  FROM "FlipTierAdmissionState"
+  WHERE "tierKey" = decision."tierKey"
+  FOR SHARE;
   IF
     decision."id" IS NULL
     OR NOT decision."allowed"
+    OR decision."stakeBindingTransactionId" IS DISTINCT FROM pg_current_xact_id()::TEXT
     OR decision."sessionReference" <> NEW."id"
     OR decision."tierKey" <> NEW."stakeCurrency" || ':' || NEW."stakeDecimals" || ':' || NEW."stakeAmount"
+    OR current_state."tierKey" IS NULL
+    OR current_state."disabled"
+    OR current_state."evaluatedAt" IS DISTINCT FROM decision."evaluatedAt"
+    OR current_state."policyHash" IS DISTINCT FROM decision."policyHash"
+    OR current_state."providerHealthHash" IS DISTINCT FROM decision."providerHealthHash"
+    OR current_state."rulesHash" IS DISTINCT FROM decision."rulesHash"
+    OR current_state."snapshotContentHash" IS DISTINCT FROM decision."snapshotContentHash"
   THEN
-    RAISE EXCEPTION 'Flip stake requires an allowed admission decision';
+    RAISE EXCEPTION 'Flip stake requires a current allowed admission decision';
   END IF;
   RETURN NEW;
 END;
