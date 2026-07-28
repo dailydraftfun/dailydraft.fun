@@ -7,16 +7,29 @@ import {
   hashCrashCalculatorRuleSet,
   type UnsignedCrashCalculatorRuleSet,
 } from './crash-calculators.js';
-import type { CrashCustodyMovementService } from './crash-custody-movement.service.js';
+import {
+  type CrashCustodyMovementService,
+  crashCustodyIntentReference,
+} from './crash-custody-movement.service.js';
 import {
   CRASH_PLAYER_DECISION_SCHEMA_VERSION,
   CrashDecisionService,
   loadCrashDecisionRules,
+  loadCrashRiskHealth,
 } from './crash-decision.service.js';
+import {
+  CRASH_RISK_HEALTH_SCHEMA_VERSION,
+  CRASH_RISK_POLICY_VERSION,
+  CRASH_RISK_RULES_SCHEMA_VERSION,
+  type CrashRiskRules,
+  hashCrashRiskRules,
+  type UnsignedCrashRiskRules,
+} from './crash-risk.policy.js';
 import {
   CRASH_STATE_MACHINE_VERSION,
   CRASH_STATE_RULES_SCHEMA_VERSION,
   type CrashFixtureDecision,
+  type CrashPostRiskAdmissionEffect,
   type CrashRoundSnapshot,
   type CrashStageStateService,
   CrashStateMachineError,
@@ -350,6 +363,15 @@ describe('CrashDecisionService', () => {
       loadCrashDecisionRules({ DAILYDRAFT_CRASH_FIXTURE_RULES_JSON: JSON.stringify(RULES) }),
     ).toEqual(RULES);
     expect(loadCrashDecisionRules({ DAILYDRAFT_CRASH_FIXTURE_RULES_JSON: '{not-json' })).toBeNull();
+    expect(loadCrashRiskHealth({})).toBeNull();
+    expect(
+      loadCrashRiskHealth({
+        DAILYDRAFT_CRASH_FIXTURE_RISK_HEALTH_JSON: JSON.stringify({ healthy: true }),
+      }),
+    ).toEqual({ healthy: true });
+    expect(
+      loadCrashRiskHealth({ DAILYDRAFT_CRASH_FIXTURE_RISK_HEALTH_JSON: '{not-json' }),
+    ).toBeNull();
   });
 });
 
@@ -360,6 +382,7 @@ function stateHarness(
       roundId: string,
       rules: unknown,
       decision: CrashFixtureDecision,
+      postRiskAdmission?: CrashPostRiskAdmissionEffect,
     ) => Promise<CrashRoundSnapshot>;
     resume?: (roundId: string) => Promise<CrashRoundSnapshot>;
   } = {},
@@ -369,7 +392,13 @@ function stateHarness(
   const service = {
     decide:
       overrides.decide ??
-      (async (_roundId: string, _rules: unknown, decision: CrashFixtureDecision) => {
+      (async (
+        _roundId: string,
+        _rules: unknown,
+        decision: CrashFixtureDecision,
+        postRiskAdmission?: CrashPostRiskAdmissionEffect,
+      ) => {
+        await postRiskAdmission?.({} as never);
         decisions.push(decision);
         return snapshot;
       }),
@@ -389,7 +418,7 @@ function decisionService(
   rules: unknown = RULES,
   custody: CrashCustodyMovementService = custodyHarness(),
 ) {
-  return new CrashDecisionService(state, rules, custody);
+  return new CrashDecisionService(state, rules, custody, RISK_HEALTH);
 }
 
 function custodyHarness(
@@ -413,7 +442,7 @@ function preparedCustodyIntent(
   return {
     approvedRecipient: 'fixture-wallet:approved-session-custody',
     assetReference: input.assetReference,
-    id: 'crashcustody_fixture',
+    id: crashCustodyIntentReference(input.roundId, input.idempotencyKey),
     idempotencyKey: input.idempotencyKey,
     network: 'solana-devnet' as const,
     playerWalletReference: input.playerWalletReference,
@@ -452,6 +481,9 @@ function activeRound(): CrashRoundSnapshot {
     pot: usdc('0'),
     rulesHash: RULES.calculatorRules.rulesHash,
     rulesVersion: RULES.calculatorRules.rulesVersion,
+    riskExpiresAt: '2026-07-28T16:05:00.000Z',
+    riskRulesHash: RULES.riskRules.riskRulesHash,
+    riskRulesVersion: RULES.riskRules.rulesVersion,
     stage: 1,
     stateMachineRulesHash: RULES.stateMachineRulesHash,
     stateMachineVersion: RULES.stateMachineVersion,
@@ -587,12 +619,43 @@ const CALCULATOR_RULES: CrashCalculatorRuleSet = {
   ...UNSIGNED_CALCULATOR_RULES,
   rulesHash: hashCrashCalculatorRuleSet(UNSIGNED_CALCULATOR_RULES),
 };
+const UNSIGNED_RISK_RULES = {
+  activation: 'fixture-only',
+  currency: 'USDC',
+  decimals: 6,
+  evidenceMaxAgeMs: 60_000,
+  maxDurationMs: 300_000,
+  maxPotAmount: '250000000',
+  maxStage: 2,
+  maxTreasuryExposureAmount: '1000000000',
+  maxWalletExposureAmount: '500000000',
+  network: 'solana-devnet',
+  policyVersion: CRASH_RISK_POLICY_VERSION,
+  poolReference: 'fixture-pool:decision-tests',
+  providerReference: 'fixture-provider:decision-tests',
+  rulesVersion: 'synthetic-player-risk-v1',
+  schemaVersion: CRASH_RISK_RULES_SCHEMA_VERSION,
+} as const satisfies UnsignedCrashRiskRules;
+const RISK_RULES: CrashRiskRules = {
+  ...UNSIGNED_RISK_RULES,
+  riskRulesHash: hashCrashRiskRules(UNSIGNED_RISK_RULES),
+};
+const RISK_HEALTH = {
+  observedAt: '2026-07-28T16:00:00.000Z',
+  poolReference: RISK_RULES.poolReference,
+  poolStatus: 'healthy',
+  providerReference: RISK_RULES.providerReference,
+  providerStatus: 'healthy',
+  riskRulesHash: RISK_RULES.riskRulesHash,
+  schemaVersion: CRASH_RISK_HEALTH_SCHEMA_VERSION,
+} as const;
 const UNSIGNED_RULES = {
   activation: 'fixture-only',
   architectureVersion: 'synthetic-player-decisions-architecture-v1',
   calculatorRules: CALCULATOR_RULES,
   decisionTimeoutMs: 30_000,
   defaultAction: 'forfeit',
+  riskRules: RISK_RULES,
   schemaVersion: CRASH_STATE_RULES_SCHEMA_VERSION,
   stateMachineVersion: CRASH_STATE_MACHINE_VERSION,
 } as const satisfies UnsignedCrashStateRules;

@@ -1,6 +1,7 @@
 import {
   type DatabaseClient,
   HouseTreasuryLedgerType,
+  HouseTreasuryReservationSource,
   HouseTreasuryReservationStatus,
   type Prisma,
 } from '@dailydraft/db';
@@ -13,7 +14,7 @@ import {
 import { PublicKey } from '@solana/web3.js';
 import { acquireAdvisoryTransactionLock } from '../database/advisory-lock.js';
 
-const HOUSE_TREASURY_EXPOSURE_LOCK_KEY = 770_392_114;
+export const HOUSE_TREASURY_EXPOSURE_LOCK_KEY = 770_392_114;
 
 export const HOUSE_TREASURY_SNAPSHOT_ID = 'solana-devnet-usdc';
 export const ACTIVE_HOUSE_RESERVATION_STATUSES: HouseTreasuryReservationStatus[] = [
@@ -230,7 +231,11 @@ export async function reserveHouseExposure(
       where: { playerWallet: input.playerWallet, status: { in: activeStatuses } },
     }),
     transaction.houseTreasuryReservation.count({
-      where: { status: { in: activeStatuses }, tier: input.tier },
+      where: {
+        source: HouseTreasuryReservationSource.DUEL,
+        status: { in: activeStatuses },
+        tier: input.tier,
+      },
     }),
     transaction.houseTreasuryLedgerEntry.findMany({
       select: { amount: true },
@@ -401,7 +406,14 @@ function assertExactReservationReplay(
 
 export function shouldRetryTreasuryTransaction(error: unknown, attempt: number): boolean {
   if (attempt >= 3 || !error || typeof error !== 'object') return false;
-  return 'code' in error && error.code === 'P2034';
+  if ('code' in error && error.code === 'P2034') return true;
+  if (!('cause' in error) || !error.cause || typeof error.cause !== 'object') return false;
+  return (
+    'originalCode' in error.cause &&
+    error.cause.originalCode === '40001' &&
+    'kind' in error.cause &&
+    error.cause.kind === 'TransactionWriteConflict'
+  );
 }
 
 export function readHouseTreasuryConfig(

@@ -17,6 +17,15 @@ import {
 } from './crash-custody-movement.service.js';
 import { CrashDecisionService } from './crash-decision.service.js';
 import {
+  CRASH_RISK_HEALTH_SCHEMA_VERSION,
+  CRASH_RISK_POLICY_VERSION,
+  CRASH_RISK_RULES_SCHEMA_VERSION,
+  type CrashRiskGate,
+  type CrashRiskRules,
+  hashCrashRiskRules,
+  type UnsignedCrashRiskRules,
+} from './crash-risk.policy.js';
+import {
   CRASH_CUSTODY_FIXTURE_VERSION,
   CRASH_PAYMENT_FIXTURE_VERSION,
   CRASH_PROVIDER_FIXTURE_VERSION,
@@ -55,10 +64,11 @@ describeDatabase('Crash stage state machine against a real Postgres', () => {
 
   test('survives service restart and collapses an idempotent concurrent transition', async () => {
     const clock = new DatabaseTestClock();
-    const service = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const service = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT, NOOP_RISK);
     const round = await service.createFixtureRound({
       initialPot: usdc('0'),
       playerWalletReference: 'fixture-wallet:postgres-player',
+      riskHealth: RISK_HEALTH,
       roundId: `${ROUND_PREFIX}-resume`,
       rules: RULES,
     });
@@ -71,7 +81,7 @@ describeDatabase('Crash stage state machine against a real Postgres', () => {
     expect(concurrent[0]).toEqual(concurrent[1]);
     expect(concurrent[0]).toMatchObject({ stage: 2, status: 'active', version: 2 });
 
-    const restarted = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const restarted = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT, NOOP_RISK);
     const resumed = await restarted.findRound(round.id);
     expect(resumed.transitions).toHaveLength(2);
     expect(resumed.transitions.map(({ sequence }) => sequence)).toEqual([1, 2]);
@@ -107,10 +117,11 @@ describeDatabase('Crash stage state machine against a real Postgres', () => {
 
   test('lets only one worker append the deadline default transition', async () => {
     const clock = new DatabaseTestClock();
-    const service = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const service = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT, NOOP_RISK);
     const round = await service.createFixtureRound({
       initialPot: usdc('0'),
       playerWalletReference: 'fixture-wallet:postgres-deadline',
+      riskHealth: RISK_HEALTH,
       roundId: `${ROUND_PREFIX}-deadline`,
       rules: RULES,
     });
@@ -134,15 +145,17 @@ describeDatabase('Crash stage state machine against a real Postgres', () => {
 
   test('persists duplicate player decisions once and restores canonical reconnect state', async () => {
     const clock = new DatabaseTestClock();
-    const state = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const state = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT, NOOP_RISK);
     const decisions = new CrashDecisionService(
       state,
       RULES,
       new CrashCustodyMovementService(database, CUSTODY_POLICY, FIXTURE_ENVIRONMENT),
+      RISK_HEALTH,
     );
     const round = await state.createFixtureRound({
       initialPot: usdc('1000000'),
       playerWalletReference: `fixture-wallet:${PLAYER_WALLET}`,
+      riskHealth: RISK_HEALTH,
       roundId: `${ROUND_PREFIX}-player`,
       rules: RULES,
     });
@@ -186,12 +199,13 @@ describeDatabase('Crash stage state machine against a real Postgres', () => {
 
   test('persists one approved custody intent when Continue responses are lost or concurrent', async () => {
     const clock = new DatabaseTestClock();
-    const state = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const state = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT, NOOP_RISK);
     const custody = new CrashCustodyMovementService(database, CUSTODY_POLICY, FIXTURE_ENVIRONMENT);
-    const decisions = new CrashDecisionService(state, RULES, custody);
+    const decisions = new CrashDecisionService(state, RULES, custody, RISK_HEALTH);
     const round = await state.createFixtureRound({
       initialPot: usdc('0'),
       playerWalletReference: `fixture-wallet:${PLAYER_WALLET}`,
+      riskHealth: RISK_HEALTH,
       roundId: `${ROUND_PREFIX}-custody`,
       rules: RULES,
     });
@@ -231,15 +245,17 @@ describeDatabase('Crash stage state machine against a real Postgres', () => {
 
   test('commits exactly one transition when reconnect and expiry workers race', async () => {
     const clock = new DatabaseTestClock();
-    const state = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const state = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT, NOOP_RISK);
     const decisions = new CrashDecisionService(
       state,
       RULES,
       new CrashCustodyMovementService(database, CUSTODY_POLICY, FIXTURE_ENVIRONMENT),
+      RISK_HEALTH,
     );
     const round = await state.createFixtureRound({
       initialPot: usdc('0'),
       playerWalletReference: `fixture-wallet:${PLAYER_WALLET}`,
+      riskHealth: RISK_HEALTH,
       roundId: `${ROUND_PREFIX}-deadline-race`,
       rules: RULES,
     });
@@ -294,12 +310,48 @@ const CALCULATOR_RULES: CrashCalculatorRuleSet = {
   ...UNSIGNED_CALCULATOR_RULES,
   rulesHash: hashCrashCalculatorRuleSet(UNSIGNED_CALCULATOR_RULES),
 };
+const UNSIGNED_RISK_RULES = {
+  activation: 'fixture-only',
+  currency: 'USDC',
+  decimals: 6,
+  evidenceMaxAgeMs: 60_000,
+  maxDurationMs: 300_000,
+  maxPotAmount: '250000000',
+  maxStage: 2,
+  maxTreasuryExposureAmount: '1000000000',
+  maxWalletExposureAmount: '500000000',
+  network: 'solana-devnet',
+  policyVersion: CRASH_RISK_POLICY_VERSION,
+  poolReference: 'fixture-pool:postgres',
+  providerReference: 'fixture-provider:postgres',
+  rulesVersion: 'synthetic-postgres-risk-v1',
+  schemaVersion: CRASH_RISK_RULES_SCHEMA_VERSION,
+} as const satisfies UnsignedCrashRiskRules;
+const RISK_RULES: CrashRiskRules = {
+  ...UNSIGNED_RISK_RULES,
+  riskRulesHash: hashCrashRiskRules(UNSIGNED_RISK_RULES),
+};
+const RISK_HEALTH = {
+  observedAt: new Date('2026-07-28T12:00:00.000Z').toISOString(),
+  poolReference: RISK_RULES.poolReference,
+  poolStatus: 'healthy',
+  providerReference: RISK_RULES.providerReference,
+  providerStatus: 'healthy',
+  riskRulesHash: RISK_RULES.riskRulesHash,
+  schemaVersion: CRASH_RISK_HEALTH_SCHEMA_VERSION,
+} as const;
+const NOOP_RISK = {
+  applyTransition: async () => {},
+  releaseTerminal: async () => {},
+  reserveRound: async () => {},
+} as unknown as CrashRiskGate;
 const UNSIGNED_RULES = {
   activation: 'fixture-only',
   architectureVersion: 'synthetic-postgres-architecture-v1',
   calculatorRules: CALCULATOR_RULES,
   decisionTimeoutMs: 10_000,
   defaultAction: 'forfeit',
+  riskRules: RISK_RULES,
   schemaVersion: CRASH_STATE_RULES_SCHEMA_VERSION,
   stateMachineVersion: CRASH_STATE_MACHINE_VERSION,
 } as const satisfies UnsignedCrashStateRules;
@@ -349,6 +401,7 @@ function continueDecision(version: number) {
       stage: 1,
       stageValue: usdc('1000000'),
     },
+    riskHealth: RISK_HEALTH,
     transitionKey: 'continue-postgres-1',
   };
 }

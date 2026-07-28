@@ -16,6 +16,15 @@ import {
   type UnsignedCrashCalculatorRuleSet,
 } from './crash-calculators.js';
 import {
+  CRASH_RISK_HEALTH_SCHEMA_VERSION,
+  CRASH_RISK_POLICY_VERSION,
+  CRASH_RISK_RULES_SCHEMA_VERSION,
+  type CrashRiskGate,
+  type CrashRiskRules,
+  hashCrashRiskRules,
+  type UnsignedCrashRiskRules,
+} from './crash-risk.policy.js';
+import {
   CRASH_CUSTODY_FIXTURE_VERSION,
   CRASH_PAYMENT_FIXTURE_VERSION,
   CRASH_PROVIDER_FIXTURE_VERSION,
@@ -84,6 +93,7 @@ describe('durable fixture-only Crash stage state machine', () => {
         fixture.database as unknown as DatabaseClient,
         fixture.clock,
         FIXTURE_ENVIRONMENT,
+        NOOP_RISK,
       );
       await expect(restarted.findRound(round.id)).resolves.toEqual(round);
     }
@@ -490,12 +500,14 @@ describe('Crash fail-closed contract', () => {
         NODE_ENV: 'production',
         VERCEL_ENV: 'production',
       },
+      NOOP_RISK,
     );
 
     await expect(
       service.createFixtureRound({
         initialPot: usdc('0'),
         playerWalletReference: 'fixture-wallet:production-blocked',
+        riskHealth: RISK_HEALTH,
         roundId: 'production-blocked',
         rules: STATE_RULES,
       }),
@@ -517,6 +529,7 @@ describe('Crash fail-closed contract', () => {
       fixture.service.createFixtureRound({
         initialPot: usdc('0'),
         playerWalletReference: 'fixture-wallet:player',
+        riskHealth: RISK_HEALTH,
         roundId: `disabled-${crypto.randomUUID()}`,
         rules: rules as CrashStateRules,
       }),
@@ -581,12 +594,49 @@ const CALCULATOR_RULES: CrashCalculatorRuleSet = {
   rulesHash: hashCrashCalculatorRuleSet(UNSIGNED_CALCULATOR_RULES),
 };
 
+const UNSIGNED_RISK_RULES = {
+  activation: 'fixture-only',
+  currency: 'USDC',
+  decimals: 6,
+  evidenceMaxAgeMs: 60_000,
+  maxDurationMs: 300_000,
+  maxPotAmount: '500000000',
+  maxStage: 3,
+  maxTreasuryExposureAmount: '1000000000',
+  maxWalletExposureAmount: '500000000',
+  network: 'solana-devnet',
+  policyVersion: CRASH_RISK_POLICY_VERSION,
+  poolReference: 'fixture-pool:state-tests',
+  providerReference: 'fixture-provider:state-tests',
+  rulesVersion: 'synthetic-risk-ci-v1',
+  schemaVersion: CRASH_RISK_RULES_SCHEMA_VERSION,
+} as const satisfies UnsignedCrashRiskRules;
+const RISK_RULES: CrashRiskRules = {
+  ...UNSIGNED_RISK_RULES,
+  riskRulesHash: hashCrashRiskRules(UNSIGNED_RISK_RULES),
+};
+const RISK_HEALTH = {
+  observedAt: START.toISOString(),
+  poolReference: RISK_RULES.poolReference,
+  poolStatus: 'healthy',
+  providerReference: RISK_RULES.providerReference,
+  providerStatus: 'healthy',
+  riskRulesHash: RISK_RULES.riskRulesHash,
+  schemaVersion: CRASH_RISK_HEALTH_SCHEMA_VERSION,
+} as const;
+const NOOP_RISK = {
+  applyTransition: async () => {},
+  releaseTerminal: async () => {},
+  reserveRound: async () => {},
+} as unknown as CrashRiskGate;
+
 const UNSIGNED_STATE_RULES = {
   activation: 'fixture-only',
   architectureVersion: 'synthetic-crash-architecture-v1',
   calculatorRules: CALCULATOR_RULES,
   decisionTimeoutMs: TIMEOUT_MS,
   defaultAction: 'forfeit',
+  riskRules: RISK_RULES,
   schemaVersion: CRASH_STATE_RULES_SCHEMA_VERSION,
   stateMachineVersion: CRASH_STATE_MACHINE_VERSION,
 } as const satisfies UnsignedCrashStateRules;
@@ -626,6 +676,7 @@ function continueDecision(
       stage,
       stageValue: usdc(stage === 1 ? '1000000' : stage === 2 ? '2000000' : '2000000'),
     },
+    riskHealth: RISK_HEALTH,
     ...(terminalSettlement ? { settlement: terminalSettlement } : {}),
     transitionKey,
   };
@@ -671,6 +722,7 @@ function harness() {
     database as unknown as DatabaseClient,
     clock,
     FIXTURE_ENVIRONMENT,
+    NOOP_RISK,
   );
   return {
     clock,
@@ -678,6 +730,7 @@ function harness() {
       service.createFixtureRound({
         initialPot: usdc('0'),
         playerWalletReference: 'fixture-wallet:player',
+        riskHealth: RISK_HEALTH,
         roundId,
         rules: STATE_RULES,
       }),
@@ -716,6 +769,10 @@ type MemoryRound = {
   potDecimals: number;
   rulesHash: string;
   rulesVersion: string;
+  riskExpiresAt: Date | null;
+  riskRulesHash: string | null;
+  riskRulesVersion: string | null;
+  riskStartedAt: Date | null;
   stage: number;
   stateMachineRulesHash: string;
   stateMachineVersion: string;
@@ -777,6 +834,10 @@ class MemoryCrashDatabase {
         potDecimals: input.potDecimals,
         rulesHash: input.rulesHash,
         rulesVersion: input.rulesVersion,
+        riskExpiresAt: input.riskExpiresAt,
+        riskRulesHash: input.riskRulesHash,
+        riskRulesVersion: input.riskRulesVersion,
+        riskStartedAt: input.riskStartedAt,
         stage: input.stage,
         stateMachineRulesHash: input.stateMachineRulesHash,
         stateMachineVersion: input.stateMachineVersion,
@@ -974,6 +1035,10 @@ interface MemoryRoundCreateInput {
   potDecimals: number;
   rulesHash: string;
   rulesVersion: string;
+  riskExpiresAt: Date;
+  riskRulesHash: string;
+  riskRulesVersion: string;
+  riskStartedAt: Date;
   stage: number;
   stateMachineRulesHash: string;
   stateMachineVersion: string;

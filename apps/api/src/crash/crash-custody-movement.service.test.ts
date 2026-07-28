@@ -20,10 +20,18 @@ import {
   CRASH_CUSTODY_POLICY_SCHEMA_VERSION,
   CrashCustodyMovementService,
   type CrashCustodyPolicy,
+  crashCustodyIntentReference,
   hashCrashCustodyPolicy,
   loadCrashCustodyPolicy,
   type UnsignedCrashCustodyPolicy,
 } from './crash-custody-movement.service.js';
+import {
+  CRASH_RISK_POLICY_VERSION,
+  CRASH_RISK_RULES_SCHEMA_VERSION,
+  type CrashRiskRules,
+  hashCrashRiskRules,
+  type UnsignedCrashRiskRules,
+} from './crash-risk.policy.js';
 import {
   CRASH_STATE_MACHINE_VERSION,
   CRASH_STATE_RULES_SCHEMA_VERSION,
@@ -47,7 +55,7 @@ describe('CrashCustodyMovementService', () => {
     expect(prepared).toEqual({
       approvedRecipient: POLICY.approvedSessionCustody,
       assetReference: input.assetReference,
-      id: expect.stringMatching(/^crashcustody_/),
+      id: crashCustodyIntentReference(input.roundId, input.idempotencyKey),
       idempotencyKey: input.idempotencyKey,
       network: 'solana-devnet',
       playerWalletReference: PLAYER,
@@ -473,12 +481,34 @@ const CALCULATOR_RULES: CrashCalculatorRuleSet = {
   ...UNSIGNED_CALCULATOR_RULES,
   rulesHash: hashCrashCalculatorRuleSet(UNSIGNED_CALCULATOR_RULES),
 };
+const UNSIGNED_RISK_RULES = {
+  activation: 'fixture-only',
+  currency: 'USDC',
+  decimals: 6,
+  evidenceMaxAgeMs: 60_000,
+  maxDurationMs: 300_000,
+  maxPotAmount: '300000000',
+  maxStage: 3,
+  maxTreasuryExposureAmount: '1000000000',
+  maxWalletExposureAmount: '500000000',
+  network: 'solana-devnet',
+  policyVersion: CRASH_RISK_POLICY_VERSION,
+  poolReference: 'fixture-pool:custody-tests',
+  providerReference: 'fixture-provider:custody-tests',
+  rulesVersion: 'synthetic-custody-risk-v1',
+  schemaVersion: CRASH_RISK_RULES_SCHEMA_VERSION,
+} as const satisfies UnsignedCrashRiskRules;
+const RISK_RULES: CrashRiskRules = {
+  ...UNSIGNED_RISK_RULES,
+  riskRulesHash: hashCrashRiskRules(UNSIGNED_RISK_RULES),
+};
 const UNSIGNED_RULES = {
   activation: 'fixture-only',
   architectureVersion: 'synthetic-custody-architecture-v1',
   calculatorRules: CALCULATOR_RULES,
   decisionTimeoutMs: 30_000,
   defaultAction: 'forfeit',
+  riskRules: RISK_RULES,
   schemaVersion: CRASH_STATE_RULES_SCHEMA_VERSION,
   stateMachineVersion: CRASH_STATE_MACHINE_VERSION,
 } as const satisfies UnsignedCrashStateRules;

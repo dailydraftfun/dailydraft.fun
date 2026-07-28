@@ -86,6 +86,7 @@ async function translateCrashErrors<T>(operation: () => Promise<T>): Promise<T> 
         throw new NotFoundException(error.message);
       case 'DISABLED':
       case 'INVALID_EVIDENCE':
+      case 'RISK_REJECTED':
         throw new ServiceUnavailableException(error.message);
       case 'CONCURRENT_TRANSITION':
       case 'DEADLINE_EXPIRED':

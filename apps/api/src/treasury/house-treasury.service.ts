@@ -6,6 +6,7 @@ import {
   HouseInventoryListingState,
   HouseInventoryStatus,
   HouseTreasuryLedgerType,
+  HouseTreasuryReservationSource,
   HouseTreasuryReservationStatus,
   type Prisma,
 } from '@dailydraft/db';
@@ -80,7 +81,10 @@ export class HouseTreasuryService {
       },
       orderBy: [{ lastReconciledAt: { nulls: 'first', sort: 'asc' } }, { id: 'asc' }],
       take: Math.max(1, Math.min(limit, LIFECYCLE_BATCH_LIMIT)),
-      where: { status: { in: [...ACTIVE_HOUSE_RESERVATION_STATUSES] } },
+      where: {
+        duelId: { not: null },
+        status: { in: [...ACTIVE_HOUSE_RESERVATION_STATUSES] },
+      },
     });
     const summary = { checked: 0, inventoryCreated: 0, released: 0, transitioned: 0 };
     for (const row of rows) {
@@ -94,6 +98,10 @@ export class HouseTreasuryService {
           return { inventoryCreated: 0, released: false, transitioned: false };
         }
         const now = new Date();
+        if (!current.duel || !current.duelId) {
+          throw new ServiceUnavailableException('Duel treasury reservation binding is incomplete');
+        }
+        const duelId = current.duelId;
         const resolution = houseReservationResolution(current.duel);
         const target = resolution.target;
         if (!target || target === current.status) {
@@ -122,8 +130,8 @@ export class HouseTreasuryService {
             amount: current.amount,
             currency: current.currency,
             decimals: current.decimals,
-            duelId: current.duelId,
-            idempotencyKey: `reservation-released:${current.duelId}`,
+            duelId,
+            idempotencyKey: `reservation-released:${duelId}`,
             reservationId: current.id,
             type: HouseTreasuryLedgerType.RESERVATION_RELEASED,
           });
@@ -134,8 +142,8 @@ export class HouseTreasuryService {
             amount: current.amount,
             currency: current.currency,
             decimals: current.decimals,
-            duelId: current.duelId,
-            idempotencyKey: `house-funding-committed:${current.duelId}`,
+            duelId,
+            idempotencyKey: `house-funding-committed:${duelId}`,
             reservationId: current.id,
             type: HouseTreasuryLedgerType.HOUSE_FUNDING_COMMITTED,
           });
@@ -148,8 +156,8 @@ export class HouseTreasuryService {
             amount: current.amount,
             currency: current.currency,
             decimals: current.decimals,
-            duelId: current.duelId,
-            idempotencyKey: `player-win-loss:${current.duelId}`,
+            duelId,
+            idempotencyKey: `player-win-loss:${duelId}`,
             metadata: { reason: resolution.reason },
             reservationId: current.id,
             type: HouseTreasuryLedgerType.PLAYER_WIN_LOSS,
@@ -168,8 +176,8 @@ export class HouseTreasuryService {
           amount: current.amount,
           currency: current.currency,
           decimals: current.decimals,
-          duelId: current.duelId,
-          idempotencyKey: `house-pack-cost:${current.duelId}`,
+          duelId,
+          idempotencyKey: `house-pack-cost:${duelId}`,
           metadata: { reason: resolution.reason },
           reservationId: current.id,
           type: HouseTreasuryLedgerType.HOUSE_PACK_COST,
@@ -180,7 +188,7 @@ export class HouseTreasuryService {
         )) {
           const acquired = await acquireHouseInventoryAsset(transaction, {
             custodyWallet: resolution.custodyWallet,
-            duelId: current.duelId,
+            duelId,
             outcome,
             reason: resolution.reason,
             reservationId: current.id,
@@ -318,7 +326,7 @@ export class HouseTreasuryService {
         where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
       }),
       this.database.houseTreasuryReservation.findMany({
-        select: { amount: true, status: true, tier: true },
+        select: { amount: true, source: true, status: true, tier: true },
       }),
       this.database.houseInventoryAsset.findMany({
         select: {
@@ -345,6 +353,7 @@ export class HouseTreasuryService {
     const available = usableCapacity > totalExposure ? usableCapacity - totalExposure : 0n;
     const tierCounts = new Map<number, number>();
     for (const reservation of active) {
+      if (reservation.source === HouseTreasuryReservationSource.CRASH) continue;
       tierCounts.set(reservation.tier, (tierCounts.get(reservation.tier) ?? 0) + 1);
     }
     const dailyLoss = sum(
