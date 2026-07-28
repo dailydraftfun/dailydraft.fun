@@ -52,8 +52,8 @@ test('keyboard completes Flip and Crash reveals, mute, skip, and every 390px bea
   await page.keyboard.press('Alt+M');
   await expect(muteControl).toHaveAttribute('aria-pressed', 'false');
 
-  await keyboardActivate(page, page.getByRole('button', { name: 'Commit fixture draw' }));
-  await keyboardActivate(page, page.getByRole('button', { name: 'Reveal selected fixture' }));
+  await keyboardActivate(page, page.getByRole('button', { name: 'Advance local script' }));
+  await keyboardActivate(page, page.getByRole('button', { name: 'Show scripted card' }));
 
   const flipReveal = page.locator('figure[data-choreography-active="true"]');
   await expectFullBeatJourney(flipReveal);
@@ -73,7 +73,7 @@ test('keyboard completes Flip and Crash reveals, mute, skip, and every 390px bea
 
   const crashPreview = page.getByRole('region', { name: 'Crash preview' });
   const secondStage = crashPreview.locator('article').nth(1);
-  const continueCrash = page.getByRole('button', { name: 'Continue fixture run' });
+  const continueCrash = page.getByRole('button', { name: 'Reveal next scripted stage' });
   await waitForReactClickHandler(continueCrash);
   await keyboardActivate(page, continueCrash);
   await expectFullBeatJourney(secondStage);
@@ -83,7 +83,7 @@ test('keyboard completes Flip and Crash reveals, mute, skip, and every 390px bea
   await expect(secondStage).toContainText('$42.00');
 
   const thirdStage = crashPreview.locator('article').nth(2);
-  await keyboardActivate(page, page.getByRole('button', { name: 'Continue fixture run' }));
+  await keyboardActivate(page, page.getByRole('button', { name: 'Reveal next scripted stage' }));
   await expectCapturedBeats(thirdStage, ['anticipation']);
 
   const thirdStageSkip = thirdStage.getByRole('button', { name: 'Skip animation' });
@@ -139,10 +139,10 @@ test('reduced motion fast-forwards every mode with full terminal information', a
     'false',
   );
   await installBeatCapture(page);
-  const commitFlip = page.getByRole('button', { name: 'Commit fixture draw' });
+  const commitFlip = page.getByRole('button', { name: 'Advance local script' });
   await waitForReactClickHandler(commitFlip);
   await commitFlip.click();
-  await page.getByRole('button', { name: 'Reveal selected fixture' }).click();
+  await page.getByRole('button', { name: 'Show scripted card' }).click();
 
   const flipReveal = page.locator('figure[data-choreography-active="true"]');
   await expectReducedMotionSettlement(flipReveal);
@@ -153,7 +153,7 @@ test('reduced motion fast-forwards every mode with full terminal information', a
   await page.goto('/games/crash', { waitUntil: 'domcontentloaded' });
   await installBeatCapture(page);
   const secondStage = page.getByRole('region', { name: 'Crash preview' }).locator('article').nth(1);
-  const continueCrash = page.getByRole('button', { name: 'Continue fixture run' });
+  const continueCrash = page.getByRole('button', { name: 'Reveal next scripted stage' });
   await waitForReactClickHandler(continueCrash);
   await continueCrash.click();
   await expectReducedMotionSettlement(secondStage);

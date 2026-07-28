@@ -23,7 +23,8 @@ for (const rulesPath of [
   '/games/marketplace-flip#rules',
   '/games/crash#rules',
 ] as const) {
-  test(`${rulesPath} activates the canonical rules target`, async ({ page }) => {
+  test(`${rulesPath} activates the canonical rules target`, async ({ journey, page }) => {
+    expect(journey.seed).toBe('public-surfaces');
     await page.goto(rulesPath);
     const rules = page.locator('#rules');
 
