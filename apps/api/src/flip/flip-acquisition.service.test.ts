@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { DatabaseClient, Prisma } from '@dailydraft/db';
 
-import { createFixtureFlipAcquisitionPolicy } from './flip-acquisition.policy.js';
+import {
+  canonicalFlipAcquisitionStringify,
+  createFixtureFlipAcquisitionPolicy,
+} from './flip-acquisition.policy.js';
 import {
   FlipAcquisitionAmbiguousError,
   FlipAcquisitionDefinitelyNotAppliedError,
@@ -10,7 +13,10 @@ import {
   type FlipAcquisitionProviderResult,
 } from './flip-acquisition.provider.js';
 import { FlipAcquisitionService } from './flip-acquisition.service.js';
-import type { FlipSessionStateService } from './flip-session-state.service.js';
+import {
+  FLIP_RECOVERY_FIXTURE_VERSION,
+  type FlipSessionStateService,
+} from './flip-session-state.service.js';
 
 const RULES_HASH = '1'.repeat(64);
 const PROOF_HASH = '2'.repeat(64);
@@ -205,6 +211,111 @@ describe('fixture Flip acquisition recovery', () => {
     expect(fixture.transitions.filter(({ kind }) => kind === 'request-recovery')).toHaveLength(1);
   });
 
+  test.each([
+    'claim',
+    'owner',
+  ] as const)('reconciles reviewed recovery after losing the acquisition lease %s', async (loss) => {
+    const fixture = harness({
+      loseClaimToRecovery: loss === 'claim',
+      loseLeaseToRecovery: loss === 'owner',
+    });
+
+    const recovered = await fixture.service.resumeFixtureAcquisition(SESSION_ID);
+
+    expect(recovered).toMatchObject({
+      recoveryBranch: 'refund',
+      recoveryReason: 'PROVIDER_REJECTED',
+      status: 'recovery-required',
+    });
+    expect(fixture.provider.executions).toBe(0);
+    expect(fixture.transitions.filter(({ kind }) => kind === 'request-recovery')).toHaveLength(1);
+  });
+
+  test('does not accept an unrelated aggregate recovery state as the acquisition transition', async () => {
+    const fixture = harness({
+      failRecoveryTransitionOnce: true,
+      provider: new ScriptedProvider({
+        failureCode: 'PROVIDER_REJECTED',
+        failKind: 'purchase',
+      }),
+    });
+    await expect(fixture.service.resumeFixtureAcquisition(SESSION_ID)).rejects.toThrow(
+      'test interrupted recovery transition',
+    );
+    const session = await fixture.sessions.findSession(SESSION_ID);
+    await fixture.sessions.transition(SESSION_ID, {
+      evidence: {
+        reasonCode: 'UNRELATED_RECOVERY',
+        reference: 'fixture-recovery:unrelated',
+        schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+        status: 'fixture-recovery-required',
+      },
+      expectedVersion: session.version,
+      kind: 'request-recovery',
+      transitionKey: 'unrelated-recovery',
+    });
+
+    await expect(fixture.service.resumeFixtureAcquisition(SESSION_ID)).rejects.toThrow(
+      'cannot append recovery from recovery-required',
+    );
+    expect(
+      fixture.transitions.some(
+        ({ transitionKey }) =>
+          transitionKey.startsWith('flip-acquisition-recovery:') &&
+          transitionKey !== 'unrelated-recovery',
+      ),
+    ).toBe(false);
+  });
+
+  test('rejects a canonical acquisition recovery transition with mismatched evidence', async () => {
+    const fixture = harness({
+      provider: new ScriptedProvider({
+        failureCode: 'PROVIDER_REJECTED',
+        failKind: 'purchase',
+      }),
+    });
+    await fixture.service.resumeFixtureAcquisition(SESSION_ID);
+    const recovery = fixture.transitions.find(({ kind }) => kind === 'request-recovery');
+    if (!recovery) throw new Error('canonical recovery transition is absent');
+    recovery.evidence = {
+      reasonCode: 'PROVIDER_REJECTED:SUBSTITUTE',
+      reference: 'fixture-recovery:mismatch',
+      schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+      status: 'fixture-recovery-required',
+    };
+
+    await expect(fixture.service.resumeFixtureAcquisition(SESSION_ID)).rejects.toThrow(
+      'changed its exact reviewed evidence',
+    );
+  });
+
+  test('replays acquisition recovery after its canonical transition was completed', async () => {
+    const fixture = harness({
+      provider: new ScriptedProvider({
+        failureCode: 'PROVIDER_REJECTED',
+        failKind: 'purchase',
+      }),
+    });
+    const recovery = await fixture.service.resumeFixtureAcquisition(SESSION_ID);
+    const session = await fixture.sessions.findSession(SESSION_ID);
+    await fixture.sessions.transition(SESSION_ID, {
+      evidence: {
+        payout: { amount: '50000000', currency: 'USDC', decimals: 6 },
+        reference: 'fixture-recovery:completed',
+        resultHash: '9'.repeat(64),
+        schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+        status: 'fixture-recovered',
+      },
+      expectedVersion: session.version,
+      kind: 'complete-recovery',
+      transitionKey: 'complete-acquisition-recovery',
+    });
+    const transitionCount = fixture.transitions.length;
+
+    await expect(fixture.service.resumeFixtureAcquisition(SESSION_ID)).resolves.toEqual(recovery);
+    expect(fixture.transitions).toHaveLength(transitionCount);
+  });
+
   test('fails closed when durable recovery evidence loses its reviewed reason', async () => {
     const fixture = harness({
       provider: new ScriptedProvider({
@@ -266,6 +377,8 @@ describe('fixture Flip acquisition recovery', () => {
 interface HarnessOptions {
   environment?: NodeJS.ProcessEnv;
   failRecoveryTransitionOnce?: boolean;
+  loseClaimToRecovery?: boolean;
+  loseLeaseToRecovery?: boolean;
   policyAbsent?: boolean;
   provider?: ScriptedProvider;
   recoverDuringLeaseClaim?: boolean;
@@ -338,7 +451,13 @@ function harness(options: HarnessOptions = {}) {
   let sessionVersion = 4;
   const inventory: Array<Record<string, unknown>> = [];
   const ledger: Array<Record<string, unknown>> = [];
-  const transitions: Array<{ kind: string; transitionKey: string }> = [];
+  const transitions: Array<{
+    evidence: unknown;
+    fromStatus: string;
+    kind: string;
+    toStatus: string;
+    transitionKey: string;
+  }> = [];
   let leaseBusy = false;
   let recoveryTransitionFailed = false;
 
@@ -466,7 +585,12 @@ function harness(options: HarnessOptions = {}) {
         leaseBusy = true;
       }
       applyData(acquisition, data);
-      if (typeof data.leaseOwner === 'string' && options.recoverDuringLeaseClaim) {
+      if (
+        typeof data.leaseOwner === 'string' &&
+        (options.loseClaimToRecovery ||
+          options.loseLeaseToRecovery ||
+          options.recoverDuringLeaseClaim)
+      ) {
         const operation = operations()[0];
         if (!operation) throw new Error('missing operation for lease-race recovery');
         applyData(operation, {
@@ -479,6 +603,14 @@ function harness(options: HarnessOptions = {}) {
           recoveryBranch: 'REFUND',
           status: 'RECOVERY_REQUIRED',
         });
+        if (options.loseClaimToRecovery) {
+          applyData(acquisition, { leaseExpiresAt: null, leaseOwner: null });
+          leaseBusy = false;
+          return { count: 0 };
+        }
+        if (options.loseLeaseToRecovery) {
+          applyData(acquisition, { leaseOwner: 'concurrent-recovery-worker' });
+        }
       }
       return { count: 1 };
     },
@@ -509,11 +641,23 @@ function harness(options: HarnessOptions = {}) {
   const database = databaseObject as unknown as DatabaseClient;
   const sessions = {
     findSession: async () => snapshot(),
-    transition: async (_sessionId: string, action: { kind: string; transitionKey: string }) => {
+    transition: async (
+      _sessionId: string,
+      action: Parameters<FlipSessionStateService['transition']>[1],
+    ) => {
       const replay = transitions.find(
         ({ transitionKey }) => transitionKey === action.transitionKey,
       );
-      if (replay) return snapshot();
+      if (replay) {
+        if (
+          replay.kind !== action.kind ||
+          canonicalFlipAcquisitionStringify(replay.evidence) !==
+            canonicalFlipAcquisitionStringify(action.evidence)
+        ) {
+          throw new Error('Flip transitionKey was reused with different evidence');
+        }
+        return snapshot();
+      }
       if (
         action.kind === 'request-recovery' &&
         options.failRecoveryTransitionOnce &&
@@ -522,11 +666,22 @@ function harness(options: HarnessOptions = {}) {
         recoveryTransitionFailed = true;
         throw new Error('test interrupted recovery transition');
       }
-      transitions.push({ kind: action.kind, transitionKey: action.transitionKey });
-      sessionVersion += 1;
+      if (action.kind === 'request-recovery' && sessionStatus === 'RECOVERY_REQUIRED') {
+        throw new Error('cannot append recovery from recovery-required');
+      }
+      const fromStatus = normalizedStatus(sessionStatus);
       if (action.kind === 'record-purchase') sessionStatus = 'PURCHASE_RECORDED';
       if (action.kind === 'record-transfer') sessionStatus = 'TRANSFER_RECORDED';
       if (action.kind === 'request-recovery') sessionStatus = 'RECOVERY_REQUIRED';
+      if (action.kind === 'complete-recovery') sessionStatus = 'RECOVERED';
+      transitions.push({
+        evidence: structuredClone(action.evidence),
+        fromStatus,
+        kind: action.kind,
+        toStatus: normalizedStatus(sessionStatus),
+        transitionKey: action.transitionKey,
+      });
+      sessionVersion += 1;
       return snapshot();
     },
   } as unknown as FlipSessionStateService;
@@ -563,7 +718,18 @@ function harness(options: HarnessOptions = {}) {
       terminalReason: null,
       transferReference: null,
       transferredAt: null,
-      transitions: [],
+      transitions: transitions.map((transition, index) => ({
+        createdAt: new Date(1_754_227_200_000 + index).toISOString(),
+        evidence: transition.evidence,
+        fromStatus: transition.fromStatus,
+        kind: snapshotTransitionKind(transition.kind),
+        poolCommitmentHash: null,
+        selectedAssetReference: null,
+        sequence: index + 1,
+        terminalReason: null,
+        toStatus: transition.toStatus,
+        transitionKey: transition.transitionKey,
+      })),
       version: sessionVersion,
     };
   }
@@ -580,6 +746,20 @@ function harness(options: HarnessOptions = {}) {
     sessions,
     transitions,
   };
+}
+
+function normalizedStatus(status: string): string {
+  return status.toLowerCase().replaceAll('_', '-');
+}
+
+function snapshotTransitionKind(kind: string): string {
+  const kinds: Record<string, string> = {
+    'complete-recovery': 'recovery-completed',
+    'record-purchase': 'purchase-recorded',
+    'record-transfer': 'transfer-recorded',
+    'request-recovery': 'recovery-requested',
+  };
+  return kinds[kind] ?? kind;
 }
 
 class ScriptedProvider implements FlipAcquisitionProvider {

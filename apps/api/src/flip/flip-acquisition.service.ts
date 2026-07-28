@@ -195,12 +195,12 @@ export class FlipAcquisitionService {
         OR: [{ leaseOwner: null }, { leaseExpiresAt: null }, { leaseExpiresAt: { lte: now } }],
       },
     });
-    if (claimed.count !== 1) return toSnapshot(await this.requireAcquisition(acquisition.id));
+    if (claimed.count !== 1) return this.snapshotDurableAcquisition(acquisition.id);
 
     try {
       const leased = await this.requireAcquisition(acquisition.id);
       if (leased.leaseOwner !== leaseOwner) {
-        return toSnapshot(leased);
+        return this.snapshotDurableAcquisition(leased.id);
       }
       if (
         leased.status === 'ACQUIRED' ||
@@ -209,11 +209,7 @@ export class FlipAcquisitionService {
         )
       ) {
         await this.releaseLease(leased.id, leaseOwner);
-        const durable = await this.requireAcquisition(leased.id);
-        if (durable.status === 'RECOVERY_REQUIRED') {
-          await this.ensureReviewedRecoveryTransition(durable);
-        }
-        return toSnapshot(durable);
+        return this.snapshotDurableAcquisition(leased.id);
       }
 
       const ordered = [...leased.operations].sort((left, right) => left.sequence - right.sequence);
@@ -324,6 +320,7 @@ export class FlipAcquisitionService {
         'PURCHASE_RECORDED',
         'TRANSFER_RECORDED',
         'RECOVERY_REQUIRED',
+        'RECOVERED',
       ].includes(session.status)
     ) {
       throw new ConflictException(
@@ -378,6 +375,17 @@ export class FlipAcquisitionService {
       where: { sessionId },
     });
     if (durableAcquisition) {
+      if (
+        session.status === 'RECOVERED' &&
+        (durableAcquisition.status !== 'RECOVERY_REQUIRED' ||
+          !durableAcquisition.operations.some(
+            (operation) => operation.recoveryMode === DatabaseFlipAcquisitionRecoveryMode.RETRYABLE,
+          ))
+      ) {
+        throw new ConflictException(
+          'Flip recovered session has no matching durable acquisition recovery',
+        );
+      }
       assertPlanReplay(durableAcquisition, session, policy);
       return durableAcquisition;
     }
@@ -644,22 +652,52 @@ export class FlipAcquisitionService {
     if (!reviewed || toDatabaseBranch(reviewed.branch) !== acquisition.recoveryBranch) {
       throw new ConflictException('Flip durable recovery evidence changed its pre-reviewed branch');
     }
+    const evidence = {
+      reasonCode: `${acquisition.failureCode}:${reviewed.branch.toUpperCase()}`,
+      reference: `fixture-recovery:${sha256(`${acquisition.id}:${acquisition.failureCode}`).slice(
+        0,
+        32,
+      )}`,
+      schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+      status: 'fixture-recovery-required' as const,
+    };
+    const transitionKey = `flip-acquisition-recovery:${acquisition.id}`;
     const session = await this.sessions.findSession(acquisition.sessionId);
-    if (session.status !== 'recovery-required') {
-      await this.sessions.transition(acquisition.sessionId, {
-        evidence: {
-          reasonCode: `${acquisition.failureCode}:${reviewed.branch.toUpperCase()}`,
-          reference: `fixture-recovery:${sha256(
-            `${acquisition.id}:${acquisition.failureCode}`,
-          ).slice(0, 32)}`,
-          schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
-          status: 'fixture-recovery-required',
-        },
-        expectedVersion: session.version,
-        kind: 'request-recovery',
-        transitionKey: `flip-acquisition-recovery:${acquisition.id}`,
-      });
+    const durableTransition = session.transitions.find(
+      (transition) => transition.transitionKey === transitionKey,
+    );
+    if (durableTransition) {
+      if (
+        durableTransition.kind !== 'recovery-requested' ||
+        durableTransition.toStatus !== 'recovery-required' ||
+        canonicalFlipAcquisitionStringify(durableTransition.evidence) !==
+          canonicalFlipAcquisitionStringify(evidence)
+      ) {
+        throw new ConflictException('Flip recovery transition changed its exact reviewed evidence');
+      }
+      return;
     }
+    await this.sessions.transition(acquisition.sessionId, {
+      evidence,
+      expectedVersion: session.version,
+      kind: 'request-recovery',
+      transitionKey,
+    });
+  }
+
+  private async snapshotDurableAcquisition(
+    acquisitionId: string,
+  ): Promise<FlipAcquisitionSnapshot> {
+    const durable = await this.requireAcquisition(acquisitionId);
+    if (
+      durable.status === 'RECOVERY_REQUIRED' &&
+      durable.operations.some(
+        (operation) => operation.recoveryMode === DatabaseFlipAcquisitionRecoveryMode.RETRYABLE,
+      )
+    ) {
+      await this.ensureReviewedRecoveryTransition(durable);
+    }
+    return toSnapshot(durable);
   }
 
   private async recordAmbiguous(

@@ -27,6 +27,7 @@ import {
 } from './flip-outcome-selection.service.js';
 import { createFixtureFlipRuleSet, FlipRulesService } from './flip-rules.service.js';
 import {
+  FLIP_RECOVERY_FIXTURE_VERSION,
   FLIP_REVEAL_READY_FIXTURE_VERSION,
   FLIP_STAKE_FIXTURE_VERSION,
   FlipSessionStateService,
@@ -38,8 +39,16 @@ if (process.env.REQUIRE_DB_INTEGRATION === '1' && !databaseUrl) {
 }
 const describeDatabase =
   process.env.REQUIRE_DB_INTEGRATION === '1' && databaseUrl ? describe : describe.skip;
+const ACQUISITION_STAKE_AMOUNT = '50000001';
 const FIXTURE_ENVIRONMENT = {
   DAILYDRAFT_FLIP_FIXTURE_MODE: 'true',
+  DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE: JSON.stringify({
+    observedAt: '2026-08-03T12:02:30.000Z',
+    poolKey: 'fixture-pool-pending',
+    provider: 'fixture-marketplace',
+    schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+    status: 'healthy',
+  }),
   NODE_ENV: 'test',
 } satisfies NodeJS.ProcessEnv;
 
@@ -173,6 +182,102 @@ describeDatabase('Flip acquisition recovery against two real Postgres connection
     ).toBe(1);
   });
 
+  test('reconciles recovery after another worker records it and crashes before a lost claim', async () => {
+    const fixture = await prepareAcquisitionFixture(databaseA, 'lost-claim-recovery-crash');
+    const provider = new DatabaseTestProvider({
+      failKind: 'purchase',
+      failureCode: 'PROVIDER_REJECTED',
+    });
+    const beforeClaim = deferred<void>();
+    const releaseClaim = deferred<void>();
+    const staleDatabase = delayFirstAcquisitionClaim(databaseB, beforeClaim, releaseClaim);
+    const staleAttempt = acquisitionService(staleDatabase, provider).resumeFixtureAcquisition(
+      fixture.sessionId,
+    );
+    await beforeClaim.promise;
+
+    const durableSessions = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    await expect(
+      acquisitionService(
+        databaseA,
+        provider,
+        new FailOnceRecoverySessions(durableSessions) as unknown as FlipSessionStateService,
+      ).resumeFixtureAcquisition(fixture.sessionId),
+    ).rejects.toThrow('test interrupted recovery transition');
+    expect(
+      await databaseA.flipSessionTransition.count({
+        where: { kind: 'RECOVERY_REQUESTED', sessionId: fixture.sessionId },
+      }),
+    ).toBe(0);
+
+    releaseClaim.resolve();
+    const recovered = await staleAttempt;
+
+    expect(recovered).toMatchObject({
+      recoveryBranch: 'refund',
+      recoveryReason: 'PROVIDER_REJECTED',
+      status: 'recovery-required',
+    });
+    expect(provider.executionsFor('purchase')).toBe(1);
+    expect(
+      await databaseA.flipSessionTransition.count({
+        where: { kind: 'RECOVERY_REQUESTED', sessionId: fixture.sessionId },
+      }),
+    ).toBe(1);
+  });
+
+  test('reconciles recovery after another worker records it and crashes before lease-owner loss', async () => {
+    const fixture = await prepareAcquisitionFixture(databaseA, 'lost-owner-recovery-crash');
+    const provider = new DatabaseTestProvider({
+      failKind: 'purchase',
+      failureCode: 'PROVIDER_REJECTED',
+    });
+    const afterClaim = deferred<void>();
+    const releaseClaim = deferred<void>();
+    const staleDatabase = delayExpiredAcquisitionClaim(databaseB, afterClaim, releaseClaim);
+    const staleAttempt = acquisitionService(staleDatabase, provider).resumeFixtureAcquisition(
+      fixture.sessionId,
+    );
+    await afterClaim.promise;
+
+    const durableSessions = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    await expect(
+      acquisitionService(
+        databaseA,
+        provider,
+        new FailOnceRecoverySessions(durableSessions) as unknown as FlipSessionStateService,
+      ).resumeFixtureAcquisition(fixture.sessionId),
+    ).rejects.toThrow('test interrupted recovery transition');
+    expect(
+      await databaseA.flipSessionTransition.count({
+        where: { kind: 'RECOVERY_REQUESTED', sessionId: fixture.sessionId },
+      }),
+    ).toBe(0);
+
+    releaseClaim.resolve();
+    const recovered = await staleAttempt;
+
+    expect(recovered).toMatchObject({
+      recoveryBranch: 'refund',
+      recoveryReason: 'PROVIDER_REJECTED',
+      status: 'recovery-required',
+    });
+    expect(provider.executionsFor('purchase')).toBe(1);
+    expect(
+      await databaseA.flipSessionTransition.count({
+        where: { kind: 'RECOVERY_REQUESTED', sessionId: fixture.sessionId },
+      }),
+    ).toBe(1);
+  });
+
   test('reconciles one durable recovery transition after a fail-once restart', async () => {
     const fixture = await prepareAcquisitionFixture(databaseA, 'recovery-transition-restart');
     const provider = new DatabaseTestProvider({
@@ -225,6 +330,90 @@ describeDatabase('Flip acquisition recovery against two real Postgres connection
         where: { kind: 'RECOVERY_REQUESTED', sessionId: fixture.sessionId },
       }),
     ).toBe(1);
+  });
+
+  test('rejects a canonical recovery transition whose reviewed evidence does not match', async () => {
+    const fixture = await prepareAcquisitionFixture(databaseA, 'recovery-transition-mismatch');
+    const provider = new DatabaseTestProvider({
+      failKind: 'purchase',
+      failureCode: 'PROVIDER_REJECTED',
+    });
+    const durableSessions = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    await expect(
+      acquisitionService(
+        databaseA,
+        provider,
+        new FailOnceRecoverySessions(durableSessions) as unknown as FlipSessionStateService,
+      ).resumeFixtureAcquisition(fixture.sessionId),
+    ).rejects.toThrow('test interrupted recovery transition');
+    const acquisition = await databaseA.flipAcquisition.findUniqueOrThrow({
+      where: { sessionId: fixture.sessionId },
+    });
+    const session = await durableSessions.findSession(fixture.sessionId);
+    await durableSessions.transition(fixture.sessionId, {
+      evidence: {
+        reasonCode: 'PROVIDER_REJECTED:SUBSTITUTE',
+        reference: 'fixture-recovery:mismatched-reviewed-evidence',
+        schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+        status: 'fixture-recovery-required',
+      },
+      expectedVersion: session.version,
+      kind: 'request-recovery',
+      transitionKey: `flip-acquisition-recovery:${acquisition.id}`,
+    });
+
+    await expect(
+      acquisitionService(databaseB, provider).resumeFixtureAcquisition(fixture.sessionId),
+    ).rejects.toThrow('changed its exact reviewed evidence');
+    expect(provider.executionsFor('purchase')).toBe(1);
+  });
+
+  test('does not append recovery again after its canonical transition was completed', async () => {
+    const fixture = await prepareAcquisitionFixture(databaseA, 'completed-recovery-transition');
+    const provider = new DatabaseTestProvider({
+      failKind: 'purchase',
+      failureCode: 'PROVIDER_REJECTED',
+    });
+    const recovery = await acquisitionService(databaseA, provider).resumeFixtureAcquisition(
+      fixture.sessionId,
+    );
+    const sessions = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    const recoverySession = await sessions.findSession(fixture.sessionId);
+    await sessions.transition(fixture.sessionId, {
+      evidence: {
+        payout: usdc(ACQUISITION_STAKE_AMOUNT),
+        reference: 'fixture-recovery:completed-canonical-transition',
+        resultHash: '9'.repeat(64),
+        schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+        status: 'fixture-recovered',
+      },
+      expectedVersion: recoverySession.version,
+      kind: 'complete-recovery',
+      transitionKey: 'complete-acquisition-recovery',
+    });
+    const beforeReplay = await databaseA.flipSessionTransition.count({
+      where: { sessionId: fixture.sessionId },
+    });
+
+    const replay = await acquisitionService(databaseB, provider).resumeFixtureAcquisition(
+      fixture.sessionId,
+    );
+
+    expect(replay).toEqual(recovery);
+    expect(provider.executionsFor('purchase')).toBe(1);
+    expect(
+      await databaseA.flipSessionTransition.count({
+        where: { sessionId: fixture.sessionId },
+      }),
+    ).toBe(beforeReplay);
   });
 
   test.each([
@@ -433,6 +622,33 @@ function delayFirstAcquisitionClaim(
   }) as unknown as DatabaseClient;
 }
 
+function delayExpiredAcquisitionClaim(
+  database: DatabaseClient,
+  afterClaim: Deferred<void>,
+  releaseClaim: Deferred<void>,
+): DatabaseClient {
+  let delayed = false;
+  return database.$extends({
+    query: {
+      flipAcquisition: {
+        async updateMany({ args, query }) {
+          if (!delayed && typeof args.data.leaseOwner === 'string') {
+            delayed = true;
+            const result = await query({
+              ...args,
+              data: { ...args.data, leaseExpiresAt: new Date(0) },
+            });
+            afterClaim.resolve();
+            await releaseClaim.promise;
+            return result;
+          }
+          return query(args);
+        },
+      },
+    },
+  }) as unknown as DatabaseClient;
+}
+
 function blockAcquisitionFinalization(database: DatabaseClient): DatabaseClient {
   return database.$extends({
     query: {
@@ -613,6 +829,13 @@ async function prepareAcquisitionFixture(database: DatabaseClient, label: string
   const poolKey = `dbtest-flip-acquisition-pool-${suffix}`;
   const policyVersion = `dbtest-flip-acquisition-inventory-${suffix}`;
   const rulesKey = `dbtest-flip-acquisition-rules-${suffix}`;
+  FIXTURE_ENVIRONMENT.DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE = JSON.stringify({
+    observedAt: '2026-08-03T12:02:30.000Z',
+    poolKey,
+    provider: 'fixture-marketplace',
+    schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+    status: 'healthy',
+  });
   const inventory = new FlipInventorySnapshotService(database);
   const snapshot = await inventory.createFixtureSnapshot({
     candidates: [
@@ -621,7 +844,7 @@ async function prepareAcquisitionFixture(database: DatabaseClient, label: string
       candidate(`${suffix}-plus`, '30000000'),
       candidate(`${suffix}-chase`, '60000000'),
     ],
-    evaluatedAt: new Date('2026-08-03T12:00:00.000Z'),
+    evaluatedAt: new Date('2026-08-03T12:02:00.000Z'),
     policy: snapshotPolicy(poolKey, policyVersion),
   });
   const rulesService = new FlipRulesService(database);
@@ -629,6 +852,7 @@ async function prepareAcquisitionFixture(database: DatabaseClient, label: string
     inventoryPolicyVersion: policyVersion,
     poolKey,
     rulesKey,
+    stakeAmount: ACQUISITION_STAKE_AMOUNT,
   });
   await rulesService.createFixtureRuleSet(rules);
   await acquisitionService(database, new DatabaseTestProvider()).createFixturePolicy({
@@ -657,7 +881,7 @@ async function prepareAcquisitionFixture(database: DatabaseClient, label: string
   });
   session = await sessions.transition(session.id, {
     evidence: {
-      amount: usdc('50000000'),
+      amount: usdc(ACQUISITION_STAKE_AMOUNT),
       reference: `fixture-stake:${label}`,
       schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
       status: 'fixture-confirmed',
@@ -821,12 +1045,12 @@ function snapshotPolicy(poolKey: string, policyVersion: string): FlipInventorySn
     policyVersion,
     poolKey,
     provider: 'fixture-marketplace',
-    stake: moneyPolicy('50000000'),
+    stake: moneyPolicy(ACQUISITION_STAKE_AMOUNT),
   };
 }
 
 function candidate(reference: string, amount: string): FlipInventoryCandidate {
-  const sourceTimestamp = new Date('2026-08-03T11:59:30.000Z');
+  const sourceTimestamp = new Date('2026-08-03T12:01:30.000Z');
   return {
     buybackValue: null,
     displayedValue: null,
