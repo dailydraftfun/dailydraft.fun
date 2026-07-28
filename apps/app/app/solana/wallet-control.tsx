@@ -17,12 +17,17 @@ import { useDialogFocus } from '../accessibility/use-dialog-focus';
 import { journeyTestIds } from '../e2e/journey-test-ids';
 import { describeWalletBalance } from './balance';
 import { getExplorerAddressUrl } from './config';
+import { getWalletAuthPresentation } from './wallet-auth-presentation';
 import { useWalletAuth } from './wallet-auth-provider';
 import { useSolanaWallet } from './wallet-provider';
 
 export function WalletControl() {
   const wallet = useSolanaWallet();
   const authentication = useWalletAuth();
+  const authenticationPresentation = getWalletAuthPresentation(
+    authentication.status,
+    authentication.expiresAt,
+  );
   const balance = describeWalletBalance(wallet.balanceStatus, wallet.balances);
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -129,25 +134,17 @@ export function WalletControl() {
                 <div className="wallet-authentication-panel">
                   <div className="wallet-authentication-heading">
                     <div>
-                      <strong>
-                        {authentication.status === 'authenticated'
-                          ? 'Authenticated to play'
-                          : 'Authenticate wallet ownership'}
-                      </strong>
-                      <small>
-                        {authentication.status === 'authenticated' && authentication.expiresAt
-                          ? `Session expires ${new Date(authentication.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                          : 'One readable Ed25519 signature · no transaction'}
-                      </small>
+                      <strong>{authenticationPresentation.title}</strong>
+                      <small>{authenticationPresentation.detail}</small>
                     </div>
                     <span
                       className={
-                        authentication.status === 'authenticated'
+                        authenticationPresentation.isActive
                           ? 'auth-status auth-status-active'
                           : 'auth-status'
                       }
                     >
-                      {authentication.status === 'authenticated' ? 'Active' : 'Required'}
+                      {authenticationPresentation.badge}
                     </span>
                   </div>
 
@@ -175,17 +172,23 @@ export function WalletControl() {
                     <Button
                       type="button"
                       onClick={authentication.prepare}
-                      disabled={authentication.status === 'preparing'}
+                      disabled={
+                        authentication.status === 'preparing' ||
+                        authentication.status === 'restoring'
+                      }
                       data-testid={journeyTestIds.walletAuthenticationPrepare}
                     >
-                      {authentication.status === 'preparing' ? (
+                      {authentication.status === 'preparing' ||
+                      authentication.status === 'restoring' ? (
                         <SpinnerGapIcon className="wallet-spinner" size={16} />
                       ) : (
                         <ShieldCheckIcon size={16} />
                       )}
-                      {authentication.status === 'preparing'
-                        ? 'Preparing message'
-                        : 'Review authentication message'}
+                      {authentication.status === 'restoring'
+                        ? 'Restoring session'
+                        : authentication.status === 'preparing'
+                          ? 'Preparing message'
+                          : 'Review authentication message'}
                     </Button>
                   ) : null}
                 </div>

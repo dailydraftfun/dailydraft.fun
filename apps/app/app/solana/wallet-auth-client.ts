@@ -17,6 +17,8 @@ export type WalletSession = {
   wallet: string;
 };
 
+export type WalletSessionIdentity = Pick<WalletSession, 'network' | 'wallet'>;
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_DUEL_API_URL?.replace(/\/$/, '');
 
 export function isDuelApiConfigured(): boolean {
@@ -68,6 +70,35 @@ export async function createWalletSessionAt(
     headers: { 'content-type': 'application/json' },
     method: 'POST',
   });
+}
+
+export async function validateWalletSession(
+  token: string,
+  signal?: AbortSignal,
+): Promise<WalletSessionIdentity | null> {
+  if (!apiBaseUrl) throw new Error('Wallet authentication is unavailable in this preview.');
+  return validateWalletSessionAt(apiBaseUrl, token, fetch, signal);
+}
+
+export async function validateWalletSessionAt(
+  baseUrl: string,
+  token: string,
+  fetcher: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<WalletSessionIdentity | null> {
+  const response = await fetcher(`${baseUrl}/auth/session`, {
+    cache: 'no-store',
+    headers: { authorization: `Bearer ${token}` },
+    method: 'GET',
+    signal,
+  });
+  if (response.status === 401 || response.status === 403) return null;
+  if (!response.ok) {
+    const problem = await response.json().catch(() => null);
+    const detail = isProblemDetail(problem) ? problem.detail : undefined;
+    throw new Error(detail ?? `Wallet authentication failed (${response.status}).`);
+  }
+  return (await response.json()) as WalletSessionIdentity;
 }
 
 export async function revokeWalletSession(token: string): Promise<void> {
