@@ -4,6 +4,9 @@ import { PrismaClient } from '../generated/client.js';
 
 export type { Prisma } from '../generated/client.js';
 export {
+  CrashDecision,
+  CrashRoundStatus,
+  CrashTransitionKind,
   DuelMode,
   DuelProviderOperationStatus,
   DuelSide,

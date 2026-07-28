@@ -226,6 +226,97 @@ enum GachaInventoryExclusionReason {
   MAXIMUM_ITEM_COUNT
 }
 
+enum CrashRoundStatus {
+  ACTIVE
+  CASHED_OUT
+  BUSTED
+  COMPLETED
+  DEFAULTED
+}
+
+enum CrashDecision {
+  CONTINUE
+  CASH_OUT
+  FORFEIT
+}
+
+enum CrashTransitionKind {
+  ROUND_STARTED
+  STAGE_CONTINUED
+  CASHED_OUT
+  BUSTED
+  COMPLETED
+  DEADLINE_DEFAULTED
+}
+
+/// Fixture-only durable Crash/Card Streak round. No production route creates
+/// these rows: every round is bound to reviewed synthetic architecture,
+/// calculator, state-machine, wallet, and rules references.
+model CrashRound {
+  id                    String           @id
+  activationMode        String           @default("fixture-only")
+  status                CrashRoundStatus @default(ACTIVE)
+  stage                 Int              @default(1)
+  version               Int              @default(1)
+  architectureVersion   String
+  stateMachineVersion   String
+  stateMachineRulesHash String
+  calculatorVersion     String
+  rulesVersion          String
+  rulesHash             String
+  playerWalletReference String
+  potAmount             String
+  potCurrency           String           @default("USDC")
+  potDecimals           Int              @default(6)
+  decisionDeadline      DateTime?
+  defaultAction         CrashDecision
+  terminalReason        String?
+  terminalAt            DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  transitions           CrashTransition[]
+
+  @@index([status, decisionDeadline])
+  @@index([playerWalletReference, createdAt])
+  @@index([rulesHash, createdAt])
+}
+
+/// Append-only evidence for one accepted Crash transition. The round version
+/// and sequence are identical, making durable replay and audit ordering
+/// independent of wall-clock timestamp precision.
+model CrashTransition {
+  id                    String              @id
+  roundId               String
+  sequence              Int
+  transitionKey         String
+  requestHash           String
+  kind                  CrashTransitionKind
+  decision              CrashDecision?
+  fromStatus            CrashRoundStatus?
+  toStatus              CrashRoundStatus
+  fromStage             Int?
+  toStage               Int
+  scheduledDeadline     DateTime?
+  payment               Json?
+  outcome               Json?
+  valueChange           Json?
+  settlement            Json?
+  terminalReason        String?
+  architectureVersion   String
+  stateMachineVersion   String
+  stateMachineRulesHash String
+  calculatorVersion     String
+  rulesVersion          String
+  rulesHash             String
+  createdAt             DateTime            @default(now())
+  round                 CrashRound           @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, sequence])
+  @@unique([roundId, transitionKey])
+  @@index([roundId, createdAt])
+  @@index([rulesHash, createdAt])
+}
+
 model Duel {
   id                  String                     @id
   mode                DuelMode
@@ -721,6 +812,7 @@ model FlipInventorySnapshot {
   sealedAt                    DateTime?
   createdAt                   DateTime                     @default(now())
   entries                     FlipInventorySnapshotEntry[]
+  sessionPoolCommitments      FlipSessionPoolCommitment[]
 
   @@unique([poolKey, revision])
   @@unique([poolKey, contentHash])
@@ -773,6 +865,65 @@ model FlipInventorySnapshotEntry {
   @@unique([snapshotId, providerAssetReference])
   @@unique([snapshotId, providerListingReference])
   @@index([snapshotId, eligible, ordinal])
+}
+
+/// Reviewed, versioned fixture-only Flip probability and economic configuration.
+/// Rules are sealed before use and remain append-only after review.
+model FlipRuleSet {
+  id                     String                      @id
+  rulesKey               String
+  version                Int
+  schemaVersion          String
+  calculatorVersion      String
+  activation             String
+  poolKey                String
+  inventoryPolicyVersion String
+  currency               String                      @default("USDC")
+  decimals               Int                         @default(6)
+  stakeAmount            String
+  feeAmount              String
+  houseEdgePpm           Int
+  probabilityScalePpm    Int                         @default(1000000)
+  bands                  Json
+  rulesCanonicalPreimage String
+  rulesHash              String
+  reviewReference        String
+  reviewedAt             DateTime
+  sealedAt               DateTime?
+  createdAt              DateTime                    @default(now())
+  sessionPoolCommitments FlipSessionPoolCommitment[]
+
+  @@unique([rulesKey, version])
+  @@unique([rulesKey, rulesHash])
+  @@index([poolKey, createdAt])
+}
+
+/// Immutable rules-and-pool binding created before a synthetic/preview Flip session.
+/// `outcomeSpace` contains only public inventory references and normalized values;
+/// no entropy, provider credentials, or other secret selection material is stored.
+model FlipSessionPoolCommitment {
+  id                    String                @id
+  sessionReference      String                @unique
+  rulesetId             String
+  snapshotId            String
+  poolKey               String
+  rulesVersion          Int
+  snapshotRevision      Int
+  rulesHash             String
+  snapshotContentHash   String
+  poolCanonicalPreimage String
+  poolCommitmentHash    String
+  eligibleOutcomeCount  Int
+  outcomeSpace          Json
+  committedAt           DateTime
+  sealedAt              DateTime?
+  createdAt             DateTime              @default(now())
+  ruleset               FlipRuleSet           @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
+  snapshot              FlipInventorySnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  @@index([rulesetId, committedAt])
+  @@index([snapshotId, committedAt])
+  @@index([poolKey, committedAt])
 }
 
 /// One configured Collector Crypt sports pack machine.

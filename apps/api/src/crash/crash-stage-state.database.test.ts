@@ -1,0 +1,221 @@
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { createDatabaseClient, type DatabaseClient } from '@dailydraft/db';
+
+import type { Money } from '../domain.js';
+import {
+  CRASH_CALCULATOR_VERSION,
+  CRASH_RULES_SCHEMA_VERSION,
+  type CrashCalculatorRuleSet,
+  hashCrashCalculatorRuleSet,
+  type UnsignedCrashCalculatorRuleSet,
+} from './crash-calculators.js';
+import {
+  CRASH_CUSTODY_FIXTURE_VERSION,
+  CRASH_PAYMENT_FIXTURE_VERSION,
+  CRASH_PROVIDER_FIXTURE_VERSION,
+  CRASH_SETTLEMENT_FIXTURE_VERSION,
+  CRASH_STATE_MACHINE_VERSION,
+  CRASH_STATE_RULES_SCHEMA_VERSION,
+  CrashStageStateService,
+  type CrashStateRules,
+  hashCrashStateRules,
+  type UnsignedCrashStateRules,
+} from './crash-stage-state.js';
+
+const databaseUrl = process.env.DATABASE_URL;
+if (process.env.REQUIRE_DB_INTEGRATION === '1' && !databaseUrl) {
+  throw new Error('REQUIRE_DB_INTEGRATION=1 but DATABASE_URL is unset');
+}
+const describeDatabase =
+  process.env.REQUIRE_DB_INTEGRATION === '1' && databaseUrl ? describe : describe.skip;
+const ROUND_PREFIX = `crash-dbtest-${crypto.randomUUID().replaceAll('-', '')}`;
+const FIXTURE_ENVIRONMENT = {
+  DAILYDRAFT_CRASH_FIXTURE_MODE: 'true',
+  NODE_ENV: 'test',
+} satisfies NodeJS.ProcessEnv;
+
+describeDatabase('Crash stage state machine against a real Postgres', () => {
+  let database: DatabaseClient;
+
+  beforeAll(() => {
+    database = createDatabaseClient(databaseUrl ?? '');
+  });
+
+  afterAll(async () => {
+    await database.$disconnect();
+  });
+
+  test('survives service restart and collapses an idempotent concurrent transition', async () => {
+    const clock = new DatabaseTestClock();
+    const service = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const round = await service.createFixtureRound({
+      initialPot: usdc('0'),
+      playerWalletReference: 'fixture-wallet:postgres-player',
+      roundId: `${ROUND_PREFIX}-resume`,
+      rules: RULES,
+    });
+    const decision = continueDecision(round.version);
+
+    const concurrent = await Promise.all([
+      service.decide(round.id, RULES, decision),
+      service.decide(round.id, RULES, decision),
+    ]);
+    expect(concurrent[0]).toEqual(concurrent[1]);
+    expect(concurrent[0]).toMatchObject({ stage: 2, status: 'active', version: 2 });
+
+    const restarted = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const resumed = await restarted.findRound(round.id);
+    expect(resumed.transitions).toHaveLength(2);
+    expect(resumed.transitions.map(({ sequence }) => sequence)).toEqual([1, 2]);
+    expect(resumed.transitions[1]).toMatchObject({
+      payment: { schemaVersion: CRASH_PAYMENT_FIXTURE_VERSION },
+      outcome: {
+        custody: { schemaVersion: CRASH_CUSTODY_FIXTURE_VERSION },
+        provider: { schemaVersion: CRASH_PROVIDER_FIXTURE_VERSION, stage: 1 },
+      },
+    });
+    await restarted.decide(round.id, RULES, {
+      decision: 'cash-out',
+      expectedStage: 2,
+      expectedVersion: 2,
+      settlement: {
+        payout: usdc('1000000'),
+        reference: 'fixture-settlement:postgres-cleanup',
+        resultHash: hash('settlement:postgres-cleanup'),
+        schemaVersion: CRASH_SETTLEMENT_FIXTURE_VERSION,
+        status: 'fixture-recorded',
+      },
+      transitionKey: 'cash-out-postgres-cleanup',
+    });
+    await expect(
+      Promise.resolve(
+        database.crashTransition.updateMany({
+          data: { terminalReason: 'TAMPERED' },
+          where: { roundId: round.id },
+        }),
+      ),
+    ).rejects.toThrow('Crash transitions are append-only');
+  });
+
+  test('lets only one worker append the deadline default transition', async () => {
+    const clock = new DatabaseTestClock();
+    const service = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const round = await service.createFixtureRound({
+      initialPot: usdc('0'),
+      playerWalletReference: 'fixture-wallet:postgres-deadline',
+      roundId: `${ROUND_PREFIX}-deadline`,
+      rules: RULES,
+    });
+    clock.advance(10_000);
+
+    const counts = await Promise.all([
+      service.applyExpiredDefaults(),
+      service.applyExpiredDefaults(),
+      service.applyExpiredDefaults(),
+    ]);
+    expect(counts.reduce((sum, value) => sum + value, 0)).toBe(1);
+
+    const stored = await service.findRound(round.id);
+    expect(stored).toMatchObject({
+      status: 'defaulted',
+      terminalReason: 'DEADLINE_DEFAULT_FORFEIT',
+      version: 2,
+    });
+    expect(stored.transitions).toHaveLength(2);
+  });
+});
+
+const UNSIGNED_CALCULATOR_RULES = {
+  activation: 'fixture-only',
+  calculatorVersion: CRASH_CALCULATOR_VERSION,
+  constraints: {
+    bustThresholdPpm: 'nondecreasing',
+    maxPotAmount: 'nondecreasing',
+    potContributionBps: 'nondecreasing',
+  },
+  currency: 'USDC',
+  decimals: 6,
+  rounding: 'floor',
+  rulesVersion: 'synthetic-postgres-v1',
+  schemaVersion: CRASH_RULES_SCHEMA_VERSION,
+  stages: [
+    {
+      bustThresholdPpm: 100_000,
+      maxPotAmount: '100000000',
+      potContributionBps: 10_000,
+      stage: 1,
+    },
+    {
+      bustThresholdPpm: 250_000,
+      maxPotAmount: '250000000',
+      potContributionBps: 15_000,
+      stage: 2,
+    },
+  ],
+} as const satisfies UnsignedCrashCalculatorRuleSet;
+
+const CALCULATOR_RULES: CrashCalculatorRuleSet = {
+  ...UNSIGNED_CALCULATOR_RULES,
+  rulesHash: hashCrashCalculatorRuleSet(UNSIGNED_CALCULATOR_RULES),
+};
+const UNSIGNED_RULES = {
+  activation: 'fixture-only',
+  architectureVersion: 'synthetic-postgres-architecture-v1',
+  calculatorRules: CALCULATOR_RULES,
+  decisionTimeoutMs: 10_000,
+  defaultAction: 'forfeit',
+  schemaVersion: CRASH_STATE_RULES_SCHEMA_VERSION,
+  stateMachineVersion: CRASH_STATE_MACHINE_VERSION,
+} as const satisfies UnsignedCrashStateRules;
+const RULES: CrashStateRules = {
+  ...UNSIGNED_RULES,
+  stateMachineRulesHash: hashCrashStateRules(UNSIGNED_RULES),
+};
+
+function continueDecision(version: number) {
+  return {
+    custody: {
+      assetReference: 'fixture-asset:postgres-1',
+      reference: 'fixture-custody:postgres-1',
+      schemaVersion: CRASH_CUSTODY_FIXTURE_VERSION,
+    },
+    decision: 'continue' as const,
+    expectedStage: 1,
+    expectedVersion: version,
+    payment: {
+      amount: usdc('1000000'),
+      reference: 'fixture-payment:postgres-1',
+      schemaVersion: CRASH_PAYMENT_FIXTURE_VERSION,
+      status: 'fixture-confirmed' as const,
+    },
+    providerOutcome: {
+      reference: 'fixture-provider:postgres-1',
+      resultHash: hash('provider:postgres-1'),
+      rollPpm: 900_000,
+      schemaVersion: CRASH_PROVIDER_FIXTURE_VERSION,
+      stage: 1,
+      stageValue: usdc('1000000'),
+    },
+    transitionKey: 'continue-postgres-1',
+  };
+}
+
+function usdc(amount: string): Money {
+  return { amount, currency: 'USDC', decimals: 6 };
+}
+
+function hash(value: string): string {
+  return new Bun.CryptoHasher('sha256').update(value).digest('hex');
+}
+
+class DatabaseTestClock {
+  #current = new Date('2026-07-28T13:00:00.000Z');
+
+  advance(milliseconds: number): void {
+    this.#current = new Date(this.#current.getTime() + milliseconds);
+  }
+
+  now(): Date {
+    return new Date(this.#current);
+  }
+}
