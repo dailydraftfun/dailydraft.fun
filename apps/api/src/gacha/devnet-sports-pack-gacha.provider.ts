@@ -41,9 +41,9 @@ const SPORTS: readonly SportsPackGachaSport[] = Object.freeze([
 ]);
 
 const TIERS = Object.freeze([
-  { label: '$50', priceMinor: '50000000' },
-  { label: '$100', priceMinor: '100000000' },
-  { label: '$250', priceMinor: '250000000' },
+  { label: '$0.01', priceMinor: '10000' },
+  { label: '$0.10', priceMinor: '100000' },
+  { label: '$1.00', priceMinor: '1000000' },
 ] as const);
 
 const COMMITTED_POOL_SIZE = 4;

@@ -22,7 +22,7 @@ import {
   shorten,
 } from './flip-machine-view';
 
-const MACHINE_KEY = 'dailydraft-devnet-football-50000000';
+const MACHINE_KEY = 'dailydraft-devnet-football-10000';
 const MAC = 'a'.repeat(32);
 const ASSET = `devnet:sports-pack:${MACHINE_KEY}:xy1-1:${MAC}`;
 
@@ -94,13 +94,13 @@ const SNAPSHOT: GachaInventorySnapshot = {
   machine: {
     active: true,
     committedPoolSize: 12,
-    displayName: 'Football $50 Devnet Machine',
+    displayName: 'Football $0.01 Devnet Machine',
     id: 'gachamachine_1',
     machineKey: MACHINE_KEY,
     sport: 'FOOTBALL',
     tierPriceCurrency: 'USDC',
     tierPriceDecimals: 6,
-    tierPriceMinor: '50000000',
+    tierPriceMinor: '10000',
   },
   machineKey: MACHINE_KEY,
   policyHash: 'p'.repeat(64),
@@ -115,7 +115,7 @@ const SNAPSHOT: GachaInventorySnapshot = {
 const INTENT: GachaPaymentIntent = {
   amountCurrency: 'USDC',
   amountDecimals: 6,
-  amountMinor: '50000000',
+  amountMinor: '10000',
   destinationTokenAccount: 'HouseTreasuryTokenAccount1111111111111111111',
   expiresAt: '2026-07-26T00:05:00.000Z',
   intentId: 'gachaintent_1_long_enough_to_shorten',
@@ -129,7 +129,7 @@ const INTENT: GachaPaymentIntent = {
 };
 
 const PREPARED: PreparedGachaPaymentTransaction = {
-  amountMinor: '50000000',
+  amountMinor: '10000',
   expectedMessageHash: 'h'.repeat(64),
   expiresAt: '2026-07-26T00:05:00.000Z',
   intentId: INTENT.intentId,
@@ -181,7 +181,7 @@ const RESULT: GachaRipResult = {
   serverSeedHash: 's'.repeat(64),
 };
 
-/** Enough USDC for the $50 tier, so the preflight reads as sufficient. */
+/** Enough devnet USDC for every reduced-price tier, so the preflight reads as sufficient. */
 const FUNDED: WalletBalances = {
   lamports: 2_000_000_000n,
   token: { amount: 90_000_000n, decimals: 6 },
@@ -268,8 +268,8 @@ describe('flip machine view stages', () => {
       }),
     );
     for (const handler of buttonHandlers(review)) handler();
-    expect(selections).toContain('football:50000000');
-    expect(selections).toContain('football:100000000');
+    expect(selections).toContain('football:10000');
+    expect(selections).toContain('football:100000');
 
     const connections: string[] = [];
     const connect = FlipMachineView(
@@ -297,7 +297,7 @@ describe('flip machine view stages', () => {
     // 25_000 / 1_000_000 → the chase band.
     expect(html).toContain('2.5%');
     expect(html).toContain('11 eligible cards');
-    expect(html).toContain('Football $50 Devnet Machine');
+    expect(html).toContain('Football $0.01 Devnet Machine');
   });
 
   test('surfaces a pricing failure without leaving the review stage', () => {
@@ -490,9 +490,9 @@ describe('flip machine view stages', () => {
   test('does not borrow rarity evidence from a different machine after recovery', () => {
     const html = render({
       state: state({
-        odds: { ...ODDS, machineKey: 'dailydraft-devnet-soccer-250000000' },
+        odds: { ...ODDS, machineKey: 'dailydraft-devnet-soccer-1000000' },
         result: RESULT,
-        snapshot: { ...SNAPSHOT, machineKey: 'dailydraft-devnet-soccer-250000000' },
+        snapshot: { ...SNAPSHOT, machineKey: 'dailydraft-devnet-soccer-1000000' },
       }),
     });
 
