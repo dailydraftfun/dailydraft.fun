@@ -1126,8 +1126,8 @@ model FlipRuleSet {
 /// `outcomeSpace` contains only public inventory references and normalized values;
 /// no entropy, provider credentials, or other secret selection material is stored.
 model FlipSessionPoolCommitment {
-  id                    String                @id
-  sessionReference      String                @unique
+  id                    String                     @id
+  sessionReference      String                     @unique
   rulesetId             String
   snapshotId            String
   poolKey               String
@@ -1141,10 +1141,11 @@ model FlipSessionPoolCommitment {
   outcomeSpace          Json
   committedAt           DateTime
   sealedAt              DateTime?
-  createdAt             DateTime              @default(now())
-  ruleset               FlipRuleSet           @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
-  snapshot              FlipInventorySnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  createdAt             DateTime                   @default(now())
+  ruleset               FlipRuleSet                @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
+  snapshot              FlipInventorySnapshot      @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
   session               FlipSession?
+  selectionProof        FlipOutcomeSelectionProof?
 
   @@index([rulesetId, committedAt])
   @@index([snapshotId, committedAt])
@@ -1184,6 +1185,7 @@ model FlipSession {
   updatedAt                DateTime                   @updatedAt
   poolCommitment           FlipSessionPoolCommitment? @relation(fields: [poolCommitmentId], references: [id], onDelete: Restrict)
   transitions              FlipSessionTransition[]
+  selectionProof           FlipOutcomeSelectionProof?
 
   @@index([status, updatedAt])
   @@index([playerWalletReference, createdAt])
@@ -1194,7 +1196,7 @@ model FlipSession {
 /// Sequence equals the aggregate version, so retries and restarts resume from a
 /// deterministic durable boundary rather than process memory.
 model FlipSessionTransition {
-  id                     String                    @id
+  id                     String                     @id
   sessionId              String
   sequence               Int
   transitionKey          String
@@ -1207,13 +1209,52 @@ model FlipSessionTransition {
   poolCommitmentHash     String?
   selectedAssetReference String?
   terminalReason         String?
-  createdAt              DateTime                  @default(now())
-  session                FlipSession               @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt              DateTime                   @default(now())
+  session                FlipSession                @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  selectionProof         FlipOutcomeSelectionProof?
 
   @@unique([sessionId, sequence])
   @@unique([sessionId, transitionKey])
   @@index([sessionId, createdAt])
   @@index([requestHash])
+}
+
+/// Payload-redacted deterministic selection proof. The approved entropy payload
+/// is never persisted; only its canonical hash and audit-safe derivation fields
+/// are retained. A prepared proof can be bound exactly once to the append-only
+/// selection transition after a lost-response-safe state-machine replay.
+model FlipOutcomeSelectionProof {
+  id                       String                    @id
+  sessionId                String                    @unique
+  poolCommitmentId         String                    @unique
+  terminalTransitionId     String?                   @unique
+  schemaVersion            String
+  algorithmVersion         String
+  requestHash              String
+  resultHash               String                    @unique
+  entropySchemaVersion     String
+  entropySource            String
+  entropyReference         String
+  entropyApprovedAt        DateTime
+  entropyHash              String
+  poolCommitmentHash       String
+  rulesHash                String
+  snapshotContentHash      String
+  rollPpm                  Int
+  selectedBandLabel        String
+  selectedBandOutcomeIndex Int
+  selectedBandOutcomeCount Int
+  selectedOrdinal          Int
+  transitionKey            String
+  finalizedAt              DateTime?
+  createdAt                DateTime                  @default(now())
+  session                  FlipSession               @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  poolCommitment           FlipSessionPoolCommitment @relation(fields: [poolCommitmentId], references: [id], onDelete: Restrict)
+  terminalTransition       FlipSessionTransition?    @relation(fields: [terminalTransitionId], references: [id], onDelete: Restrict)
+
+  @@unique([sessionId, transitionKey])
+  @@index([rulesHash, createdAt])
+  @@index([entropyHash])
 }
 
 /// One configured Collector Crypt sports pack machine.
