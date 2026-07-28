@@ -512,6 +512,9 @@ describe('Crash fail-closed contract', () => {
         rules: STATE_RULES,
       }),
     ).rejects.toMatchObject({ code: 'DISABLED' });
+    await expect(service.findRound('crashround_productionblocked')).rejects.toMatchObject({
+      code: 'DISABLED',
+    });
   });
 
   test.each([

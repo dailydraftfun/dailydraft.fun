@@ -41,6 +41,7 @@ type WalletAuthContextValue = {
   signIn: () => Promise<boolean>;
   signOut: () => Promise<void>;
   status: WalletAuthStatus;
+  walletAddress: string | null;
 };
 
 const WalletAuthContext = createContext<WalletAuthContextValue | null>(null);
@@ -266,6 +267,7 @@ export function useWalletAuthRuntime(
     signIn,
     signOut,
     status,
+    walletAddress: wallet.address,
   };
 }
 

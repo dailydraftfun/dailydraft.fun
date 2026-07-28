@@ -14,6 +14,7 @@ import {
   loadCrashDecisionRules,
   loadCrashRiskHealth,
 } from './crash-decision.service.js';
+import { CrashHistoryService } from './crash-history.service.js';
 import { CrashRiskGate, CrashRiskPolicyService } from './crash-risk.policy.js';
 import { CRASH_SETTLEMENT_POLICY, loadCrashSettlementPolicy } from './crash-settlement.policy.js';
 import {
@@ -33,6 +34,7 @@ import { CRASH_CLOCK, CRASH_ENVIRONMENT, CrashStageStateService } from './crash-
   exports: [
     CrashCustodyMovementService,
     CrashDecisionService,
+    CrashHistoryService,
     CrashSettlementService,
     CrashStageStateService,
   ],
@@ -41,6 +43,7 @@ import { CRASH_CLOCK, CRASH_ENVIRONMENT, CrashStageStateService } from './crash-
     CrashStageStateService,
     CrashCustodyMovementService,
     CrashDecisionService,
+    CrashHistoryService,
     CrashSettlementService,
     DeterministicCrashSettlementFixtureProvider,
     {

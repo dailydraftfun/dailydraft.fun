@@ -68,6 +68,7 @@ describe('Crash settlement recovery', () => {
     const replay = await fixture.service.resumeFixtureSettlement(ROUND_ID);
     expect(replay).toEqual(settled);
     expect(fixture.provider.executeKinds).toEqual(['transfer']);
+    await expect(fixture.service.findFixtureSettlement(ROUND_ID)).resolves.toEqual(settled);
   });
 
   test('bust purchases, opens, and routes every forfeited asset through the committed inventory policy', async () => {
@@ -136,10 +137,32 @@ describe('Crash settlement recovery', () => {
       status: 'recovery-required',
     });
     expect(fixture.database.round.settlementStatus).toBe('RECOVERY_REQUIRED');
+    await expect(fixture.service.findFixtureSettlement(ROUND_ID)).resolves.toEqual(recovery);
 
     const settled = await fixture.service.resumeFixtureSettlement(ROUND_ID);
     expect(settled.status).toBe('settled');
     expect(fixture.provider.effectCount(kind)).toBe(1);
+  });
+
+  test('derives the public recovery code from the verified operation without serializing its id', async () => {
+    const fixture = settlementFixture({ outcome: 'cash-out' });
+    fixture.provider.failDefinitelyOnce('transfer');
+
+    const recovery = await fixture.service.resumeFixtureSettlement(ROUND_ID);
+    const operation = fixture.database.operations[0];
+    const settlement = fixture.database.settlement;
+    if (!operation?.id || !settlement) throw new Error('recovery evidence required');
+    const operationId = String(operation.id);
+    const failureCode = 'FIXTURE_TRANSFER_NOT_APPLIED';
+
+    expect(settlement.recoveryReason).toBe(`${operationId}:${failureCode}`);
+    expect(recovery.recoveryReason).toBe(failureCode);
+    expect(JSON.stringify(recovery)).not.toContain(operationId);
+
+    settlement.recoveryReason = `crashsettlementop_wrong:${failureCode}`;
+    await expect(fixture.service.findFixtureSettlement(ROUND_ID)).rejects.toMatchObject({
+      code: 'INVALID_EVIDENCE',
+    });
   });
 
   test('lost provider response reconciles the original request without a second signing', async () => {
@@ -232,6 +255,96 @@ describe('Crash settlement recovery', () => {
     await expect(disabled.resumeFixtureSettlement(ROUND_ID)).rejects.toMatchObject({
       code: 'DISABLED',
     });
+    await expect(disabled.findFixtureSettlement(ROUND_ID)).rejects.toMatchObject({
+      code: 'DISABLED',
+    });
+  });
+
+  test.each([
+    [
+      'receipt hash',
+      (fixture: ReturnType<typeof settlementFixture>) => {
+        if (!fixture.database.settlement) throw new Error('settlement required');
+        fixture.database.settlement.receiptHash = 'f'.repeat(64);
+      },
+    ],
+    [
+      'inventory policy',
+      (fixture: ReturnType<typeof settlementFixture>) => {
+        if (!fixture.database.settlement) throw new Error('settlement required');
+        fixture.database.settlement.inventoryPolicyHash = 'f'.repeat(64);
+      },
+    ],
+    [
+      'round status',
+      (fixture: ReturnType<typeof settlementFixture>) => {
+        fixture.database.round.settlementStatus = 'RECOVERY_REQUIRED';
+      },
+    ],
+    [
+      'provider evidence',
+      (fixture: ReturnType<typeof settlementFixture>) => {
+        const operation = fixture.database.operations[0];
+        if (!operation) throw new Error('operation required');
+        operation.providerEvidence = {
+          providerRequestKey: 'another-request',
+          schemaVersion: CRASH_SETTLEMENT_PROVIDER_FIXTURE_VERSION,
+        };
+      },
+    ],
+  ] as const)('rejects tampered verified settlement %s', async (_name, tamper) => {
+    const fixture = settlementFixture({ outcome: 'cash-out' });
+    await fixture.service.resumeFixtureSettlement(ROUND_ID);
+    tamper(fixture);
+
+    await expect(fixture.service.findFixtureSettlement(ROUND_ID)).rejects.toMatchObject({
+      code: 'INVALID_EVIDENCE',
+    });
+  });
+
+  test.each([
+    'architectureVersion',
+    'stateMachineVersion',
+    'stateMachineRulesHash',
+    'calculatorVersion',
+    'rulesVersion',
+    'rulesHash',
+    'riskRulesVersion',
+    'riskRulesHash',
+  ] as const)('rejects a pending settlement with a mismatched %s binding', async (field) => {
+    const fixture = settlementFixture({ outcome: 'cash-out' });
+    fixture.provider.failDefinitelyOnce('transfer');
+    await fixture.service.resumeFixtureSettlement(ROUND_ID);
+    const settlement = fixture.database.settlement;
+    if (!settlement) throw new Error('settlement required');
+    settlement[field] = field.endsWith('Hash') ? hash(`tampered-${field}`) : `tampered-${field}`;
+
+    await expect(fixture.service.findFixtureSettlement(ROUND_ID)).rejects.toMatchObject({
+      code: 'INVALID_EVIDENCE',
+    });
+  });
+
+  test.each([
+    'missing',
+    'duplicate',
+    'extra',
+  ] as const)('rejects a %s custody intent set before creating a settlement plan', async (kind) => {
+    const fixture = settlementFixture({ outcome: 'cash-out', promisedAsset: true });
+    const intents = fixture.database.round.custodyIntents;
+    if (!Array.isArray(intents) || !intents[0]) throw new Error('custody intent required');
+    if (kind === 'missing') {
+      intents.pop();
+    } else {
+      intents.push({
+        ...intents[0],
+        id: kind === 'duplicate' ? intents[0].id : 'crashcustody_unbound_extra',
+      });
+    }
+
+    await expect(fixture.service.resumeFixtureSettlement(ROUND_ID)).rejects.toMatchObject({
+      code: 'INVALID_EVIDENCE',
+    });
+    expect(fixture.database.settlement).toBeNull();
   });
 
   test('detects a changed terminal plan under the same durable round', async () => {

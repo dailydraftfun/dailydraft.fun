@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { pullRarityFixtures } from './pull-rarity.js';
 import { rgsCompatibilityFixtures } from './rgs.js';
 
+export * from './crash-history.js';
 export * from './game-catalog.js';
 export * from './game-lobby.js';
 export * from './pull-rarity.js';

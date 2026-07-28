@@ -1,7 +1,23 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { GameModePreview } from './game-mode-preview';
+
+mock.module('../solana/wallet-auth-provider', () => ({
+  useWalletAuth: () => ({
+    challenge: null,
+    clearError: () => undefined,
+    error: null,
+    expiresAt: null,
+    prepare: async () => undefined,
+    sessionToken: null,
+    signIn: async () => false,
+    signOut: async () => undefined,
+    status: 'unauthenticated',
+    walletAddress: null,
+  }),
+}));
+
+const { GameModePreview } = await import('./game-mode-preview');
 
 describe('game mode preview', () => {
   test('resolves workspace runtimes from source in fresh app installs', () => {
@@ -85,6 +101,9 @@ describe('game mode preview', () => {
     expect(active).not.toMatch(/<button[^>]*\sdisabled(?:=|>)/);
     expect(active).toContain('min-h-12');
     expect(active).toContain('text-xs');
+    expect(active).toContain('Private wallet history');
+    expect(active).toContain('Wallet authentication required');
+    expect(active).toContain('No other wallet’s rounds are discoverable');
     expect(cashed).toContain('Fixture pot cashed out');
     expect(cashed).toContain('Player cash-out');
     expect(finalStage).toContain('Attempt past final stage');

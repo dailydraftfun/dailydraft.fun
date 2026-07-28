@@ -1,8 +1,14 @@
+import 'reflect-metadata';
+
 import { describe, expect, test } from 'bun:test';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
-import { CrashPlayerDecisionRequest, CrashRoundParams } from './crash-decision.dto.js';
+import {
+  CrashPlayerDecisionRequest,
+  CrashRoundParams,
+  ListCrashHistoryQuery,
+} from './crash-decision.dto.js';
 
 describe('Crash player decision DTOs', () => {
   test('accept canonical round parameters and both stage actions', async () => {
@@ -45,5 +51,25 @@ describe('Crash player decision DTOs', () => {
       'expectedStage',
       'expectedVersion',
     ]);
+  });
+
+  test('bounds private Crash history pagination', async () => {
+    const valid = plainToInstance(ListCrashHistoryQuery, {
+      cursor: 'v1.c2FmZS1jdXJzb3I',
+      limit: '50',
+    });
+    await expect(validate(valid)).resolves.toEqual([]);
+    expect(valid.limit).toBe(50);
+
+    for (const input of [
+      { cursor: 'unsafe cursor', limit: 10 },
+      { limit: 0 },
+      { limit: 51 },
+      { limit: 1.5 },
+    ]) {
+      await expect(validate(plainToInstance(ListCrashHistoryQuery, input))).resolves.not.toEqual(
+        [],
+      );
+    }
   });
 });

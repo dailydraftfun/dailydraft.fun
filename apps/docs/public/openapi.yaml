@@ -269,6 +269,60 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /crash/rounds:
+    get:
+      operationId: listCrashHistory
+      tags: [Crash]
+      security:
+        - walletSession: []
+      summary: List the authenticated wallet's recent fixture-preview Crash rounds
+      description: |
+        Returns a bounded keyset-paginated history projection for the wallet
+        session. Every row is revalidated against its append-only game ledger.
+        The private response excludes raw wallets, provider signatures,
+        provider evidence, signing payloads, and custody endpoints.
+      x-dailydraft-availability: preview-fixture-only
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^v1\.[A-Za-z0-9_-]{1,480}$'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Recent wallet-scoped Crash rounds and an optional next cursor
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+            X-Robots-Tag:
+              schema:
+                type: string
+                const: noindex, nofollow, noarchive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrashHistoryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /crash/rounds/{roundId}:
     get:
       operationId: getCrashCurrentStage
@@ -302,6 +356,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CrashCurrentStage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /crash/rounds/{roundId}/receipt:
+    get:
+      operationId: getCrashReceipt
+      tags: [Crash]
+      security:
+        - walletSession: []
+      summary: Retrieve a verified private Crash history receipt
+      description: |
+        Projects the authenticated player's canonical transition ledger,
+        custody intent status, and settlement operation status in event order.
+        Game-state commitment, custody finality, and settlement finality are
+        reported separately. Recovery never implies ownership finality. Raw
+        wallets, provider signatures/evidence, and transaction payloads are
+        never included.
+      x-dailydraft-availability: preview-fixture-only
+      parameters:
+        - $ref: '#/components/parameters/CrashRoundId'
+      responses:
+        '200':
+          description: Wallet-scoped, privacy-safe durable Crash receipt
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+            X-Robots-Tag:
+              schema:
+                type: string
+                const: noindex, nofollow, noarchive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrashReceipt'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -2365,6 +2460,357 @@ components:
         version:
           type: integer
           minimum: 1
+    CrashHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [data, hasMore, nextCursor, schemaVersion]
+      properties:
+        data:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/CrashHistoryItem'
+        hasMore:
+          type: boolean
+        nextCursor:
+          type: [string, 'null']
+          pattern: '^v1\.[A-Za-z0-9_-]{1,480}$'
+        schemaVersion:
+          type: string
+          const: dailydraft.crash-history.v1
+    CrashHistoryItem:
+      type: object
+      additionalProperties: false
+      required:
+        - createdAt
+        - currentStage
+        - decisionDeadline
+        - gameState
+        - pot
+        - receiptHref
+        - resolution
+        - roundId
+        - safeNextAction
+        - settlement
+        - terminalReason
+        - updatedAt
+      properties:
+        createdAt:
+          type: string
+          format: date-time
+        currentStage:
+          type: integer
+          minimum: 1
+        decisionDeadline:
+          type: [string, 'null']
+          format: date-time
+        gameState:
+          type: object
+          additionalProperties: false
+          required: [committed, status, version]
+          properties:
+            committed:
+              type: boolean
+              const: true
+            status:
+              $ref: '#/components/schemas/CrashStatus'
+            version:
+              type: integer
+              minimum: 1
+        pot:
+          $ref: '#/components/schemas/Money'
+        receiptHref:
+          type: string
+          pattern: '^/v1/crash/rounds/crashround_[A-Za-z0-9._:-]{8,128}/receipt$'
+        resolution:
+          $ref: '#/components/schemas/CrashResolutionStatus'
+        roundId:
+          type: string
+          pattern: '^crashround_[A-Za-z0-9._:-]{8,128}$'
+        safeNextAction:
+          $ref: '#/components/schemas/CrashSafeNextAction'
+        settlement:
+          type: object
+          additionalProperties: false
+          required: [finalizedOperationCount, receiptHash, status]
+          properties:
+            finalizedOperationCount:
+              type: integer
+              minimum: 0
+            receiptHash:
+              type: [string, 'null']
+              pattern: '^[a-f0-9]{64}$'
+            status:
+              $ref: '#/components/schemas/CrashSettlementStatus'
+        terminalReason:
+          type: [string, 'null']
+          maxLength: 480
+        updatedAt:
+          type: string
+          format: date-time
+    CrashReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - bindings
+        - createdAt
+        - custody
+        - decisionDeadline
+        - events
+        - finality
+        - mode
+        - network
+        - pot
+        - privacy
+        - resolution
+        - roundId
+        - safeNextAction
+        - schemaVersion
+        - settlement
+        - stage
+        - status
+        - terminalAt
+        - terminalReason
+        - updatedAt
+        - version
+      properties:
+        bindings:
+          type: object
+          additionalProperties: false
+          required:
+            - architectureVersion
+            - calculatorVersion
+            - custodyPolicyHash
+            - custodyPolicyVersion
+            - inventoryPolicyHash
+            - inventoryPolicyVersion
+            - riskRulesHash
+            - riskRulesVersion
+            - rulesHash
+            - rulesVersion
+            - settlementPolicyHash
+            - settlementPolicyVersion
+            - stateMachineRulesHash
+            - stateMachineVersion
+          properties:
+            architectureVersion:
+              type: string
+            calculatorVersion:
+              type: string
+            custodyPolicyHash:
+              type: [string, 'null']
+              pattern: '^[a-f0-9]{64}$'
+            custodyPolicyVersion:
+              type: [string, 'null']
+            inventoryPolicyHash:
+              type: [string, 'null']
+              pattern: '^[a-f0-9]{64}$'
+            inventoryPolicyVersion:
+              type: [string, 'null']
+            riskRulesHash:
+              type: string
+              pattern: '^[a-f0-9]{64}$'
+            riskRulesVersion:
+              type: string
+            rulesHash:
+              type: string
+              pattern: '^[a-f0-9]{64}$'
+            rulesVersion:
+              type: string
+            settlementPolicyHash:
+              type: [string, 'null']
+              pattern: '^[a-f0-9]{64}$'
+            settlementPolicyVersion:
+              type: [string, 'null']
+            stateMachineRulesHash:
+              type: string
+              pattern: '^[a-f0-9]{64}$'
+            stateMachineVersion:
+              type: string
+        createdAt:
+          type: string
+          format: date-time
+        decisionDeadline:
+          type: [string, 'null']
+          format: date-time
+        custody:
+          type: object
+          additionalProperties: false
+          required: [preparedIntentCount, recoveryRequiredIntentCount, status]
+          properties:
+            preparedIntentCount:
+              type: integer
+              minimum: 0
+            recoveryRequiredIntentCount:
+              type: integer
+              minimum: 0
+            status:
+              type: string
+              enum: [not-started, prepared, recovery-required]
+        events:
+          type: array
+          maxItems: 500
+          description: |
+            Ordered by occurredAt ascending. At equal timestamps, transition
+            events come first by numeric sequence, custody events next by event
+            ID, and settlement events last by numeric sequence.
+          items:
+            $ref: '#/components/schemas/CrashReceiptEvent'
+        finality:
+          type: object
+          additionalProperties: false
+          required: [custody, gameState, settlement]
+          properties:
+            custody:
+              type: string
+              enum: [not-final, recovery-required, settled]
+            gameState:
+              type: string
+              const: committed
+            settlement:
+              $ref: '#/components/schemas/CrashSettlementStatus'
+        mode:
+          type: string
+          const: fixture-preview
+        network:
+          type: string
+          const: solana-devnet
+        pot:
+          $ref: '#/components/schemas/Money'
+        privacy:
+          type: object
+          additionalProperties: false
+          required: [exposesProviderSignatures, exposesWalletAddresses]
+          properties:
+            exposesProviderSignatures:
+              type: boolean
+              const: false
+            exposesWalletAddresses:
+              type: boolean
+              const: false
+        resolution:
+          $ref: '#/components/schemas/CrashResolutionStatus'
+        roundId:
+          type: string
+          pattern: '^crashround_[A-Za-z0-9._:-]{8,128}$'
+        safeNextAction:
+          $ref: '#/components/schemas/CrashSafeNextAction'
+        schemaVersion:
+          type: string
+          const: dailydraft.crash-receipt.v1
+        settlement:
+          type: object
+          additionalProperties: false
+          required:
+            - expectedOperationCount
+            - finalizedOperationCount
+            - receiptHash
+            - recoveryReason
+            - status
+          properties:
+            expectedOperationCount:
+              type: integer
+              minimum: 0
+            finalizedOperationCount:
+              type: integer
+              minimum: 0
+            receiptHash:
+              type: [string, 'null']
+              pattern: '^[a-f0-9]{64}$'
+            recoveryReason:
+              type: [string, 'null']
+              maxLength: 480
+            status:
+              $ref: '#/components/schemas/CrashSettlementStatus'
+        stage:
+          type: integer
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/CrashStatus'
+        terminalAt:
+          type: [string, 'null']
+          format: date-time
+        terminalReason:
+          type: [string, 'null']
+          maxLength: 480
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+    CrashReceiptEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - amount
+        - decision
+        - eventId
+        - kind
+        - occurredAt
+        - reference
+        - scheduledDeadline
+        - stage
+        - terminalReason
+      properties:
+        amount:
+          oneOf:
+            - $ref: '#/components/schemas/Money'
+            - type: 'null'
+        decision:
+          type: [string, 'null']
+          enum: [cash-out, continue, forfeit, null]
+        eventId:
+          type: string
+          maxLength: 180
+          pattern: '^(?:(?:transition|settlement):[1-9][0-9]{0,9}|custody:crashref_[a-f0-9]{32})$'
+        kind:
+          type: string
+          enum:
+            - custody-prepared
+            - custody-recovery-required
+            - deadline-defaulted
+            - round-busted
+            - round-cashed-out
+            - round-completed
+            - round-started
+            - settlement-finalized
+            - settlement-prepared
+            - settlement-recovery-required
+            - stage-continued
+        occurredAt:
+          type: string
+          format: date-time
+        reference:
+          type: string
+          maxLength: 240
+          pattern: '^crashref_[a-f0-9]{32}$'
+        scheduledDeadline:
+          type: [string, 'null']
+          format: date-time
+        stage:
+          type: integer
+          minimum: 1
+        terminalReason:
+          type: [string, 'null']
+          maxLength: 480
+    CrashSafeNextAction:
+      type: string
+      enum:
+        - choose-action
+        - reconnect
+        - retry-settlement
+        - review-receipt
+        - wait-for-settlement
+    CrashResolutionStatus:
+      type: string
+      enum: [active, bust, cash-out, disputed, failed, recovering, refunded, timed-out]
+    CrashSettlementStatus:
+      type: string
+      enum: [not-required, pending, recovery-required, settled]
+    CrashStatus:
+      type: string
+      enum: [active, busted, cashed-out, completed, defaulted]
     RgsHash:
       type: string
       pattern: '^[a-f0-9]{64}$'

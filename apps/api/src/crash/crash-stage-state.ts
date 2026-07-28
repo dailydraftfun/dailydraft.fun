@@ -328,6 +328,10 @@ export class CrashStageStateService {
     @Inject(CrashRiskGate) private readonly risk: CrashRiskGate,
   ) {}
 
+  assertFixtureModeEnabled(): void {
+    this.requireFixtureMode();
+  }
+
   async createFixtureRound(input: CreateCrashFixtureRound): Promise<CrashRoundSnapshot> {
     this.requireFixtureMode();
     const rules = validateCrashStateRules(input.rules);
@@ -434,6 +438,7 @@ export class CrashStageStateService {
   }
 
   async findRound(roundId: string): Promise<CrashRoundSnapshot> {
+    this.requireFixtureMode();
     requireIdentifier(roundId, 'roundId');
     const round = await this.database.crashRound.findUnique({
       include: { transitions: { orderBy: { sequence: 'asc' } } },
