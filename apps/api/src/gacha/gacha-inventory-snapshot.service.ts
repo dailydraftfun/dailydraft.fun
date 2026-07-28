@@ -21,6 +21,7 @@ import type {
 export const GACHA_INVENTORY_SCHEMA_VERSION = 'dailydraft.gacha-inventory.v1';
 
 const GACHA_INVENTORY_LOCK_NAMESPACE = 1_191_047_329;
+const CONTENT_HASH_PATTERN = /^[a-f0-9]{64}$/;
 const MAX_CANDIDATES = 500;
 const MAX_REFERENCE_LENGTH = 240;
 const NORMALIZED_CURRENCY = 'USDC';
@@ -238,6 +239,28 @@ export class GachaInventorySnapshotService {
     });
     if (!snapshot) {
       throw new ServiceUnavailableException('No sealed Gacha inventory snapshot is available');
+    }
+    return snapshot;
+  }
+
+  async findSealed(machineKey: string, contentHash: string) {
+    const snapshot = await this.database.gachaInventorySnapshot.findFirst({
+      include: {
+        entries: {
+          orderBy: { ordinal: 'asc' },
+        },
+        machine: true,
+      },
+      where: {
+        contentHash: requireContentHash(contentHash),
+        machineKey: requireKey(machineKey, 'machineKey'),
+        sealedAt: { not: null },
+      },
+    });
+    if (!snapshot) {
+      throw new ServiceUnavailableException(
+        'The committed Gacha inventory snapshot is not available',
+      );
     }
     return snapshot;
   }
@@ -593,6 +616,13 @@ function requireKey(value: string, field: string): string {
     throw new ConflictException(`${field} is invalid`);
   }
   return canonical;
+}
+
+function requireContentHash(value: string): string {
+  if (typeof value !== 'string' || !CONTENT_HASH_PATTERN.test(value)) {
+    throw new ConflictException('contentHash is invalid');
+  }
+  return value;
 }
 
 function optionalReference(value: string | undefined, field: string): string | null {

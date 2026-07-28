@@ -27,8 +27,6 @@ import {
   VerifyGachaPaymentRequest,
 } from './gacha.dto.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
-import { GachaInventorySnapshotService } from './gacha-inventory-snapshot.service.js';
-// biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { GachaPaymentService } from './gacha-payment.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { GachaRipService } from './gacha-rip.service.js';
@@ -36,7 +34,6 @@ import { GachaRipService } from './gacha-rip.service.js';
 @Controller('gacha')
 export class GachaController {
   constructor(
-    private readonly snapshots: GachaInventorySnapshotService,
     private readonly rips: GachaRipService,
     private readonly payments: GachaPaymentService,
   ) {}
@@ -50,7 +47,7 @@ export class GachaController {
   @Get('machines/:machineKey/inventory')
   @Header('cache-control', 'no-store')
   findInventory(@Param() params: GachaMachineParams) {
-    return this.snapshots.findLatestSealed(params.machineKey);
+    return this.rips.findCommittedInventory(params.machineKey);
   }
 
   @Get('machines/:machineKey/odds')

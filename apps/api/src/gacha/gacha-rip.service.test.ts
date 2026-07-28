@@ -484,14 +484,12 @@ describe('GachaRipService', () => {
     const provider = new RecordingProvider();
     const service = serviceWith(database, provider);
     const commitment = await service.createSeedCommitment(MACHINE_KEY);
-    await database.gachaPullOddsCommitment.create({
-      data: { id: 'gachaodds_manual', version: 1 },
-    });
+    const oddsCommitmentId = requireOddsCommitmentId(database);
     const inFlightRip = await database.gachaRip.create({
       data: baseRipRow({
         id: 'gacharip_in_flight',
         idempotencyKey: 'idem-in-flight',
-        oddsCommitmentId: 'gachaodds_manual',
+        oddsCommitmentId,
         selectedAssetReference: 'devnet:fixture:asset:in-flight',
         lifecycleLeaseExpiresAt: new Date(Date.now() - 1_000),
         lifecycleLeaseOwner: 'crashed-process',
@@ -523,16 +521,14 @@ describe('GachaRipService', () => {
     const provider = new RecordingProvider();
     const service = serviceWith(database, provider);
     const commitment = await service.createSeedCommitment(MACHINE_KEY);
-    await database.gachaPullOddsCommitment.create({
-      data: { id: 'gachaodds_active_lease', version: 1 },
-    });
+    const oddsCommitmentId = requireOddsCommitmentId(database);
     const inFlightRip = await database.gachaRip.create({
       data: baseRipRow({
         id: 'gacharip_active_lease',
         idempotencyKey: 'idem-active-lease',
         lifecycleLeaseExpiresAt: new Date(Date.now() + 60_000),
         lifecycleLeaseOwner: 'active-process',
-        oddsCommitmentId: 'gachaodds_active_lease',
+        oddsCommitmentId,
         status: GachaRipStatus.REVEALED,
       }),
     });
@@ -560,13 +556,11 @@ describe('GachaRipService', () => {
     const payments = new RecordingPayments();
     const service = serviceWith(database, provider, snapshot(), payments);
     const commitment = await service.createSeedCommitment(MACHINE_KEY);
-    await database.gachaPullOddsCommitment.create({
-      data: { id: 'gachaodds_paid_recovery', version: 1 },
-    });
+    const oddsCommitmentId = requireOddsCommitmentId(database);
     const inFlightRip = await database.gachaRip.create({
       data: baseRipRow({
         id: 'gacharip_paid_recovery',
-        oddsCommitmentId: 'gachaodds_paid_recovery',
+        oddsCommitmentId,
         recipientWallet: SOLANA_WALLET,
         selectedAssetReference: 'devnet:fixture:asset:paid-recovery',
         status: GachaRipStatus.SELECTED,
@@ -723,7 +717,7 @@ describe('GachaRipService', () => {
     expect(payments.consumed).toEqual([]);
   });
 
-  test('reports provider capabilities and exposes only sealed committed odds', async () => {
+  test('keeps public machine reads closed until authenticated preparation seals the read model', async () => {
     enableFixtureMode();
     const database = new RipDatabase();
     const service = serviceWith(database, new RecordingProvider());
@@ -738,17 +732,71 @@ describe('GachaRipService', () => {
       },
       providerMode: 'fixture',
     });
+    expect(database.oddsCommitment).toBeNull();
+    await expect(service.findCommittedInventory(MACHINE_KEY)).rejects.toThrow(
+      'No sealed Gacha odds commitment is available',
+    );
     await expect(service.findCommittedOdds(MACHINE_KEY)).rejects.toThrow(
       'No sealed Gacha odds commitment is available',
     );
 
-    database.oddsCommitment = {
-      committedAt: new Date(),
+    await service.createSeedCommitment(MACHINE_KEY);
+
+    await expect(service.findCommittedInventory(MACHINE_KEY)).resolves.toMatchObject({
+      contentHash: SNAPSHOT_HASH,
+      sealedAt: expect.any(Date),
+    });
+    expect(database.oddsCommitment).toMatchObject({
       machineKey: MACHINE_KEY,
-      sealedAt: new Date(),
+      sealedAt: expect.any(Date),
+      snapshotContentHash: SNAPSHOT_HASH,
       version: 1,
-    };
-    await expect(service.findCommittedOdds(MACHINE_KEY)).resolves.toMatchObject({ version: 1 });
+    });
+    await expect(service.findCommittedOdds(MACHINE_KEY)).resolves.toMatchObject(
+      database.oddsCommitment as Record<string, unknown>,
+    );
+  });
+
+  test('makes the first odds commitment canonical across concurrent cold-start readers', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const registry = new Map<string, ReturnType<typeof snapshot>>();
+    const firstHash = '1'.repeat(64);
+    const secondHash = '2'.repeat(64);
+    const firstService = coldStartService(database, registry, firstHash);
+    const secondService = coldStartService(database, registry, secondHash);
+
+    await Promise.all([
+      firstService.bootstrapConfiguredMachines(),
+      secondService.bootstrapConfiguredMachines(),
+    ]);
+    const [inventory, odds] = await Promise.all([
+      firstService.findCommittedInventory(MACHINE_KEY),
+      secondService.findCommittedOdds(MACHINE_KEY),
+    ]);
+
+    expect(registry.size).toBe(2);
+    expect(inventory.contentHash).toBe(odds.snapshotContentHash);
+    expect(database.oddsCommitment).toMatchObject({
+      machineKey: MACHINE_KEY,
+      sealedAt: expect.any(Date),
+      snapshotContentHash: inventory.contentHash,
+      version: 1,
+    });
+  });
+
+  test('skips controlled startup preparation until every capability gate is playable', async () => {
+    enableFixtureMode();
+    const provider = new ClosedBootstrapProvider();
+    const service = new GachaRipService(
+      new RipDatabase() as unknown as DatabaseClient,
+      {} as GachaInventorySnapshotService,
+      provider,
+      new RecordingPayments() as unknown as GachaPaymentService,
+    );
+
+    await expect(service.bootstrapConfiguredMachines()).resolves.toEqual([]);
+    expect(provider.machineReads).toBe(0);
   });
 
   test('records a terminal failure without inventing acquisition or settlement evidence', async () => {
@@ -945,6 +993,14 @@ function serviceWith(
   payments: RecordingPayments = new RecordingPayments(),
 ): GachaRipService {
   const snapshots = {
+    findSealed: async (_machineKey: string, contentHash: string) => {
+      if (contentHash !== snapshotOverride.contentHash) {
+        throw new ServiceUnavailableException(
+          'The committed Gacha inventory snapshot is not available',
+        );
+      }
+      return snapshotOverride;
+    },
     findLatestSealed: async () => snapshotOverride,
   } as unknown as GachaInventorySnapshotService;
   return new GachaRipService(
@@ -952,6 +1008,51 @@ function serviceWith(
     snapshots,
     provider,
     payments as unknown as GachaPaymentService,
+  );
+}
+
+function coldStartService(
+  database: RipDatabase,
+  registry: Map<string, ReturnType<typeof snapshot>>,
+  contentHash: string,
+): GachaRipService {
+  let created = false;
+  const preparedSnapshot = { ...snapshot(), contentHash };
+  const snapshots = {
+    createFixtureSnapshot: async () => {
+      created = true;
+      registry.set(contentHash, preparedSnapshot);
+      return {
+        contentHash,
+        created: true,
+        id: `gachasnap_${contentHash.slice(0, 8)}`,
+        machineKey: MACHINE_KEY,
+        poolKey: `${MACHINE_KEY}:pool`,
+        revision: registry.size,
+        sealedAt: preparedSnapshot.sealedAt,
+      };
+    },
+    findLatestSealed: async () => {
+      if (!created) {
+        throw new ServiceUnavailableException('No sealed Gacha inventory snapshot is available');
+      }
+      return preparedSnapshot;
+    },
+    findSealed: async (_machineKey: string, requestedHash: string) => {
+      const selected = registry.get(requestedHash);
+      if (!selected) {
+        throw new ServiceUnavailableException(
+          'The committed Gacha inventory snapshot is not available',
+        );
+      }
+      return selected;
+    },
+  } as unknown as GachaInventorySnapshotService;
+  return new GachaRipService(
+    database as unknown as DatabaseClient,
+    snapshots,
+    new ColdStartProvider(),
+    new RecordingPayments() as unknown as GachaPaymentService,
   );
 }
 
@@ -966,6 +1067,68 @@ function snapshot() {
     ],
     sealedAt: new Date('2026-07-24T12:00:00.000Z'),
   };
+}
+
+class ColdStartProvider extends SportsPackGachaProvider {
+  readonly capabilities = Object.freeze({
+    acquisition: true,
+    odds: true,
+    provider: true,
+    settlement: true,
+  });
+  readonly mode = 'fixture' as const;
+
+  async acquireCard(_input: AcquireGachaCardInput): Promise<AcquiredGachaCard> {
+    return { acquisitionReference: 'unused', status: 'acquired' };
+  }
+
+  async getEligibleCards(_machineKey: string): Promise<readonly SportsPackGachaCard[]> {
+    return [];
+  }
+
+  async listMachines(): Promise<readonly SportsPackGachaMachine[]> {
+    return [
+      {
+        committedPoolSize: 4,
+        displayName: 'Fixture Football Machine',
+        machineKey: MACHINE_KEY,
+        sport: 'football',
+        tierPriceMinor: '50000000',
+      },
+    ];
+  }
+
+  async settleRip(_input: SettleGachaRipInput): Promise<SettledGachaRip> {
+    return { settlementReference: 'unused', status: 'settled' };
+  }
+}
+
+class ClosedBootstrapProvider extends SportsPackGachaProvider {
+  readonly capabilities = Object.freeze({
+    acquisition: false,
+    odds: true,
+    provider: true,
+    settlement: false,
+  });
+  readonly mode = 'fixture' as const;
+  machineReads = 0;
+
+  async acquireCard(_input: AcquireGachaCardInput): Promise<AcquiredGachaCard> {
+    throw new Error('unexpected acquisition');
+  }
+
+  async getEligibleCards(_machineKey: string): Promise<readonly SportsPackGachaCard[]> {
+    throw new Error('unexpected inventory read');
+  }
+
+  async listMachines(): Promise<readonly SportsPackGachaMachine[]> {
+    this.machineReads += 1;
+    return [];
+  }
+
+  async settleRip(_input: SettleGachaRipInput): Promise<SettledGachaRip> {
+    throw new Error('unexpected settlement');
+  }
 }
 
 function twoCardBaseSnapshot() {
@@ -988,6 +1151,12 @@ function requireStoredServerSeed(database: RipDatabase, commitmentId: string): s
   const commitment = database.seedCommitments.find((candidate) => candidate.id === commitmentId);
   if (!commitment) throw new Error(`no stored seed commitment for ${commitmentId}`);
   return commitment.serverSeed;
+}
+
+function requireOddsCommitmentId(database: RipDatabase): string {
+  const id = database.oddsCommitment?.id;
+  if (typeof id !== 'string') throw new Error('no stored odds commitment');
+  return id;
 }
 
 function rollPpmFor(rules: GachaPullOddsRuleSet, serverSeed: string, clientSeed: string): number {
@@ -1155,6 +1324,7 @@ class RipDatabase {
   rips: StoredRip[] = [];
   seedCommitments: StoredSeedCommitment[] = [];
   transitions: GachaRipStatus[] = [];
+  private transactionTail: Promise<void> = Promise.resolve();
 
   get rip(): StoredRip | null {
     return this.rips.at(-1) ?? null;
@@ -1285,7 +1455,17 @@ class RipDatabase {
   readonly $executeRaw = async () => 1;
 
   async $transaction<T>(operation: (transaction: this) => Promise<T>): Promise<T> {
-    return operation(this);
+    const previous = this.transactionTail;
+    let release = () => {};
+    this.transactionTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await operation(this);
+    } finally {
+      release();
+    }
   }
 }
 
