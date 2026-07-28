@@ -17,6 +17,10 @@ import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
 import { rarityForSerializedValue } from '../common/pull-rarity.js';
+import {
+  CRASH_PLAYER_DECISION_SCHEMA_VERSION,
+  type CrashCurrentStage,
+} from '../crash/crash-decision.service.js';
 import type { Duel, DuelTransactionRecord } from '../domain.js';
 import { toDuelResult } from '../duels/prisma-duel.repository.js';
 import { buildPublicDuelReceipt } from '../duels/public-duel-proof.js';
@@ -83,6 +87,7 @@ describe('API response schema gate', () => {
 
   test('covers every schema this gate claims to guard', () => {
     expect(cases.map((responseCase) => responseCase.schema).sort()).toEqual([
+      'CrashCurrentStage',
       'DuelPackOutcome',
       'DuelResult',
       'GachaRip',
@@ -183,6 +188,11 @@ function buildResponsePayloadCases(): ResponsePayloadCase[] {
 
   return [
     {
+      payload: crashCurrentStagePayload(),
+      schema: 'CrashCurrentStage',
+      source: 'CrashDecisionService.currentStage()',
+    },
+    {
       payload: gameCatalogPayload(),
       schema: 'GameCatalog',
       source: 'GamesCatalogService.getCatalog()',
@@ -257,6 +267,23 @@ function buildResponsePayloadCases(): ResponsePayloadCase[] {
       source: 'GachaRipService.loadRipResult(...).rip',
     },
   ];
+}
+
+function crashCurrentStagePayload(): CrashCurrentStage {
+  return {
+    availableActions: ['continue', 'cash-out'],
+    decisionDeadline: '2026-07-28T12:00:30.000Z',
+    defaultAction: 'forfeit',
+    mode: 'fixture-preview',
+    network: 'solana-devnet',
+    pot: { amount: '1000000', currency: 'USDC', decimals: 6 },
+    roundId: 'crashround_contract01',
+    schemaVersion: CRASH_PLAYER_DECISION_SCHEMA_VERSION,
+    stage: 2,
+    status: 'active',
+    terminalReason: null,
+    version: 2,
+  };
 }
 
 function gameCatalogPayload(): GameCatalog {

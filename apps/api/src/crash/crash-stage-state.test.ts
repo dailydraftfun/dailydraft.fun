@@ -219,6 +219,24 @@ describe('durable fixture-only Crash stage state machine', () => {
     expect(await fixture.service.applyExpiredDefaults()).toBe(1);
   });
 
+  test('resumes an expired round through its one canonical deadline transition', async () => {
+    const fixture = harness();
+    const round = await fixture.create('round-reconnect-deadline');
+    fixture.clock.advance(TIMEOUT_MS);
+
+    const resumed = await fixture.service.resumeFixtureRound(round.id);
+    const retried = await fixture.service.resumeFixtureRound(round.id);
+
+    expect(retried).toEqual(resumed);
+    expect(resumed).toMatchObject({
+      decisionDeadline: null,
+      status: 'defaulted',
+      terminalReason: 'DEADLINE_DEFAULT_FORFEIT',
+      version: 2,
+    });
+    expect(resumed.transitions).toHaveLength(2);
+  });
+
   test('allows only one concurrent decision from a durable stage version', async () => {
     const fixture = harness();
     const round = await fixture.create('round-concurrency');
@@ -237,6 +255,16 @@ describe('durable fixture-only Crash stage state machine', () => {
     const durable = await fixture.service.findRound(round.id);
     expect(durable.transitions).toHaveLength(2);
     expect(durable.version).toBe(2);
+  });
+
+  test('normalizes a raw serialization failure after a competing stage wins', async () => {
+    const fixture = harness();
+    const round = await fixture.create('round-serialization-race');
+    fixture.database.failNextTransaction({ version: 2 });
+
+    await expect(
+      fixture.service.decide(round.id, STATE_RULES, continueDecision(1, 1, 900_000)),
+    ).rejects.toMatchObject({ code: 'CONCURRENT_TRANSITION' });
   });
 
   test('rejects transition-key reuse with changed evidence', async () => {
@@ -728,6 +756,7 @@ type MemoryTransition = {
 class MemoryCrashDatabase {
   readonly #rounds = new Map<string, MemoryRound>();
   readonly #transitions: MemoryTransition[] = [];
+  #transactionFailure: { patch?: Partial<MemoryRound> } | null = null;
 
   readonly crashRound = {
     create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -901,7 +930,18 @@ class MemoryCrashDatabase {
   };
 
   async $transaction<T>(operation: (transaction: this) => Promise<T>): Promise<T> {
+    if (this.#transactionFailure) {
+      const failure = this.#transactionFailure;
+      this.#transactionFailure = null;
+      const round = [...this.#rounds.values()].at(-1);
+      if (round && failure.patch) Object.assign(round, failure.patch);
+      throw new Error('synthetic serialization failure');
+    }
     return operation(this);
+  }
+
+  failNextTransaction(patch?: Partial<MemoryRound>): void {
+    this.#transactionFailure = patch ? { patch } : {};
   }
 
   corruptRound(id: string, patch: Partial<MemoryRound>): void {
