@@ -188,6 +188,34 @@ enum FlipInventoryExclusionReason {
   MAXIMUM_EXPOSURE
 }
 
+enum FlipSessionStatus {
+  AWAITING_STAKE
+  STAKE_CONFIRMED
+  POOL_COMMITTED
+  SELECTION_RECORDED
+  PURCHASE_RECORDED
+  TRANSFER_RECORDED
+  REVEAL_READY
+  RECOVERY_REQUIRED
+  SETTLED
+  RECOVERED
+  FAILED
+}
+
+enum FlipSessionTransitionKind {
+  SESSION_STARTED
+  STAKE_CONFIRMED
+  POOL_COMMITTED
+  SELECTION_RECORDED
+  PURCHASE_RECORDED
+  TRANSFER_RECORDED
+  REVEAL_READY
+  SETTLED
+  RECOVERY_REQUESTED
+  RECOVERY_COMPLETED
+  TERMINATED
+}
+
 enum GachaSport {
   FOOTBALL
   SOCCER
@@ -920,10 +948,75 @@ model FlipSessionPoolCommitment {
   createdAt             DateTime              @default(now())
   ruleset               FlipRuleSet           @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
   snapshot              FlipInventorySnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  session               FlipSession?
 
   @@index([rulesetId, committedAt])
   @@index([snapshotId, committedAt])
   @@index([poolKey, committedAt])
+}
+
+/// Fixture-only durable Marketplace Flip session. No public route creates these
+/// rows: every mutation is guarded by explicit non-production fixture mode.
+model FlipSession {
+  id                       String                     @id
+  activationMode           String                     @default("fixture-only")
+  stateMachineVersion      String
+  status                   FlipSessionStatus          @default(AWAITING_STAKE)
+  version                  Int                        @default(1)
+  playerWalletReference    String
+  stakeAmount              String?
+  stakeCurrency            String?
+  stakeDecimals            Int?
+  poolCommitmentId         String?                    @unique
+  poolCommitmentHash       String?
+  rulesHash                String?
+  snapshotContentHash      String?
+  selectedOrdinal          Int?
+  selectedBandLabel        String?
+  selectedAssetReference   String?
+  selectedListingReference String?
+  selectedValueAmount      String?
+  purchaseReference        String?
+  purchasedAt              DateTime?
+  transferReference        String?
+  transferredAt            DateTime?
+  revealReadyReference     String?
+  revealReadyAt            DateTime?
+  terminalReason           String?
+  terminalAt               DateTime?
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  poolCommitment           FlipSessionPoolCommitment? @relation(fields: [poolCommitmentId], references: [id], onDelete: Restrict)
+  transitions              FlipSessionTransition[]
+
+  @@index([status, updatedAt])
+  @@index([playerWalletReference, createdAt])
+  @@index([rulesHash, createdAt])
+}
+
+/// Append-only evidence for one accepted Marketplace Flip lifecycle transition.
+/// Sequence equals the aggregate version, so retries and restarts resume from a
+/// deterministic durable boundary rather than process memory.
+model FlipSessionTransition {
+  id                     String                    @id
+  sessionId              String
+  sequence               Int
+  transitionKey          String
+  requestHash            String
+  kind                   FlipSessionTransitionKind
+  fromStatus             FlipSessionStatus?
+  toStatus               FlipSessionStatus
+  evidence               Json?
+  poolCommitmentHash     String?
+  selectedAssetReference String?
+  terminalReason         String?
+  createdAt              DateTime                  @default(now())
+  session                FlipSession               @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, sequence])
+  @@unique([sessionId, transitionKey])
+  @@index([sessionId, createdAt])
+  @@index([requestHash])
 }
 
 /// One configured Collector Crypt sports pack machine.

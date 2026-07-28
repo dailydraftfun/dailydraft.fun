@@ -18,6 +18,8 @@ export {
   FantasySport,
   FantasyTournamentStatus,
   FlipInventoryExclusionReason,
+  FlipSessionStatus,
+  FlipSessionTransitionKind,
   GachaInventoryExclusionReason,
   GachaRipPaymentStatus,
   GachaRipStatus,
