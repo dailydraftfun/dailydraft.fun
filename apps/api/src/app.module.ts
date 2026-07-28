@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AdminModule } from './admin/admin.module.js';
 import { AnalyticsModule } from './analytics/analytics.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { CrashModule } from './crash/crash.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { DuelsModule } from './duels/duels.module.js';
 import { FantasyModule } from './fantasy/fantasy.module.js';
@@ -24,6 +25,7 @@ import { HouseTreasuryModule } from './treasury/house-treasury.module.js';
     AdminModule,
     AnalyticsModule,
     AuthModule,
+    CrashModule,
     HealthModule,
     RealValuePolicyModule,
     MatchmakingModule,

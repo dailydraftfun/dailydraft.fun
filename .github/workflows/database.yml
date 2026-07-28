@@ -75,6 +75,7 @@ jobs:
         run: >-
           bun test
           src/database/advisory-lock.database.test.ts
+          src/crash/crash-stage-state.database.test.ts
           src/flip/flip-rules.database.test.ts
           src/gacha/gacha-payment-idempotency.database.test.ts
       - name: Validate Prisma schema

@@ -298,6 +298,27 @@ persistence, provider, wallet, entropy, clock, transaction, or production
 activation path. Live Crash economics and custody remain disabled until their
 separate HITL approval and promotion gate is complete.
 
+## Crash fixture stage state
+
+`src/crash/crash-stage-state.ts` is the durable fixture interpreter layered on
+the pure calculators. Each `CrashRound` is bound to immutable architecture,
+state-machine, calculator, and economic-rule references. Its append-only
+`CrashTransition` ledger records the optimistic round version as its sequence,
+plus every accepted decision, deadline, fixture payment, provider and custody
+outcome, pot change, settlement receipt, and terminal reason. A service restart
+resumes exclusively from those rows; no process-memory checkpoint is part of
+the contract.
+
+Every mutating decision carries a transition key and a hash of its complete
+fixture evidence. Exact retries replay the durable result, changed retries are
+rejected, and a stage/version compare-and-swap permits only one concurrent
+transition. Expired stages apply their pre-disclosed synthetic `forfeit`
+default once, with a deterministic zero-payout fixture receipt. Production
+Crash stays unavailable: the module exports no controller, accepts only
+hash-committed `fixture-only` rules and `fixture-*` collaborator evidence, and
+reports `playable: false` even when the fixture contract is ready. Architecture,
+economics, custody, or provider promotion still require the separate HITL gate.
+
 ## AWS production runtime
 
 The API runs as the long-lived `api-dailydraft-fun` Docker container on the shared
