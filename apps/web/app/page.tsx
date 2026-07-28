@@ -73,7 +73,7 @@ const ruleSurfaces = [
     label: 'Fixture preview',
     title: 'Marketplace Flip',
     detail:
-      'Committed pool and selection UX with acquisition and ownership kept explicitly pending.',
+      'Scripted local marketplace UX with a fixed result and no draw, purchase, or ownership change.',
   },
   {
     href: rulesUrl('/games/crash#rules'),

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { DuelArena } from '../../duel-arena';
-import { GameRulesOverview } from '../game-rules-overview';
 import { type DuelRouteSearchParams, resolveDuelRouteEntry } from './route-entry';
 
 type DuelPageProps = {
@@ -18,12 +17,5 @@ export default async function DuelPage({ searchParams }: DuelPageProps) {
   const entry = await resolveDuelRouteEntry(query);
   const entryKey = entry ? `${entry.action}:${entry.duelId}` : 'duel-lobby';
 
-  return (
-    <>
-      <div className="mx-auto max-w-[1400px] px-4 pt-8 sm:px-6 sm:pt-12">
-        <GameRulesOverview mode="duel" />
-      </div>
-      <DuelArena key={entryKey} entry={entry ?? undefined} />
-    </>
-  );
+  return <DuelArena key={entryKey} entry={entry ?? undefined} />;
 }

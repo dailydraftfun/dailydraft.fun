@@ -41,20 +41,22 @@ describe('game mode preview', () => {
       <GameModePreview fixtureState={{ flipStep: 3 }} mode="flip" />,
     );
 
-    expect(configure).toContain('Choose one eligible inventory band');
+    expect(configure).toContain('Choose a display band');
     expect(configure).toContain('data-game-rules="flip"');
     expect(configure.match(/<h1\b/g)).toHaveLength(1);
     expect(configure).toContain('Commercial + provider gated');
     expect(configure).toContain('href="#preview-lab"');
-    expect(configure).toContain('Commit fixture draw');
-    expect(committed).toContain('Fixture pool committed');
+    expect(configure).toContain('Advance local script');
+    expect(committed).toContain('Local fixture advanced');
+    expect(committed).toContain('Selection proof');
     expect(revealed).toContain('Charizard · Base Set');
     expect(revealed).toContain('data-choreography-beat="idle"');
     expect(revealed).toContain('data-choreography-rarity="rare"');
     expect(revealed).toContain('Skip reveal animation');
-    expect(revealed).toContain('Review fixture receipt');
-    expect(receipt).toContain('Flip acquisition receipt');
-    expect(receipt).toContain('Not transferred');
+    expect(revealed).toContain('Review script summary');
+    expect(receipt).toContain('Flip script summary');
+    expect(receipt).toContain('Fixed local script');
+    expect(receipt).toContain('Unchanged');
   });
 
   test('renders active, cashed, and busted Crash states', () => {
@@ -65,8 +67,11 @@ describe('game mode preview', () => {
     const busted = renderToStaticMarkup(
       <GameModePreview fixtureState={{ crashStage: 4, crashStatus: 'busted' }} mode="crash" />,
     );
+    const finalStage = renderToStaticMarkup(
+      <GameModePreview fixtureState={{ crashStage: 4 }} mode="crash" />,
+    );
 
-    expect(active).toContain('Continue fixture run');
+    expect(active).toContain('Reveal next scripted stage');
     expect(active).toContain('data-game-rules="crash"');
     expect(active).toContain('Architecture + policy gated');
     expect(active).toContain('Cash out fixture pot');
@@ -82,8 +87,9 @@ describe('game mode preview', () => {
     expect(active).toContain('text-xs');
     expect(cashed).toContain('Fixture pot cashed out');
     expect(cashed).toContain('Player cash-out');
-    expect(busted).toContain('committed stage busted');
-    expect(busted).toContain('Committed bust');
+    expect(finalStage).toContain('Attempt past final stage');
+    expect(busted).toContain('scripted run ended past stage four');
+    expect(busted).toContain('Scripted end after stage four');
   });
 
   test('renders House disclosure, precommitment, and ready states', () => {

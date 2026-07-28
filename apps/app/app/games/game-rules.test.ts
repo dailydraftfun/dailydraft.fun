@@ -49,5 +49,30 @@ describe('canonical game rules', () => {
     expect(gameRules.duel.wallet).toContain('Browsing needs no wallet');
     expect(gameRules.duel.wallet).toContain('no-value ownership message');
     expect(gameRules.duel.wallet).toContain('exact displayed test-SOL transaction');
+    const copy = JSON.stringify(gameRules.duel);
+    expect(copy).toContain('tier is a pool label, not an amount charged');
+    expect(copy).toContain('separately inspect and approve your exact test-SOL platform fee');
+    expect(copy).toContain('only after both participants’ platform-fee transactions finalize');
+    expect(copy).toContain('value is not charged or purchased');
+    expect(copy).not.toContain('Two wallets fund the same enabled tier');
+  });
+
+  test('describes Flip as a fixed local script without selection proof', () => {
+    const copy = JSON.stringify(gameRules.flip);
+
+    expect(copy).toContain('fixed result');
+    expect(copy).toContain('No pool snapshot, seed, commitment, or selection proof is created');
+    expect(copy).toContain('no sealed pool, random draw, reproducible selection proof');
+    expect(copy).not.toContain('sealed demonstration pool');
+    expect(copy).not.toContain('reproducibly selected');
+  });
+
+  test('matches Crash to the fixed four-stage UI state machine', () => {
+    const copy = JSON.stringify(gameRules.crash);
+
+    expect(copy).toContain('four fixed card stages');
+    expect(copy).toContain('attempt past the final stage');
+    expect(copy).toContain('Only an attempt past the final stage triggers the scripted bust state');
+    expect(copy).not.toContain('next committed fixture stage');
   });
 });

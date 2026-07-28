@@ -18,6 +18,21 @@ type AxeResults = Awaited<ReturnType<AxeBuilder['analyze']>>;
 
 test.use({ journeySeed: 'public-surfaces' });
 
+for (const rulesPath of [
+  '/games/duel#rules',
+  '/games/marketplace-flip#rules',
+  '/games/crash#rules',
+] as const) {
+  test(`${rulesPath} activates the canonical rules target`, async ({ page }) => {
+    await page.goto(rulesPath);
+    const rules = page.locator('#rules');
+
+    await expect(rules).toBeVisible();
+    await expect(rules).toBeFocused();
+    await expect(rules).toHaveAttribute('tabindex', '-1');
+  });
+}
+
 test('reports no serious or critical violations across the deterministic duel journey', async ({
   journey,
   page,

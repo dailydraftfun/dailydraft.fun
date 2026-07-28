@@ -1,3 +1,5 @@
+'use client';
+
 import {
   ArrowDownIcon,
   CheckCircleIcon,
@@ -6,19 +8,133 @@ import {
   ShieldWarningIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
+import { useEffect, useRef } from 'react';
+import type { CapabilityLoadState } from '../duel-lobby-options';
 import { type GameRulesMode, gameRules } from './game-rules';
 import styles from './game-rules-overview.module.css';
 
-export function GameRulesOverview({ mode }: { mode: GameRulesMode }) {
+type GameRulesOverviewProps =
+  | { capabilityState: CapabilityLoadState; mode: 'duel' }
+  | { capabilityState?: never; mode: Exclude<GameRulesMode, 'duel'> };
+
+type DuelReadiness = {
+  actionLabel: string;
+  detail: string;
+  label: string;
+  state: 'checking' | 'degraded' | 'enabled' | 'unavailable';
+};
+
+const modeLabels = {
+  direct: 'direct challenge',
+  house: 'house',
+  open: 'public matchmaking',
+} as const;
+
+export function activateRulesHashTarget(input: {
+  hash: string;
+  requestFrame: (callback: () => void) => unknown;
+  target: { focus: (options: FocusOptions) => void } | null;
+}): boolean {
+  if (input.hash !== '#rules' || !input.target) return false;
+  input.requestFrame(() => input.target?.focus({ preventScroll: true }));
+  return true;
+}
+
+export function resolveDuelRulesReadiness(state: CapabilityLoadState): DuelReadiness {
+  if (state.status === 'loading') {
+    return {
+      actionLabel: 'See capability check',
+      detail: 'Checking the current provider, opponent modes, and demo-pool tiers.',
+      label: 'Checking current capability',
+      state: 'checking',
+    };
+  }
+
+  if (state.status === 'error') {
+    return {
+      actionLabel: 'See capability check',
+      detail: state.message,
+      label: 'Capability unavailable',
+      state: 'unavailable',
+    };
+  }
+
+  const enabledModes = (Object.keys(modeLabels) as (keyof typeof modeLabels)[])
+    .filter((mode) => state.value.modes[mode].enabled)
+    .map((mode) => modeLabels[mode]);
+  const enabledTiers = state.value.packs
+    .filter((pack) => pack.enabled)
+    .map((pack) => `$${pack.tier} demo pool`);
+  const enabledDetail = `Enabled modes: ${enabledModes.join(', ') || 'none'}. Enabled tiers: ${enabledTiers.join(', ') || 'none'}.`;
+
+  if (!state.value.provider.ready) {
+    return {
+      actionLabel: 'See capability check',
+      detail: `The provider is not ready. ${enabledDetail}`,
+      label: 'Provider degraded',
+      state: 'degraded',
+    };
+  }
+
+  if (enabledModes.length === 0 || enabledTiers.length === 0) {
+    const reasons = [
+      ...Object.values(state.value.modes).map((mode) => mode.reason),
+      ...state.value.packs.map((pack) => pack.reason),
+    ].filter((reason): reason is string => Boolean(reason));
+    const reasonDetail = [...new Set(reasons)].join(' ');
+    return {
+      actionLabel: 'See capability check',
+      detail: `${enabledDetail}${reasonDetail ? ` ${reasonDetail}` : ''}`,
+      label: 'Duel unavailable',
+      state: 'unavailable',
+    };
+  }
+
+  return {
+    actionLabel: 'Review verified options',
+    detail: enabledDetail,
+    label: 'Devnet options verified',
+    state: 'enabled',
+  };
+}
+
+export function GameRulesOverview(props: GameRulesOverviewProps) {
+  const { mode } = props;
   const rules = gameRules[mode];
   const preview = rules.state === 'fixture-preview';
+  const sectionRef = useRef<HTMLElement>(null);
+  const readiness =
+    mode === 'duel'
+      ? resolveDuelRulesReadiness(props.capabilityState)
+      : {
+          actionLabel: rules.previewLabel,
+          detail: '',
+          label: rules.statusLabel,
+          state: 'preview' as const,
+        };
+
+  useEffect(() => {
+    const focusRules = () => {
+      activateRulesHashTarget({
+        hash: window.location.hash,
+        requestFrame: (callback) => window.requestAnimationFrame(callback),
+        target: sectionRef.current,
+      });
+    };
+    focusRules();
+    window.addEventListener('hashchange', focusRules);
+    return () => window.removeEventListener('hashchange', focusRules);
+  }, []);
 
   return (
     <section
       aria-labelledby={`${mode}-rules-title`}
       className={styles.shell}
       data-game-rules={mode}
+      data-readiness={readiness.state}
       id="rules"
+      ref={sectionRef}
+      tabIndex={-1}
     >
       <header className={styles.masthead}>
         <div>
@@ -31,18 +147,26 @@ export function GameRulesOverview({ mode }: { mode: GameRulesMode }) {
         </div>
 
         <aside
+          aria-live={mode === 'duel' ? 'polite' : undefined}
           aria-label={`${rules.name} readiness and wallet requirements`}
-          className={`${styles.statusDocket}${preview ? ` ${styles.previewStatus}` : ''}`}
+          className={[
+            styles.statusDocket,
+            preview ? styles.previewStatus : '',
+            mode === 'duel' ? styles[`readiness-${readiness.state}`] : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
         >
           <div className={styles.statusLine}>
             <span className={styles.statusDot} aria-hidden="true" />
-            {rules.statusLabel}
+            {readiness.label}
           </div>
+          {readiness.detail ? <p className={styles.readinessDetail}>{readiness.detail}</p> : null}
           <p className={styles.wallet}>
             <strong className="text-primary">Wallet requirement.</strong> {rules.wallet}
           </p>
           <Link className={styles.action} href={rules.previewHref}>
-            {rules.previewLabel}
+            {readiness.actionLabel}
             <ArrowDownIcon aria-hidden="true" size={15} weight="bold" />
           </Link>
         </aside>

@@ -261,7 +261,7 @@ function ConnectStep() {
         <div>
           <span>Step 1</span>
           <h3>Connect your Solana wallet</h3>
-          <p>This keeps your selected pack and opponent ready for the next step.</p>
+          <p>This keeps your selected demo pool and opponent ready for the next step.</p>
         </div>
       </div>
       {wallet.wallets.length > 0 ? (
@@ -428,7 +428,7 @@ function FundingReviewStep({
   const summary = getPlainMoneySummary(tier, intent);
   const copy = getDuelPaymentReviewCopy(intent.feeAmountSol);
   const additionalRows = copy.rows.filter(
-    (row) => row.label !== 'Platform fee now' && row.label !== 'Pack purchase',
+    (row) => row.label !== 'Platform fee now' && row.label !== 'Demo-pool value',
   );
   // Devnet duel funding is a plain SOL transfer of the platform fee — the USDC
   // stake is settled by the escrow program, not charged here — so lamports are
@@ -457,12 +457,12 @@ function FundingReviewStep({
       </div>
       <dl className="duel-money-summary">
         <div>
-          <dt>Pack tier</dt>
-          <dd>{summary.packTier}</dd>
+          <dt>Demo pool</dt>
+          <dd>{summary.demoPool}</dd>
         </div>
         <div>
-          <dt>Pack purchase</dt>
-          <dd>{summary.packPurchase}</dd>
+          <dt>Demo-pool value</dt>
+          <dd>{summary.demoPoolValue}</dd>
         </div>
         <div>
           <dt>Platform fee</dt>

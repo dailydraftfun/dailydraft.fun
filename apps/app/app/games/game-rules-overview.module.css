@@ -9,6 +9,11 @@
     linear-gradient(108deg, rgba(184, 255, 90, 0.055), transparent 42%), var(--bg-secondary);
 }
 
+.shell:focus {
+  outline: 2px solid var(--lime);
+  outline-offset: 4px;
+}
+
 .shell::before {
   position: absolute;
   z-index: -1;
@@ -78,6 +83,23 @@
 
 .previewStatus .statusLine {
   color: var(--gold);
+}
+
+.readiness-checking .statusLine {
+  color: var(--text-secondary);
+}
+
+.readiness-degraded .statusLine,
+.readiness-unavailable .statusLine {
+  color: var(--gold);
+}
+
+.readinessDetail {
+  margin: 12px 0 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .wallet {

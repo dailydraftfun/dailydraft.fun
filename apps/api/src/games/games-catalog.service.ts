@@ -54,7 +54,7 @@ export class GamesCatalogService {
           : degradedGachaCatalogMode(),
         previewMode({
           description:
-            'Trade against a committed marketplace quote once inventory, custody, pricing, and settlement are implemented.',
+            'Walk through a scripted local marketplace UI with a fixed result while inventory, selection, custody, pricing, and settlement remain disabled.',
           href: '/games/marketplace-flip',
           id: 'flip',
           name: 'Marketplace Flip',
@@ -63,7 +63,7 @@ export class GamesCatalogService {
         }),
         previewMode({
           description:
-            'Build a card streak and choose whether to continue or cash out before a committed bust condition.',
+            'Walk through a fixed four-stage card script; only an attempt past the final stage triggers its local bust state.',
           href: '/games/crash',
           id: 'crash',
           name: 'Card Streak',

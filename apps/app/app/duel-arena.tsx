@@ -98,6 +98,7 @@ import {
 } from './duel-lobby-options';
 import { SharedOpponentControl, type SharedOpponentEntry } from './duel-shared-opponent';
 import { journeyTestIds } from './e2e/journey-test-ids';
+import { GameRulesOverview } from './games/game-rules-overview';
 import { createAbortScope } from './solana/abort-scope';
 import { type ConfirmationPhase, describeConfirmation } from './solana/confirmation';
 import {
@@ -140,6 +141,26 @@ type DuelLobbyEntryBase = {
 };
 
 export type DuelLobbyEntry = DuelLobbyEntryBase & SharedOpponentEntry;
+
+export function duelPrimaryActionLabel(input: {
+  action?: DuelLobbyEntry['action'];
+  intentPending: boolean;
+  mode: Mode;
+  tier: number;
+}): string {
+  if (input.intentPending) return 'Preparing payment review';
+  if (input.mode === 'direct') {
+    if (input.action === 'accept') return `Accept challenge · $${input.tier} demo pool`;
+    if (input.action === 'rematch') return `Review rematch · $${input.tier} demo pool`;
+    return `Create challenge · $${input.tier} demo pool`;
+  }
+  if (input.mode === 'house') {
+    return input.action === 'rematch'
+      ? `Review house rematch · $${input.tier} demo pool`
+      : `Play house · $${input.tier} demo pool`;
+  }
+  return `Find rival · $${input.tier} demo pool`;
+}
 
 const terminalDuelStatuses = new Set<DurableDuel['status']>([
   'cancelled',
@@ -944,8 +965,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         setActiveEntry(undefined);
         setActionError(
           resolved.pack
-            ? `The shared $${tier} pack tier cannot be played. The supported $${resolved.pack.tier} pack is selected for a new duel.`
-            : `The shared $${tier} pack tier is not currently playable.`,
+            ? `The shared $${tier} demo-pool tier cannot be played. The supported $${resolved.pack.tier} demo pool is selected for a new duel.`
+            : `The shared $${tier} demo-pool tier is not currently playable.`,
         );
       }
       setTier(resolved.tier);
@@ -1387,7 +1408,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         matchmakingSession.queue.packId,
       );
       setMatchmakingSession(session);
-      setActionNotice('Searching again for another wallet using the same selected pack.');
+      setActionNotice('Searching again for another wallet using the same selected demo pool.');
     } catch (error) {
       setActionError(getPlayerActionError(error, 'Could not continue matchmaking.'));
     } finally {
@@ -1811,6 +1832,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
     return (
       <main className="duel-experience" data-testid={journeyTestIds.battle}>
+        <div className="mx-auto max-w-[1400px] px-4 pt-8 sm:px-6 sm:pt-12">
+          <GameRulesOverview capabilityState={capabilityState} mode="duel" />
+        </div>
         <div className="duel-topline">
           <button
             type="button"
@@ -2026,16 +2050,19 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }
 
   return (
-    <main className="lobby-shell" data-testid={journeyTestIds.lobby} id="duel-lobby">
-      <section className="lobby-hero">
+    <main className="lobby-shell" data-testid={journeyTestIds.lobby}>
+      <div className="mx-auto max-w-[1400px] px-4 pt-8 sm:px-6 sm:pt-12">
+        <GameRulesOverview capabilityState={capabilityState} mode="duel" />
+      </div>
+      <section className="lobby-hero" id="duel-lobby">
         <div className="hero-copy">
           <span className="eyebrow">
             <LightningIcon size={14} weight="fill" /> Solana devnet MVP
           </span>
           <h2>
-            Rip together.
+            Reveal together.
             <br />
-            <em>Winner takes all.</em>
+            <em>Receipt tells the truth.</em>
           </h2>
           <p>{getLobbyEconomicsCopy()}</p>
           <div className="hero-proof-row">
@@ -2043,7 +2070,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               <LockKeyIcon size={15} /> Devnet escrow
             </span>
             <span>
-              <ShieldCheckIcon size={15} /> Committed card value
+              <ShieldCheckIcon size={15} /> Verified outcome state
             </span>
             <span>
               <FireIcon size={15} /> Synchronized reveal
@@ -2110,7 +2137,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                       <UsersThreeIcon size={18} weight="fill" />
                       <span>
                         <strong>Public wallet matchmaking</strong>
-                        We match you with another wallet using the same selected pack. You can
+                        We match you with another wallet using the same selected demo pool. You can
                         continue searching or cancel before funding starts. House play is never
                         selected automatically.
                       </span>
@@ -2135,24 +2162,24 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                         </strong>
                         {activeEntry?.action === 'rematch'
                           ? `The original $${activeEntry.tier} house tier is preselected for a fresh commitment.`
-                          : 'The house funds the matching pack and must precommit before either reveal.'}
+                          : 'The disclosed house joins the same demo pool and must precommit before either reveal.'}
                       </span>
                     </div>
                   </div>
 
                   <div className="fee-summary">
                     <span>
-                      Platform fee <strong>Shown before approval</strong>
+                      Your platform fee <strong>Shown before approval</strong>
                     </span>
                     <span>
-                      Pack tier{' '}
+                      Demo pool{' '}
                       <strong data-testid={journeyTestIds.entryTier}>${tier.toFixed(2)}</strong>
                     </span>
                     <span>
-                      Pack purchase <strong>Not charged now</strong>
+                      Pool value <strong>Not charged or purchased</strong>
                     </span>
                     <span>
-                      Winner gets <strong>Both cards</strong>
+                      Opening <strong>After both fees finalize</strong>
                     </span>
                   </div>
 
@@ -2184,19 +2211,12 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                     ) : (
                       <LinkIcon size={18} weight="bold" />
                     )}
-                    {intentPending
-                      ? 'Preparing payment review'
-                      : mode === 'direct'
-                        ? activeEntry?.action === 'accept'
-                          ? `Accept $${tier} challenge`
-                          : activeEntry?.action === 'rematch'
-                            ? `Review $${tier} rematch`
-                            : `Create $${tier} challenge`
-                        : mode === 'house'
-                          ? activeEntry?.action === 'rematch'
-                            ? `Review $${tier} house rematch`
-                            : `Play house for $${tier}`
-                          : `Find a $${tier} duel`}
+                    {duelPrimaryActionLabel({
+                      action: activeEntry?.action,
+                      intentPending,
+                      mode,
+                      tier,
+                    })}
                   </Button>
                   <p className="signing-note">
                     <InfoIcon size={13} /> You will see the exact fee and purpose before your wallet
@@ -2348,18 +2368,18 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       <section className="rules-strip">
         <div>
           <span>01</span>
-          <strong>Pick a pack</strong>
-          <small>Both wallets fund the same tier</small>
+          <strong>Choose demo pool</strong>
+          <small>Tier is a pool label, not a charge</small>
         </div>
         <div>
           <span>02</span>
-          <strong>Rip together</strong>
-          <small>Pulls reveal on the same beat</small>
+          <strong>Escrow separately</strong>
+          <small>Each participant approves their own fee</small>
         </div>
         <div>
           <span>03</span>
-          <strong>Winner takes all</strong>
-          <small>Higher verified value gets both cards</small>
+          <strong>Open together</strong>
+          <small>Only after both fees finalize</small>
         </div>
       </section>
       <details className="rules-disclosure">

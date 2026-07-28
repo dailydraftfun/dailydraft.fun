@@ -70,7 +70,7 @@ describe('duel entry stepper', () => {
 
     expect(html).toContain('Value-bearing transaction');
     expect(html).toContain('0.015 SOL');
-    expect(html).toContain('Not charged in this devnet step');
+    expect(html).toContain('Not charged or purchased');
     expect(html).toContain('Approve 0.015 SOL in wallet');
     expect(html).toContain('data-testid="duel-entry-confirm-funding"');
   });

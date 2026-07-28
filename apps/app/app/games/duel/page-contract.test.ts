@@ -27,12 +27,17 @@ describe('canonical Duel Arena route', () => {
     expect(metadata.robots).toEqual({ follow: false, index: false, nocache: true });
   });
 
-  test('places the canonical browse-first rules before the live arena', () => {
-    const source = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+  test('delegates rules and the live arena to one capability-owning surface', () => {
+    const pageSource = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+    const arenaSource = readFileSync(new URL('../../duel-arena.tsx', import.meta.url), 'utf8');
 
-    expect(source.indexOf('<GameRulesOverview mode="duel" />')).toBeGreaterThan(-1);
-    expect(source.indexOf('<GameRulesOverview mode="duel" />')).toBeLessThan(
-      source.indexOf('<DuelArena'),
+    expect(pageSource).toContain('<DuelArena');
+    expect(pageSource).not.toContain('GameRulesOverview');
+    expect(arenaSource).toContain(
+      '<GameRulesOverview capabilityState={capabilityState} mode="duel" />',
+    );
+    expect(arenaSource.indexOf('<GameRulesOverview')).toBeLessThan(
+      arenaSource.indexOf('id="duel-lobby"'),
     );
   });
 

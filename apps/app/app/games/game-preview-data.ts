@@ -90,7 +90,7 @@ export const activityItems: readonly ActivityItem[] = [
   {
     amount: '$25 fixture',
     badge: 'Flip preview',
-    detail: 'Committed pool, probability band, selection, and acquisition receipt UI.',
+    detail: 'Scripted local UI with a fixed result and no selection proof or acquisition.',
     href: '/games/marketplace-flip',
     id: 'flip-1',
     mode: 'flip',

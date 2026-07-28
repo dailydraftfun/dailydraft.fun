@@ -55,9 +55,13 @@ mock.module('./solana/wallet-auth-provider', () => ({
   useWalletAuth: () => authenticationState,
 }));
 
-const { DuelArena, DuelCard, duelResolutionReady, duelWinnerCelebrationIntensity } = await import(
-  './duel-arena'
-);
+const {
+  DuelArena,
+  DuelCard,
+  duelPrimaryActionLabel,
+  duelResolutionReady,
+  duelWinnerCelebrationIntensity,
+} = await import('./duel-arena');
 
 const charizard: LivePull = {
   id: 'outcome-you',
@@ -77,12 +81,28 @@ const charizard: LivePull = {
 const artless: LivePull = { ...charizard, image: undefined };
 
 describe('duel arena contract', () => {
+  test('labels every capability-gated entry path as a demo pool, never a charge', () => {
+    const label = (mode: 'direct' | 'house' | 'matchmaking', action?: 'accept' | 'rematch') =>
+      duelPrimaryActionLabel({ action, intentPending: false, mode, tier: 50 });
+
+    expect(duelPrimaryActionLabel({ intentPending: true, mode: 'direct', tier: 50 })).toBe(
+      'Preparing payment review',
+    );
+    expect(label('direct', 'accept')).toBe('Accept challenge · $50 demo pool');
+    expect(label('direct', 'rematch')).toBe('Review rematch · $50 demo pool');
+    expect(label('direct')).toBe('Create challenge · $50 demo pool');
+    expect(label('house', 'rematch')).toBe('Review house rematch · $50 demo pool');
+    expect(label('house')).toBe('Play house · $50 demo pool');
+    expect(label('matchmaking')).toBe('Find rival · $50 demo pool');
+  });
+
   test('renders the default lobby view with no active duel', () => {
     const markup = renderToStaticMarkup(<DuelArena />);
 
     expect(markup).toContain(`data-testid="${journeyTestIds.lobby}"`);
-    expect(markup).toContain('Rip together.');
-    expect(markup).toContain('Winner takes all.');
+    expect(markup).toContain('Reveal together.');
+    expect(markup).toContain('Receipt tells the truth.');
+    expect(markup).toContain('Checking current capability');
     expect(markup).toContain('Solana devnet MVP');
   });
 

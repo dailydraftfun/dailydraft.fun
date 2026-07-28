@@ -45,7 +45,7 @@ export const gameRules = {
       {
         label: 'Continue or cash out',
         detail:
-          'Each fixture stage offers Continue or Cash out. The next committed fixture stage either adds its displayed card value or busts the run.',
+          'The local script contains four fixed card stages. Continue reveals the next fixed card through stage four; attempting to continue past stage four ends the script.',
       },
       {
         label: 'Probability rule',
@@ -62,7 +62,7 @@ export const gameRules = {
     loop: [
       {
         label: 'Read the stage',
-        detail: 'Inspect the fixture card, displayed pot, and next committed stage boundary.',
+        detail: 'Inspect the current fixed card, displayed fixture pot, and scripted stage number.',
       },
       {
         label: 'Choose once',
@@ -70,7 +70,8 @@ export const gameRules = {
       },
       {
         label: 'Resolve',
-        detail: 'The next fixture stage adds its card or ends the simulated run as a bust.',
+        detail:
+          'Stages two through four reveal their fixed cards. Only an attempt past the final stage triggers the scripted bust state.',
       },
       {
         label: 'Inspect',
@@ -90,7 +91,8 @@ export const gameRules = {
     stateLegend: [
       {
         label: 'Committed',
-        detail: 'The fixture sequence and next demonstration state are fixed for the preview.',
+        detail:
+          'No commitment or random draw is created. The four-card local sequence is fixed in the interface.',
       },
       {
         label: 'Owned',
@@ -103,25 +105,25 @@ export const gameRules = {
     ],
     statusLabel: 'Architecture + policy gated',
     summary:
-      'Build a card streak, then stop or risk the next committed fixture stage. This surface demonstrates the decision rhythm—not live economics.',
+      'Walk through a fixed four-stage card script, then cash out or attempt past the final stage. The bust state occurs only after that final attempt.',
     wallet:
       'No wallet is needed for the fixture. Live Crash will require an approved wallet, funding, custody, and recovery contract; those requirements are intentionally not invented here.',
   },
   duel: {
     canonicalHref: '/games/duel#rules',
     custody:
-      'The devnet contract can hold test assets while the duel resolves. Production Collector Crypt custody is not active.',
+      'Each participant separately escrows only the displayed test-SOL platform fee. The tier’s demo-pool value is not charged or purchased.',
     eyebrow: 'Card Duel · rules docket 01',
     facts: [
       {
         label: 'Eligibility',
         detail:
-          'A server capability check must enable both the chosen opponent mode and pack tier. A direct challenge also needs a complete opponent wallet.',
+          'A server capability check must enable both the chosen opponent mode and demo-pool tier. A direct challenge also needs a complete opponent wallet.',
       },
       {
         label: 'Comparison rule',
         detail:
-          'The higher server-verified value snapshot wins both demo cards. Equal values return each original card and both platform fees.',
+          'The server compares its demo outcomes using a verified value snapshot. The public receipt—not this overview—is authoritative for the result, fee, asset, and refund states.',
       },
       {
         label: 'Probability source',
@@ -130,7 +132,7 @@ export const gameRules = {
       },
     ],
     gates: [
-      'Current server capability must enable the chosen opponent mode and pack tier.',
+      'Current server capability must enable the chosen opponent mode and demo-pool tier.',
       'Solana devnet and the transaction-preparation service must be healthy.',
       'Real-value play remains disabled until legal, geography, age, responsible-play, AML, and fee policy are approved.',
       'Production packs require approved Collector Crypt inventory, custody, valuation, and settlement integrations.',
@@ -138,26 +140,30 @@ export const gameRules = {
     loop: [
       {
         label: 'Choose',
-        detail: 'Select an enabled pack tier and a direct, public, or disclosed house opponent.',
+        detail:
+          'Select an enabled demo-pool tier and a direct, public, or disclosed house opponent. The tier is a pool label, not an amount charged.',
       },
       {
         label: 'Review',
-        detail: 'Connect and verify a Solana wallet, then inspect the exact devnet platform fee.',
+        detail:
+          'Connect and verify a Solana wallet, then separately inspect and approve your exact test-SOL platform fee.',
       },
       {
         label: 'Open',
-        detail: 'After both wallets pay, both hidden demo pulls open on the same reveal beat.',
+        detail:
+          'Opening begins only after both participants’ platform-fee transactions finalize on devnet.',
       },
       {
         label: 'Settle',
-        detail: 'Higher verified value receives both demo cards; a tie returns each original card.',
+        detail:
+          'The receipt exposes the comparison outcome separately from payment, demo-asset, and refund finality.',
       },
     ],
     name: 'Card Duel',
     previewHref: '#duel-lobby',
     previewLabel: 'Check live duel options',
     receipt:
-      'The public receipt separates the committed result from Solana transaction references and final card ownership.',
+      'The public receipt separates the committed result, each participant’s fee references, and current demo-asset or refund status. It does not claim production ownership.',
     refund:
       'A challenge can be cancelled before funding starts. After either wallet pays, it follows opening, settlement, or the safe-refund path.',
     settlement:
@@ -170,16 +176,17 @@ export const gameRules = {
       },
       {
         label: 'Owned',
-        detail: 'Card ownership changes only after the required devnet transfer completes.',
+        detail:
+          'Do not infer ownership from the reveal. Check the public receipt for the current demo-asset state.',
       },
       {
         label: 'Final',
         detail: 'The public receipt exposes completed settlement or refund references separately.',
       },
     ],
-    statusLabel: 'Runtime checked · devnet',
+    statusLabel: 'Capability check required',
     summary:
-      'Two wallets fund the same enabled tier. Both demo pulls stay hidden, reveal together, and the higher verified value wins both cards.',
+      'The tier selects a server-provided demo pool; its value is not charged or purchased. Each participant separately escrows the displayed test-SOL fee, and opening waits for both fees to finalize.',
     wallet:
       'Browsing needs no wallet. To enter, use a Wallet Standard Solana wallet on devnet, sign a no-value ownership message, then separately approve the exact displayed test-SOL transaction.',
   },
@@ -197,7 +204,7 @@ export const gameRules = {
       {
         label: 'Probability rule',
         detail:
-          'The fixture shows disclosed Floor, Core, and Chase bands against a sealed demonstration pool. It does not claim commercial odds or expected value.',
+          'Floor, Core, and Chase are display controls only. They do not change the fixed card result and are not odds, probability bands, or a draw.',
       },
       {
         label: 'Acquisition rule',
@@ -214,15 +221,18 @@ export const gameRules = {
     loop: [
       {
         label: 'Choose',
-        detail: 'Select a fixture inventory band with its displayed size and demonstration price.',
+        detail:
+          'Choose a display band for the walkthrough. The control does not affect the fixed result.',
       },
       {
-        label: 'Commit',
-        detail: 'Seal the fixture pool snapshot and disclosed probability bands before selection.',
+        label: 'Advance',
+        detail:
+          'Advance a scripted local state. No pool snapshot, seed, commitment, or selection proof is created.',
       },
       {
         label: 'Reveal',
-        detail: 'Show the reproducibly selected fixture card and keep acquisition status explicit.',
+        detail:
+          'Show the same fixed example card every time. No marketplace selection or acquisition occurs.',
       },
       {
         label: 'Inspect',
@@ -233,7 +243,7 @@ export const gameRules = {
     previewHref: '#preview-lab',
     previewLabel: 'Run no-value fixture',
     receipt:
-      'The fixture receipt proves only the demonstration selection. Purchase, transfer, ownership, and settlement remain “not submitted.”',
+      'The local summary records only which scripted screen was shown. It provides no selection proof; purchase, transfer, ownership, and settlement remain “not submitted.”',
     refund:
       'Nothing is charged, so there is nothing to refund. Live reselection, substitute, or refund behavior awaits explicit commercial approval.',
     settlement:
@@ -242,7 +252,8 @@ export const gameRules = {
     stateLegend: [
       {
         label: 'Committed',
-        detail: 'The fixture pool and probability bands are sealed before the demonstration draw.',
+        detail:
+          'Nothing is committed or sealed. A click only advances the local scripted interface.',
       },
       {
         label: 'Owned',
@@ -251,12 +262,12 @@ export const gameRules = {
       {
         label: 'Final',
         detail:
-          'Only the fixture selection completes. No marketplace or chain finality is claimed.',
+          'Only the local script ends. No selection, marketplace, payment, or chain finality is claimed.',
       },
     ],
     statusLabel: 'Commercial + provider gated',
     summary:
-      'Commit an eligible marketplace pool, select within disclosed fixture bands, and keep selection, acquisition, and ownership visibly separate.',
+      'Walk through a scripted local marketplace UI with a fixed result. There is no sealed pool, random draw, reproducible selection proof, purchase, or ownership change.',
     wallet:
       'No wallet is needed for the fixture. A future live flow will require an approved Solana wallet and explicit transaction review, but no funding CTA is exposed before the commercial contract exists.',
   },

@@ -9,5 +9,6 @@ describe('marketplace flip preview route', () => {
     expect(markup).toContain('Marketplace Flip');
     expect(metadata.title).toBe('Marketplace Flip preview — DailyDraft Devnet');
     expect(metadata.description).toContain('Fixture-only');
+    expect(metadata.robots).toEqual({ follow: false, index: false, nocache: true });
   });
 });
