@@ -512,6 +512,7 @@ class ScriptedProvider implements FlipAcquisitionProvider {
 
   async reconcile(
     request: FlipAcquisitionProviderRequest,
+    _knownProviderReference: string | null,
   ): Promise<FlipAcquisitionProviderResult | null> {
     this.reconciliations += 1;
     return this.effects.get(request.providerRequestKey) ?? null;

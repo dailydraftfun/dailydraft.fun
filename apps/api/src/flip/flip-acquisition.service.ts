@@ -188,30 +188,43 @@ export class FlipAcquisitionService {
       where: {
         id: acquisition.id,
         status: { in: ['PENDING', 'RECOVERY_REQUIRED'] },
+        version: acquisition.version,
         OR: [{ leaseOwner: null }, { leaseExpiresAt: null }, { leaseExpiresAt: { lte: now } }],
       },
     });
     if (claimed.count !== 1) return toSnapshot(await this.requireAcquisition(acquisition.id));
 
     try {
-      const ordered = [...acquisition.operations].sort(
-        (left, right) => left.sequence - right.sequence,
-      );
+      const leased = await this.requireAcquisition(acquisition.id);
+      if (leased.leaseOwner !== leaseOwner) {
+        return toSnapshot(leased);
+      }
+      if (
+        leased.status === 'ACQUIRED' ||
+        leased.operations.some(
+          (operation) => operation.recoveryMode === DatabaseFlipAcquisitionRecoveryMode.RETRYABLE,
+        )
+      ) {
+        await this.releaseLease(leased.id, leaseOwner);
+        return toSnapshot(await this.requireAcquisition(leased.id));
+      }
+
+      const ordered = [...leased.operations].sort((left, right) => left.sequence - right.sequence);
       for (const candidate of ordered) {
         const current = await this.database.flipAcquisitionOperation.findUnique({
           where: { id: candidate.id },
         });
         if (!current) throw new ServiceUnavailableException('Flip acquisition operation is absent');
         if (current.status === DatabaseFlipAcquisitionOperationStatus.FINALIZED) {
-          await this.ensureLifecycleTransition(acquisition, current);
+          await this.ensureLifecycleTransition(leased, current);
           continue;
         }
         const request = operationRequest(sessionId, current);
-        const reconciled = await this.provider.reconcile(request);
+        const reconciled = await this.provider.reconcile(request, current.providerReference);
         if (reconciled) {
-          await this.finalizeOperation(acquisition.id, current, reconciled);
+          await this.finalizeOperation(leased.id, current, reconciled);
           await this.ensureLifecycleTransition(
-            acquisition,
+            leased,
             await this.database.flipAcquisitionOperation.findUniqueOrThrow({
               where: { id: current.id },
             }),
@@ -220,14 +233,18 @@ export class FlipAcquisitionService {
         }
         if (current.recoveryMode === DatabaseFlipAcquisitionRecoveryMode.RECONCILE_ONLY) {
           await this.recordAmbiguous(
-            acquisition.id,
+            leased.id,
             current.id,
             leaseOwner,
             current.failureCode ?? 'PROVIDER_RESULT_AMBIGUOUS',
             current.providerReference,
             false,
           );
-          return toSnapshot(await this.requireAcquisition(acquisition.id));
+          return toSnapshot(await this.requireAcquisition(leased.id));
+        }
+        if (current.recoveryMode === DatabaseFlipAcquisitionRecoveryMode.RETRYABLE) {
+          await this.releaseLease(leased.id, leaseOwner);
+          return toSnapshot(await this.requireAcquisition(leased.id));
         }
 
         let result: FlipAcquisitionProviderResult;
@@ -235,14 +252,14 @@ export class FlipAcquisitionService {
           result = await this.provider.execute(request);
         } catch (error) {
           if (error instanceof FlipAcquisitionDefinitelyNotAppliedError) {
-            await this.recordReviewedRecovery(acquisition, current, leaseOwner, error.code);
+            await this.recordReviewedRecovery(leased, current, leaseOwner, error.code);
           } else {
             const ambiguous =
               error instanceof FlipAcquisitionAmbiguousError
                 ? error
                 : new FlipAcquisitionAmbiguousError('PROVIDER_RESPONSE_AMBIGUOUS');
             await this.recordAmbiguous(
-              acquisition.id,
+              leased.id,
               current.id,
               leaseOwner,
               ambiguous.code,
@@ -250,17 +267,17 @@ export class FlipAcquisitionService {
               true,
             );
           }
-          return toSnapshot(await this.requireAcquisition(acquisition.id));
+          return toSnapshot(await this.requireAcquisition(leased.id));
         }
-        await this.finalizeOperation(acquisition.id, current, result, true);
+        await this.finalizeOperation(leased.id, current, result, true);
         await this.ensureLifecycleTransition(
-          acquisition,
+          leased,
           await this.database.flipAcquisitionOperation.findUniqueOrThrow({
             where: { id: current.id },
           }),
         );
       }
-      return toSnapshot(await this.finalizeAcquisition(acquisition.id, leaseOwner));
+      return toSnapshot(await this.finalizeAcquisition(leased.id, leaseOwner));
     } catch (error) {
       await this.releaseLease(acquisition.id, leaseOwner).catch(() => undefined);
       throw error;

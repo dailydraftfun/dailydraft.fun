@@ -330,6 +330,7 @@ CREATE FUNCTION "validate_flip_acquisition_plan"() RETURNS trigger AS $$
 DECLARE
   commitment "FlipSessionPoolCommitment"%ROWTYPE;
   operation_row RECORD;
+  operation_count INTEGER;
   operations_json JSONB;
   policy "FlipAcquisitionPolicy"%ROWTYPE;
   proof "FlipOutcomeSelectionProof"%ROWTYPE;
@@ -357,6 +358,10 @@ BEGIN
       'sourceReference', operation."sourceReference"
     ) ORDER BY operation."sequence"
   ) INTO operations_json
+  FROM "FlipAcquisitionOperation" operation
+  WHERE operation."acquisitionId" = NEW."id";
+
+  SELECT count(*) INTO operation_count
   FROM "FlipAcquisitionOperation" operation
   WHERE operation."acquisitionId" = NEW."id";
 
@@ -404,7 +409,8 @@ BEGIN
     OR NEW."houseInventoryCustodyReference" IS DISTINCT FROM policy."houseInventoryCustodyReference"
     OR NEW."requestKey" IS DISTINCT FROM
       'flip-acquisition:' || substr(proof."resultHash", 1, 40)
-    OR jsonb_array_length(operations_json) <> 2
+    OR operation_count <> 2
+    OR operations_json IS NULL
     OR NEW."requestHash" IS DISTINCT FROM expected_request_hash
   THEN
     RAISE EXCEPTION 'Flip acquisition plan does not match finalized selection and reviewed policy';
@@ -440,6 +446,31 @@ BEGIN
     IF operation_row."operationKey" IS DISTINCT FROM
         'flip-acquisition:' || operation_row."sequence" || ':' ||
         lower(operation_row."kind"::TEXT)
+      OR operation_row."assetReference" IS DISTINCT FROM NEW."selectedAssetReference"
+      OR operation_row."listingReference" IS DISTINCT FROM NEW."selectedListingReference"
+      OR operation_row."amount" IS DISTINCT FROM NEW."selectedValueAmount"
+      OR (
+        operation_row."sequence" = 1
+        AND (
+          operation_row."kind" <> 'PURCHASE'
+          OR operation_row."expectedSessionVersion" <> session_row."version"
+          OR operation_row."sourceReference" IS DISTINCT FROM
+            policy."providerSourceCustodyReference"
+          OR operation_row."destinationReference" IS DISTINCT FROM
+            policy."houseInventoryCustodyReference"
+        )
+      )
+      OR (
+        operation_row."sequence" = 2
+        AND (
+          operation_row."kind" <> 'TRANSFER'
+          OR operation_row."expectedSessionVersion" <> session_row."version" + 1
+          OR operation_row."sourceReference" IS DISTINCT FROM
+            policy."houseInventoryCustodyReference"
+          OR operation_row."destinationReference" IS DISTINCT FROM
+            session_row."playerWalletReference"
+        )
+      )
       OR operation_row."providerRequestKey" IS DISTINCT FROM
         'fixture-acquisition:' || substr(encode(
           digest(convert_to(operation_row.provider_key_preimage, 'UTF8'), 'sha256'),

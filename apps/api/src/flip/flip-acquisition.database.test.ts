@@ -1,9 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createDatabaseClient, type DatabaseClient } from '@dailydraft/db';
+import { createDatabaseClient, type DatabaseClient, type Prisma } from '@dailydraft/db';
 
 import type { Money } from '../domain.js';
-import { createFixtureFlipAcquisitionPolicy } from './flip-acquisition.policy.js';
 import {
+  canonicalFlipAcquisitionStringify,
+  createFixtureFlipAcquisitionPolicy,
+} from './flip-acquisition.policy.js';
+import {
+  DeterministicFlipAcquisitionFixtureProvider,
   FLIP_ACQUISITION_PROVIDER_FIXTURE_VERSION,
   FlipAcquisitionAmbiguousError,
   FlipAcquisitionDefinitelyNotAppliedError,
@@ -23,6 +27,7 @@ import {
 } from './flip-outcome-selection.service.js';
 import { createFixtureFlipRuleSet, FlipRulesService } from './flip-rules.service.js';
 import {
+  FLIP_REVEAL_READY_FIXTURE_VERSION,
   FLIP_STAKE_FIXTURE_VERSION,
   FlipSessionStateService,
 } from './flip-session-state.service.js';
@@ -96,10 +101,10 @@ describeDatabase('Flip acquisition recovery against two real Postgres connection
     ).toBe(2);
   });
 
-  test('reconciles a lost purchase response after restart without another purchase', async () => {
+  test('reconciles a lost purchase response after a provider process restart', async () => {
     const fixture = await prepareAcquisitionFixture(databaseA, 'lost-response');
-    const provider = new DatabaseTestProvider({ ambiguousOnce: 'purchase' });
-    const first = await acquisitionService(databaseA, provider).resumeFixtureAcquisition(
+    const firstProvider = new LostResponseFixtureProvider();
+    const first = await acquisitionService(databaseA, firstProvider).resumeFixtureAcquisition(
       fixture.sessionId,
     );
 
@@ -114,12 +119,58 @@ describeDatabase('Flip acquisition recovery against two real Postgres connection
       ],
       status: 'recovery-required',
     });
-    const recovered = await acquisitionService(databaseB, provider).resumeFixtureAcquisition(
+    const recovered = await acquisitionService(
+      databaseB,
+      new DeterministicFlipAcquisitionFixtureProvider(),
+    ).resumeFixtureAcquisition(fixture.sessionId);
+    expect(recovered.status).toBe('acquired');
+    expect(firstProvider.purchaseExecutions).toBe(1);
+    const operations = await databaseA.flipAcquisitionOperation.findMany({
+      orderBy: { sequence: 'asc' },
+      where: { acquisition: { sessionId: fixture.sessionId } },
+    });
+    expect(operations).toMatchObject([
+      { kind: 'PURCHASE', status: 'FINALIZED', submissionCount: 1 },
+      { kind: 'TRANSFER', status: 'FINALIZED', submissionCount: 1 },
+    ]);
+  });
+
+  test.each([
+    ['PROVIDER_REJECTED', 'refund'],
+    ['SELECTED_ASSET_UNAVAILABLE', 'reselection'],
+    ['APPROVED_SUBSTITUTE_REQUIRED', 'substitute'],
+  ] as const)('prevents a stale concurrent worker from resubmitting %s recovery', async (failureCode, branch) => {
+    const fixture = await prepareAcquisitionFixture(databaseA, `concurrent-recovery-${branch}`);
+    const provider = new DatabaseTestProvider({
+      failKind: 'purchase',
+      failureCode,
+    });
+    const beforeClaim = deferred<void>();
+    const releaseClaim = deferred<void>();
+    const staleDatabase = delayFirstAcquisitionClaim(databaseB, beforeClaim, releaseClaim);
+    const staleAttempt = acquisitionService(staleDatabase, provider).resumeFixtureAcquisition(
       fixture.sessionId,
     );
-    expect(recovered.status).toBe('acquired');
+    await beforeClaim.promise;
+
+    const recovery = await acquisitionService(databaseA, provider).resumeFixtureAcquisition(
+      fixture.sessionId,
+    );
+    releaseClaim.resolve();
+    const staleResult = await staleAttempt;
+
+    expect(recovery).toMatchObject({
+      recoveryBranch: branch,
+      recoveryReason: failureCode,
+      status: 'recovery-required',
+    });
+    expect(staleResult).toEqual(recovery);
     expect(provider.executionsFor('purchase')).toBe(1);
-    expect(provider.executionsFor('transfer')).toBe(1);
+    expect(
+      await databaseA.flipSessionTransition.count({
+        where: { kind: 'RECOVERY_REQUESTED', sessionId: fixture.sessionId },
+      }),
+    ).toBe(1);
   });
 
   test.each([
@@ -215,6 +266,60 @@ describeDatabase('Flip acquisition recovery against two real Postgres connection
       Promise.resolve(databaseA.flipAcquisition.delete({ where: { id: acquisition.id } })),
     ).rejects.toThrow('Flip acquisition evidence is append-only');
   });
+
+  test('rejects null and semantically forged acquisition plans in Postgres', async () => {
+    const nullFixture = await prepareAcquisitionFixture(databaseA, 'null-plan');
+    await expect(
+      createRawAcquisitionPlan(databaseA, nullFixture.sessionId, 'null'),
+    ).rejects.toThrow('does not match finalized selection and reviewed policy');
+
+    const forgedFixture = await prepareAcquisitionFixture(databaseB, 'forged-plan');
+    await expect(
+      createRawAcquisitionPlan(databaseB, forgedFixture.sessionId, 'forged-asset'),
+    ).rejects.toThrow();
+    expect(
+      await databaseA.flipAcquisition.findUnique({
+        where: { sessionId: forgedFixture.sessionId },
+      }),
+    ).toBeNull();
+  });
+
+  test('blocks reveal for a sealed-policy session until the acquisition receipt is final', async () => {
+    const fixture = await prepareAcquisitionFixture(databaseA, 'reveal-gate');
+    const finalizationBlocked = blockAcquisitionFinalization(databaseA);
+    await expect(
+      acquisitionService(
+        finalizationBlocked,
+        new DeterministicFlipAcquisitionFixtureProvider(),
+      ).resumeFixtureAcquisition(fixture.sessionId),
+    ).rejects.toThrow('test blocked acquisition finalization');
+
+    const sessions = new FlipSessionStateService(
+      databaseA,
+      new DatabaseTestClock(),
+      FIXTURE_ENVIRONMENT,
+    );
+    const session = await sessions.findSession(fixture.sessionId);
+    if (!session.purchaseReference || !session.transferReference) {
+      throw new Error('Reveal-gate fixture did not reach durable transfer state');
+    }
+    await expect(
+      sessions.transition(fixture.sessionId, {
+        evidence: {
+          purchaseReference: session.purchaseReference,
+          reference: 'fixture-reveal:acquisition-not-final',
+          schemaVersion: FLIP_REVEAL_READY_FIXTURE_VERSION,
+          status: 'fixture-ready',
+          transferReference: session.transferReference,
+        },
+        expectedVersion: session.version,
+        kind: 'mark-reveal-ready',
+        transitionKey: 'reveal-before-acquisition-finality',
+      }),
+    ).rejects.toThrow('Flip reveal requires finalized purchase and transfer acquisition proof');
+
+    expect((await sessions.findSession(fixture.sessionId)).status).toBe('transfer-recorded');
+  });
 });
 
 function acquisitionService(
@@ -227,6 +332,229 @@ function acquisitionService(
     new FlipSessionStateService(database, new DatabaseTestClock(), FIXTURE_ENVIRONMENT),
     FIXTURE_ENVIRONMENT,
   );
+}
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value: T): void;
+}
+
+interface RawAcquisitionOperation {
+  amount: string;
+  assetReference: string;
+  destinationReference: string;
+  expectedSessionVersion: number;
+  kind: 'PURCHASE' | 'TRANSFER';
+  listingReference: string;
+  operationKey: string;
+  providerRequestKey: string;
+  requestHash: string;
+  sequence: number;
+  sourceReference: string;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolvePromise: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+}
+
+function delayFirstAcquisitionClaim(
+  database: DatabaseClient,
+  beforeClaim: Deferred<void>,
+  releaseClaim: Deferred<void>,
+): DatabaseClient {
+  let delayed = false;
+  return database.$extends({
+    query: {
+      flipAcquisition: {
+        async updateMany({ args, query }) {
+          if (!delayed && typeof args.data.leaseOwner === 'string') {
+            delayed = true;
+            beforeClaim.resolve();
+            await releaseClaim.promise;
+          }
+          return query(args);
+        },
+      },
+    },
+  }) as unknown as DatabaseClient;
+}
+
+function blockAcquisitionFinalization(database: DatabaseClient): DatabaseClient {
+  return database.$extends({
+    query: {
+      flipAcquisition: {
+        async update({ args, query }) {
+          if (args.data.status === 'ACQUIRED') {
+            throw new Error('test blocked acquisition finalization');
+          }
+          return query(args);
+        },
+      },
+    },
+  }) as unknown as DatabaseClient;
+}
+
+async function createRawAcquisitionPlan(
+  database: DatabaseClient,
+  sessionId: string,
+  mode: 'forged-asset' | 'null',
+): Promise<void> {
+  const session = await database.flipSession.findUniqueOrThrow({
+    include: {
+      poolCommitment: {
+        include: { ruleset: { include: { acquisitionPolicy: true } } },
+      },
+      selectionProof: true,
+    },
+    where: { id: sessionId },
+  });
+  const commitment = session.poolCommitment;
+  const policy = commitment?.ruleset.acquisitionPolicy;
+  const proof = session.selectionProof;
+  if (
+    !commitment ||
+    !policy ||
+    !proof ||
+    session.selectedOrdinal === null ||
+    !session.selectedBandLabel ||
+    !session.selectedAssetReference ||
+    !session.selectedListingReference ||
+    !session.selectedValueAmount
+  ) {
+    throw new Error('Raw acquisition fixture binding is incomplete');
+  }
+
+  const selected = {
+    amount: session.selectedValueAmount,
+    assetReference: session.selectedAssetReference,
+    listingReference: session.selectedListingReference,
+  };
+  const operations =
+    mode === 'null'
+      ? []
+      : [
+          rawAcquisitionOperation({
+            ...selected,
+            assetReference: 'fixture-asset-forged-plan',
+            destinationReference: policy.houseInventoryCustodyReference,
+            expectedSessionVersion: session.version,
+            kind: 'PURCHASE',
+            sequence: 1,
+            sessionId,
+            sourceReference: policy.providerSourceCustodyReference,
+          }),
+          rawAcquisitionOperation({
+            ...selected,
+            destinationReference: session.playerWalletReference,
+            expectedSessionVersion: session.version + 1,
+            kind: 'TRANSFER',
+            sequence: 2,
+            sessionId,
+            sourceReference: policy.houseInventoryCustodyReference,
+          }),
+        ];
+  const requestKey = `flip-acquisition:${proof.resultHash.slice(0, 40)}`;
+  const requestHash = hash(
+    canonicalFlipAcquisitionStringify({
+      operations: mode === 'null' ? null : operations,
+      policyHash: policy.policyHash,
+      poolCommitmentHash: session.poolCommitmentHash,
+      requestKey,
+      rulesHash: session.rulesHash,
+      selectionProofId: proof.id,
+      selectionResultHash: proof.resultHash,
+      sessionReference: session.id,
+      snapshotContentHash: session.snapshotContentHash,
+    }),
+  );
+  const data = {
+    activationMode: 'fixture-only',
+    expectedOperationCount: 2,
+    houseInventoryCustodyReference: policy.houseInventoryCustodyReference,
+    id: `flipacquisition_${crypto.randomUUID().replaceAll('-', '')}`,
+    network: policy.network,
+    ...(operations.length > 0
+      ? {
+          operations: {
+            create: operations.map((operation) => ({
+              ...operation,
+              currency: 'USDC',
+              decimals: 6,
+              id: `flipacqop_${crypto.randomUUID().replaceAll('-', '')}`,
+            })),
+          },
+        }
+      : {}),
+    playerWalletReference: session.playerWalletReference,
+    policyId: policy.id,
+    provider: policy.provider,
+    requestHash,
+    requestKey,
+    rulesHash: commitment.rulesHash,
+    rulesVersion: commitment.rulesVersion,
+    schemaVersion: 'dailydraft.flip-acquisition.v1',
+    selectedAssetReference: session.selectedAssetReference,
+    selectedBandLabel: session.selectedBandLabel,
+    selectedListingReference: session.selectedListingReference,
+    selectedOrdinal: session.selectedOrdinal,
+    selectedValueAmount: session.selectedValueAmount,
+    selectionProofId: proof.id,
+    sessionId,
+    sourceCustodyReference: policy.providerSourceCustodyReference,
+  } satisfies Prisma.FlipAcquisitionCreateArgs['data'];
+  await database.flipAcquisition.create({ data });
+}
+
+function rawAcquisitionOperation(input: {
+  amount: string;
+  assetReference: string;
+  destinationReference: string;
+  expectedSessionVersion: number;
+  kind: 'PURCHASE' | 'TRANSFER';
+  listingReference: string;
+  sequence: number;
+  sessionId: string;
+  sourceReference: string;
+}): RawAcquisitionOperation {
+  const operationKey = `flip-acquisition:${input.sequence}:${input.kind.toLowerCase()}`;
+  const providerRequestKey = `fixture-acquisition:${hash(
+    canonicalFlipAcquisitionStringify({
+      operationKey,
+      sessionReference: input.sessionId,
+    }),
+  ).slice(0, 40)}`;
+  const requestHash = hash(
+    canonicalFlipAcquisitionStringify({
+      amount: input.amount,
+      assetReference: input.assetReference,
+      currency: 'USDC',
+      decimals: 6,
+      destinationReference: input.destinationReference,
+      kind: input.kind.toLowerCase(),
+      listingReference: input.listingReference,
+      operationKey,
+      providerRequestKey,
+      sessionReference: input.sessionId,
+      sourceReference: input.sourceReference,
+    }),
+  );
+  return {
+    amount: input.amount,
+    assetReference: input.assetReference,
+    destinationReference: input.destinationReference,
+    expectedSessionVersion: input.expectedSessionVersion,
+    kind: input.kind,
+    listingReference: input.listingReference,
+    operationKey,
+    providerRequestKey,
+    requestHash,
+    sequence: input.sequence,
+    sourceReference: input.sourceReference,
+  };
 }
 
 async function prepareAcquisitionFixture(database: DatabaseClient, label: string) {
@@ -317,6 +645,34 @@ async function prepareAcquisitionFixture(database: DatabaseClient, label: string
   };
 }
 
+class LostResponseFixtureProvider extends FlipAcquisitionProvider {
+  readonly #delegate = new DeterministicFlipAcquisitionFixtureProvider();
+  #responseLost = false;
+  purchaseExecutions = 0;
+
+  async execute(request: FlipAcquisitionProviderRequest): Promise<FlipAcquisitionProviderResult> {
+    const result = await this.#delegate.execute(request);
+    if (request.kind === 'purchase') {
+      this.purchaseExecutions += 1;
+      if (!this.#responseLost) {
+        this.#responseLost = true;
+        throw new FlipAcquisitionAmbiguousError(
+          'PROVIDER_RESPONSE_AMBIGUOUS',
+          result.providerReference,
+        );
+      }
+    }
+    return result;
+  }
+
+  async reconcile(
+    _request: FlipAcquisitionProviderRequest,
+    _knownProviderReference: string | null,
+  ): Promise<FlipAcquisitionProviderResult | null> {
+    return null;
+  }
+}
+
 class DatabaseTestProvider extends FlipAcquisitionProvider {
   readonly #ambiguousOnce: 'purchase' | 'transfer' | undefined;
   readonly #executions: FlipAcquisitionProviderRequest[] = [];
@@ -371,6 +727,7 @@ class DatabaseTestProvider extends FlipAcquisitionProvider {
 
   async reconcile(
     request: FlipAcquisitionProviderRequest,
+    _knownProviderReference: string | null,
   ): Promise<FlipAcquisitionProviderResult | null> {
     return this.#results.get(request.providerRequestKey) ?? null;
   }

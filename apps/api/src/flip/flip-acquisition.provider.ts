@@ -37,6 +37,7 @@ export abstract class FlipAcquisitionProvider {
 
   abstract reconcile(
     request: FlipAcquisitionProviderRequest,
+    knownProviderReference: string | null,
   ): Promise<FlipAcquisitionProviderResult | null>;
 }
 
@@ -64,30 +65,30 @@ export class FlipAcquisitionAmbiguousError extends Error {
  */
 @Injectable()
 export class DeterministicFlipAcquisitionFixtureProvider extends FlipAcquisitionProvider {
-  readonly #results = new Map<string, FlipAcquisitionProviderResult>();
-
   async execute(request: FlipAcquisitionProviderRequest): Promise<FlipAcquisitionProviderResult> {
-    const existing = this.#results.get(request.providerRequestKey);
-    if (existing) return existing;
-    const providerReference = `fixture-provider:${sha256(request.providerRequestKey).slice(0, 40)}`;
-    const result = Object.freeze({
-      evidence: Object.freeze({
-        providerRequestKey: request.providerRequestKey,
-        schemaVersion: FLIP_ACQUISITION_PROVIDER_FIXTURE_VERSION,
-      }),
-      finalized: true as const,
-      providerReference,
-      resultHash: sha256(`${request.requestHash}:${providerReference}`),
-    });
-    this.#results.set(request.providerRequestKey, result);
-    return result;
+    return fixtureResult(request);
   }
 
   async reconcile(
     request: FlipAcquisitionProviderRequest,
+    knownProviderReference: string | null,
   ): Promise<FlipAcquisitionProviderResult | null> {
-    return this.#results.get(request.providerRequestKey) ?? null;
+    const result = fixtureResult(request);
+    return knownProviderReference === result.providerReference ? result : null;
   }
+}
+
+function fixtureResult(request: FlipAcquisitionProviderRequest): FlipAcquisitionProviderResult {
+  const providerReference = `fixture-provider:${sha256(request.providerRequestKey).slice(0, 40)}`;
+  return Object.freeze({
+    evidence: Object.freeze({
+      providerRequestKey: request.providerRequestKey,
+      schemaVersion: FLIP_ACQUISITION_PROVIDER_FIXTURE_VERSION,
+    }),
+    finalized: true as const,
+    providerReference,
+    resultHash: sha256(`${request.requestHash}:${providerReference}`),
+  });
 }
 
 function sha256(value: string): string {

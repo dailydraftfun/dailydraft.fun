@@ -63,11 +63,12 @@ describe('Flip acquisition policy and deterministic provider', () => {
   test('reconciles one keyed fixture effect without duplicate execution evidence', async () => {
     const provider = new DeterministicFlipAcquisitionFixtureProvider();
     const request = providerRequest();
-    expect(await provider.reconcile(request)).toBeNull();
+    expect(await provider.reconcile(request, null)).toBeNull();
     const first = await provider.execute(request);
     const replay = await provider.execute(request);
     expect(replay).toEqual(first);
-    expect(await provider.reconcile(request)).toEqual(first);
+    const restarted = new DeterministicFlipAcquisitionFixtureProvider();
+    expect(await restarted.reconcile(request, first.providerReference)).toEqual(first);
     expect(first.evidence.providerRequestKey).toBe(request.providerRequestKey);
   });
 });
