@@ -33,6 +33,8 @@ export function CrashHistoryPanel() {
   const [receiptState, setReceiptState] = useState<CrashHistoryLoadState>('empty');
   const requestGuard = useRef(new CrashHistorySessionGuard());
   const sessionToken = authentication.sessionToken;
+  const sessionOwner = crashHistorySessionOwner(authentication.walletAddress, sessionToken);
+  const [stateOwner, setStateOwner] = useState(sessionOwner);
 
   const refresh = useCallback(async () => {
     if (!sessionToken) {
@@ -57,11 +59,12 @@ export function CrashHistoryPanel() {
     setReceipt(null);
     setLoadState('empty');
     setReceiptState('empty');
-    if (sessionToken) void refresh();
+    setStateOwner(sessionOwner);
+    if (sessionOwner) void refresh();
     return () => {
       requestGuard.current.switchSession();
     };
-  }, [refresh, sessionToken]);
+  }, [refresh, sessionOwner]);
 
   useEffect(() => {
     const reconnect = () => void refresh();
@@ -105,8 +108,7 @@ export function CrashHistoryPanel() {
   }
 
   return (
-    <CrashHistorySurface
-      authenticated={Boolean(sessionToken)}
+    <CrashHistoryOwnedSurface
       loadState={loadState}
       onLoadMore={() => void loadMore()}
       onOpenReceipt={(item) => void openReceipt(item)}
@@ -114,8 +116,46 @@ export function CrashHistoryPanel() {
       page={page}
       receipt={receipt}
       receiptState={receiptState}
+      sessionOwner={sessionOwner}
+      stateOwner={stateOwner}
     />
   );
+}
+
+export function CrashHistoryOwnedSurface({
+  loadState,
+  onLoadMore,
+  onOpenReceipt,
+  onRefresh,
+  page,
+  receipt,
+  receiptState,
+  sessionOwner,
+  stateOwner,
+}: Omit<Parameters<typeof CrashHistorySurface>[0], 'authenticated'> & {
+  sessionOwner: string | null;
+  stateOwner: string | null;
+}) {
+  const ownsSession = sessionOwner !== null && sessionOwner === stateOwner;
+  return (
+    <CrashHistorySurface
+      authenticated={sessionOwner !== null}
+      loadState={ownsSession ? loadState : 'empty'}
+      onLoadMore={onLoadMore}
+      onOpenReceipt={onOpenReceipt}
+      onRefresh={onRefresh}
+      page={ownsSession ? page : null}
+      receipt={ownsSession ? receipt : null}
+      receiptState={ownsSession ? receiptState : 'empty'}
+    />
+  );
+}
+
+export function crashHistorySessionOwner(
+  walletAddress: string | null,
+  sessionToken: string | null,
+): string | null {
+  return walletAddress && sessionToken ? `${walletAddress}:${sessionToken}` : null;
 }
 
 export function CrashHistorySurface({

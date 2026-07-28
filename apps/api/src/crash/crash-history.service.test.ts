@@ -151,6 +151,23 @@ describe('CrashHistoryService', () => {
     });
   });
 
+  test.each([
+    'duplicate',
+    'extra',
+  ] as const)('rejects an %s custody intent instead of projecting ambiguous ownership evidence', async (kind) => {
+    const metadata = metadataFixture();
+    const intent = metadata.custodyIntents[0];
+    if (!intent) throw new Error('custody fixture required');
+    metadata.custodyIntents.push({
+      ...intent,
+      id: kind === 'duplicate' ? intent.id : 'crashcustody_unbound_extra',
+    });
+
+    await expect(
+      createService({ findUnique: async () => metadata }).getReceipt(ROUND_ID, WALLET),
+    ).rejects.toMatchObject({ code: 'INVALID_EVIDENCE' });
+  });
+
   test('projects every safe next action and non-final custody state', async () => {
     const active = snapshot();
     active.status = 'active';
@@ -240,12 +257,6 @@ describe('CrashHistoryService', () => {
 
   test('sanitizes malformed recovery evidence and handles every operation projection branch', async () => {
     const metadata = metadataFixture();
-    const intent = metadata.custodyIntents[0];
-    if (!intent) throw new Error('custody fixture required');
-    metadata.custodyIntents[0] = {
-      ...intent,
-      status: 'RECOVERY_REQUIRED',
-    };
     if (!metadata.settlement) throw new Error('settlement fixture required');
     const operation = metadata.settlement.operations[0];
     if (!operation) throw new Error('operation fixture required');
@@ -302,8 +313,8 @@ describe('CrashHistoryService', () => {
       }),
     ).getReceipt(ROUND_ID, WALLET);
 
-    expect(receipt.custody.status).toBe('recovery-required');
-    expect(receipt.finality.custody).toBe('recovery-required');
+    expect(receipt.custody.status).toBe('prepared');
+    expect(receipt.finality.custody).toBe('not-final');
     expect(receipt.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -373,15 +384,49 @@ function createService(
 
 function metadataFixture(withSettlement = true) {
   const custodyIntents: Array<{
+    activationMode: string;
+    approvedRecipient: string | null;
+    architectureVersion: string;
+    assetReference: string;
+    calculatorVersion: string;
     createdAt: Date;
     id: string;
+    network: string;
+    playerWalletReference: string;
+    policyHash: string | null;
+    policyVersion: string | null;
+    recoveryReason: string | null;
+    requestedRecipient: string;
+    roundId: string;
+    rulesHash: string;
+    rulesVersion: string;
+    signingStatus: 'NOT_STARTED';
     stage: number;
+    stateMachineRulesHash: string;
+    stateMachineVersion: string;
     status: 'PREPARED' | 'RECOVERY_REQUIRED';
   }> = [
     {
+      activationMode: 'fixture-only',
+      approvedRecipient: 'fixture-wallet:session-custody',
+      architectureVersion: 'crash-architecture-v1',
+      assetReference: 'fixture-asset:history-stage-1',
+      calculatorVersion: 'dailydraft.crash-calculator.v1',
       createdAt: new Date('2026-07-28T18:00:02.000Z'),
       id: 'crashcustody_safe_reference',
+      network: 'solana-devnet',
+      playerWalletReference: `fixture-wallet:${WALLET}`,
+      policyHash: 'c'.repeat(64),
+      policyVersion: 'custody-v1',
+      recoveryReason: null,
+      requestedRecipient: 'fixture-wallet:session-custody',
+      roundId: ROUND_ID,
+      rulesHash: 'b'.repeat(64),
+      rulesVersion: 'rules-v1',
+      signingStatus: 'NOT_STARTED',
       stage: 1,
+      stateMachineRulesHash: 'a'.repeat(64),
+      stateMachineVersion: 'dailydraft.crash-stage-state.v1',
       status: 'PREPARED',
     },
   ];
@@ -445,6 +490,7 @@ function settlement(
   }> = {},
 ) {
   return {
+    custodyRecipient: 'fixture-wallet:session-custody',
     expectedOperationCount: 1,
     finalizedOperationCount: 0,
     custodyPolicyHash: 'c'.repeat(64),
@@ -524,8 +570,15 @@ function snapshot(): CrashRoundSnapshot {
         fromStatus: 'active',
         kind: 'stage-continued',
         outcome: {
-          providerEvidence: 'must-never-leak',
-          wallet: OTHER_WALLET,
+          custody: {
+            assetReference: 'fixture-asset:history-stage-1',
+            reference: 'crashcustody_safe_reference',
+          },
+          provider: {
+            providerEvidence: 'must-never-leak',
+            stage: 1,
+            wallet: OTHER_WALLET,
+          },
         },
         payment: { providerSignature: 'must-never-leak' },
         scheduledDeadline: '2026-07-28T18:00:31.000Z',

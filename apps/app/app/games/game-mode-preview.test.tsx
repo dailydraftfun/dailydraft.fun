@@ -13,6 +13,7 @@ mock.module('../solana/wallet-auth-provider', () => ({
     signIn: async () => false,
     signOut: async () => undefined,
     status: 'unauthenticated',
+    walletAddress: null,
   }),
 }));
 

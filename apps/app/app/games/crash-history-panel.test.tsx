@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import type { CrashHistoryPage, CrashReceipt } from '@dailydraft/contracts/crash-history';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { actionLabel, CrashHistorySurface } from './crash-history-panel';
+import {
+  actionLabel,
+  CrashHistoryOwnedSurface,
+  CrashHistorySurface,
+  crashHistorySessionOwner,
+} from './crash-history-panel';
 
 describe('Crash history presentation', () => {
   test('renders the authenticated empty, loading, and reconnect-safe error states', () => {
@@ -25,6 +30,28 @@ describe('Crash history presentation', () => {
     expect(markup).toContain('Wallet authentication required');
     expect(markup).toContain('No other wallet’s rounds are discoverable');
     expect(markup).not.toContain('Verify receipt');
+  });
+
+  test('suppresses wallet A state during the render that switches to wallet B', () => {
+    const walletA = crashHistorySessionOwner('wallet-a', 'session-a');
+    const walletB = crashHistorySessionOwner('wallet-b', 'session-b');
+    const markup = renderToStaticMarkup(
+      <CrashHistoryOwnedSurface
+        loadState="ready"
+        onLoadMore={() => undefined}
+        onOpenReceipt={() => undefined}
+        onRefresh={() => undefined}
+        page={page()}
+        receipt={receipt()}
+        receiptState="ready"
+        sessionOwner={walletB}
+        stateOwner={walletA}
+      />,
+    );
+
+    expect(markup).toContain('No history shown');
+    expect(markup).not.toContain('crashround_panelhistory01');
+    expect(markup).not.toContain('Committed game ledger');
   });
 
   test('renders committed, custody, and settlement finality as separate facts', () => {

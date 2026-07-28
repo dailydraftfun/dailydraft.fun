@@ -281,6 +281,51 @@ describe('Crash settlement recovery', () => {
     });
   });
 
+  test.each([
+    'architectureVersion',
+    'stateMachineVersion',
+    'stateMachineRulesHash',
+    'calculatorVersion',
+    'rulesVersion',
+    'rulesHash',
+    'riskRulesVersion',
+    'riskRulesHash',
+  ] as const)('rejects a pending settlement with a mismatched %s binding', async (field) => {
+    const fixture = settlementFixture({ outcome: 'cash-out' });
+    fixture.provider.failDefinitelyOnce('transfer');
+    await fixture.service.resumeFixtureSettlement(ROUND_ID);
+    const settlement = fixture.database.settlement;
+    if (!settlement) throw new Error('settlement required');
+    settlement[field] = field.endsWith('Hash') ? hash(`tampered-${field}`) : `tampered-${field}`;
+
+    await expect(fixture.service.findFixtureSettlement(ROUND_ID)).rejects.toMatchObject({
+      code: 'INVALID_EVIDENCE',
+    });
+  });
+
+  test.each([
+    'missing',
+    'duplicate',
+    'extra',
+  ] as const)('rejects a %s custody intent set before creating a settlement plan', async (kind) => {
+    const fixture = settlementFixture({ outcome: 'cash-out', promisedAsset: true });
+    const intents = fixture.database.round.custodyIntents;
+    if (!Array.isArray(intents) || !intents[0]) throw new Error('custody intent required');
+    if (kind === 'missing') {
+      intents.pop();
+    } else {
+      intents.push({
+        ...intents[0],
+        id: kind === 'duplicate' ? intents[0].id : 'crashcustody_unbound_extra',
+      });
+    }
+
+    await expect(fixture.service.resumeFixtureSettlement(ROUND_ID)).rejects.toMatchObject({
+      code: 'INVALID_EVIDENCE',
+    });
+    expect(fixture.database.settlement).toBeNull();
+  });
+
   test('detects a changed terminal plan under the same durable round', async () => {
     const fixture = settlementFixture({ outcome: 'cash-out' });
     fixture.provider.failDefinitelyOnce('transfer');

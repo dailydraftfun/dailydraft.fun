@@ -26,9 +26,26 @@ type CrashHistoryMetadata = Prisma.CrashRoundGetPayload<{
     createdAt: true;
     custodyIntents: {
       select: {
+        activationMode: true;
+        approvedRecipient: true;
+        architectureVersion: true;
+        assetReference: true;
+        calculatorVersion: true;
         createdAt: true;
         id: true;
+        network: true;
+        playerWalletReference: true;
+        policyHash: true;
+        policyVersion: true;
+        recoveryReason: true;
+        requestedRecipient: true;
+        roundId: true;
+        rulesHash: true;
+        rulesVersion: true;
+        signingStatus: true;
         stage: true;
+        stateMachineRulesHash: true;
+        stateMachineVersion: true;
         status: true;
       };
     };
@@ -115,7 +132,29 @@ export class CrashHistoryService {
           createdAt: true,
           custodyIntents: {
             orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-            select: { createdAt: true, id: true, stage: true, status: true },
+            select: {
+              activationMode: true,
+              approvedRecipient: true,
+              architectureVersion: true,
+              assetReference: true,
+              calculatorVersion: true,
+              createdAt: true,
+              id: true,
+              network: true,
+              playerWalletReference: true,
+              policyHash: true,
+              policyVersion: true,
+              recoveryReason: true,
+              requestedRecipient: true,
+              roundId: true,
+              rulesHash: true,
+              rulesVersion: true,
+              signingStatus: true,
+              stage: true,
+              stateMachineRulesHash: true,
+              stateMachineVersion: true,
+              status: true,
+            },
           },
           id: true,
           playerWalletReference: true,
@@ -149,7 +188,7 @@ export class CrashHistoryService {
     if (!metadata || metadata.playerWalletReference !== fixtureWallet(playerWallet)) {
       throw new CrashStateMachineError('NOT_FOUND', `Crash round ${roundId} was not found`);
     }
-    assertReceiptMetadata(round, metadata, settlement);
+    const custodyBinding = assertReceiptMetadata(round, metadata, settlement);
 
     const settlementStatus = settlement?.status ?? round.settlementStatus;
     const custody = custodyState(metadata, settlementStatus);
@@ -163,8 +202,10 @@ export class CrashHistoryService {
       bindings: {
         architectureVersion: round.architectureVersion,
         calculatorVersion: round.calculatorVersion,
-        custodyPolicyHash: metadata.settlement?.custodyPolicyHash ?? null,
-        custodyPolicyVersion: settlement?.custodyPolicyVersion ?? null,
+        custodyPolicyHash:
+          metadata.settlement?.custodyPolicyHash ?? custodyBinding?.policyHash ?? null,
+        custodyPolicyVersion:
+          settlement?.custodyPolicyVersion ?? custodyBinding?.policyVersion ?? null,
         inventoryPolicyHash: settlement?.inventoryPolicyHash ?? null,
         inventoryPolicyVersion: settlement?.inventoryPolicyVersion ?? null,
         riskRulesHash: round.riskRulesHash,
@@ -341,7 +382,8 @@ function assertReceiptMetadata(
   round: CrashRoundSnapshot,
   metadata: CrashHistoryMetadata,
   settlement: Awaited<ReturnType<CrashSettlementService['findFixtureSettlement']>>,
-): void {
+): { policyHash: string; policyVersion: string } | null {
+  const custodyBinding = assertReceiptCustodyEvidence(round, metadata.custodyIntents, settlement);
   const terminal = round.status !== 'active';
   if (
     (terminal && (!settlement || !metadata.settlement)) ||
@@ -352,7 +394,7 @@ function assertReceiptMetadata(
       'Crash receipt settlement evidence is incomplete',
     );
   }
-  if (!settlement || !metadata.settlement) return;
+  if (!settlement || !metadata.settlement) return custodyBinding;
   const operations = [...metadata.settlement.operations].sort(
     (left, right) => left.sequence - right.sequence,
   );
@@ -377,6 +419,111 @@ function assertReceiptMetadata(
       'Crash receipt metadata conflicts with verified settlement',
     );
   }
+  return custodyBinding;
+}
+
+function assertReceiptCustodyEvidence(
+  round: CrashRoundSnapshot,
+  intents: CrashHistoryMetadata['custodyIntents'],
+  settlement: Awaited<ReturnType<CrashSettlementService['findFixtureSettlement']>>,
+): { policyHash: string; policyVersion: string } | null {
+  const expected = round.transitions.flatMap((transition) => {
+    if (!transition.outcome) return [];
+    if (
+      typeof transition.outcome !== 'object' ||
+      Array.isArray(transition.outcome) ||
+      transition.outcome === null
+    ) {
+      throw invalidReceiptCustody();
+    }
+    const outcome = transition.outcome as Record<string, unknown>;
+    const custody = outcome.custody;
+    const provider = outcome.provider;
+    if (
+      !custody ||
+      typeof custody !== 'object' ||
+      Array.isArray(custody) ||
+      !provider ||
+      typeof provider !== 'object' ||
+      Array.isArray(provider)
+    ) {
+      throw invalidReceiptCustody();
+    }
+    const custodyRecord = custody as Record<string, unknown>;
+    const providerRecord = provider as Record<string, unknown>;
+    if (
+      typeof custodyRecord.reference !== 'string' ||
+      typeof custodyRecord.assetReference !== 'string' ||
+      !Number.isInteger(providerRecord.stage) ||
+      Number(providerRecord.stage) < 1
+    ) {
+      throw invalidReceiptCustody();
+    }
+    return [
+      {
+        assetReference: custodyRecord.assetReference,
+        id: custodyRecord.reference,
+        stage: Number(providerRecord.stage),
+      },
+    ];
+  });
+  if (expected.length !== intents.length) throw invalidReceiptCustody();
+
+  const matched = new Set<string>();
+  for (const binding of expected) {
+    const intent = intents.find(({ id }) => id === binding.id);
+    if (
+      !intent ||
+      matched.has(intent.id) ||
+      intent.roundId !== round.id ||
+      intent.assetReference !== binding.assetReference ||
+      intent.stage !== binding.stage ||
+      intent.activationMode !== 'fixture-only' ||
+      intent.network !== 'solana-devnet' ||
+      intent.playerWalletReference !== round.playerWalletReference ||
+      intent.status !== 'PREPARED' ||
+      intent.signingStatus !== 'NOT_STARTED' ||
+      intent.recoveryReason !== null ||
+      !intent.policyHash ||
+      !intent.policyVersion ||
+      !intent.approvedRecipient ||
+      intent.requestedRecipient !== intent.approvedRecipient ||
+      intent.architectureVersion !== round.architectureVersion ||
+      intent.stateMachineVersion !== round.stateMachineVersion ||
+      intent.stateMachineRulesHash !== round.stateMachineRulesHash ||
+      intent.calculatorVersion !== round.calculatorVersion ||
+      intent.rulesVersion !== round.rulesVersion ||
+      intent.rulesHash !== round.rulesHash ||
+      (settlement !== null &&
+        (intent.approvedRecipient !== settlement.custodyRecipient ||
+          intent.policyHash !== settlement.custodyPolicyHash ||
+          intent.policyVersion !== settlement.custodyPolicyVersion))
+    ) {
+      throw invalidReceiptCustody();
+    }
+    matched.add(intent.id);
+  }
+
+  const first = intents[0];
+  if (!first) return null;
+  if (
+    intents.some(
+      ({ policyHash, policyVersion }) =>
+        policyHash !== first.policyHash || policyVersion !== first.policyVersion,
+    ) ||
+    !first.policyHash ||
+    !first.policyVersion
+  ) {
+    throw invalidReceiptCustody();
+  }
+  return { policyHash: first.policyHash, policyVersion: first.policyVersion };
+}
+
+function invalidReceiptCustody(): CrashStateMachineError {
+  return new CrashStateMachineError(
+    'INVALID_EVIDENCE',
+    'Crash receipt custody evidence is incomplete or ambiguous',
+  );
 }
 
 function transitionAmount(value: unknown): CrashReceiptEvent['amount'] {

@@ -66,6 +66,7 @@ interface PlannedOperation {
 }
 
 export interface CrashSettlementSnapshot {
+  custodyRecipient: string;
   custodyPolicyHash: string;
   custodyPolicyVersion: string;
   expectedOperationCount: number;
@@ -641,30 +642,7 @@ function planOperations(
 ): PlannedOperation[] {
   const operations: Omit<PlannedOperation, 'providerRequestKey' | 'requestHash' | 'sequence'>[] =
     [];
-  const promisedAssets = round.transitions.flatMap((transition) => {
-    if (!transition.outcome) return [];
-    const outcome = parseOutcome(transition.outcome);
-    const intent = round.custodyIntents.find(
-      (candidate) =>
-        candidate.id === outcome.custodyReference &&
-        candidate.assetReference === outcome.assetReference &&
-        candidate.stage === outcome.stage,
-    );
-    if (
-      !intent ||
-      intent.status !== 'PREPARED' ||
-      intent.signingStatus !== 'NOT_STARTED' ||
-      intent.approvedRecipient !== policy.approvedSessionCustody ||
-      intent.policyHash !== policy.custodyPolicyHash ||
-      intent.policyVersion !== policy.custodyPolicyVersion
-    ) {
-      throw new CrashStateMachineError(
-        'INVALID_EVIDENCE',
-        'Crash settlement asset lacks approved custody evidence',
-      );
-    }
-    return [{ ...outcome, sourceReference: intent.sourceWalletReference }];
-  });
+  const promisedAssets = verifiedPromisedAssets(round, policy);
 
   for (const asset of promisedAssets) {
     operations.push({
@@ -740,6 +718,51 @@ function planOperations(
       }),
     );
     return { ...operation, providerRequestKey, requestHash, sequence };
+  });
+}
+
+function verifiedPromisedAssets(
+  round: TerminalRound,
+  policy: CrashSettlementPolicy,
+): Array<ReturnType<typeof parseOutcome> & { sourceReference: string }> {
+  const outcomes = round.transitions.flatMap((transition) =>
+    transition.outcome ? [parseOutcome(transition.outcome)] : [],
+  );
+  if (outcomes.length !== round.custodyIntents.length) {
+    throw invalidSettlementEvidence('custody intent set is incomplete or ambiguous');
+  }
+  const matched = new Set<string>();
+  return outcomes.map((outcome) => {
+    const intent = round.custodyIntents.find(
+      (candidate) => candidate.id === outcome.custodyReference,
+    );
+    if (
+      !intent ||
+      matched.has(intent.id) ||
+      intent.roundId !== round.id ||
+      intent.assetReference !== outcome.assetReference ||
+      intent.stage !== outcome.stage ||
+      intent.status !== 'PREPARED' ||
+      intent.signingStatus !== 'NOT_STARTED' ||
+      intent.recoveryReason !== null ||
+      intent.activationMode !== 'fixture-only' ||
+      intent.network !== 'solana-devnet' ||
+      intent.playerWalletReference !== round.playerWalletReference ||
+      intent.requestedRecipient !== policy.approvedSessionCustody ||
+      intent.approvedRecipient !== policy.approvedSessionCustody ||
+      intent.policyHash !== policy.custodyPolicyHash ||
+      intent.policyVersion !== policy.custodyPolicyVersion ||
+      intent.architectureVersion !== round.architectureVersion ||
+      intent.stateMachineVersion !== round.stateMachineVersion ||
+      intent.stateMachineRulesHash !== round.stateMachineRulesHash ||
+      intent.calculatorVersion !== round.calculatorVersion ||
+      intent.rulesVersion !== round.rulesVersion ||
+      intent.rulesHash !== round.rulesHash
+    ) {
+      throw invalidSettlementEvidence('custody intent binding changed');
+    }
+    matched.add(intent.id);
+    return { ...outcome, sourceReference: intent.sourceWalletReference };
   });
 }
 
@@ -873,6 +896,14 @@ function assertVerifiedSettlement(
     settlement.inventoryPolicyVersion === policy.inventoryPolicyVersion &&
     settlement.settlementPolicyHash === policy.policyHash &&
     settlement.settlementPolicyVersion === policy.policyVersion &&
+    settlement.architectureVersion === round.architectureVersion &&
+    settlement.stateMachineVersion === round.stateMachineVersion &&
+    settlement.stateMachineRulesHash === round.stateMachineRulesHash &&
+    settlement.calculatorVersion === round.calculatorVersion &&
+    settlement.rulesVersion === round.rulesVersion &&
+    settlement.rulesHash === round.rulesHash &&
+    settlement.riskRulesVersion === round.riskRulesVersion &&
+    settlement.riskRulesHash === round.riskRulesHash &&
     settlement.expectedOperationCount === expected.operations.length &&
     settlement.operations.length === expected.operations.length;
   if (!exactBinding) throw invalidSettlementEvidence('durable bindings changed');
@@ -966,6 +997,8 @@ function assertOperationEvidence(operation: SettlementRecord['operations'][numbe
     operation.failureCode === null &&
     Boolean(operation.providerSignature) &&
     Boolean(operation.providerResultHash && HASH_PATTERN.test(operation.providerResultHash)) &&
+    operation.providerResultHash ===
+      sha256(`${operation.requestHash}:${operation.providerSignature ?? ''}`) &&
     providerEvidence?.providerRequestKey === operation.providerRequestKey &&
     providerEvidence.schemaVersion === CRASH_SETTLEMENT_PROVIDER_FIXTURE_VERSION &&
     Object.keys(providerEvidence).sort().join(',') === 'providerRequestKey,schemaVersion' &&
@@ -976,12 +1009,15 @@ function assertOperationEvidence(operation: SettlementRecord['operations'][numbe
     operation.failureCode === null &&
     operation.providerSignature === null &&
     operation.providerResultHash === null &&
+    operation.providerEvidence === null &&
     operation.finalizedAt === null;
   const recovering =
     operation.status === 'RECOVERY_REQUIRED' &&
     operation.recoveryMode !== 'NONE' &&
     Boolean(operation.failureCode) &&
+    (operation.recoveryMode === 'RECONCILE_ONLY' || operation.providerSignature === null) &&
     operation.providerResultHash === null &&
+    operation.providerEvidence === null &&
     operation.finalizedAt === null;
   if (!finalized && !prepared && !recovering) {
     throw invalidSettlementEvidence('operation finality is ambiguous');
@@ -1231,6 +1267,7 @@ function money(amount: string): Money {
 
 function toSnapshot(row: SettlementRecord): CrashSettlementSnapshot {
   return {
+    custodyRecipient: row.custodyRecipient,
     custodyPolicyHash: row.custodyPolicyHash,
     custodyPolicyVersion: row.custodyPolicyVersion,
     expectedOperationCount: row.expectedOperationCount,
