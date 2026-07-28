@@ -315,6 +315,7 @@ function crashHistoryPayload(): CrashHistoryPage {
       {
         createdAt: receipt.createdAt,
         currentStage: receipt.stage,
+        decisionDeadline: receipt.decisionDeadline,
         gameState: {
           committed: true,
           status: receipt.status,
@@ -322,6 +323,7 @@ function crashHistoryPayload(): CrashHistoryPage {
         },
         pot: receipt.pot,
         receiptHref: `/v1/crash/rounds/${receipt.roundId}/receipt`,
+        resolution: receipt.resolution,
         roundId: receipt.roundId,
         safeNextAction: receipt.safeNextAction,
         settlement: {
@@ -358,6 +360,7 @@ function crashReceiptPayload(): CrashReceipt {
       stateMachineVersion: 'dailydraft.crash-stage-state.v1',
     },
     createdAt: '2026-07-28T12:00:00.000Z',
+    decisionDeadline: null,
     custody: {
       preparedIntentCount: 1,
       recoveryRequiredIntentCount: 0,
@@ -408,6 +411,7 @@ function crashReceiptPayload(): CrashReceipt {
       exposesWalletAddresses: false,
     },
     roundId: 'crashround_contract01',
+    resolution: 'disputed',
     safeNextAction: 'review-receipt',
     schemaVersion: CRASH_RECEIPT_SCHEMA_VERSION,
     settlement: {

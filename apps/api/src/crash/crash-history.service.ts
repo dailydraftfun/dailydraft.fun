@@ -6,6 +6,7 @@ import {
   type CrashHistoryPage,
   type CrashReceipt,
   type CrashReceiptEvent,
+  type CrashResolutionStatus,
   type CrashSafeNextAction,
   type CrashSettlementPublicStatus,
 } from '@dailydraft/contracts/crash-history';
@@ -54,20 +55,6 @@ type CrashHistoryMetadata = Prisma.CrashRoundGetPayload<{
     settlement: {
       select: {
         custodyPolicyHash: true;
-        operations: {
-          select: {
-            amount: true;
-            createdAt: true;
-            decimals: true;
-            failureCode: true;
-            finalizedAt: true;
-            operationKey: true;
-            sequence: true;
-            stage: true;
-            status: true;
-            updatedAt: true;
-          };
-        };
         settlementPolicyHash: true;
       };
     };
@@ -161,21 +148,6 @@ export class CrashHistoryService {
           settlement: {
             select: {
               custodyPolicyHash: true,
-              operations: {
-                orderBy: { sequence: 'asc' },
-                select: {
-                  amount: true,
-                  createdAt: true,
-                  decimals: true,
-                  failureCode: true,
-                  finalizedAt: true,
-                  operationKey: true,
-                  sequence: true,
-                  stage: true,
-                  status: true,
-                  updatedAt: true,
-                },
-              },
               settlementPolicyHash: true,
             },
           },
@@ -195,7 +167,7 @@ export class CrashHistoryService {
     const events = [
       ...round.transitions.map(transitionEvent),
       ...metadata.custodyIntents.map(custodyEvent),
-      ...(metadata.settlement?.operations.map(settlementEvent) ?? []),
+      ...(settlement?.operations.map(settlementEvent) ?? []),
     ].sort(compareEvents);
 
     return {
@@ -219,6 +191,7 @@ export class CrashHistoryService {
         stateMachineVersion: round.stateMachineVersion,
       },
       createdAt: metadata.createdAt.toISOString(),
+      decisionDeadline: round.decisionDeadline,
       custody,
       events,
       finality: {
@@ -239,6 +212,7 @@ export class CrashHistoryService {
         exposesWalletAddresses: false,
       },
       roundId: round.id,
+      resolution: resolutionStatus(round, settlementStatus, settlement),
       safeNextAction: safeNextAction(round, settlementStatus),
       schemaVersion: CRASH_RECEIPT_SCHEMA_VERSION,
       settlement: {
@@ -282,6 +256,7 @@ function historyItem(receipt: CrashReceipt): CrashHistoryItem {
   return {
     createdAt: receipt.createdAt,
     currentStage: receipt.stage,
+    decisionDeadline: receipt.decisionDeadline,
     gameState: {
       committed: true,
       status: receipt.status,
@@ -289,6 +264,7 @@ function historyItem(receipt: CrashReceipt): CrashHistoryItem {
     },
     pot: receipt.pot,
     receiptHref: `/v1/crash/rounds/${receipt.roundId}/receipt`,
+    resolution: receipt.resolution,
     roundId: receipt.roundId,
     safeNextAction: receipt.safeNextAction,
     settlement: {
@@ -336,7 +312,9 @@ function custodyEvent(intent: CrashHistoryMetadata['custodyIntents'][number]): C
 }
 
 function settlementEvent(
-  operation: NonNullable<CrashHistoryMetadata['settlement']>['operations'][number],
+  operation: NonNullable<
+    Awaited<ReturnType<CrashSettlementService['findFixtureSettlement']>>
+  >['operations'][number],
 ): CrashReceiptEvent {
   return {
     amount:
@@ -346,12 +324,12 @@ function settlementEvent(
     decision: null,
     eventId: `settlement:${operation.sequence}`,
     kind:
-      operation.status === 'FINALIZED'
+      operation.status === 'finalized'
         ? 'settlement-finalized'
-        : operation.status === 'RECOVERY_REQUIRED'
+        : operation.status === 'recovery-required'
           ? 'settlement-recovery-required'
           : 'settlement-prepared',
-    occurredAt: (operation.finalizedAt ?? operation.updatedAt ?? operation.createdAt).toISOString(),
+    occurredAt: operation.finalizedAt ?? operation.updatedAt ?? operation.createdAt,
     reference: publicReference('settlement', operation.operationKey),
     stage: operation.stage ?? operation.sequence,
     terminalReason: publicRecoveryCode(operation.failureCode),
@@ -395,24 +373,9 @@ function assertReceiptMetadata(
     );
   }
   if (!settlement || !metadata.settlement) return custodyBinding;
-  const operations = [...metadata.settlement.operations].sort(
-    (left, right) => left.sequence - right.sequence,
-  );
   if (
     metadata.settlement.custodyPolicyHash !== settlement.custodyPolicyHash ||
-    metadata.settlement.settlementPolicyHash !== settlement.settlementPolicyHash ||
-    operations.length !== settlement.expectedOperationCount ||
-    operations.filter(({ status }) => status === 'FINALIZED').length !==
-      settlement.finalizedOperationCount ||
-    operations.some((operation, index) => {
-      const verified = settlement.operations[index];
-      return (
-        !verified ||
-        operation.sequence !== verified.sequence ||
-        operation.operationKey !== verified.operationKey ||
-        operation.status.toLowerCase().replace('_', '-') !== verified.status
-      );
-    })
+    metadata.settlement.settlementPolicyHash !== settlement.settlementPolicyHash
   ) {
     throw new CrashStateMachineError(
       'INVALID_EVIDENCE',
@@ -541,6 +504,24 @@ function safeMoney(value: unknown): CrashReceiptEvent['amount'] {
     money.decimals === 6
     ? { amount: money.amount, currency: 'USDC', decimals: 6 }
     : null;
+}
+
+function resolutionStatus(
+  round: CrashRoundSnapshot,
+  settlementStatus: CrashSettlementPublicStatus,
+  settlement: Awaited<ReturnType<CrashSettlementService['findFixtureSettlement']>>,
+): CrashResolutionStatus {
+  if (round.status === 'active') return 'active';
+  if (settlementStatus === 'pending') return 'recovering';
+  if (settlementStatus === 'recovery-required') {
+    const operation = settlement?.operations.find(({ status }) => status === 'recovery-required');
+    if (operation?.recoveryMode === 'reconcile-only') return 'disputed';
+    if (operation?.recoveryMode === 'retryable') return 'failed';
+    return 'recovering';
+  }
+  if (round.status === 'busted') return 'bust';
+  if (round.status === 'defaulted') return 'timed-out';
+  return 'cash-out';
 }
 
 function safeNextAction(

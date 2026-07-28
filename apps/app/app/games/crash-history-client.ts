@@ -109,9 +109,11 @@ export function parseCrashReceipt(value: unknown): CrashReceipt {
     Number(value.version) < 1 ||
     !isIso(value.createdAt) ||
     !isIso(value.updatedAt) ||
+    !isDeadline(value.decisionDeadline, value.status) ||
     !(value.terminalAt === null || isIso(value.terminalAt)) ||
     !(value.terminalReason === null || typeof value.terminalReason === 'string') ||
     !isMoney(value.pot) ||
+    !isResolution(value.resolution, value.status, value.settlement) ||
     !isSafeNextAction(value.safeNextAction) ||
     !isObject(value.privacy) ||
     value.privacy.exposesProviderSignatures !== false ||
@@ -161,6 +163,8 @@ function parseHistoryItem(value: unknown): CrashHistoryItem {
     !isObject(value.gameState) ||
     value.gameState.committed !== true ||
     !isStatus(value.gameState.status) ||
+    !isDeadline(value.decisionDeadline, value.gameState.status) ||
+    !isResolution(value.resolution, value.gameState.status, value.settlement) ||
     !Number.isInteger(value.gameState.version) ||
     Number(value.gameState.version) < 1 ||
     !isObject(value.settlement) ||
@@ -271,6 +275,33 @@ function isSafeNextAction(value: unknown): value is CrashSafeNextAction {
     'review-receipt',
     'wait-for-settlement',
   ].includes(String(value));
+}
+
+function isDeadline(value: unknown, status: unknown): value is string | null {
+  return status === 'active' ? isIso(value) : value === null;
+}
+
+function isResolution(
+  value: unknown,
+  status: unknown,
+  settlement: unknown,
+): value is CrashReceipt['resolution'] {
+  if (!isObject(settlement) || !isSettlementStatus(settlement.status)) return false;
+  if (value === 'active') return status === 'active' && settlement.status === 'not-required';
+  if (value === 'recovering') {
+    return status !== 'active' && ['pending', 'recovery-required'].includes(settlement.status);
+  }
+  if (value === 'disputed' || value === 'failed') {
+    return status !== 'active' && settlement.status === 'recovery-required';
+  }
+  if (value === 'refunded') return status !== 'active' && settlement.status === 'settled';
+  if (value === 'bust') return status === 'busted' && settlement.status === 'settled';
+  if (value === 'timed-out') return status === 'defaulted' && settlement.status === 'settled';
+  return (
+    value === 'cash-out' &&
+    (status === 'cashed-out' || status === 'completed') &&
+    settlement.status === 'settled'
+  );
 }
 
 function nonNegativeInteger(value: unknown): boolean {

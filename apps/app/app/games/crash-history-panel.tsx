@@ -220,11 +220,19 @@ export function CrashHistorySurface({
                   </time>
                 </div>
                 <p className="mt-2 text-base font-semibold text-primary">
-                  {statusLabel(item.gameState.status)}
+                  {resolutionLabel(item.resolution)}
                 </p>
                 <p className="mt-1 text-sm text-secondary">
                   {formatMoney(item.pot.amount)} · {actionLabel(item.safeNextAction)}
                 </p>
+                {item.decisionDeadline ? (
+                  <p className="mt-1 text-xs text-warning">
+                    Decision due{' '}
+                    <time dateTime={item.decisionDeadline}>
+                      {formatTimestamp(item.decisionDeadline)}
+                    </time>
+                  </p>
+                ) : null}
                 <p className="mt-2 truncate font-mono text-[11px] text-muted">{item.roundId}</p>
               </div>
               <button
@@ -320,9 +328,23 @@ function ReceiptDetail({
           </dd>
         </div>
         <div>
+          <dt>Resolution</dt>
+          <dd>{resolutionLabel(receipt.resolution)}</dd>
+        </div>
+        <div>
           <dt>Safe next action</dt>
           <dd>{actionLabel(receipt.safeNextAction)}</dd>
         </div>
+        {receipt.decisionDeadline ? (
+          <div>
+            <dt>Decision deadline</dt>
+            <dd>
+              <time dateTime={receipt.decisionDeadline}>
+                {formatTimestamp(receipt.decisionDeadline)}
+              </time>
+            </dd>
+          </div>
+        ) : null}
       </dl>
       <ol className="mt-5 grid gap-2">
         {receipt.events.map((event) => (
@@ -424,13 +446,16 @@ export function actionLabel(action: CrashHistoryItem['safeNextAction']): string 
   }[action];
 }
 
-function statusLabel(status: CrashHistoryItem['gameState']['status']): string {
+export function resolutionLabel(status: CrashHistoryItem['resolution']): string {
   return {
     active: 'Run in progress',
-    busted: 'Run busted',
-    'cashed-out': 'Cash-out committed',
-    completed: 'All stages completed',
-    defaulted: 'Deadline forfeit committed',
+    bust: 'Run busted',
+    'cash-out': 'Cash-out committed',
+    disputed: 'Settlement disputed',
+    failed: 'Settlement action failed',
+    recovering: 'Settlement recovering',
+    refunded: 'Refund finalized',
+    'timed-out': 'Deadline forfeit committed',
   }[status];
 }
 

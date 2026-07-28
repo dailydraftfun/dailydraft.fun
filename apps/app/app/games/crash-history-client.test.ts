@@ -150,6 +150,36 @@ describe('Crash history client', () => {
       }),
     ).toThrow('malformed private history');
   });
+
+  test.each([
+    ['active', 'active', 'not-required', '2026-07-28T18:00:30.000Z'],
+    ['cash-out', 'cashed-out', 'settled', null],
+    ['bust', 'busted', 'settled', null],
+    ['timed-out', 'defaulted', 'settled', null],
+    ['recovering', 'cashed-out', 'pending', null],
+    ['disputed', 'cashed-out', 'recovery-required', null],
+    ['refunded', 'cashed-out', 'settled', null],
+    ['failed', 'cashed-out', 'recovery-required', null],
+  ] as const)('accepts a contract-consistent %s resolution and durable deadline', (resolution, status, settlementStatus, decisionDeadline) => {
+    const payload = historyPage();
+    const item = payload.data[0];
+    if (!item) throw new Error('history fixture required');
+
+    expect(() =>
+      parseCrashHistoryPage({
+        ...payload,
+        data: [
+          {
+            ...item,
+            decisionDeadline,
+            gameState: { ...item.gameState, status },
+            resolution,
+            settlement: { ...item.settlement, status: settlementStatus },
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
 });
 
 function historyPage() {
@@ -158,9 +188,11 @@ function historyPage() {
       {
         createdAt: '2026-07-28T18:00:00.000Z',
         currentStage: 2,
+        decisionDeadline: null,
         gameState: { committed: true, status: 'cashed-out', version: 2 },
         pot: { amount: '2000000', currency: 'USDC', decimals: 6 },
         receiptHref: `/v1/crash/rounds/${ROUND_ID}/receipt`,
+        resolution: 'disputed',
         roundId: ROUND_ID,
         safeNextAction: 'retry-settlement',
         settlement: {
@@ -197,6 +229,7 @@ function receipt() {
       stateMachineVersion: 'state-v1',
     },
     createdAt: '2026-07-28T18:00:00.000Z',
+    decisionDeadline: null,
     custody: {
       preparedIntentCount: 1,
       recoveryRequiredIntentCount: 0,
@@ -237,6 +270,7 @@ function receipt() {
       exposesWalletAddresses: false,
     },
     roundId: ROUND_ID,
+    resolution: 'disputed',
     safeNextAction: 'retry-settlement',
     schemaVersion: 'dailydraft.crash-receipt.v1',
     settlement: {

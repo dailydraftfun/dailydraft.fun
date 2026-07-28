@@ -74,6 +74,8 @@ describe('CrashHistoryService', () => {
       settlement: 'recovery-required',
     });
     expect(receipt.safeNextAction).toBe('retry-settlement');
+    expect(receipt.decisionDeadline).toBeNull();
+    expect(receipt.resolution).toBe('disputed');
     expect(receipt.bindings).toMatchObject({
       custodyPolicyHash: 'c'.repeat(64),
       custodyPolicyVersion: 'custody-v1',
@@ -180,6 +182,8 @@ describe('CrashHistoryService', () => {
       WALLET,
     );
     expect(choose.safeNextAction).toBe('choose-action');
+    expect(choose.decisionDeadline).toBe('2026-07-28T18:00:30.000Z');
+    expect(choose.resolution).toBe('active');
     expect(choose.custody.status).toBe('prepared');
 
     active.decisionDeadline = null;
@@ -218,6 +222,7 @@ describe('CrashHistoryService', () => {
       }),
     ).getReceipt(ROUND_ID, WALLET);
     expect(pending.safeNextAction).toBe('wait-for-settlement');
+    expect(pending.resolution).toBe('recovering');
 
     terminal.settlementStatus = 'settled';
     terminal.settlementReceiptHash = 'f'.repeat(64);
@@ -253,9 +258,82 @@ describe('CrashHistoryService', () => {
     ).getReceipt(ROUND_ID, WALLET);
     expect(settled.safeNextAction).toBe('review-receipt');
     expect(settled.finality.custody).toBe('settled');
+    expect(settled.resolution).toBe('cash-out');
+
+    terminal.status = 'busted';
+    const busted = await createService(
+      { findUnique: async () => settledMetadata },
+      { findRound: async () => terminal },
+      settlement({
+        finalizedOperationCount: 1,
+        operations: [
+          {
+            failureCode: null,
+            kind: 'transfer',
+            operationKey: 'operation:safe-reference',
+            providerSignature: 'provider-signature-secret',
+            recoveryMode: 'none',
+            sequence: 1,
+            status: 'finalized',
+          },
+        ],
+        receiptHash: 'f'.repeat(64),
+        recoveryReason: null,
+        status: 'settled',
+      }),
+    ).getReceipt(ROUND_ID, WALLET);
+    expect(busted.resolution).toBe('bust');
+
+    terminal.status = 'defaulted';
+    const timedOut = await createService(
+      { findUnique: async () => settledMetadata },
+      { findRound: async () => terminal },
+      settlement({
+        finalizedOperationCount: 1,
+        operations: [
+          {
+            failureCode: null,
+            kind: 'transfer',
+            operationKey: 'operation:safe-reference',
+            providerSignature: 'provider-signature-secret',
+            recoveryMode: 'none',
+            sequence: 1,
+            status: 'finalized',
+          },
+        ],
+        receiptHash: 'f'.repeat(64),
+        recoveryReason: null,
+        status: 'settled',
+      }),
+    ).getReceipt(ROUND_ID, WALLET);
+    expect(timedOut.resolution).toBe('timed-out');
+
+    terminal.status = 'cashed-out';
+    terminal.settlementStatus = 'recovery-required';
+    terminal.settlementReceiptHash = null;
+    terminal.settledAt = null;
+    const failed = await createService(
+      {},
+      { findRound: async () => terminal },
+      settlement({
+        operations: [
+          {
+            failureCode: 'FIXTURE_TRANSFER_NOT_APPLIED',
+            kind: 'transfer',
+            operationKey: 'operation:safe-reference',
+            providerSignature: null,
+            recoveryMode: 'retryable',
+            sequence: 1,
+            status: 'recovery-required',
+          },
+        ],
+        recoveryReason: 'FIXTURE_TRANSFER_NOT_APPLIED',
+      }),
+    ).getReceipt(ROUND_ID, WALLET);
+    expect(failed.resolution).toBe('failed');
   });
 
-  test('sanitizes malformed recovery evidence and handles every operation projection branch', async () => {
+  test('projects only the verified settlement snapshot across a concurrent metadata contradiction', async () => {
     const metadata = metadataFixture();
     if (!metadata.settlement) throw new Error('settlement fixture required');
     const operation = metadata.settlement.operations[0];
@@ -263,7 +341,8 @@ describe('CrashHistoryService', () => {
     metadata.settlement.operations = [
       {
         ...operation,
-        failureCode: 'unsafe recovery reason with spaces and wallet data',
+        amount: '999999999',
+        failureCode: 'CONTRADICTORY_METADATA_CODE',
         status: 'FINALIZED',
       },
       {
@@ -291,6 +370,7 @@ describe('CrashHistoryService', () => {
         finalizedOperationCount: 1,
         operations: [
           {
+            amount: '2000000',
             failureCode: 'unsafe recovery reason with spaces and wallet data',
             kind: 'transfer',
             operationKey: operation.operationKey,
@@ -300,6 +380,7 @@ describe('CrashHistoryService', () => {
             status: 'finalized',
           },
           {
+            amount: '01',
             failureCode: null,
             kind: 'transfer',
             operationKey: 'operation:prepared',
@@ -334,6 +415,8 @@ describe('CrashHistoryService', () => {
     );
     expect(receipt.settlement.recoveryReason).toBe('RECOVERY_REQUIRED');
     expect(JSON.stringify(receipt)).not.toContain('crashsettlementop_internal_01');
+    expect(JSON.stringify(receipt)).not.toContain('CONTRADICTORY_METADATA_CODE');
+    expect(JSON.stringify(receipt)).not.toContain('999999999');
   });
 
   test.each([
@@ -477,13 +560,19 @@ function settlement(
     finalizedOperationCount: number;
     expectedOperationCount: number;
     operations: Array<{
+      amount?: string;
+      createdAt?: string;
+      decimals?: 6;
       failureCode: string | null;
+      finalizedAt?: string | null;
       kind: 'liquidate' | 'open' | 'purchase' | 'transfer';
       operationKey: string;
       providerSignature: string | null;
       recoveryMode: 'none' | 'reconcile-only' | 'retryable';
       sequence: number;
+      stage?: number | null;
       status: 'finalized' | 'prepared' | 'recovery-required';
+      updatedAt?: string;
     }>;
     receiptHash: string | null;
     recoveryReason: string | null;
@@ -499,17 +588,6 @@ function settlement(
     inventoryPolicyHash: 'f'.repeat(64),
     inventoryPolicyVersion: 'inventory-v1',
     kind: 'cash-out' as const,
-    operations: [
-      {
-        failureCode: 'PROVIDER_RESULT_AMBIGUOUS',
-        kind: 'transfer' as const,
-        operationKey: 'operation:safe-reference',
-        providerSignature: 'provider-signature-secret',
-        recoveryMode: 'reconcile-only' as const,
-        sequence: 1,
-        status: 'recovery-required' as const,
-      },
-    ],
     receiptHash: null,
     recoveryReason: 'PROVIDER_RESULT_AMBIGUOUS',
     roundId: ROUND_ID,
@@ -518,6 +596,27 @@ function settlement(
     settlementPolicyVersion: 'settlement-v1',
     status: 'recovery-required' as const,
     ...overrides,
+    operations: (
+      overrides.operations ?? [
+        {
+          failureCode: 'PROVIDER_RESULT_AMBIGUOUS',
+          kind: 'transfer' as const,
+          operationKey: 'operation:safe-reference',
+          providerSignature: 'provider-signature-secret',
+          recoveryMode: 'reconcile-only' as const,
+          sequence: 1,
+          status: 'recovery-required' as const,
+        },
+      ]
+    ).map((operation) => ({
+      amount: '2000000',
+      createdAt: '2026-07-28T18:00:03.000Z',
+      decimals: 6 as const,
+      finalizedAt: null,
+      stage: 2,
+      updatedAt: '2026-07-28T18:00:04.000Z',
+      ...operation,
+    })),
   };
 }
 

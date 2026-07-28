@@ -62,13 +62,40 @@ describe('Crash history presentation', () => {
       receiptState: 'ready',
     });
 
-    expect(markup).toContain('Cash-out committed');
+    expect(markup).toContain('Settlement disputed');
     expect(markup).toContain('recovery-required');
     expect(markup).toContain('Retry settlement reconciliation');
     expect(markup).toContain('Custody: not-final · Settlement: recovery-required');
     expect(markup).toContain('Provider signatures and wallet addresses are intentionally excluded');
     expect(markup).toContain('PROVIDER RESULT AMBIGUOUS');
     expect(markup).toContain('Load older runs');
+  });
+
+  test.each([
+    ['active', 'Run in progress'],
+    ['cash-out', 'Cash-out committed'],
+    ['bust', 'Run busted'],
+    ['timed-out', 'Deadline forfeit committed'],
+    ['recovering', 'Settlement recovering'],
+    ['disputed', 'Settlement disputed'],
+    ['refunded', 'Refund finalized'],
+    ['failed', 'Settlement action failed'],
+  ] as const)('renders the %s durable resolution state', (resolution, label) => {
+    const history = page();
+    const item = history.data[0];
+    if (!item) throw new Error('history fixture required');
+    item.resolution = resolution;
+    if (resolution === 'active') {
+      item.decisionDeadline = '2026-07-28T18:00:30.000Z';
+    }
+
+    const markup = renderSurface({ loadState: 'ready', page: history });
+
+    expect(markup).toContain(label);
+    if (resolution === 'active') {
+      expect(markup).toContain('Decision due');
+      expect(markup).toContain('2026-07-28T18:00:30.000Z');
+    }
   });
 
   test('renders receipt loading and failure without claiming finality', () => {
@@ -124,9 +151,11 @@ function page(): CrashHistoryPage {
       {
         createdAt: '2026-07-28T18:00:00.000Z',
         currentStage: 2,
+        decisionDeadline: null,
         gameState: { committed: true, status: 'cashed-out', version: 2 },
         pot: { amount: '2500000', currency: 'USDC', decimals: 6 },
         receiptHref: '/v1/crash/rounds/crashround_panelhistory01/receipt',
+        resolution: 'disputed',
         roundId: 'crashround_panelhistory01',
         safeNextAction: 'retry-settlement',
         settlement: {
@@ -163,6 +192,7 @@ function receipt(): CrashReceipt {
       stateMachineVersion: 'state-v1',
     },
     createdAt: '2026-07-28T18:00:00.000Z',
+    decisionDeadline: null,
     custody: {
       preparedIntentCount: 1,
       recoveryRequiredIntentCount: 0,
@@ -193,6 +223,7 @@ function receipt(): CrashReceipt {
       exposesWalletAddresses: false,
     },
     roundId: 'crashround_panelhistory01',
+    resolution: 'disputed',
     safeNextAction: 'retry-settlement',
     schemaVersion: 'dailydraft.crash-receipt.v1',
     settlement: {

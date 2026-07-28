@@ -2484,9 +2484,11 @@ components:
       required:
         - createdAt
         - currentStage
+        - decisionDeadline
         - gameState
         - pot
         - receiptHref
+        - resolution
         - roundId
         - safeNextAction
         - settlement
@@ -2499,6 +2501,9 @@ components:
         currentStage:
           type: integer
           minimum: 1
+        decisionDeadline:
+          type: [string, 'null']
+          format: date-time
         gameState:
           type: object
           additionalProperties: false
@@ -2517,6 +2522,8 @@ components:
         receiptHref:
           type: string
           pattern: '^/v1/crash/rounds/crashround_[A-Za-z0-9._:-]{8,128}/receipt$'
+        resolution:
+          $ref: '#/components/schemas/CrashResolutionStatus'
         roundId:
           type: string
           pattern: '^crashround_[A-Za-z0-9._:-]{8,128}$'
@@ -2548,12 +2555,14 @@ components:
         - bindings
         - createdAt
         - custody
+        - decisionDeadline
         - events
         - finality
         - mode
         - network
         - pot
         - privacy
+        - resolution
         - roundId
         - safeNextAction
         - schemaVersion
@@ -2621,6 +2630,9 @@ components:
         createdAt:
           type: string
           format: date-time
+        decisionDeadline:
+          type: [string, 'null']
+          format: date-time
         custody:
           type: object
           additionalProperties: false
@@ -2672,6 +2684,8 @@ components:
             exposesWalletAddresses:
               type: boolean
               const: false
+        resolution:
+          $ref: '#/components/schemas/CrashResolutionStatus'
         roundId:
           type: string
           pattern: '^crashround_[A-Za-z0-9._:-]{8,128}$'
@@ -2779,6 +2793,9 @@ components:
         - retry-settlement
         - review-receipt
         - wait-for-settlement
+    CrashResolutionStatus:
+      type: string
+      enum: [active, bust, cash-out, disputed, failed, recovering, refunded, timed-out]
     CrashSettlementStatus:
       type: string
       enum: [not-required, pending, recovery-required, settled]

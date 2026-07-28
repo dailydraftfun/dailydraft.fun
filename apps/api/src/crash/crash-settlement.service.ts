@@ -75,13 +75,19 @@ export interface CrashSettlementSnapshot {
   inventoryPolicyVersion: string;
   kind: 'bust' | 'cash-out';
   operations: readonly {
+    amount: string;
+    createdAt: string;
+    decimals: 6;
     failureCode: string | null;
+    finalizedAt: string | null;
     kind: 'liquidate' | 'open' | 'purchase' | 'transfer';
     operationKey: string;
     providerSignature: string | null;
     recoveryMode: 'none' | 'reconcile-only' | 'retryable';
     sequence: number;
+    stage: number | null;
     status: 'finalized' | 'prepared' | 'recovery-required';
+    updatedAt: string;
   }[];
   receiptHash: string | null;
   recoveryReason: string | null;
@@ -1292,7 +1298,11 @@ function toSnapshot(row: SettlementRecord): CrashSettlementSnapshot {
     operations: [...row.operations]
       .sort((left, right) => left.sequence - right.sequence)
       .map((operation) => ({
+        amount: operation.amount,
+        createdAt: operation.createdAt.toISOString(),
+        decimals: 6,
         failureCode: operation.failureCode,
+        finalizedAt: operation.finalizedAt?.toISOString() ?? null,
         kind: operation.kind.toLowerCase() as 'liquidate' | 'open' | 'purchase' | 'transfer',
         operationKey: operation.operationKey,
         providerSignature: operation.providerSignature,
@@ -1301,10 +1311,12 @@ function toSnapshot(row: SettlementRecord): CrashSettlementSnapshot {
           | 'reconcile-only'
           | 'retryable',
         sequence: operation.sequence,
+        stage: operation.stage,
         status: operation.status.toLowerCase().replace('_', '-') as
           | 'finalized'
           | 'prepared'
           | 'recovery-required',
+        updatedAt: operation.updatedAt.toISOString(),
       })),
     receiptHash: row.receiptHash,
     recoveryReason: verifiedPublicRecoveryReason(row),

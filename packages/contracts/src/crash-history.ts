@@ -9,6 +9,16 @@ export type CrashSettlementPublicStatus =
   | 'recovery-required'
   | 'settled';
 
+export type CrashResolutionStatus =
+  | 'active'
+  | 'bust'
+  | 'cash-out'
+  | 'disputed'
+  | 'failed'
+  | 'recovering'
+  | 'refunded'
+  | 'timed-out';
+
 export type CrashSafeNextAction =
   | 'choose-action'
   | 'reconnect'
@@ -19,6 +29,7 @@ export type CrashSafeNextAction =
 export type CrashHistoryItem = {
   createdAt: string;
   currentStage: number;
+  decisionDeadline: string | null;
   gameState: {
     committed: true;
     status: CrashPublicStatus;
@@ -30,6 +41,7 @@ export type CrashHistoryItem = {
     decimals: 6;
   };
   receiptHref: string;
+  resolution: CrashResolutionStatus;
   roundId: string;
   safeNextAction: CrashSafeNextAction;
   settlement: {
@@ -92,6 +104,7 @@ export type CrashReceipt = {
     stateMachineVersion: string;
   };
   createdAt: string;
+  decisionDeadline: string | null;
   custody: {
     preparedIntentCount: number;
     recoveryRequiredIntentCount: number;
@@ -115,6 +128,7 @@ export type CrashReceipt = {
     exposesWalletAddresses: false;
   };
   roundId: string;
+  resolution: CrashResolutionStatus;
   safeNextAction: CrashSafeNextAction;
   schemaVersion: typeof CRASH_RECEIPT_SCHEMA_VERSION;
   settlement: {
