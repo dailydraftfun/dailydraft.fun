@@ -3,9 +3,11 @@ import {
   type GameCatalogMode,
   type PublicGameAvailability,
   type PublicGameAvailabilityMode,
+  type PublicGameModeId,
   VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION,
   type VerifiedGameActivity,
   type VerifiedGameActivityPage,
+  verifyRgsProof,
 } from '@dailydraft/contracts';
 import {
   type DatabaseClient,
@@ -17,64 +19,56 @@ import {
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
-import { pseudonymizeWallet } from '../duels/public-duel-proof.js';
+import { toDuel, toDuelTransaction } from '../duels/prisma-duel.repository.js';
+import { buildPublicDuelReceipt, pseudonymizeWallet } from '../duels/public-duel-proof.js';
 import { evaluateRealValuePolicy, type RealValueCapability } from '../policy/real-value-policy.js';
-import { createDuelRgsCommitment } from '../rgs/rgs-duel-contract.js';
+import { buildDuelRgsProof } from '../rgs/rgs-proof.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { GamesCatalogService } from './games-catalog.service.js';
 import type { ListVerifiedGameActivityQuery } from './games-lobby.dto.js';
 
 const PUBLIC_ACTIVITY_CACHE_TTL_MS = 30_000;
 const PUBLIC_ACTIVITY_CACHE_ENTRY_LIMIT = 100;
+const PUBLIC_ACTIVITY_SCAN_LIMIT = 500;
+const PUBLIC_ACTIVITY_SCAN_BATCH = 100;
 
 type ActivityCursor = {
   id: string;
+  mode: PublicGameModeId;
   occurredAt: string;
 };
 
-export type PublicDuelActivityCandidate = {
-  creatorWallet: string;
-  escrowAddress: string;
-  houseOpponent: boolean;
-  id: string;
-  opponentWallet: string | null;
-  packId: string;
-  packName: string;
-  packOutcomes: Array<{
-    isMock: boolean;
-    resultHash: string;
-    side: DuelSide;
-  }>;
-  providerMode: ProviderMode;
-  providerOperations: Array<{
-    generateIdempotencyKey: string;
-    openIdempotencyKey: string;
-    payloadHash: string | null;
-    provider: string;
-    providerPackId: string;
-    providerReference: string | null;
-    recipientWallet: string;
-    resultHash: string | null;
-    side: DuelSide;
-    signature: string | null;
-    signatureAlgorithm: string | null;
-    signingKeyReference: string | null;
-  }>;
-  rgsCommitmentHash: string;
-  rgsConfigHash: string;
-  rgsRulesHash: string;
-  settledAt: Date;
-  stakeAmount: string;
-  stakeCurrency: string;
-  stakeDecimals: number;
-  valuationPolicyHash: string;
-  winnerWallet: string | null;
-};
+export type PublicDuelActivityCandidate = Prisma.DuelGetPayload<{
+  include: {
+    packOutcomes: true;
+    providerOperations: true;
+    transactions: true;
+  };
+}>;
 
 const ACTION_POLICY_CAPABILITIES = {
-  'direct-challenge': ['duel.create.direct'],
-  'house-opponent': ['duel.create.house', 'matchmaking.house-fallback'],
-  'open-matchmaking': ['duel.create.open', 'matchmaking.search'],
+  'direct-challenge': [
+    'duel.create.direct',
+    'duel.funding.prepare',
+    'duel.join',
+    'duel.pack.open',
+    'provider.escrow.prepare',
+  ],
+  'house-opponent': [
+    'duel.create.house',
+    'duel.funding.prepare',
+    'duel.pack.open',
+    'matchmaking.house-fallback',
+    'provider.escrow.prepare',
+  ],
+  'open-matchmaking': [
+    'duel.create.open',
+    'duel.funding.prepare',
+    'duel.join',
+    'duel.pack.open',
+    'matchmaking.search',
+    'provider.escrow.prepare',
+  ],
 } as const satisfies Record<string, readonly RealValueCapability[]>;
 
 @Injectable()
@@ -130,71 +124,47 @@ export class GamesLobbyService {
     cursor: ActivityCursor | null,
     asOf: Date,
   ): Promise<VerifiedGameActivityPage> {
-    const rows = (await this.database.duel.findMany({
-      orderBy: [{ settledAt: 'desc' }, { id: 'desc' }],
-      select: {
-        creatorWallet: true,
-        escrowAddress: true,
-        houseOpponent: true,
-        id: true,
-        opponentWallet: true,
-        packId: true,
-        packName: true,
-        packOutcomes: {
-          orderBy: { side: 'asc' },
-          select: { isMock: true, resultHash: true, side: true },
-        },
-        providerMode: true,
-        providerOperations: {
-          orderBy: { side: 'asc' },
-          select: {
-            generateIdempotencyKey: true,
-            openIdempotencyKey: true,
-            payloadHash: true,
-            provider: true,
-            providerPackId: true,
-            providerReference: true,
-            recipientWallet: true,
-            resultHash: true,
-            side: true,
-            signature: true,
-            signatureAlgorithm: true,
-            signingKeyReference: true,
-          },
-        },
-        rgsCommitmentHash: true,
-        rgsConfigHash: true,
-        rgsRulesHash: true,
-        settledAt: true,
-        stakeAmount: true,
-        stakeCurrency: true,
-        stakeDecimals: true,
-        valuationPolicyHash: true,
-        winnerWallet: true,
-      },
-      take: limit + 1,
-      where: verifiedDuelActivityWhere(cursor),
-    })) as PublicDuelActivityCandidate[];
+    const projected: Array<{ activity: VerifiedGameActivity; cursor: ActivityCursor }> = [];
+    let scanCursor = cursor;
+    let scanned = 0;
+    let exhausted = false;
 
-    const projected = rows.flatMap((row) => {
-      const activity = projectVerifiedDuelActivity(row);
-      return activity ? [activity] : [];
-    });
-    const data = projected.slice(0, limit);
-    const hasMore = rows.length > limit || projected.length > limit;
-    const nextCursor = hasMore
-      ? encodeActivityCursor(
-          data.length > 0
-            ? {
-                id: requireDuelId(data.at(-1)?.activityId),
-                occurredAt: data.at(-1)?.occurredAt ?? '',
-              }
-            : {
-                id: rows.at(-1)?.id ?? '',
-                occurredAt: rows.at(-1)?.settledAt.toISOString() ?? '',
-              },
-        )
-      : null;
+    while (projected.length < limit + 1 && scanned < PUBLIC_ACTIVITY_SCAN_LIMIT) {
+      const take = Math.min(PUBLIC_ACTIVITY_SCAN_BATCH, PUBLIC_ACTIVITY_SCAN_LIMIT - scanned);
+      const rows = (await this.database.duel.findMany({
+        include: {
+          packOutcomes: { orderBy: { side: 'asc' } },
+          providerOperations: { orderBy: { side: 'asc' } },
+          transactions: { orderBy: { createdAt: 'asc' } },
+        },
+        orderBy: [{ settledAt: 'desc' }, { id: 'desc' }],
+        take,
+        where: verifiedDuelActivityWhere(scanCursor),
+      })) as PublicDuelActivityCandidate[];
+      if (rows.length === 0) {
+        exhausted = true;
+        break;
+      }
+
+      for (const row of rows) {
+        scanned += 1;
+        scanCursor = activityCursorForRow(row);
+        const activity = projectVerifiedDuelActivity(row);
+        if (activity) projected.push({ activity, cursor: scanCursor });
+        if (projected.length === limit + 1 || scanned === PUBLIC_ACTIVITY_SCAN_LIMIT) break;
+      }
+      if (projected.length === limit + 1 || scanned === PUBLIC_ACTIVITY_SCAN_LIMIT) break;
+      if (rows.length < take) {
+        exhausted = true;
+        break;
+      }
+    }
+
+    const data = projected.slice(0, limit).map((entry) => entry.activity);
+    const hasMore = projected.length > limit || !exhausted;
+    const nextBoundary =
+      projected.length > limit ? (projected[limit - 1]?.cursor ?? null) : scanCursor;
+    const nextCursor = hasMore && nextBoundary ? encodeActivityCursor(nextBoundary) : null;
 
     return {
       asOf: asOf.toISOString(),
@@ -307,85 +277,72 @@ export function decodeActivityCursor(value: string): ActivityCursor {
 export function projectVerifiedDuelActivity(
   row: PublicDuelActivityCandidate,
 ): VerifiedGameActivity | null {
-  if (
-    row.packOutcomes.length !== 2 ||
-    row.providerOperations.length !== 2 ||
-    !row.escrowAddress ||
-    !row.opponentWallet ||
-    row.stakeCurrency !== 'USDC' ||
-    row.stakeDecimals !== 6 ||
-    !/^[0-9]+$/.test(row.stakeAmount) ||
-    row.packOutcomes.some((outcome) => outcome.isMock) ||
-    !hasBothSides(row.packOutcomes) ||
-    !hasBothSides(row.providerOperations) ||
-    row.providerOperations.some(
-      (operation) =>
-        !operation.payloadHash ||
-        !operation.providerReference ||
-        !operation.resultHash ||
-        !operation.signature ||
-        !operation.signatureAlgorithm ||
-        !operation.signingKeyReference,
-    ) ||
-    !providerEvidenceMatchesOutcomes(row) ||
-    (row.winnerWallet !== null &&
-      row.winnerWallet !== row.creatorWallet &&
-      row.winnerWallet !== row.opponentWallet)
-  ) {
+  try {
+    const duel = toDuel(row);
+    const receipt = buildPublicDuelReceipt(duel, row.transactions.map(toDuelTransaction));
+    const proof = buildDuelRgsProof(row);
+    const verification = verifyRgsProof(proof);
+    const proofResult = jsonObject(proof.result);
+
+    if (
+      duel.status !== 'settled' ||
+      proof.phase !== 'settled' ||
+      proof.mode !== 'duel' ||
+      proof.roundId !== duel.id ||
+      !verification.valid ||
+      !receipt.availability.complete ||
+      receipt.duel.id !== duel.id ||
+      receipt.duel.status !== 'settled' ||
+      !receipt.result ||
+      !receipt.result.settlementReady ||
+      !proofResult ||
+      proofResult.comparisonHash !== receipt.result.resultHash ||
+      proofResult.winnerSide !== receipt.result.winnerSide ||
+      receipt.pack.tier.amount !== duel.stake.amount ||
+      receipt.pack.tier.currency !== duel.stake.currency ||
+      receipt.pack.tier.decimals !== duel.stake.decimals
+    ) {
+      return null;
+    }
+
+    const creatorLabel = pseudonymizeWallet(duel.creatorWallet);
+    const opponentLabel = duel.houseOpponent
+      ? 'DailyDraft House'
+      : pseudonymizeWallet(duel.opponentWallet ?? '');
+    const winnerLabel =
+      duel.winnerWallet === duel.creatorWallet
+        ? creatorLabel
+        : duel.winnerWallet === duel.opponentWallet
+          ? opponentLabel
+          : null;
+
+    return {
+      activityId: `duel:${duel.id}`,
+      mode: 'duel',
+      occurredAt: duel.settledAt as string,
+      participants: [
+        { label: creatorLabel, role: 'player' },
+        { label: opponentLabel, role: duel.houseOpponent ? 'house' : 'player' },
+      ],
+      receiptHref: `/v1/duels/${duel.id}/receipt`,
+      result: duel.winnerWallet === null ? 'tie' : 'winner-verified',
+      resultHref: `/v1/rgs/rounds/duel/${duel.id}/proof`,
+      resultSummary: winnerLabel
+        ? `${winnerLabel} won a verified ${duel.pack.name} Duel.`
+        : `${creatorLabel} and ${opponentLabel} tied in a verified ${duel.pack.name} Duel.`,
+      tier: duel.stake,
+      title: `${duel.pack.name} Duel settled`,
+      verification: 'settled-rgs-proof',
+    };
+  } catch {
     return null;
   }
-
-  const commitment = createDuelRgsCommitment({
-    duelId: row.id,
-    operations: row.providerOperations,
-    packId: row.packId,
-    providerMode: row.providerMode,
-    rulesHash: row.valuationPolicyHash,
-  });
-  if (
-    commitment.commitmentHash !== row.rgsCommitmentHash ||
-    commitment.configHash !== row.rgsConfigHash ||
-    commitment.rulesHash !== row.rgsRulesHash
-  ) {
-    return null;
-  }
-
-  const creatorLabel = pseudonymizeWallet(row.creatorWallet);
-  const opponentLabel = row.houseOpponent
-    ? 'DailyDraft House'
-    : pseudonymizeWallet(row.opponentWallet ?? '');
-  const winnerLabel =
-    row.winnerWallet === row.creatorWallet
-      ? creatorLabel
-      : row.winnerWallet === row.opponentWallet
-        ? opponentLabel
-        : null;
-
-  return {
-    activityId: `duel:${row.id}`,
-    mode: 'duel',
-    occurredAt: row.settledAt.toISOString(),
-    participants: [
-      { label: creatorLabel, side: 'creator' },
-      { label: opponentLabel, side: 'opponent' },
-    ],
-    receiptHref: `/duels/${row.id}/receipt`,
-    result: row.winnerWallet === null ? 'tie' : 'winner-verified',
-    resultHref: `/rgs/rounds/duel/${row.id}/proof`,
-    resultSummary: winnerLabel
-      ? `${winnerLabel} won a verified ${row.packName} Duel.`
-      : `${creatorLabel} and ${opponentLabel} tied in a verified ${row.packName} Duel.`,
-    tier: {
-      amount: row.stakeAmount,
-      currency: 'USDC',
-      decimals: 6,
-    },
-    title: `${row.packName} Duel settled`,
-    verification: 'settled-rgs-proof',
-  };
 }
 
 function verifiedDuelActivityWhere(cursor: ActivityCursor | null): Prisma.DuelWhereInput {
+  if (cursor && cursor.mode !== 'duel') {
+    throw new BadRequestException('activity cursor mode is not available');
+  }
   return {
     AND: [
       { packOutcomes: { some: { isMock: false, side: DuelSide.CREATOR } } },
@@ -443,17 +400,17 @@ function verifiedDuelActivityWhere(cursor: ActivityCursor | null): Prisma.DuelWh
   };
 }
 
-function hasBothSides(rows: Array<{ side: DuelSide }>): boolean {
-  const sides = new Set(rows.map((row) => row.side));
-  return sides.has(DuelSide.CREATOR) && sides.has(DuelSide.OPPONENT);
+function activityCursorForRow(
+  row: Pick<PublicDuelActivityCandidate, 'id' | 'settledAt'>,
+): ActivityCursor {
+  if (!row.settledAt) throw new BadRequestException('activity cursor is invalid');
+  return { id: row.id, mode: 'duel', occurredAt: row.settledAt.toISOString() };
 }
 
-function providerEvidenceMatchesOutcomes(row: PublicDuelActivityCandidate): boolean {
-  return row.providerOperations.every((operation) =>
-    row.packOutcomes.some(
-      (outcome) => outcome.side === operation.side && outcome.resultHash === operation.resultHash,
-    ),
-  );
+function jsonObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function isValidCursor(value: unknown): value is ActivityCursor {
@@ -461,19 +418,12 @@ function isValidCursor(value: unknown): value is ActivityCursor {
   const cursor = value as Partial<ActivityCursor>;
   if (
     typeof cursor.id !== 'string' ||
-    !/^duel_[A-Za-z0-9]{12,64}$/.test(cursor.id) ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$/.test(cursor.id) ||
+    !['duel', 'flip', 'crash'].includes(cursor.mode ?? '') ||
     typeof cursor.occurredAt !== 'string'
   ) {
     return false;
   }
   const timestamp = new Date(cursor.occurredAt);
   return !Number.isNaN(timestamp.valueOf()) && timestamp.toISOString() === cursor.occurredAt;
-}
-
-function requireDuelId(activityId: string | undefined): string {
-  const id = activityId?.replace(/^duel:/, '');
-  if (!id || !/^duel_[A-Za-z0-9]{12,64}$/.test(id)) {
-    throw new BadRequestException('activity cursor is invalid');
-  }
-  return id;
 }

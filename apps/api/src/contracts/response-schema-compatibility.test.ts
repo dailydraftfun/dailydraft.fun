@@ -10,6 +10,7 @@ import {
   rgsCompatibilityFixtures,
   VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION,
   type VerifiedGameActivityPage,
+  verifiedGameActivityContractFixtures,
 } from '@dailydraft/contracts';
 import { DuelSide as DatabaseDuelSide } from '@dailydraft/db';
 import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js';
@@ -96,6 +97,8 @@ describe('API response schema gate', () => {
       'RgsExternalProof',
       'RgsModeList',
       'RgsSeededProof',
+      'VerifiedGameActivity',
+      'VerifiedGameActivity',
       'VerifiedGameActivity',
       'VerifiedGameActivityPage',
     ]);
@@ -199,11 +202,11 @@ function buildResponsePayloadCases(): ResponsePayloadCase[] {
       schema: 'VerifiedGameActivityPage',
       source: 'GamesLobbyService.getVerifiedActivity()',
     },
-    {
-      payload: verifiedActivityPayload().data[0],
+    ...Object.values(verifiedGameActivityContractFixtures).map((payload) => ({
+      payload,
       schema: 'VerifiedGameActivity',
-      source: 'GamesLobbyService.getVerifiedActivity().data[0]',
-    },
+      source: `Verified game activity ${payload.mode} contract fixture`,
+    })),
     {
       payload: contractFixtures.rgsModes.response,
       schema: 'RgsModeList',
@@ -389,24 +392,7 @@ function gameAvailabilityStateFixtures(): PublicGameAvailabilityMode[] {
 function verifiedActivityPayload(): VerifiedGameActivityPage {
   return {
     asOf: '2026-07-28T12:00:00.000Z',
-    data: [
-      {
-        activityId: 'duel:duel_activity000001',
-        mode: 'duel',
-        occurredAt: '2026-07-28T11:59:00.000Z',
-        participants: [
-          { label: '9xQe…9gJ1', side: 'creator' },
-          { label: 'Gk8Z…MQyW', side: 'opponent' },
-        ],
-        receiptHref: '/duels/duel_activity000001/receipt',
-        result: 'winner-verified',
-        resultHref: '/rgs/rounds/duel/duel_activity000001/proof',
-        resultSummary: '9xQe…9gJ1 won a verified Sports Pack Duel.',
-        tier: { amount: '50000000', currency: 'USDC', decimals: 6 },
-        title: 'Sports Pack Duel settled',
-        verification: 'settled-rgs-proof',
-      },
-    ],
+    data: Object.values(verifiedGameActivityContractFixtures),
     hasMore: false,
     nextCursor: null,
     schemaVersion: VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION,

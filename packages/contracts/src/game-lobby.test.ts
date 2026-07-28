@@ -4,7 +4,9 @@ import {
   GAME_AVAILABILITY_SCHEMA_VERSION,
   PUBLIC_GAME_MODE_IDS,
   VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION,
+  type VerifiedGameActivity,
   type VerifiedGameActivityPage,
+  verifiedGameActivityContractFixtures,
 } from './game-lobby.js';
 
 describe('public game lobby contracts', () => {
@@ -17,24 +19,7 @@ describe('public game lobby contracts', () => {
   test('keeps verified activity free of participant identifiers', () => {
     const page: VerifiedGameActivityPage = {
       asOf: '2026-07-28T12:00:00.000Z',
-      data: [
-        {
-          activityId: 'duel:duel_activity000001',
-          mode: 'duel',
-          occurredAt: '2026-07-28T11:59:00.000Z',
-          participants: [
-            { label: '9xQe…9gJ1', side: 'creator' },
-            { label: 'Gk8Z…MQyW', side: 'opponent' },
-          ],
-          receiptHref: '/duels/duel_activity000001/receipt',
-          result: 'winner-verified',
-          resultHref: '/rgs/rounds/duel/duel_activity000001/proof',
-          resultSummary: '9xQe…9gJ1 won a verified Sports Pack Duel.',
-          tier: { amount: '50000000', currency: 'USDC', decimals: 6 },
-          title: 'Sports Pack Duel settled',
-          verification: 'settled-rgs-proof',
-        },
-      ],
+      data: [verifiedGameActivityContractFixtures.duel],
       hasMore: false,
       nextCursor: null,
       schemaVersion: VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION,
@@ -52,6 +37,36 @@ describe('public game lobby contracts', () => {
       'tier',
       'title',
       'verification',
+    ]);
+  });
+
+  test('keeps one generic envelope compatible with two-player and single-player modes', () => {
+    expect(
+      Object.values(verifiedGameActivityContractFixtures).map((activity) => ({
+        mode: activity.mode,
+        participants: activity.participants.length,
+        result: activity.result,
+      })),
+    ).toEqual([
+      { mode: 'crash', participants: 1, result: 'cashed-out' },
+      { mode: 'duel', participants: 2, result: 'winner-verified' },
+      { mode: 'flip', participants: 1, result: 'acquired' },
+    ]);
+
+    const singlePlayerResults: VerifiedGameActivity[] = [
+      'acquired',
+      'bust',
+      'cashed-out',
+      'completed',
+    ].map((result) => ({
+      ...verifiedGameActivityContractFixtures.crash,
+      result,
+    }));
+    expect(singlePlayerResults.map((activity) => activity.result)).toEqual([
+      'acquired',
+      'bust',
+      'cashed-out',
+      'completed',
     ]);
   });
 });

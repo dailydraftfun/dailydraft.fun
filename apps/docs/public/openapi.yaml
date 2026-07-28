@@ -226,7 +226,8 @@ paths:
         Returns only settled rounds whose complete non-mock RGS proof and public
         receipt are resolvable. Direct wallet identifiers, private match state,
         transaction intents, and unsettled outcomes are never projected. Results
-        are ordered by occurredAt descending and immutable round ID descending.
+        are ordered by occurredAt descending, stable mode ID ascending, and
+        immutable round ID descending.
         Flip and Crash remain absent until their engines emit the same eligible
         receipt and proof evidence.
       x-dailydraft-availability: devnet
@@ -2688,29 +2689,30 @@ components:
           format: date-time
         participants:
           type: array
-          minItems: 2
+          minItems: 1
           maxItems: 2
           items:
             type: object
             additionalProperties: false
-            required: [label, side]
+            required: [label, role]
             properties:
               label:
                 type: string
                 minLength: 1
                 maxLength: 32
-              side:
+              role:
                 type: string
-                enum: [creator, opponent]
+                enum: [house, player]
         receiptHref:
           type: string
-          pattern: '^/[A-Za-z0-9/_:.-]+$'
+          pattern: '^/v1/[A-Za-z0-9/_:.-]+$'
         result:
           type: string
-          enum: [tie, winner-verified]
+          description: Extensible mode-specific outcome token, such as acquired, bust, cashed-out, completed, tie, or winner-verified.
+          pattern: '^[a-z][a-z0-9-]{1,63}$'
         resultHref:
           type: string
-          pattern: '^/rgs/rounds/(duel|flip|crash)/[A-Za-z0-9][A-Za-z0-9._:-]{0,239}/proof$'
+          pattern: '^/v1/rgs/rounds/(duel|flip|crash)/[A-Za-z0-9][A-Za-z0-9._:-]{0,239}/proof$'
         resultSummary:
           type: string
           minLength: 1
