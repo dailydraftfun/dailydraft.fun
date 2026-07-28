@@ -110,6 +110,21 @@ describe('flip payment recovery storage', () => {
     expect(storage.getItem(FLIP_PAYMENT_RECOVERY_LEGACY_STORAGE_KEY)).toBeNull();
   });
 
+  test('keeps a v1 broadcast-unknown record locked because it may already be on chain', () => {
+    const storage = memoryStorage();
+    const legacy = {
+      ...createAwaitingFlipPaymentRecovery(INPUT, '2026-07-26T00:00:00.000Z'),
+      status: 'broadcast-unknown',
+      version: 1,
+    };
+    const raw = JSON.stringify(legacy);
+    storage.setItem(FLIP_PAYMENT_RECOVERY_LEGACY_STORAGE_KEY, raw);
+
+    expect(readFlipPaymentRecovery(storage, NOW)).toEqual({ status: 'invalid' });
+    expect(storage.getItem(FLIP_PAYMENT_RECOVERY_LEGACY_STORAGE_KEY)).toBe(raw);
+    expect(storage.getItem(FLIP_PAYMENT_RECOVERY_STORAGE_KEY)).toBeNull();
+  });
+
   test('migrates signed v2 recovery into v3 without changing its signed bytes', () => {
     const storage = memoryStorage();
     const current = attachFlipSignedTransaction(createAwaitingFlipPaymentRecovery(INPUT), {

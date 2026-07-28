@@ -301,6 +301,16 @@ describe('flip machine view stages', () => {
     expect(html).toContain('Football $0.01');
   });
 
+  test('keeps the game stage honest while odds and inventory are still loading', () => {
+    const html = render();
+
+    expect(html).toContain('data-stage="review"');
+    expect(html).toContain('—</strong> possible cards');
+    expect(html).toContain('—</strong> Chase');
+    expect(html).not.toContain('Odds &amp; fairness');
+    expect(html).toContain('disabled=""');
+  });
+
   test('surfaces a pricing failure without leaving the review stage', () => {
     const html = render({ state: state({ error: 'No pool is open.', odds: ODDS }) });
 
@@ -449,6 +459,52 @@ describe('flip machine view stages', () => {
     expect(html).not.toContain('<legend');
   });
 
+  test('keeps corrupt recovery visibly fail-closed without exposing another payment', () => {
+    const html = render({
+      state: state({
+        fundingPhase: 'recovering',
+        recoveryInvalid: true,
+      }),
+    });
+
+    expect(html).toContain('Your previous rip needs attention');
+    expect(html).toContain('Do not approve another payment');
+    expect(html).toContain('Your previous pack is protected');
+    expect(html).not.toContain('Try recovery now');
+    expect(html).not.toContain('Rip Football');
+  });
+
+  test('pauses signed recovery for auth restoration and the original wallet', () => {
+    const recovery = {
+      commitmentId: 'gachaseed_1',
+      intentId: INTENT.intentId,
+      machineKey: MACHINE_KEY,
+      mint: INTENT.mint,
+      oddsVersion: ODDS.version,
+      payerWallet: INTENT.payerWallet,
+      serverSeedHash: 's'.repeat(64),
+      signature: 'S'.repeat(88),
+      signedTransactionBase64: 'c2lnbmVk',
+      sourceTokenAccount: PREPARED.sourceTokenAccount,
+      status: 'signed-claim-pending' as const,
+      updatedAt: '2026-07-26T00:00:00.000Z',
+      version: 3 as const,
+    };
+
+    const restoring = render({
+      state: state({ fundingPhase: 'recovering', recovery }),
+      walletAuthenticationPending: true,
+    });
+    expect(restoring).toContain('Restoring your wallet session before recovery');
+
+    const wrongWallet = render({
+      state: state({ fundingPhase: 'recovering', recovery }),
+      walletAddress: 'DifferentWallet11111111111111111111111111111111',
+    });
+    expect(wrongWallet).toContain('Reconnect the wallet that started this rip');
+    expect(wrongWallet).not.toContain('Try recovery now');
+  });
+
   test('blocks every retry control while a signature-less broadcast is unresolved', () => {
     const html = render({
       state: state({
@@ -520,6 +576,31 @@ describe('flip machine view stages', () => {
     expect(html).not.toContain('Provably fair receipt');
   });
 
+  test('uses safe receipt fallbacks when a provider failure has sparse evidence', () => {
+    const html = render({
+      state: state({
+        odds: ODDS,
+        result: {
+          ...RESULT,
+          rip: {
+            ...RIP,
+            failedAssetReference: null,
+            failedAt: '2026-07-26T00:01:00.000Z',
+            failureReason: null,
+            selectedAssetReference: null,
+            status: 'FAILED',
+          },
+          serverSeed: null,
+        },
+        snapshot: SNAPSHOT,
+      }),
+    });
+
+    expect(html).toContain('Provider delivery failed');
+    expect(html).toContain('Not recorded');
+    expect(html).toContain('Unavailable');
+  });
+
   test('does not borrow rarity evidence from a different machine after recovery', () => {
     const html = render({
       state: state({
@@ -554,6 +635,18 @@ describe('flip machine view stages', () => {
     });
 
     expect(html).toContain('Pending reveal');
+  });
+
+  test('labels a settled receipt whose commitment echo is unavailable', () => {
+    const html = render({
+      state: state({
+        odds: ODDS,
+        result: { ...RESULT, serverSeedHash: null },
+        snapshot: SNAPSHOT,
+      }),
+    });
+
+    expect(html).toContain('Missing proof');
   });
 
   test('renders a posted notice alongside whatever stage is active', () => {

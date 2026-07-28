@@ -214,17 +214,18 @@ function migrateFlipPaymentRecovery(
       version: 3,
     } as FlipPaymentRecovery;
   }
-  if (
-    value.version !== 1 ||
-    (value.status !== 'broadcast-unknown' && value.status !== 'signature-known')
-  ) {
+  // V1 `broadcast-unknown` came from combined sign-and-send wallets. A crash
+  // could therefore happen after broadcast but before the signature callback,
+  // so that legacy state must remain invalid/fail-closed instead of being
+  // reclassified as a sign-only pre-broadcast record.
+  if (value.version !== 1 || value.status !== 'signature-known') {
     return null;
   }
   return {
     ...(value as unknown as FlipPaymentRecoveryBase),
     signature: value.signature ?? null,
     signedTransactionBase64: null,
-    status: value.status === 'broadcast-unknown' ? 'awaiting-signature' : value.status,
+    status: 'signature-known',
     version: 3,
   } as FlipPaymentRecovery;
 }
