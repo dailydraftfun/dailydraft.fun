@@ -116,9 +116,10 @@ ADD CONSTRAINT "FlipSessionPoolCommitment_contract_check" CHECK (
   AND jsonb_array_length("outcomeSpace") = "eligibleOutcomeCount"
 );
 
--- Mirrors the application's stableStringify contract for the bounded JSON
--- shapes in this migration. The C collation fixes object-key ordering and
--- array ordinality is preserved exactly.
+-- Canonicalizes the bounded nested JSON shapes in this migration. Top-level
+-- preimages are assembled explicitly below because JavaScript localeCompare
+-- ordering is not equivalent to PostgreSQL's bytewise C collation for
+-- camel-cased keys.
 CREATE FUNCTION "dailydraft_canonical_jsonb"(candidate JSONB) RETURNS TEXT AS $$
 DECLARE
   canonical TEXT;
@@ -168,6 +169,7 @@ DECLARE
   band_label TEXT;
   band_minimum NUMERIC;
   band_probability NUMERIC;
+  expected_canonical_preimage TEXT;
   expected_preimage JSONB;
   labels TEXT[] := ARRAY[]::TEXT[];
   parsed_preimage JSONB;
@@ -270,7 +272,26 @@ BEGIN
     IF parsed_preimage <> expected_preimage THEN
       RAISE EXCEPTION 'Flip ruleset canonical preimage does not match authoritative fields';
     END IF;
-    IF NEW."rulesCanonicalPreimage" <> "dailydraft_canonical_jsonb"(expected_preimage) THEN
+    expected_canonical_preimage :=
+      '{"activation":' || to_jsonb(NEW."activation")::TEXT
+      || ',"bands":' || "dailydraft_canonical_jsonb"(NEW."bands")
+      || ',"calculatorVersion":' || to_jsonb(NEW."calculatorVersion")::TEXT
+      || ',"currency":' || to_jsonb(NEW."currency")::TEXT
+      || ',"decimals":' || NEW."decimals"::TEXT
+      || ',"feeAmount":' || to_jsonb(NEW."feeAmount")::TEXT
+      || ',"houseEdgePpm":' || NEW."houseEdgePpm"::TEXT
+      || ',"inventoryPolicyVersion":' || to_jsonb(NEW."inventoryPolicyVersion")::TEXT
+      || ',"poolKey":' || to_jsonb(NEW."poolKey")::TEXT
+      || ',"probabilityScalePpm":' || NEW."probabilityScalePpm"::TEXT
+      || ',"reviewedAt":'
+      || to_jsonb(to_char(NEW."reviewedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))::TEXT
+      || ',"reviewReference":' || to_jsonb(NEW."reviewReference")::TEXT
+      || ',"rulesKey":' || to_jsonb(NEW."rulesKey")::TEXT
+      || ',"schemaVersion":' || to_jsonb(NEW."schemaVersion")::TEXT
+      || ',"stakeAmount":' || to_jsonb(NEW."stakeAmount")::TEXT
+      || ',"version":' || NEW."version"::TEXT
+      || '}';
+    IF NEW."rulesCanonicalPreimage" <> expected_canonical_preimage THEN
       RAISE EXCEPTION 'Flip ruleset canonical preimage is not canonical';
     END IF;
     IF (
@@ -313,6 +334,7 @@ FOR EACH ROW EXECUTE FUNCTION "require_flip_ruleset_sealed"();
 CREATE FUNCTION "reject_flip_session_pool_commitment_mutation"() RETURNS trigger AS $$
 DECLARE
   actual_outcome_count BIGINT;
+  expected_canonical_preimage TEXT;
   expected_outcome_space JSONB;
   expected_preimage JSONB;
   parsed_preimage JSONB;
@@ -403,7 +425,13 @@ BEGIN
     IF parsed_preimage <> expected_preimage THEN
       RAISE EXCEPTION 'Flip session pool canonical preimage does not match authoritative evidence';
     END IF;
-    IF NEW."poolCanonicalPreimage" <> "dailydraft_canonical_jsonb"(expected_preimage) THEN
+    expected_canonical_preimage :=
+      '{"outcomeSpace":' || "dailydraft_canonical_jsonb"(expected_outcome_space)
+      || ',"rulesHash":' || to_jsonb(stored_rules."rulesHash")::TEXT
+      || ',"schemaVersion":"dailydraft.flip-session-pool-commitment.v1"'
+      || ',"snapshotContentHash":' || to_jsonb(stored_snapshot."contentHash")::TEXT
+      || '}';
+    IF NEW."poolCanonicalPreimage" <> expected_canonical_preimage THEN
       RAISE EXCEPTION 'Flip session pool canonical preimage is not canonical';
     END IF;
     IF (
