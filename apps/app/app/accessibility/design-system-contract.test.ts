@@ -88,6 +88,7 @@ describe('cross-surface design system contract', () => {
 
     for (const dialog of [walletDialog, duelStepper]) {
       expect(dialog).toContain('useDialogFocus');
+      expect(dialog).toContain('<DialogPortal>');
       expect(dialog).toContain('data-dialog-initial-focus');
       expect(dialog).toContain('aria-describedby');
       expect(dialog).toContain('tabIndex={-1}');
