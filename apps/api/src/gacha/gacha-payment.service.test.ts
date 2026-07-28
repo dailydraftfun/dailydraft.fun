@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { DatabaseClient, Prisma } from '@dailydraft/db';
 import { GachaRipPaymentStatus } from '@dailydraft/db';
 import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { Keypair, Transaction } from '@solana/web3.js';
+import { ComputeBudgetProgram, Keypair, SystemProgram, Transaction } from '@solana/web3.js';
 import bs58 from 'bs58';
 
 import { type LegacySplTokenAccount, SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
@@ -568,6 +568,38 @@ describe('GachaPaymentService.claimSignature', () => {
     );
   });
 
+  test('accepts the bounded priority-fee prefix Phantom adds before signing', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    const signed = signedPaymentTransaction(intent.intentId, { phantomPriorityFee: true });
+
+    await expect(
+      service.claimSignature({
+        intentId: intent.intentId,
+        signedTransactionBase64: signed.signedTransactionBase64,
+      }),
+    ).resolves.toMatchObject({ signature: signed.signature });
+    expect(database.payments[0]?.signature).toBe(signed.signature);
+  });
+
+  test('rejects every non-priority instruction a wallet inserts around the exact payment', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    const signed = signedPaymentTransaction(intent.intentId, { maliciousTransfer: true });
+
+    await expect(
+      service.claimSignature({
+        intentId: intent.intentId,
+        signedTransactionBase64: signed.signedTransactionBase64,
+      }),
+    ).rejects.toThrow('does not match');
+    expect(database.payments[0]?.signature).toBeNull();
+  });
+
   test('rejects an attacker-signed victim transaction without locking the intent', async () => {
     configureDevnet();
     const database = new PaymentDatabase();
@@ -1038,7 +1070,9 @@ function signedPaymentTransaction(
     amountMinor?: bigint;
     blockhash?: string;
     destinationTokenAccount?: string;
+    maliciousTransfer?: boolean;
     memoNonce?: string;
+    phantomPriorityFee?: boolean;
     signer?: Keypair;
   } = {},
 ): { signature: string; signedTransactionBase64: string } {
@@ -1054,6 +1088,22 @@ function signedPaymentTransaction(
     recentBlockhash: overrides.blockhash ?? 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG',
   });
   const transaction = Transaction.from(Buffer.from(built.serializedTransactionBase64, 'base64'));
+  if (overrides.phantomPriorityFee) {
+    transaction.instructions = [
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 375_000 }),
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
+      ...transaction.instructions,
+    ];
+  }
+  if (overrides.maliciousTransfer) {
+    transaction.add(
+      SystemProgram.transfer({
+        fromPubkey: signer.publicKey,
+        lamports: 1,
+        toPubkey: ATTACKER_KEYPAIR.publicKey,
+      }),
+    );
+  }
   transaction.partialSign(signer);
   const signatureBytes = transaction.signature;
   if (!signatureBytes) throw new Error('test transaction was not signed');

@@ -42,9 +42,10 @@ import {
   attachFlipPaymentSignature,
   attachFlipSignedTransaction,
   clearFlipPaymentRecovery,
-  createUnknownFlipPaymentRecovery,
+  createAwaitingFlipPaymentRecovery,
   FLIP_PAYMENT_RECOVERY_LEGACY_STORAGE_KEY,
   FLIP_PAYMENT_RECOVERY_STORAGE_KEY,
+  FLIP_PAYMENT_RECOVERY_V2_STORAGE_KEY,
   type FlipPaymentRecovery,
   readFlipPaymentRecovery,
   storeFlipPaymentRecovery,
@@ -72,14 +73,22 @@ export function bindFlipSession(sessionToken: string | null) {
  */
 export function FlipMachine() {
   const wallet = useSolanaWallet();
-  const { sessionToken } = useWalletAuth();
-  return <FlipMachineController sessionToken={sessionToken} wallet={wallet} />;
+  const authentication = useWalletAuth();
+  return (
+    <FlipMachineController
+      authenticationStatus={authentication.status}
+      sessionToken={authentication.sessionToken}
+      wallet={wallet}
+    />
+  );
 }
 
 export function FlipMachineController({
+  authenticationStatus = 'unauthenticated',
   sessionToken = null,
   wallet,
 }: {
+  authenticationStatus?: ReturnType<typeof useWalletAuth>['status'];
   sessionToken?: string | null;
   wallet: ReturnType<typeof useSolanaWallet>;
 }) {
@@ -115,6 +124,7 @@ export function FlipMachineController({
       if (
         event.key === null ||
         event.key === FLIP_PAYMENT_RECOVERY_STORAGE_KEY ||
+        event.key === FLIP_PAYMENT_RECOVERY_V2_STORAGE_KEY ||
         event.key === FLIP_PAYMENT_RECOVERY_LEGACY_STORAGE_KEY
       ) {
         hydrateRecovery(window.localStorage, paymentRecoveryRef, dispatch);
@@ -164,6 +174,7 @@ export function FlipMachineController({
   }, [machineKey]);
 
   const handleSelect = useCallback((sport: FlipSport, tierPriceMinor: string) => {
+    if (paymentRecoveryRef.current) return;
     const next = findFlipMachine(sport, tierPriceMinor);
     if (next) dispatch({ machine: next, type: 'machine-selected' });
   }, []);
@@ -183,6 +194,7 @@ export function FlipMachineController({
       !address ||
       !odds ||
       broadcastUnknown ||
+      paymentRecoveryRef.current ||
       recovery ||
       recoveryInvalid ||
       signature
@@ -202,7 +214,7 @@ export function FlipMachineController({
       }
       if (outcome.status === 'resumed') {
         const record = attachFlipPaymentSignature(
-          createUnknownFlipPaymentRecovery({
+          createAwaitingFlipPaymentRecovery({
             commitmentId: outcome.commitmentId,
             intentId: outcome.intent.intentId,
             machineKey: started,
@@ -276,7 +288,7 @@ export function FlipMachineController({
     const events: FlipConfirmEvents = {
       ...baseEvents,
       onBroadcastPending: (nextPrepared) => {
-        const record = createUnknownFlipPaymentRecovery({
+        const record = createAwaitingFlipPaymentRecovery({
           commitmentId,
           intentId: intent.intentId,
           machineKey: started,
@@ -288,6 +300,7 @@ export function FlipMachineController({
         });
         if (!storeFlipPaymentRecovery(window.localStorage, record)) return false;
         paymentRecoveryRef.current = record;
+        dispatch({ record, type: 'recovery-synchronized' });
         return true;
       },
       onSignature: (nextSignature) => {
@@ -299,6 +312,7 @@ export function FlipMachineController({
         // safely re-claim and re-broadcast the exact same transfer.
         if (storeFlipPaymentRecovery(window.localStorage, known)) {
           paymentRecoveryRef.current = known;
+          dispatch({ record: known, type: 'recovery-synchronized' });
         }
       },
       onSignedTransaction: (signed) => {
@@ -307,6 +321,7 @@ export function FlipMachineController({
         const pending = attachFlipSignedTransaction(current, signed);
         if (!storeFlipPaymentRecovery(window.localStorage, pending)) return false;
         paymentRecoveryRef.current = pending;
+        dispatch({ record: pending, type: 'recovery-synchronized' });
         return true;
       },
     };
@@ -337,10 +352,10 @@ export function FlipMachineController({
 
   const handleResume = useCallback(() => {
     const address = wallet.address;
-    if (fundingOperationRef.current || recoveryInvalid) return;
+    if (fundingOperationRef.current || recoveryInvalid || !sessionToken) return;
 
     if (recovery) {
-      if (recovery.status === 'broadcast-unknown') return;
+      if (recovery.status === 'awaiting-signature' || address !== recovery.payerWallet) return;
       fundingOperationRef.current = true;
       const recoveryInput = {
         address: recovery.payerWallet,
@@ -438,6 +453,7 @@ export function FlipMachineController({
     recoveryInvalid,
     serverSeedHash,
     signature,
+    sessionToken,
     wallet,
     createFlipConfirmIo,
     prepareGachaPaymentTransaction,
@@ -446,16 +462,21 @@ export function FlipMachineController({
   useEffect(() => {
     if (
       !recovery ||
-      recovery.status === 'broadcast-unknown' ||
+      recovery.status === 'awaiting-signature' ||
+      !sessionToken ||
+      wallet.address !== recovery.payerWallet ||
+      fundingOperationRef.current ||
       automaticRecoverySignatureRef.current === recovery.signature
     ) {
       return;
     }
     automaticRecoverySignatureRef.current = recovery.signature;
     handleResume();
-  }, [handleResume, recovery]);
+  }, [handleResume, recovery, sessionToken, wallet.address]);
 
-  const handleReset = useCallback(() => dispatch({ type: 'reset' }), []);
+  const handleReset = useCallback(() => {
+    if (!paymentRecoveryRef.current) dispatch({ type: 'reset' });
+  }, []);
 
   // The view takes plain data so it stays renderable without a wallet provider;
   // the Wallet Standard object itself never crosses that boundary.
@@ -475,7 +496,11 @@ export function FlipMachineController({
       onResume={handleResume}
       onSelect={handleSelect}
       state={state}
+      walletAuthenticated={Boolean(sessionToken)}
       walletAddress={wallet.address}
+      walletAuthenticationPending={
+        authenticationStatus === 'restoring' || authenticationStatus === 'signing'
+      }
       walletCanSignTransaction={wallet.canSignTransaction}
       walletConnecting={wallet.status === 'connecting'}
       wallets={wallets}
@@ -490,6 +515,12 @@ export function hydrateRecovery(
 ): void {
   const restored = readFlipPaymentRecovery(storage);
   if (restored.status === 'valid') {
+    if (restored.record.status === 'awaiting-signature') {
+      clearFlipPaymentRecovery(storage);
+      recoveryRef.current = null;
+      dispatch({ type: 'recovery-cleared' });
+      return;
+    }
     recoveryRef.current = restored.record;
     dispatch({ record: restored.record, stale: restored.stale, type: 'recovery-hydrated' });
     return;

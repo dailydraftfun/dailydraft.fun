@@ -4,7 +4,6 @@ import {
   ArrowSquareOutIcon,
   CardsThreeIcon,
   CheckCircleIcon,
-  LockKeyIcon,
   ReceiptIcon,
   SparkleIcon,
   SpinnerGapIcon,
@@ -23,7 +22,6 @@ import { engineRarityForGachaBand } from '../scenes/gacha-reveal-choreography';
 import { GachaRevealScene } from '../scenes/gacha-reveal-scene';
 import {
   describeFlipStage,
-  type FlipStage,
   getFlipCostSummary,
   getFlipFundingRequirement,
   getFlipStage,
@@ -31,6 +29,7 @@ import {
 import type { FlipMachineState } from './flip-machine-state';
 import { FLIP_SPORTS, FLIP_TIERS, type FlipSport } from './flip-machines';
 import { describeFlipReveal } from './flip-reveal-presentation';
+import styles from './gacha-machine.module.css';
 
 /** The subset of a Wallet Standard entry this surface renders. */
 export type FlipWalletChoice = { icon: string; name: string };
@@ -45,7 +44,9 @@ export type FlipMachineViewProps = {
   onResume: () => void;
   onSelect: (sport: FlipSport, tierPriceMinor: string) => void;
   state: FlipMachineState;
+  walletAuthenticated: boolean;
   walletAddress: string | null;
+  walletAuthenticationPending: boolean;
   walletCanSignTransaction: boolean;
   walletConnecting: boolean;
   wallets: readonly FlipWalletChoice[];
@@ -69,7 +70,9 @@ export function FlipMachineView({
   onResume,
   onSelect,
   state,
+  walletAuthenticated,
   walletAddress,
+  walletAuthenticationPending,
   walletCanSignTransaction,
   walletConnecting,
   wallets,
@@ -126,383 +129,388 @@ export function FlipMachineView({
           revealEvidenceMatches ? odds.bandMinimums : null,
         )
       : null;
+  const locked = Boolean(recovery || recoveryInvalid || broadcastUnknown || signature);
+  const selectionStage =
+    stage === 'review' || stage === 'preparing' || (stage === 'recovery' && !locked && !intent);
+  const recoveryWalletMatches = Boolean(
+    recovery && walletAddress && recovery.payerWallet === walletAddress,
+  );
+  const recoveryActionable = Boolean(
+    recovery &&
+      recovery.status !== 'awaiting-signature' &&
+      walletAuthenticated &&
+      recoveryWalletMatches,
+  );
+  const chaseChance = odds
+    ? formatChance(odds.chaseProbabilityPpm, odds.probabilityScalePpm)
+    : null;
 
   return (
-    <section
-      aria-label="Sports Pack Gacha"
-      className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]"
-      data-stage={stage}
-    >
-      <div className="proof-panel">
-        <PanelHeading
-          eyebrow={stageCopy.label}
-          title={
-            snapshot?.machineKey === machine.machineKey
-              ? snapshot.machine.displayName
-              : `${machine.sportLabel} ${machine.tierLabel} Sports Pack`
-          }
+    <section aria-label="Sports Pack Gacha" className={styles.machine} data-stage={stage}>
+      <header className={styles.topbar}>
+        <div>
+          <p className={styles.eyebrow}>{stageCopy.label}</p>
+          <h2 className={styles.title}>
+            {snapshot?.machineKey === machine.machineKey
+              ? snapshot.machine.displayName.replace(' Devnet Machine', '')
+              : `${machine.sportLabel} ${machine.tierLabel} Pack`}
+          </h2>
+        </div>
+        <span className={styles.devnet}>Devnet</span>
+      </header>
+
+      {stage !== 'revealed' ? (
+        <PackStage
+          detail={stageCopy.detail}
+          label={stageCopy.label}
+          price={cost.packTier}
+          sport={machine.sport}
+          sportLabel={machine.sportLabel}
         />
-        <p className="mt-3 text-sm leading-6 text-secondary">{stageCopy.detail}</p>
+      ) : null}
 
-        {stage === 'blocked' ? (
-          <div className="intent-warnings mt-5" role="status">
-            <WarningCircleIcon size={17} weight="fill" />
-            <span>{capabilityError ?? capability?.reason ?? 'This machine is closed.'}</span>
-          </div>
-        ) : null}
+      {stage === 'blocked' ? (
+        <StatusCard
+          detail={capabilityError ?? capability?.reason ?? 'This machine is closed.'}
+          title="This pack is temporarily offline"
+          warning
+        />
+      ) : null}
 
-        {stage === 'connect' ? (
-          <ConnectPanel connecting={walletConnecting} onConnect={onConnect} wallets={wallets} />
-        ) : null}
+      {stage === 'connect' ? (
+        <ConnectPanel connecting={walletConnecting} onConnect={onConnect} wallets={wallets} />
+      ) : null}
 
-        {stage === 'review' ||
-        stage === 'preparing' ||
-        (stage === 'recovery' && !signature && !broadcastUnknown) ? (
-          <>
-            <p className="proof-label mt-6">Sport</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {selectionStage ? (
+        <div className={styles.controls}>
+          <fieldset className={styles.choiceGroup}>
+            <legend className={styles.choiceLabel}>Sport</legend>
+            <div className={styles.choices} style={{ '--columns': 4 } as React.CSSProperties}>
               {FLIP_SPORTS.map(({ label, sport }) => (
-                <PoolChoice
+                <Choice
                   active={machine.sport === sport}
                   key={sport}
                   label={label}
-                  meta="Sealed devnet pool"
                   onClick={() => onSelect(sport, machine.tierPriceMinor)}
                 />
               ))}
             </div>
-
-            <p className="proof-label mt-6">Tier</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          </fieldset>
+          <fieldset className={styles.choiceGroup}>
+            <legend className={styles.choiceLabel}>Pack</legend>
+            <div className={styles.choices} style={{ '--columns': 3 } as React.CSSProperties}>
               {FLIP_TIERS.map((tier) => (
-                <PoolChoice
+                <Choice
                   active={machine.tierPriceMinor === tier.priceMinor}
                   key={tier.priceMinor}
                   label={tier.label}
-                  meta="Per rip"
                   onClick={() => onSelect(machine.sport, tier.priceMinor)}
                 />
               ))}
             </div>
+          </fieldset>
 
-            {odds ? (
-              <div className="mt-5 rounded-xl border border-lime/20 bg-lime/5 p-5" role="status">
-                <div className="flex items-center gap-3 text-lime">
-                  <LockKeyIcon size={20} weight="fill" />
-                  <strong className="text-sm">Odds sealed before your roll</strong>
-                </div>
-                <div className="mt-4 overflow-hidden rounded-xl border border-border">
-                  <ProbabilityRow
-                    band="Base"
-                    chance={formatChance(odds.baseProbabilityPpm, odds.probabilityScalePpm)}
-                    detail="Cleared the pool floor."
-                  />
-                  <ProbabilityRow
-                    band="Plus"
-                    chance={formatChance(odds.plusProbabilityPpm, odds.probabilityScalePpm)}
-                    detail="Cleared the plus band minimum."
-                  />
-                  <ProbabilityRow
-                    band="Premium"
-                    chance={formatChance(odds.premiumProbabilityPpm, odds.probabilityScalePpm)}
-                    detail="Cleared the premium band minimum."
-                  />
-                  <ProbabilityRow
-                    band="Chase"
-                    chance={formatChance(odds.chaseProbabilityPpm, odds.probabilityScalePpm)}
-                    detail="Top committed band — the chase hit."
-                  />
-                </div>
-                <dl className="proof-definition-list mt-4">
-                  <div>
-                    <dt>Odds key</dt>
-                    <dd>{shorten(odds.oddsKey)}</dd>
-                  </div>
-                  <div>
-                    <dt>Rules hash</dt>
-                    <dd>{shorten(odds.rulesHash)}</dd>
-                  </div>
-                  <div>
-                    <dt>Committed pool</dt>
-                    <dd>{snapshot ? `${snapshot.eligibleCount} eligible cards` : 'Loading…'}</dd>
-                  </div>
-                </dl>
-              </div>
-            ) : null}
+          <p className={styles.facts}>
+            <span>
+              <strong>{snapshot ? snapshot.eligibleCount : '—'}</strong> possible cards
+            </span>
+            <span>
+              <strong>{chaseChance ?? '—'}</strong> Chase
+            </span>
+            <span>Provably fair</span>
+          </p>
 
-            {error ? (
-              <p className="duel-preflight duel-preflight-short mt-5" role="alert">
-                <WarningCircleIcon size={15} weight="fill" />
-                {error}
-              </p>
-            ) : null}
-
-            <button
-              className="proof-primary-action mt-6 gap-2"
-              disabled={pending || !odds}
-              onClick={onPrepare}
-              type="button"
-            >
-              <LockKeyIcon size={16} />
-              {pending ? 'Preparing your rip…' : 'Price this rip'}
-            </button>
-          </>
-        ) : null}
-
-        {stage === 'funding-review' && intent && prepared ? (
-          <div className="duel-step-panel mt-6">
-            <div className="duel-step-title">
-              <WalletIcon size={23} weight="fill" />
-              <h3>Review the deposit</h3>
-            </div>
-            <dl className="duel-money-summary">
-              <div>
-                <dt>Pack tier</dt>
-                <dd>{cost.packTier}</dd>
-              </div>
-              <div className="duel-money-total">
-                <dt>Deposit</dt>
-                <dd>{cost.deposit}</dd>
-              </div>
-              <div>
-                <dt>Network fee</dt>
-                <dd>{cost.networkFee}</dd>
-              </div>
-              <div>
-                <dt>Wallet approval</dt>
-                <dd>{cost.walletApproval}</dd>
-              </div>
-            </dl>
-
-            {preflight ? (
-              <p className={underfunded ? 'duel-preflight duel-preflight-short' : 'duel-preflight'}>
-                {underfunded ? <WarningCircleIcon size={15} weight="fill" /> : null}
-                {preflight.summary}
-              </p>
-            ) : null}
-
-            <p className="duel-payment-safety">
-              Nothing is charged until you approve the transfer. The deposit goes to the house
-              treasury token account shown below, and the seed is only revealed once the network
-              confirms it.
+          {error ? (
+            <p className="duel-preflight duel-preflight-short mt-4" role="alert">
+              <WarningCircleIcon size={15} weight="fill" />
+              {error}
             </p>
+          ) : null}
 
-            {!walletCanSignTransaction ? (
-              <p className="duel-preflight duel-preflight-short" role="alert">
-                <WarningCircleIcon size={15} weight="fill" />
-                This wallet only supports combined sign-and-send. Choose a wallet that can sign
-                first so the payment is claimed by the server before broadcast.
-              </p>
-            ) : null}
+          <button
+            className={styles.primary}
+            disabled={pending || !odds}
+            onClick={onPrepare}
+            type="button"
+          >
+            <SparkleIcon size={17} weight="fill" />
+            {pending ? 'Sealing your pack…' : `Rip ${machine.sportLabel} · ${cost.packTier}`}
+          </button>
 
-            <dl className="proof-definition-list mt-4">
-              <AddressRow address={intent.destinationTokenAccount} label="House treasury" />
-              <AddressRow address={intent.mint} label="USDC mint" />
-              <AddressRow address={prepared.sourceTokenAccount} label="Funding token account" />
-              <div>
-                <dt>Intent</dt>
-                <dd>{shorten(intent.intentId)}</dd>
-              </div>
-              {serverSeedHash ? (
-                <div>
-                  <dt>Server seed commitment</dt>
-                  <dd className="break-all font-mono text-xs">{serverSeedHash}</dd>
-                </div>
-              ) : null}
-            </dl>
-
-            {error ? (
-              <p className="duel-preflight duel-preflight-short" role="alert">
-                <WarningCircleIcon size={15} weight="fill" />
-                {error}
-              </p>
-            ) : null}
-
-            <button
-              className="proof-primary-action mt-6 gap-2"
-              disabled={underfunded || !walletCanSignTransaction}
-              onClick={onConfirm}
-              type="button"
-            >
-              <SparkleIcon size={16} weight="fill" />
-              Approve and rip
-            </button>
-          </div>
-        ) : null}
-
-        {stage === 'funding-signature' ||
-        stage === 'confirming' ||
-        stage === 'verifying' ||
-        stage === 'ripping' ? (
-          <ProgressPanel
-            detail={
-              confirmationPhase && stage === 'confirming'
-                ? describeConfirmation(confirmationPhase).detail
-                : stageCopy.detail
-            }
-            explorerUrl={signature ? getExplorerTransactionUrl(signature) : null}
-            label={stageCopy.label}
-            signature={signature ? shorten(signature) : undefined}
-          />
-        ) : null}
-
-        {stage === 'recovery' &&
-        (intent || signature || broadcastUnknown || recoveryInvalid || recovery) ? (
-          <div className="duel-step-panel mt-6" role="alert">
-            <div className="duel-step-title">
-              <WarningCircleIcon size={23} weight="fill" />
-              <h3>Recover this rip</h3>
-            </div>
-            <p className="text-sm leading-6 text-secondary">{error ?? stageCopy.detail}</p>
-            {signature ? (
-              <a
-                className="duel-explorer-link"
-                href={getExplorerTransactionUrl(signature)}
-                rel="noreferrer"
-                target="_blank"
-              >
-                Track on Solana Explorer <ArrowSquareOutIcon size={13} />
-              </a>
-            ) : null}
-            {broadcastUnknown || recoveryInvalid ? (
-              <>
-                <p className="duel-preflight duel-preflight-short mt-5" role="status">
-                  Reconciliation is required before another transfer can be approved.
-                </p>
-                {recoveryInvalid ? (
-                  <p className="mt-3 text-xs leading-5 text-secondary">
-                    Contact the DailyDraft operator from this browser and include your connected
-                    wallet address. Do not clear browser storage or approve another transfer until
-                    the prior intent is identified.
-                  </p>
-                ) : null}
-              </>
-            ) : (
-              <button className="proof-secondary-action mt-5" onClick={onResume} type="button">
-                {signature ? 'Resume this rip' : 'Refresh payment review'}
-              </button>
-            )}
-          </div>
-        ) : null}
-
-        {stage === 'delivery-failed' && result ? (
-          <div className="duel-step-panel mt-6" role="alert">
-            <div className="duel-step-title">
-              <WarningCircleIcon size={23} weight="fill" />
-              <h3>Card delivery failed</h3>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-secondary">
-              Your deposit settled and was consumed, but the provider did not deliver the selected
-              card. DailyDraft operator reconciliation and a manual refund are required.
-            </p>
-            <ReceiptSummary
-              facts={[
-                ['Rip', shorten(result.rip.id)],
-                ['Failure reason', result.rip.failureReason ?? 'Provider delivery failed'],
-                ['Failed asset', result.rip.failedAssetReference ?? 'Not recorded'],
-                [
-                  'Server seed proof',
-                  result.serverSeed ? 'Verified against the pre-payment commitment' : 'Unavailable',
-                ],
-              ]}
-              title="Refund reconciliation"
+          {odds ? (
+            <FairnessDetails
+              odds={odds}
+              serverSeedHash={null}
+              snapshotCount={snapshot?.eligibleCount}
             />
-            <button className="proof-secondary-action mt-5" onClick={onReset} type="button">
-              Return to the machine
-            </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
+      ) : null}
 
-        {stage === 'revealed' && reveal && result ? (
-          <div className="mt-6 grid gap-6 md:grid-cols-[minmax(19rem,22rem)_minmax(0,1fr)] md:items-center">
-            <div data-rarity={reveal.rarity?.band}>
-              {revealEvidenceMatches && reveal.rarity && reveal.imageUrl ? (
-                <GachaRevealScene
-                  cardImageUrl={reveal.imageUrl}
-                  displayName={reveal.displayName}
-                  rarity={engineRarityForGachaBand(reveal.rarity.band)}
-                  revealId={result.rip.id}
-                />
-              ) : reveal.imageUrl ? (
-                <div className="relative mx-auto aspect-[2.5/3.5] w-full max-w-60 overflow-hidden rounded-xl border border-border bg-tertiary">
-                  <Image
-                    alt={reveal.displayName}
-                    className="object-cover"
-                    fill
-                    priority
-                    sizes="(min-width: 768px) 240px, 72vw"
-                    src={reveal.imageUrl}
-                  />
+      {stage === 'funding-review' && intent && prepared ? (
+        <div className={styles.sheet}>
+          <div className={styles.sheetHeading}>
+            <WalletIcon size={23} weight="fill" />
+            <h3>One approval, then the pack opens</h3>
+          </div>
+          <div className={styles.price}>
+            <span>Total deposit</span>
+            <strong>{cost.deposit}</strong>
+          </div>
+
+          {preflight ? (
+            <p className={underfunded ? 'duel-preflight duel-preflight-short' : 'duel-preflight'}>
+              {underfunded ? <WarningCircleIcon size={15} weight="fill" /> : null}
+              {preflight.summary}
+            </p>
+          ) : null}
+
+          <p className={styles.safety}>
+            Nothing moves until you approve {cost.deposit} in your wallet. DailyDraft verifies the
+            exact transfer before broadcasting it, then opens this sealed pack automatically.
+          </p>
+
+          {!walletCanSignTransaction ? (
+            <p className="duel-preflight duel-preflight-short mt-4" role="alert">
+              <WarningCircleIcon size={15} weight="fill" />
+              This wallet only supports combined sign-and-send. Choose a wallet that supports safe
+              sign-first payments.
+            </p>
+          ) : null}
+
+          {error ? (
+            <p className="duel-preflight duel-preflight-short mt-4" role="alert">
+              <WarningCircleIcon size={15} weight="fill" />
+              {error}
+            </p>
+          ) : null}
+
+          <button
+            className={styles.primary}
+            disabled={underfunded || !walletCanSignTransaction}
+            onClick={onConfirm}
+            type="button"
+          >
+            <SparkleIcon size={17} weight="fill" />
+            Approve {cost.deposit}
+          </button>
+
+          <details className={styles.details}>
+            <summary>Payment details</summary>
+            <div className={styles.detailsBody}>
+              <dl className={styles.technical}>
+                <div>
+                  <dt>Network fee</dt>
+                  <dd>{cost.networkFee}</dd>
                 </div>
-              ) : (
-                <div className="mx-auto grid aspect-[2.5/3.5] w-full max-w-60 place-items-center rounded-xl border border-border bg-tertiary text-sm text-secondary">
-                  {reveal.displayName}
+                <AddressRow address={intent.destinationTokenAccount} label="House treasury" />
+                <AddressRow address={intent.mint} label="USDC mint" />
+                <AddressRow address={prepared.sourceTokenAccount} label="Funding token account" />
+                <div>
+                  <dt>Intent</dt>
+                  <dd>{shorten(intent.intentId)}</dd>
                 </div>
-              )}
+                {serverSeedHash ? (
+                  <div>
+                    <dt>Server seed commitment</dt>
+                    <dd className="break-all font-mono text-xs">{serverSeedHash}</dd>
+                  </div>
+                ) : null}
+              </dl>
             </div>
-            <div>
-              <div className="flex items-center gap-3 text-lime">
-                <CheckCircleIcon size={20} weight="fill" />
-                <strong className="text-sm">
-                  {revealEvidenceMatches ? (reveal.rarity?.label ?? 'Revealed') : 'Rarity pending'}
-                </strong>
-              </div>
-              <h3 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-primary">
-                {reveal.displayName}
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-secondary">
-                {revealEvidenceMatches
-                  ? (reveal.rarity?.blurb ?? 'The server seed is revealed and the pull is final.')
-                  : 'The pull is final. Matching sealed rarity evidence is still loading.'}
-              </p>
+          </details>
+        </div>
+      ) : null}
+
+      {stage === 'funding-signature' ||
+      stage === 'confirming' ||
+      stage === 'verifying' ||
+      stage === 'ripping' ? (
+        <ProgressPanel
+          detail={
+            confirmationPhase && stage === 'confirming'
+              ? describeConfirmation(confirmationPhase).detail
+              : stageCopy.detail
+          }
+          explorerUrl={signature ? getExplorerTransactionUrl(signature) : null}
+          label={stageCopy.label}
+          signature={signature ? shorten(signature) : undefined}
+        />
+      ) : null}
+
+      {stage === 'recovery' &&
+      (intent || signature || broadcastUnknown || recoveryInvalid || recovery) ? (
+        <div
+          className={`${styles.statusCard} ${recoveryInvalid ? styles.warning : ''}`}
+          role="status"
+        >
+          <span className={styles.statusIcon}>
+            {recoveryInvalid ? (
+              <WarningCircleIcon size={22} weight="fill" />
+            ) : (
+              <SpinnerGapIcon className="wallet-spinner" size={22} />
+            )}
+          </span>
+          <h3>
+            {recovery?.status === 'signed-claim-pending'
+              ? 'Securing your pack'
+              : recoveryInvalid
+                ? 'Your previous rip needs attention'
+                : 'Finishing your rip'}
+          </h3>
+          <p>
+            {recovery?.status === 'signed-claim-pending'
+              ? 'Your payment was not sent. We will retry the same signed payment—never a second charge or wallet prompt.'
+              : recoveryInvalid
+                ? 'Do not approve another payment. Your saved recovery record needs operator review.'
+                : broadcastUnknown
+                  ? 'We are checking the previous attempt before another payment can be approved.'
+                  : 'Your pack is safe. DailyDraft will continue from the last verified step.'}
+          </p>
+
+          {walletAuthenticationPending ? (
+            <p>Restoring your wallet session before recovery…</p>
+          ) : recovery && walletAddress && !recoveryWalletMatches ? (
+            <p>Reconnect the wallet that started this rip to continue safely.</p>
+          ) : null}
+
+          {recoveryActionable || (!recovery && intent && prepared && !broadcastUnknown) ? (
+            <button className={styles.secondary} onClick={onResume} type="button">
+              Try recovery now
+            </button>
+          ) : null}
+
+          <details className={styles.details}>
+            <summary>Recovery details</summary>
+            <div className={styles.detailsBody}>
+              <p>{error ?? stageCopy.detail}</p>
+              {signature ? (
+                <a
+                  className="duel-explorer-link"
+                  href={getExplorerTransactionUrl(signature)}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Track on Solana Explorer <ArrowSquareOutIcon size={13} />
+                </a>
+              ) : null}
+            </div>
+          </details>
+        </div>
+      ) : null}
+
+      {stage === 'delivery-failed' && result ? (
+        <div className={`${styles.statusCard} ${styles.warning}`} role="alert">
+          <span className={styles.statusIcon}>
+            <WarningCircleIcon size={22} weight="fill" />
+          </span>
+          <h3>Card delivery is delayed</h3>
+          <p>
+            Your deposit settled, but the card provider did not finish delivery. This rip is locked
+            for operator reconciliation and refund review.
+          </p>
+          <button className={styles.secondary} onClick={onReset} type="button">
+            Return to packs
+          </button>
+          <details className={styles.details}>
+            <summary>Refund details</summary>
+            <div className={styles.detailsBody}>
               <ReceiptSummary
                 facts={[
-                  ['Insured value', reveal.insuredValue],
-                  ['Graded', reveal.graded ? 'Yes' : 'No'],
                   ['Rip', shorten(result.rip.id)],
-                  ['Client seed hash', result.rip.seedCommitmentHash],
+                  ['Failure reason', result.rip.failureReason ?? 'Provider delivery failed'],
+                  ['Failed asset', result.rip.failedAssetReference ?? 'Not recorded'],
                   [
-                    'Server seed',
-                    result.serverSeed ? shorten(result.serverSeed) : 'Pending reveal',
+                    'Server seed proof',
+                    result.serverSeed
+                      ? 'Verified against the pre-payment commitment'
+                      : 'Unavailable',
                   ],
-                  ['Server seed commitment', result.serverSeedHash ?? 'Missing proof'],
-                  ['Server seed proof', 'Verified against the pre-payment commitment'],
-                  ['Odds rules hash', shorten(result.rip.oddsRulesHash)],
                 ]}
-                title="Provably fair receipt"
+                title="Refund reconciliation"
               />
-              <button className="proof-secondary-action mt-5" onClick={onReset} type="button">
-                Rip another pack
-              </button>
             </div>
+          </details>
+        </div>
+      ) : null}
+
+      {stage === 'revealed' && reveal && result ? (
+        <div className={styles.reveal}>
+          <div data-rarity={reveal.rarity?.band}>
+            {revealEvidenceMatches && reveal.rarity && reveal.imageUrl ? (
+              <GachaRevealScene
+                cardImageUrl={reveal.imageUrl}
+                displayName={reveal.displayName}
+                rarity={engineRarityForGachaBand(reveal.rarity.band)}
+                revealId={result.rip.id}
+              />
+            ) : reveal.imageUrl ? (
+              <div className="relative mx-auto aspect-[2.5/3.5] w-full max-w-60 overflow-hidden rounded-xl border border-border bg-tertiary">
+                <Image
+                  alt={reveal.displayName}
+                  className="object-cover"
+                  fill
+                  priority
+                  sizes="(min-width: 768px) 240px, 72vw"
+                  src={reveal.imageUrl}
+                />
+              </div>
+            ) : (
+              <div className="mx-auto grid aspect-[2.5/3.5] w-full max-w-60 place-items-center rounded-xl border border-border bg-tertiary text-sm text-secondary">
+                {reveal.displayName}
+              </div>
+            )}
           </div>
-        ) : null}
+          <div className={styles.reward}>
+            <p className={styles.rarity}>
+              <CheckCircleIcon size={16} weight="fill" />{' '}
+              {revealEvidenceMatches ? (reveal.rarity?.label ?? 'Revealed') : 'Rarity pending'}
+            </p>
+            <h3>{reveal.displayName}</h3>
+            <p>
+              {revealEvidenceMatches
+                ? (reveal.rarity?.blurb ?? 'The committed pack is open and the pull is final.')
+                : 'The pull is final. Matching sealed rarity evidence is still loading.'}
+            </p>
+            <div className={styles.value}>
+              <span>Insured value</span>
+              <strong>{reveal.insuredValue}</strong>
+            </div>
+            <button className={styles.primary} onClick={onReset} type="button">
+              <SparkleIcon size={17} weight="fill" />
+              Rip another · {cost.packTier}
+            </button>
+            <details className={styles.details}>
+              <summary>Verified receipt</summary>
+              <div className={styles.detailsBody}>
+                <ReceiptSummary
+                  facts={[
+                    ['Graded', reveal.graded ? 'Yes' : 'No'],
+                    ['Rip', shorten(result.rip.id)],
+                    ['Client seed hash', result.rip.seedCommitmentHash],
+                    [
+                      'Server seed',
+                      result.serverSeed ? shorten(result.serverSeed) : 'Pending reveal',
+                    ],
+                    ['Server seed commitment', result.serverSeedHash ?? 'Missing proof'],
+                    ['Server seed proof', 'Verified against the pre-payment commitment'],
+                    ['Odds rules hash', shorten(result.rip.oddsRulesHash)],
+                  ]}
+                  title="Provably fair receipt"
+                />
+              </div>
+            </details>
+          </div>
+        </div>
+      ) : null}
 
-        {notice ? (
-          <p className="mt-5 text-xs leading-5 text-secondary" role="status">
-            {notice}
-          </p>
-        ) : null}
-      </div>
-
-      <JourneyRail current={journeyIndex(stage)} />
+      {notice ? (
+        <p className={styles.notice} role="status">
+          {notice}
+        </p>
+      ) : null}
     </section>
   );
-}
-
-const JOURNEY_STEPS: ReadonlyArray<[string, string, string]> = [
-  ['01', 'Pick your pack', 'Choose a sport and tier. The machine prices the rip.'],
-  ['02', 'Seal the odds', 'The server commits a seed hash and the odds before you pay.'],
-  ['03', 'Approve the deposit', 'One USDC transfer to the house treasury, shown in full.'],
-  ['04', 'Reveal', 'The seed is revealed and the committed pull is final.'],
-];
-
-export function journeyIndex(stage: FlipStage): number {
-  if (stage === 'delivery-failed' || stage === 'revealed') return 3;
-  if (stage === 'ripping' || stage === 'verifying' || stage === 'confirming') return 2;
-  if (stage === 'funding-review' || stage === 'funding-signature') return 2;
-  if (stage === 'preparing') return 1;
-  return 0;
 }
 
 export function formatChance(ppm: number, scalePpm: number): string {
@@ -514,61 +522,129 @@ export function shorten(value: string): string {
   return value.length > 14 ? `${value.slice(0, 6)}…${value.slice(-6)}` : value;
 }
 
-function PanelHeading({ eyebrow, title }: { eyebrow: string; title: string }) {
+function PackStage({
+  detail,
+  label,
+  price,
+  sport,
+  sportLabel,
+}: {
+  detail: string;
+  label: string;
+  price: string;
+  sport: FlipSport;
+  sportLabel: string;
+}) {
   return (
-    <div>
-      <p className="proof-label">{eyebrow}</p>
-      <h2 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-primary">{title}</h2>
+    <div className={styles.stage}>
+      <div>
+        <div className={styles.packWrap} aria-hidden="true">
+          <span className={styles.halo} />
+          <div className={styles.pack} data-sport={sport}>
+            <span className={styles.packMark}>
+              <CardsThreeIcon size={25} weight="fill" />
+            </span>
+            <span className={styles.packCopy}>
+              <small>DailyDraft sealed</small>
+              <strong>{sportLabel}</strong>
+              <span>{price}</span>
+            </span>
+          </div>
+        </div>
+        <p aria-live="polite" className={styles.phase}>
+          <strong>{label}</strong>
+          <span>{detail}</span>
+        </p>
+      </div>
     </div>
   );
 }
 
-function PoolChoice({
+function Choice({
   active,
   label,
-  meta,
   onClick,
 }: {
   active: boolean;
   label: string;
-  meta: string;
   onClick: () => void;
 }) {
   return (
-    <button
-      aria-pressed={active}
-      className={[
-        'min-h-28 rounded-xl border p-4 text-left transition-colors',
-        active
-          ? 'border-lime/40 bg-lime/5'
-          : 'border-border bg-tertiary hover:border-border-strong',
-      ].join(' ')}
-      onClick={onClick}
-      type="button"
-    >
-      <span aria-hidden="true" className={active ? 'text-lime' : 'text-secondary'}>
-        <CardsThreeIcon size={20} weight="fill" />
-      </span>
-      <strong className="mt-3 block text-sm text-primary">{label}</strong>
-      <small className="mt-1 block text-xs text-secondary">{meta}</small>
+    <button aria-pressed={active} className={styles.choice} onClick={onClick} type="button">
+      {label}
     </button>
   );
 }
 
-function ProbabilityRow({
-  band,
-  chance,
-  detail,
+function FairnessDetails({
+  odds,
+  serverSeedHash,
+  snapshotCount,
 }: {
-  band: string;
-  chance: string;
+  odds: NonNullable<FlipMachineState['odds']>;
+  serverSeedHash: string | null;
+  snapshotCount: number | undefined;
+}) {
+  const probabilities = [
+    ['Base', odds.baseProbabilityPpm],
+    ['Plus', odds.plusProbabilityPpm],
+    ['Premium', odds.premiumProbabilityPpm],
+    ['Chase', odds.chaseProbabilityPpm],
+  ] as const;
+
+  return (
+    <details className={styles.details}>
+      <summary>Odds &amp; fairness</summary>
+      <div className={styles.detailsBody}>
+        <div className={styles.probabilities}>
+          {probabilities.map(([band, ppm]) => (
+            <div className={styles.probability} key={band}>
+              <strong>{formatChance(ppm, odds.probabilityScalePpm)}</strong>
+              <span>{band}</span>
+            </div>
+          ))}
+        </div>
+        <dl className={styles.technical}>
+          <div>
+            <dt>Possible cards</dt>
+            <dd>{snapshotCount ?? 'Loading'}</dd>
+          </div>
+          <div>
+            <dt>Odds key</dt>
+            <dd>{shorten(odds.oddsKey)}</dd>
+          </div>
+          <div>
+            <dt>Rules hash</dt>
+            <dd>{shorten(odds.rulesHash)}</dd>
+          </div>
+          {serverSeedHash ? (
+            <div>
+              <dt>Seed commitment</dt>
+              <dd>{shorten(serverSeedHash)}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </div>
+    </details>
+  );
+}
+
+function StatusCard({
+  detail,
+  title,
+  warning = false,
+}: {
   detail: string;
+  title: string;
+  warning?: boolean;
 }) {
   return (
-    <div className="grid gap-2 border-b border-border bg-secondary px-4 py-3 last:border-b-0 sm:grid-cols-[6rem_4rem_minmax(0,1fr)] sm:items-center">
-      <strong className="text-sm text-primary">{band}</strong>
-      <span className="font-mono text-sm font-semibold text-lime">{chance}</span>
-      <span className="text-xs text-secondary">{detail}</span>
+    <div className={`${styles.statusCard} ${warning ? styles.warning : ''}`} role="status">
+      <span className={styles.statusIcon}>
+        <WarningCircleIcon size={22} weight="fill" />
+      </span>
+      <h3>{title}</h3>
+      <p>{detail}</p>
     </div>
   );
 }
@@ -603,8 +679,10 @@ function ProgressPanel({
   signature?: string;
 }) {
   return (
-    <div aria-live="polite" className="duel-step-panel duel-progress-panel mt-6" role="status">
-      <SpinnerGapIcon className="wallet-spinner" size={30} />
+    <div aria-live="polite" className={styles.statusCard} role="status">
+      <span className={styles.statusIcon}>
+        <SpinnerGapIcon className="wallet-spinner" size={22} />
+      </span>
       {signature ? <span className="duel-progress-signature">{signature}</span> : null}
       <h3>{label}</h3>
       <p>{detail}</p>
@@ -627,10 +705,10 @@ function ConnectPanel({
   wallets: readonly FlipWalletChoice[];
 }) {
   return (
-    <div className="duel-step-panel mt-6">
-      <div className="duel-step-title">
+    <div className={styles.sheet}>
+      <div className={styles.sheetHeading}>
         <WalletIcon size={23} weight="fill" />
-        <h3>Connect your wallet</h3>
+        <h3>Connect to open this pack</h3>
       </div>
       {wallets.length > 0 ? (
         <div className="wallet-list">
@@ -665,12 +743,12 @@ function ConnectPanel({
 
 function ReceiptSummary({ facts, title }: { facts: Array<[string, string]>; title: string }) {
   return (
-    <div className="mt-5 rounded-xl border border-border bg-tertiary p-5" role="status">
+    <div role="status">
       <div className="flex items-center gap-3 text-lime">
         <ReceiptIcon size={20} weight="fill" />
         <strong className="text-sm">{title}</strong>
       </div>
-      <dl className="proof-definition-list mt-4">
+      <dl className={styles.technical}>
         {facts.map(([label, value]) => (
           <div key={label}>
             <dt>{label}</dt>
@@ -679,34 +757,5 @@ function ReceiptSummary({ facts, title }: { facts: Array<[string, string]>; titl
         ))}
       </dl>
     </div>
-  );
-}
-
-function JourneyRail({ current }: { current: number }) {
-  return (
-    <aside className="proof-panel">
-      <p className="proof-label">Player journey</p>
-      <h2 className="mt-2 text-xl font-semibold text-primary">One committed path</h2>
-      <ol className="mt-5 grid gap-3">
-        {JOURNEY_STEPS.map(([number, label, detail], index) => (
-          <li className="flex gap-3" key={number}>
-            <span
-              className={[
-                'grid size-8 shrink-0 place-items-center rounded-full border font-mono text-xs font-semibold',
-                index <= current
-                  ? 'border-lime/40 bg-lime/10 text-lime'
-                  : 'border-border bg-tertiary text-secondary',
-              ].join(' ')}
-            >
-              {number}
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-primary">{label}</p>
-              <p className="mt-1 text-xs leading-5 text-secondary">{detail}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </aside>
   );
 }

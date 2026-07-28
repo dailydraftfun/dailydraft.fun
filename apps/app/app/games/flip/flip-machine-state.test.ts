@@ -17,7 +17,7 @@ import { FLIP_MACHINES } from './flip-machines';
 import {
   attachFlipPaymentSignature,
   attachFlipSignedTransaction,
-  createUnknownFlipPaymentRecovery,
+  createAwaitingFlipPaymentRecovery,
 } from './flip-payment-recovery';
 
 const CAPABILITY: GachaCapability = {
@@ -36,7 +36,7 @@ const PROVIDER_FAILED_RESULT = {
   rip: { id: 'gacharip_failed', status: 'FAILED' },
   serverSeed: 'seed',
 } as GachaRipResult;
-const RECOVERY = createUnknownFlipPaymentRecovery(
+const RECOVERY = createAwaitingFlipPaymentRecovery(
   {
     commitmentId: 'gachaseed_1',
     intentId: 'gachapay_1',
@@ -296,10 +296,27 @@ describe('flip machine state', () => {
     expect(hydrated.broadcastUnknown).toBe(false);
   });
 
+  test('synchronizes signed recovery into live state before a failed claim can render another rip', () => {
+    const synchronized = reduce({
+      record: SIGNED_RECOVERY,
+      type: 'recovery-synchronized',
+    });
+    const selected = flipMachineReducer(synchronized, {
+      machine: FLIP_MACHINES[5] as never,
+      type: 'machine-selected',
+    });
+    const prepared = flipMachineReducer(synchronized, { type: 'prepare-started' });
+
+    expect(synchronized.recovery).toBe(SIGNED_RECOVERY);
+    expect(synchronized.signature).toBe(SIGNED_RECOVERY.signature);
+    expect(selected).toBe(synchronized);
+    expect(prepared).toBe(synchronized);
+  });
+
   test('hydrates recovery onto its own machine and drops mismatched reveal evidence', () => {
     const target = FLIP_MACHINES[5] as (typeof FLIP_MACHINES)[number];
     const recovered = attachFlipPaymentSignature(
-      createUnknownFlipPaymentRecovery({
+      createAwaitingFlipPaymentRecovery({
         commitmentId: 'gachaseed_other',
         intentId: 'gachapay_other',
         machineKey: target.machineKey,
@@ -322,10 +339,10 @@ describe('flip machine state', () => {
   });
 
   test('keeps stale and corrupt reloads fail-closed without a signature', () => {
-    const stale = reduce({ record: RECOVERY, stale: true, type: 'recovery-hydrated' });
+    const stale = reduce({ record: KNOWN_RECOVERY, stale: true, type: 'recovery-hydrated' });
     const invalid = reduce({ type: 'recovery-invalid' });
 
-    expect(stale.broadcastUnknown).toBe(true);
+    expect(stale.recovery).toBe(KNOWN_RECOVERY);
     expect(stale.error).toContain('remains locked');
     expect(invalid.broadcastUnknown).toBe(true);
     expect(invalid.recoveryInvalid).toBe(true);

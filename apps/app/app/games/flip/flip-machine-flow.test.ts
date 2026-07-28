@@ -153,7 +153,7 @@ describe('flip stage copy', () => {
       expect(described.label.length).toBeGreaterThan(0);
       expect(described.detail.length).toBeGreaterThan(0);
     }
-    expect(describeFlipStage('funding-signature').detail).toContain('Nothing is charged');
+    expect(describeFlipStage('funding-signature').detail).toContain('Nothing moves');
   });
 });
 

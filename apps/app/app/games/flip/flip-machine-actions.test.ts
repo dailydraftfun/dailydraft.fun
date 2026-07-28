@@ -35,7 +35,7 @@ import {
 import type { FlipFundingPhase } from './flip-machine-flow';
 import {
   attachFlipPaymentSignature,
-  createUnknownFlipPaymentRecovery,
+  createAwaitingFlipPaymentRecovery,
   readFlipPaymentRecovery,
   storeFlipPaymentRecovery,
 } from './flip-payment-recovery';
@@ -551,8 +551,7 @@ describe('confirmFlipRip', () => {
     );
 
     expect(outcome).toEqual({
-      message:
-        'The server signature claim could not be reconciled. Nothing was broadcast, and this intent remains locked for safe recovery.',
+      message: 'Nothing was sent. Recovery is holding this exact pack safely. Claim response lost.',
       status: 'failed',
     });
     expect(broadcasts).toBe(0);
@@ -783,8 +782,7 @@ describe('confirmFlipRip', () => {
     const interrupted = await confirmFlipRip(CONFIRM_INPUT, firstEvents.events, io);
 
     expect(interrupted).toEqual({
-      message:
-        'The server signature claim could not be reconciled. Nothing was broadcast, and this intent remains locked for safe recovery.',
+      message: 'Nothing was sent. Recovery is holding this exact pack safely. Claim response lost.',
       status: 'failed',
     });
     expect(firstEvents.signatures).toEqual([]);
@@ -1147,7 +1145,7 @@ describe('confirmFlipRip', () => {
     };
     const signature = 'Z'.repeat(88);
     const record = attachFlipPaymentSignature(
-      createUnknownFlipPaymentRecovery({
+      createAwaitingFlipPaymentRecovery({
         commitmentId: CONFIRM_INPUT.commitmentId,
         intentId: CONFIRM_INPUT.intent.intentId,
         machineKey: CONFIRM_INPUT.machineKey,
@@ -1303,6 +1301,58 @@ describe('signature claim authority', () => {
         }),
       }),
     ).rejects.toThrow('Claim rejected.');
+  });
+
+  test('recognizes a replacement pending intent as proof the expired signature never broadcast', async () => {
+    const replacement = {
+      ...INTENT,
+      intentId: 'gachaintent_2',
+      resumed: false,
+      signature: null,
+    };
+
+    await expect(
+      claimOrRecoverSignature(CONFIRM_INPUT, signedTransaction(), {
+        claimSignature: async () => {
+          throw new Error('The old intent expired.');
+        },
+        createPaymentIntent: async () => replacement,
+      }),
+    ).rejects.toThrow('previous approval expired before broadcast');
+  });
+
+  test('releases expired pre-broadcast recovery when the server issues a replacement intent', async () => {
+    let broadcasts = 0;
+    const outcome = await reconcileSignedFlipRip(
+      {
+        ...RESUME_INPUT,
+        signedTransactionBase64: RECOVERY_SIGNED_TRANSACTION.signedTransactionBase64,
+      },
+      RECOVERY_SIGNED_TRANSACTION.signature,
+      recorder().events,
+      confirmIo({
+        broadcastTransaction: async () => {
+          broadcasts += 1;
+          return 'unexpected';
+        },
+        claimSignature: async () => {
+          throw new Error('The old intent expired.');
+        },
+        createPaymentIntent: async () => ({
+          ...INTENT,
+          intentId: 'gachaintent_2',
+          resumed: false,
+          signature: null,
+        }),
+      }),
+    );
+
+    expect(outcome).toEqual({
+      message: 'Your previous approval expired before it was sent. Rip again when ready.',
+      status: 'retryable',
+    });
+    expect(broadcasts).toBe(0);
+    expect(flipOutcomeClearsRecovery(outcome)).toBe(true);
   });
 });
 

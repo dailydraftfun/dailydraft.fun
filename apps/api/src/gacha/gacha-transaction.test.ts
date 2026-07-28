@@ -91,6 +91,17 @@ describe('buildGachaPaymentTransaction', () => {
     );
   });
 
+  test('refuses a misconfigured house destination that would pay the player themselves', () => {
+    const payerTokenAccount = getAssociatedTokenAddressSync(
+      new PublicKey(USDC_MINT),
+      new PublicKey(PAYER),
+    ).toBase58();
+
+    expect(() => build({ destinationTokenAccount: payerTokenAccount })).toThrow(
+      'source and house destination token accounts must differ',
+    );
+  });
+
   test('encodes transferChecked so the mint is provable from the transaction alone', () => {
     const envelope = landed(build().serializedTransactionBase64);
     const message = envelope.transaction.message;
