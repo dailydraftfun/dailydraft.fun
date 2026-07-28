@@ -799,6 +799,30 @@ describe('GachaRipService', () => {
     expect(provider.machineReads).toBe(0);
   });
 
+  test('fails Gacha closed without killing API startup when provider readiness is unavailable', async () => {
+    enableFixtureMode();
+    const database = new RipDatabase();
+    const service = coldStartService(database, new Map(), '3'.repeat(64), 1);
+
+    await expect(service.bootstrapConfiguredMachines()).resolves.toEqual([]);
+    expect(service.capability()).toMatchObject({
+      availability: 'preview',
+      reason: 'Gacha inventory readiness could not be verified. Rip actions are unavailable.',
+    });
+
+    for (
+      let attempt = 0;
+      attempt < 20 && service.capability().availability !== 'playable';
+      attempt += 1
+    ) {
+      await Bun.sleep(5);
+    }
+    expect(service.capability()).toMatchObject({ availability: 'playable' });
+    await expect(service.findCommittedOdds(MACHINE_KEY)).resolves.toMatchObject({
+      snapshotContentHash: '3'.repeat(64),
+    });
+  });
+
   test('records a terminal failure without inventing acquisition or settlement evidence', async () => {
     enableFixtureMode();
     const database = new RipDatabase();
@@ -1015,11 +1039,17 @@ function coldStartService(
   database: RipDatabase,
   registry: Map<string, ReturnType<typeof snapshot>>,
   contentHash: string,
+  failuresBeforeCreate = 0,
 ): GachaRipService {
   let created = false;
+  let remainingFailures = failuresBeforeCreate;
   const preparedSnapshot = { ...snapshot(), contentHash };
   const snapshots = {
     createFixtureSnapshot: async () => {
+      if (remainingFailures > 0) {
+        remainingFailures -= 1;
+        throw new ServiceUnavailableException('provider unavailable');
+      }
       created = true;
       registry.set(contentHash, preparedSnapshot);
       return {

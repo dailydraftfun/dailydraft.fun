@@ -40,6 +40,26 @@ export class PokemonTcgClient {
       ),
     });
   }
+
+  async getCards(cardIds: readonly string[]): Promise<readonly PokemonTcgCardSnapshot[]> {
+    const apiKey = process.env.POKEMON_TCG_API_KEY?.trim();
+    return fetchCards(cardIds, {
+      ...(apiKey ? { apiKey } : {}),
+      fetcher: fetch,
+      onRetry: (event) => this.#logger.warn(JSON.stringify(event)),
+      retries: resolveNonNegativeInteger(process.env.POKEMON_TCG_API_RETRIES, DEFAULT_RETRIES, 3),
+      retryDelayMs: resolveNonNegativeInteger(
+        process.env.POKEMON_TCG_API_RETRY_DELAY_MS,
+        DEFAULT_RETRY_DELAY_MS,
+        5_000,
+      ),
+      timeoutMs: resolvePositiveInteger(
+        process.env.POKEMON_TCG_API_TIMEOUT_MS,
+        DEFAULT_REQUEST_TIMEOUT_MS,
+        60_000,
+      ),
+    });
+  }
 }
 
 interface FetchCardOptions {
@@ -60,29 +80,51 @@ export async function fetchCard(
   cardId: string,
   options: FetchCardOptions,
 ): Promise<PokemonTcgCardSnapshot> {
-  if (!/^[A-Za-z0-9-]{2,32}$/.test(cardId)) {
-    throw new BadGatewayException('Pokémon TCG card ID is invalid');
-  }
+  validateCardIds([cardId]);
+  const value = await fetchJson(
+    `${API_BASE_URL}/cards/${encodeURIComponent(cardId)}?select=id,name,images,tcgplayer`,
+    options,
+  );
+  return parseCard(value);
+}
 
+export async function fetchCards(
+  cardIdsInput: readonly string[],
+  options: FetchCardOptions,
+): Promise<readonly PokemonTcgCardSnapshot[]> {
+  const cardIds = validateCardIds(cardIdsInput);
+  const firstCardId = cardIds[0];
+  if (!firstCardId) throw new BadGatewayException('Pokémon TCG card batch size is invalid');
+  const setId = cardSetId(firstCardId);
+  if (cardIds.some((cardId) => cardSetId(cardId) !== setId)) {
+    throw new BadGatewayException('Pokémon TCG card batch must use one set');
+  }
+  const query = new URLSearchParams({
+    pageSize: '250',
+    q: `set.id:${setId}`,
+    select: 'id,name,images,tcgplayer',
+  });
+  const value = await fetchJson(`${API_BASE_URL}/cards?${query.toString()}`, options);
+  return parseCards(value, cardIds);
+}
+
+async function fetchJson(url: string, options: FetchCardOptions): Promise<unknown> {
   const maxAttempts = options.retries + 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
     try {
-      const response = await options.fetcher(
-        `${API_BASE_URL}/cards/${encodeURIComponent(cardId)}?select=id,name,images,tcgplayer`,
-        {
-          headers: {
-            accept: 'application/json',
-            ...(options.apiKey ? { 'x-api-key': options.apiKey } : {}),
-          },
-          signal: controller.signal,
+      const response = await options.fetcher(url, {
+        headers: {
+          accept: 'application/json',
+          ...(options.apiKey ? { 'x-api-key': options.apiKey } : {}),
         },
-      );
+        signal: controller.signal,
+      });
       if (!response.ok) {
         throw new PokemonTcgHttpError(response.status);
       }
-      return parseCard(await response.json());
+      return response.json();
     } catch (error) {
       if (!isRetryable(error) || attempt === maxAttempts) {
         throw toBadGatewayException(error);
@@ -100,6 +142,31 @@ export async function fetchCard(
   }
 
   throw new BadGatewayException('Pokémon TCG API is unavailable');
+}
+
+export function parseCards(
+  value: unknown,
+  expectedCardIds: readonly string[],
+): readonly PokemonTcgCardSnapshot[] {
+  if (!isObject(value) || !Array.isArray(value.data)) {
+    throw new BadGatewayException('Pokémon TCG API returned an invalid card batch');
+  }
+  const expected = new Set(expectedCardIds);
+  const cards = new Map<string, PokemonTcgCardSnapshot>();
+  for (const candidate of value.data) {
+    if (!isObject(candidate) || typeof candidate.id !== 'string' || !expected.has(candidate.id)) {
+      continue;
+    }
+    if (cards.has(candidate.id)) {
+      throw new BadGatewayException('Pokémon TCG API returned a duplicate card');
+    }
+    cards.set(candidate.id, parseCard({ data: candidate }));
+  }
+  return expectedCardIds.map((cardId) => {
+    const card = cards.get(cardId);
+    if (!card) throw new BadGatewayException(`Pokémon TCG API omitted card ${cardId}`);
+    return card;
+  });
 }
 
 class PokemonTcgHttpError extends Error {
@@ -211,6 +278,31 @@ function isPokemonImageUrl(value: string): boolean {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validateCardIds(cardIds: readonly string[]): readonly string[] {
+  if (cardIds.length < 1 || cardIds.length > 250) {
+    throw new BadGatewayException('Pokémon TCG card batch size is invalid');
+  }
+  const unique = new Set<string>();
+  for (const cardId of cardIds) {
+    if (!/^[A-Za-z0-9-]{2,32}$/.test(cardId)) {
+      throw new BadGatewayException('Pokémon TCG card ID is invalid');
+    }
+    if (unique.has(cardId)) {
+      throw new BadGatewayException('Pokémon TCG card batch contains a duplicate ID');
+    }
+    unique.add(cardId);
+  }
+  return [...unique];
+}
+
+function cardSetId(cardId: string): string {
+  const separator = cardId.lastIndexOf('-');
+  if (separator < 1 || separator === cardId.length - 1) {
+    throw new BadGatewayException('Pokémon TCG card ID has no canonical set');
+  }
+  return cardId.slice(0, separator);
 }
 
 function resolvePositiveInteger(

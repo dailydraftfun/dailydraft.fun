@@ -39,6 +39,7 @@ describe('Devnet Sports Pack Gacha provider', () => {
   test('gives each machine its own committed window and wraps at the pool edge', () => {
     expect(machineCardIds(0)).toEqual(['base1-1', 'base1-2', 'base1-3', 'base1-4']);
     expect(machineCardIds(1)).toEqual(['base1-2', 'base1-3', 'base1-4', 'base1-5']);
+    expect(machineCardIds(4)).toEqual(['base1-5', 'base1-6', 'base1-7', 'base1-17']);
     // Machine 14 runs off the end of the sixteen-card pool and wraps.
     expect(machineCardIds(14)).toEqual(['base1-15', 'base1-16', 'base1-1', 'base1-2']);
   });
@@ -85,6 +86,60 @@ describe('Devnet Sports Pack Gacha provider', () => {
     expect(shared?.assetReference).not.toBe(
       cards.find((candidate) => candidate.providerCardReference.endsWith(':base1-2'))
         ?.assetReference,
+    );
+  });
+
+  test('coalesces all machine inventory reads into one upstream set request', async () => {
+    enableDevnet();
+    let requests = 0;
+    const pokemon = {
+      async getCards(cardIds: readonly string[]): Promise<readonly PokemonTcgCardSnapshot[]> {
+        requests += 1;
+        return cardIds.map(cardSnapshot);
+      },
+    } as unknown as PokemonTcgClient;
+    const provider = new DevnetSportsPackGachaProvider(pokemon, stubSigner());
+    const machines = await provider.listMachines();
+
+    await Promise.all(machines.map((machine) => provider.getEligibleCards(machine.machineKey)));
+
+    expect(requests).toBe(1);
+  });
+
+  test('evicts a failed upstream set request so readiness can recover', async () => {
+    enableDevnet();
+    let requests = 0;
+    const pokemon = {
+      async getCards(cardIds: readonly string[]): Promise<readonly PokemonTcgCardSnapshot[]> {
+        requests += 1;
+        if (requests === 1) throw new Error('temporary catalog failure');
+        return cardIds.map(cardSnapshot);
+      },
+    } as unknown as PokemonTcgClient;
+    const provider = new DevnetSportsPackGachaProvider(pokemon, stubSigner());
+    const [machine] = await provider.listMachines();
+    if (!machine) throw new Error('Expected a devnet machine');
+
+    await expect(provider.getEligibleCards(machine.machineKey)).rejects.toThrow(
+      'temporary catalog failure',
+    );
+    await expect(provider.getEligibleCards(machine.machineKey)).resolves.toHaveLength(4);
+    expect(requests).toBe(2);
+  });
+
+  test('fails closed when the upstream batch omits a configured pool card', async () => {
+    enableDevnet();
+    const pokemon = {
+      async getCards(cardIds: readonly string[]): Promise<readonly PokemonTcgCardSnapshot[]> {
+        return cardIds.slice(1).map(cardSnapshot);
+      },
+    } as unknown as PokemonTcgClient;
+    const provider = new DevnetSportsPackGachaProvider(pokemon, stubSigner());
+    const [machine] = await provider.listMachines();
+    if (!machine) throw new Error('Expected a devnet machine');
+
+    await expect(provider.getEligibleCards(machine.machineKey)).rejects.toThrow(
+      'Gacha devnet card base1-1 is unavailable',
     );
   });
 
@@ -202,18 +257,22 @@ function restoreEnvironment(key: string, value: string | undefined): void {
 
 function stubPokemon(): PokemonTcgClient {
   return {
-    async getCard(cardId: string): Promise<PokemonTcgCardSnapshot> {
-      return {
-        cardId,
-        displayName: `Card ${cardId}`,
-        imageUrl: `https://images.pokemontcg.io/${cardId}.png`,
-        marketValueMicroUsdc: '4200000',
-        priceUpdatedAt: '2026/07/20',
-        priceVariant: 'holofoil',
-        sourceTimestamp: new Date('2026-07-20T00:00:00.000Z'),
-      };
+    async getCards(cardIds: readonly string[]): Promise<readonly PokemonTcgCardSnapshot[]> {
+      return cardIds.map(cardSnapshot);
     },
   } as unknown as PokemonTcgClient;
+}
+
+function cardSnapshot(cardId: string): PokemonTcgCardSnapshot {
+  return {
+    cardId,
+    displayName: `Card ${cardId}`,
+    imageUrl: `https://images.pokemontcg.io/${cardId}.png`,
+    marketValueMicroUsdc: '4200000',
+    priceUpdatedAt: '2026/07/20',
+    priceVariant: 'holofoil',
+    sourceTimestamp: new Date('2026-07-20T00:00:00.000Z'),
+  };
 }
 
 function stubSigner(): DevnetDemoSignerService {

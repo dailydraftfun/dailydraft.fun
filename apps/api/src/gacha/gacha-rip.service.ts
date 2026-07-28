@@ -6,7 +6,13 @@ import {
   type RgsSeededProof,
 } from '@dailydraft/contracts';
 import { type DatabaseClient, GachaRipStatus, type Prisma } from '@dailydraft/db';
-import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 import { rarityForSerializedValue } from '../common/pull-rarity.js';
 import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
@@ -38,6 +44,7 @@ const GACHA_ODDS_LOCK_NAMESPACE = 1_191_047_330;
 const MAX_SEED_LENGTH = 240;
 const GACHA_SEED_COMMITMENT_TTL_MS = 15 * 60 * 1000;
 const GACHA_RIP_LIFECYCLE_LEASE_MS = 2 * 60 * 1000;
+const GACHA_BOOTSTRAP_RETRY_MS = 30_000;
 const SERVER_SEED_PATTERN = /^[a-f0-9]{64}$/;
 const INCOMPLETE_RIP_STATUSES = [
   GachaRipStatus.SELECTED,
@@ -88,6 +95,10 @@ type GachaRipRow = NonNullable<Awaited<ReturnType<DatabaseClient['gachaRip']['fi
 
 @Injectable()
 export class GachaRipService {
+  readonly #logger = new Logger(GachaRipService.name);
+  #bootstrapFailed = false;
+  #bootstrapRetry: ReturnType<typeof setTimeout> | undefined;
+
   constructor(
     @Inject(DATABASE_CLIENT) private readonly database: DatabaseClient,
     private readonly snapshots: GachaInventorySnapshotService,
@@ -96,8 +107,14 @@ export class GachaRipService {
   ) {}
 
   capability() {
+    const capability = resolveGachaCapability(this.provider.capabilities);
     return {
-      ...resolveGachaCapability(this.provider.capabilities),
+      ...(capability.availability === 'playable' && this.#bootstrapFailed
+        ? {
+            availability: 'preview' as const,
+            reason: 'Gacha inventory readiness could not be verified. Rip actions are unavailable.',
+          }
+        : capability),
       gates: this.provider.capabilities,
       providerMode: this.provider.mode,
     };
@@ -121,13 +138,27 @@ export class GachaRipService {
   async bootstrapConfiguredMachines() {
     if (
       (!gachaFixtureModeEnabled() && !gachaDevnetModeEnabled()) ||
-      this.capability().availability !== 'playable'
+      resolveGachaCapability(this.provider.capabilities).availability !== 'playable'
     ) {
       return [];
     }
     const prepared = [];
-    for (const machine of await this.provider.listMachines()) {
-      prepared.push(await this.ensureMachineReadiness(machine.machineKey));
+    try {
+      for (const machine of await this.provider.listMachines()) {
+        prepared.push(await this.ensureMachineReadiness(machine.machineKey));
+      }
+      this.#bootstrapFailed = false;
+      this.clearBootstrapRetry();
+    } catch (error) {
+      this.#bootstrapFailed = true;
+      this.#logger.error(
+        JSON.stringify({
+          event: 'gacha_bootstrap_failed',
+          failure: error instanceof Error ? error.name : 'unknown',
+          preparedMachines: prepared.length,
+        }),
+      );
+      this.scheduleBootstrapRetry();
     }
     return prepared;
   }
@@ -377,6 +408,21 @@ export class GachaRipService {
     const candidates = await this.provider.getEligibleCards(machineKey);
     await this.snapshots.createFixtureSnapshot(snapshotInputForMode(machine, candidates));
     return this.snapshots.findLatestSealed(machineKey);
+  }
+
+  private clearBootstrapRetry(): void {
+    if (!this.#bootstrapRetry) return;
+    clearTimeout(this.#bootstrapRetry);
+    this.#bootstrapRetry = undefined;
+  }
+
+  private scheduleBootstrapRetry(): void {
+    if (this.#bootstrapRetry) return;
+    this.#bootstrapRetry = setTimeout(() => {
+      this.#bootstrapRetry = undefined;
+      void this.bootstrapConfiguredMachines();
+    }, gachaBootstrapRetryMs());
+    this.#bootstrapRetry.unref?.();
   }
 
   private async requireCommittedOdds(machineKey: string) {
@@ -693,6 +739,10 @@ export class GachaRipService {
       serverSeedHash: commitment.serverSeedHash,
     };
   }
+}
+
+function gachaBootstrapRetryMs(environment: NodeJS.ProcessEnv = process.env): number {
+  return environment.NODE_ENV === 'test' ? 1 : GACHA_BOOTSTRAP_RETRY_MS;
 }
 
 function leaseExpiry(now: Date): Date {
