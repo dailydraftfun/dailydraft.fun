@@ -279,6 +279,12 @@ function crashCurrentStagePayload(): CrashCurrentStage {
     pot: { amount: '1000000', currency: 'USDC', decimals: 6 },
     roundId: 'crashround_contract01',
     schemaVersion: CRASH_PLAYER_DECISION_SCHEMA_VERSION,
+    settlement: {
+      finalizedOperationCount: 0,
+      receiptHash: null,
+      recoveryReason: null,
+      status: 'not-required',
+    },
     stage: 2,
     status: 'active',
     terminalReason: null,

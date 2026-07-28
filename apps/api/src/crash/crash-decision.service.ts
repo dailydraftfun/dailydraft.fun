@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Prisma } from '@dailydraft/db';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import type { Money } from '../domain.js';
 import { stableStringify } from '../providers/valuation-policy.js';
@@ -11,6 +11,10 @@ import {
   crashCustodyIntentReference,
 } from './crash-custody-movement.service.js';
 import type { CrashRiskHealthFixture } from './crash-risk.policy.js';
+import {
+  CrashSettlementService,
+  type CrashSettlementSnapshot,
+} from './crash-settlement.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the state service class as a runtime injection token.
 import {
   assertCrashRoundRuleBinding,
@@ -50,6 +54,12 @@ export interface CrashCurrentStage {
   pot: Money;
   roundId: string;
   schemaVersion: typeof CRASH_PLAYER_DECISION_SCHEMA_VERSION;
+  settlement: {
+    finalizedOperationCount: number;
+    receiptHash: string | null;
+    recoveryReason: string | null;
+    status: CrashRoundSnapshot['settlementStatus'];
+  };
   stage: number;
   status: CrashRoundSnapshot['status'];
   terminalReason: string | null;
@@ -63,6 +73,9 @@ export class CrashDecisionService {
     @Inject(CRASH_DECISION_RULES) private readonly configuredRules: unknown,
     private readonly custody: CrashCustodyMovementService,
     @Inject(CRASH_RISK_HEALTH) private readonly configuredRiskHealth: unknown = null,
+    @Optional()
+    @Inject(CrashSettlementService)
+    private readonly settlements: CrashSettlementService | null = null,
   ) {}
 
   async currentStage(roundId: string, playerWallet: string): Promise<CrashCurrentStage> {
@@ -70,10 +83,12 @@ export class CrashDecisionService {
     const found = await this.state.findRound(roundId);
     assertRoundPlayer(found, playerWallet);
     assertCrashRoundRuleBinding(found, rules);
-    const current = await this.state.resumeFixtureRound(roundId);
+    let current = await this.state.resumeFixtureRound(roundId);
     assertRoundPlayer(current, playerWallet);
     assertCrashRoundRuleBinding(current, rules);
-    return toCurrentStage(current);
+    const settlement = await this.settleTerminal(current);
+    if (settlement) current = await this.state.findRound(roundId);
+    return toCurrentStage(current, settlement);
   }
 
   async decide(input: CrashPlayerDecisionInput): Promise<CrashCurrentStage> {
@@ -86,8 +101,11 @@ export class CrashDecisionService {
     assertCrashRoundRuleBinding(current, rules);
 
     const replay = findPlayerReplay(current, input);
-    if (replay) return toCurrentStage(current);
-    if (current.status === 'defaulted') return toCurrentStage(current);
+    if (replay || current.status === 'defaulted') {
+      const settlement = await this.settleTerminal(current);
+      if (settlement) current = await this.state.findRound(input.roundId);
+      return toCurrentStage(current, settlement);
+    }
     assertCurrentDecision(current, input);
 
     const custodyReference =
@@ -127,7 +145,19 @@ export class CrashDecisionService {
         );
       }
     }
-    return toCurrentStage(current);
+    const settlement = await this.settleTerminal(current);
+    if (settlement) current = await this.state.findRound(input.roundId);
+    return toCurrentStage(current, settlement);
+  }
+
+  async reconcileSettlement(roundId: string, playerWallet: string): Promise<CrashCurrentStage> {
+    const rules = this.requireRules();
+    let current = await this.state.findRound(roundId);
+    assertRoundPlayer(current, playerWallet);
+    assertCrashRoundRuleBinding(current, rules);
+    const settlement = await this.settleTerminal(current);
+    if (settlement) current = await this.state.findRound(roundId);
+    return toCurrentStage(current, settlement);
   }
 
   private requireRules(): CrashStateRules {
@@ -139,6 +169,13 @@ export class CrashDecisionService {
         'Crash player decisions require approved fixture-preview rules',
       );
     }
+  }
+
+  private async settleTerminal(
+    current: CrashRoundSnapshot,
+  ): Promise<CrashSettlementSnapshot | null> {
+    if (current.status === 'active' || !this.settlements) return null;
+    return this.settlements.resumeFixtureSettlement(current.id);
   }
 
   private async prepareCustodyMovement(
@@ -310,7 +347,10 @@ function assertRoundPlayer(round: CrashRoundSnapshot, playerWallet: string): voi
   }
 }
 
-function toCurrentStage(round: CrashRoundSnapshot): CrashCurrentStage {
+function toCurrentStage(
+  round: CrashRoundSnapshot,
+  settlement: CrashSettlementSnapshot | null = null,
+): CrashCurrentStage {
   return {
     availableActions: round.status === 'active' ? ['continue', 'cash-out'] : [],
     decisionDeadline: round.decisionDeadline,
@@ -320,6 +360,12 @@ function toCurrentStage(round: CrashRoundSnapshot): CrashCurrentStage {
     pot: round.pot,
     roundId: round.id,
     schemaVersion: CRASH_PLAYER_DECISION_SCHEMA_VERSION,
+    settlement: {
+      finalizedOperationCount: settlement?.finalizedOperationCount ?? 0,
+      receiptHash: settlement?.receiptHash ?? round.settlementReceiptHash,
+      recoveryReason: settlement?.recoveryReason ?? null,
+      status: settlement?.status ?? round.settlementStatus,
+    },
     stage: round.stage,
     status: round.status,
     terminalReason: round.terminalReason,
