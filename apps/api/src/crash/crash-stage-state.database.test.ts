@@ -9,6 +9,12 @@ import {
   hashCrashCalculatorRuleSet,
   type UnsignedCrashCalculatorRuleSet,
 } from './crash-calculators.js';
+import {
+  CRASH_CUSTODY_POLICY_SCHEMA_VERSION,
+  CrashCustodyMovementService,
+  hashCrashCustodyPolicy,
+  type UnsignedCrashCustodyPolicy,
+} from './crash-custody-movement.service.js';
 import { CrashDecisionService } from './crash-decision.service.js';
 import {
   CRASH_CUSTODY_FIXTURE_VERSION,
@@ -129,7 +135,11 @@ describeDatabase('Crash stage state machine against a real Postgres', () => {
   test('persists duplicate player decisions once and restores canonical reconnect state', async () => {
     const clock = new DatabaseTestClock();
     const state = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
-    const decisions = new CrashDecisionService(state, RULES);
+    const decisions = new CrashDecisionService(
+      state,
+      RULES,
+      new CrashCustodyMovementService(database, CUSTODY_POLICY, FIXTURE_ENVIRONMENT),
+    );
     const round = await state.createFixtureRound({
       initialPot: usdc('1000000'),
       playerWalletReference: `fixture-wallet:${PLAYER_WALLET}`,
@@ -174,10 +184,59 @@ describeDatabase('Crash stage state machine against a real Postgres', () => {
     });
   });
 
+  test('persists one approved custody intent when Continue responses are lost or concurrent', async () => {
+    const clock = new DatabaseTestClock();
+    const state = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
+    const custody = new CrashCustodyMovementService(database, CUSTODY_POLICY, FIXTURE_ENVIRONMENT);
+    const decisions = new CrashDecisionService(state, RULES, custody);
+    const round = await state.createFixtureRound({
+      initialPot: usdc('0'),
+      playerWalletReference: `fixture-wallet:${PLAYER_WALLET}`,
+      roundId: `${ROUND_PREFIX}-custody`,
+      rules: RULES,
+    });
+    const request = {
+      action: 'continue' as const,
+      expectedStage: round.stage,
+      expectedVersion: round.version,
+      idempotencyKey: 'postgres-custody-idempotency-0001',
+      playerWallet: PLAYER_WALLET,
+      roundId: round.id,
+    };
+
+    const [first, lostResponseRetry] = await Promise.all([
+      decisions.decide(request),
+      decisions.decide(request),
+    ]);
+    expect(lostResponseRetry).toEqual(first);
+    const intents = await database.crashCustodyMovementIntent.findMany({
+      where: { roundId: round.id },
+    });
+    expect(intents).toHaveLength(1);
+    expect(intents[0]).toMatchObject({
+      approvedRecipient: CUSTODY_POLICY.approvedSessionCustody,
+      requestedRecipient: CUSTODY_POLICY.approvedSessionCustody,
+      signingStatus: 'NOT_STARTED',
+      status: 'PREPARED',
+    });
+    await expect(
+      Promise.resolve(
+        database.crashCustodyMovementIntent.updateMany({
+          data: { recoveryReason: 'TAMPERED' },
+          where: { roundId: round.id },
+        }),
+      ),
+    ).rejects.toThrow('Crash custody movement intents are append-only');
+  });
+
   test('commits exactly one transition when reconnect and expiry workers race', async () => {
     const clock = new DatabaseTestClock();
     const state = new CrashStageStateService(database, clock, FIXTURE_ENVIRONMENT);
-    const decisions = new CrashDecisionService(state, RULES);
+    const decisions = new CrashDecisionService(
+      state,
+      RULES,
+      new CrashCustodyMovementService(database, CUSTODY_POLICY, FIXTURE_ENVIRONMENT),
+    );
     const round = await state.createFixtureRound({
       initialPot: usdc('0'),
       playerWalletReference: `fixture-wallet:${PLAYER_WALLET}`,
@@ -247,6 +306,23 @@ const UNSIGNED_RULES = {
 const RULES: CrashStateRules = {
   ...UNSIGNED_RULES,
   stateMachineRulesHash: hashCrashStateRules(UNSIGNED_RULES),
+};
+const UNSIGNED_CUSTODY_POLICY = {
+  activation: 'fixture-only',
+  approvedSessionCustody: 'fixture-wallet:postgres-session-custody',
+  architectureVersion: RULES.architectureVersion,
+  calculatorVersion: RULES.calculatorRules.calculatorVersion,
+  network: 'solana-devnet',
+  policyVersion: 'synthetic-postgres-custody-v1',
+  rulesHash: RULES.calculatorRules.rulesHash,
+  rulesVersion: RULES.calculatorRules.rulesVersion,
+  schemaVersion: CRASH_CUSTODY_POLICY_SCHEMA_VERSION,
+  stateMachineRulesHash: RULES.stateMachineRulesHash,
+  stateMachineVersion: RULES.stateMachineVersion,
+} as const satisfies UnsignedCrashCustodyPolicy;
+const CUSTODY_POLICY = {
+  ...UNSIGNED_CUSTODY_POLICY,
+  policyHash: hashCrashCustodyPolicy(UNSIGNED_CUSTODY_POLICY),
 };
 
 function continueDecision(version: number) {

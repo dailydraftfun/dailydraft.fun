@@ -7,6 +7,7 @@ import {
   hashCrashCalculatorRuleSet,
   type UnsignedCrashCalculatorRuleSet,
 } from './crash-calculators.js';
+import type { CrashCustodyMovementService } from './crash-custody-movement.service.js';
 import {
   CRASH_PLAYER_DECISION_SCHEMA_VERSION,
   CrashDecisionService,
@@ -31,7 +32,7 @@ const DEADLINE = '2026-07-28T16:00:30.000Z';
 describe('CrashDecisionService', () => {
   test('restores the canonical stage, deadline, disclosed default, and actions', async () => {
     const state = stateHarness(activeRound());
-    const service = new CrashDecisionService(state.service, RULES);
+    const service = decisionService(state.service);
 
     await expect(service.currentStage(ROUND_ID, WALLET)).resolves.toEqual({
       availableActions: ['continue', 'cash-out'],
@@ -56,7 +57,7 @@ describe('CrashDecisionService', () => {
   ] as const)('collapses duplicate %s requests onto the accepted transition', async (action) => {
     const accepted = terminalRound(action);
     const state = stateHarness(accepted);
-    const service = new CrashDecisionService(state.service, RULES);
+    const service = decisionService(state.service);
 
     const input = decisionInput(action);
     const first = await service.decide(input);
@@ -78,7 +79,7 @@ describe('CrashDecisionService', () => {
         return continued;
       },
     });
-    const service = new CrashDecisionService(state.service, RULES);
+    const service = decisionService(state.service);
 
     await expect(service.decide(decisionInput('continue'))).resolves.toMatchObject({
       availableActions: ['continue', 'cash-out'],
@@ -97,9 +98,30 @@ describe('CrashDecisionService', () => {
     expect(state.decisions[0]).not.toHaveProperty('settlement');
   });
 
+  test('stops the player decision before the state transition when custody enters recovery', async () => {
+    const state = stateHarness(activeRound());
+    const recoveryCustody = custodyHarness({
+      prepareFixtureMovement: async (input) => ({
+        ...preparedCustodyIntent(input),
+        approvedRecipient: null,
+        policyHash: null,
+        policyVersion: null,
+        recoveryReason: 'CUSTODY_POLICY_ABSENT',
+        status: 'recovery-required',
+      }),
+    });
+    const service = decisionService(state.service, RULES, recoveryCustody);
+
+    await expect(service.decide(decisionInput('continue'))).rejects.toMatchObject({
+      code: 'INVALID_EVIDENCE',
+      message: expect.stringContaining('CUSTODY_POLICY_ABSENT'),
+    });
+    expect(state.decisions).toEqual([]);
+  });
+
   test('submits cash out and final-stage Continue with exact synthetic settlement evidence', async () => {
     const cashOutState = stateHarness(activeRound());
-    const cashOutService = new CrashDecisionService(cashOutState.service, RULES);
+    const cashOutService = decisionService(cashOutState.service);
     await cashOutService.decide(decisionInput('cash-out'));
     expect(cashOutState.decisions[0]).toMatchObject({
       decision: 'cash-out',
@@ -108,7 +130,7 @@ describe('CrashDecisionService', () => {
 
     const final = continuedRound();
     const finalState = stateHarness(final);
-    const finalService = new CrashDecisionService(finalState.service, RULES);
+    const finalService = decisionService(finalState.service);
     await finalService.decide({
       ...decisionInput('continue'),
       expectedStage: 2,
@@ -152,7 +174,7 @@ describe('CrashDecisionService', () => {
       },
       resume: async () => (calls++ === 0 ? initial : defaulted),
     });
-    const service = new CrashDecisionService(state.service, RULES);
+    const service = decisionService(state.service);
 
     await expect(service.decide(decisionInput('continue'))).resolves.toMatchObject({
       availableActions: [],
@@ -175,7 +197,7 @@ describe('CrashDecisionService', () => {
     const state = stateHarness(defaulted);
 
     await expect(
-      new CrashDecisionService(state.service, RULES).decide(decisionInput('continue')),
+      decisionService(state.service).decide(decisionInput('continue')),
     ).resolves.toMatchObject({ availableActions: [], status: 'defaulted', version: 2 });
     expect(state.decisions).toEqual([]);
   });
@@ -190,7 +212,7 @@ describe('CrashDecisionService', () => {
       resume: async () => (resumes++ === 0 ? activeRound() : accepted),
     });
     await expect(
-      new CrashDecisionService(sameKeyState.service, RULES).decide(decisionInput('cash-out')),
+      decisionService(sameKeyState.service).decide(decisionInput('cash-out')),
     ).resolves.toMatchObject({ status: 'cashed-out', version: 2 });
 
     const otherWinner = {
@@ -209,7 +231,7 @@ describe('CrashDecisionService', () => {
       resume: async () => (resumes++ === 0 ? activeRound() : otherWinner),
     });
     await expect(
-      new CrashDecisionService(otherKeyState.service, RULES).decide(decisionInput('cash-out')),
+      decisionService(otherKeyState.service).decide(decisionInput('cash-out')),
     ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
   });
 
@@ -219,14 +241,14 @@ describe('CrashDecisionService', () => {
         throw new Error('database offline');
       },
     });
-    await expect(
-      new CrashDecisionService(state.service, RULES).decide(decisionInput('continue')),
-    ).rejects.toThrow('database offline');
+    await expect(decisionService(state.service).decide(decisionInput('continue'))).rejects.toThrow(
+      'database offline',
+    );
   });
 
   test('rejects stale decisions and idempotency-key reuse for a different action', async () => {
     const state = stateHarness(continuedRound());
-    const service = new CrashDecisionService(state.service, RULES);
+    const service = decisionService(state.service);
 
     await expect(service.decide(decisionInput('continue'))).rejects.toMatchObject({
       code: 'INVALID_TRANSITION',
@@ -234,7 +256,7 @@ describe('CrashDecisionService', () => {
 
     const accepted = terminalRound('cash-out');
     const replayState = stateHarness(accepted);
-    const replayService = new CrashDecisionService(replayState.service, RULES);
+    const replayService = decisionService(replayState.service);
     await expect(replayService.decide(decisionInput('continue'))).rejects.toMatchObject({
       code: 'IDEMPOTENCY_MISMATCH',
     });
@@ -242,7 +264,7 @@ describe('CrashDecisionService', () => {
 
   test('fails closed for another wallet and absent approved preview rules', async () => {
     const state = stateHarness(activeRound());
-    const missingRules = new CrashDecisionService(state.service, null);
+    const missingRules = decisionService(state.service, null);
 
     await expect(missingRules.currentStage(ROUND_ID, WALLET)).rejects.toMatchObject({
       code: 'DISABLED',
@@ -251,7 +273,7 @@ describe('CrashDecisionService', () => {
       code: 'DISABLED',
     });
     await expect(
-      new CrashDecisionService(state.service, RULES).currentStage(
+      decisionService(state.service).currentStage(
         ROUND_ID,
         'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW',
       ),
@@ -259,15 +281,12 @@ describe('CrashDecisionService', () => {
   });
 
   test('rejects reconnect and exact replay under a different valid rule binding', async () => {
-    const reconnect = new CrashDecisionService(
-      stateHarness(activeRound()).service,
-      ALTERNATE_RULES,
-    );
+    const reconnect = decisionService(stateHarness(activeRound()).service, ALTERNATE_RULES);
     await expect(reconnect.currentStage(ROUND_ID, WALLET)).rejects.toMatchObject({
       code: 'DISABLED',
     });
 
-    const replay = new CrashDecisionService(
+    const replay = decisionService(
       stateHarness(terminalRound('cash-out')).service,
       ALTERNATE_RULES,
     );
@@ -314,6 +333,52 @@ function stateHarness(
       }),
   } as unknown as CrashStageStateService;
   return { decisions, resumes, service };
+}
+
+function decisionService(
+  state: CrashStageStateService,
+  rules: unknown = RULES,
+  custody: CrashCustodyMovementService = custodyHarness(),
+) {
+  return new CrashDecisionService(state, rules, custody);
+}
+
+function custodyHarness(
+  overrides: {
+    prepareFixtureMovement?: (
+      input: Parameters<CrashCustodyMovementService['prepareFixtureMovement']>[0],
+    ) => ReturnType<CrashCustodyMovementService['prepareFixtureMovement']>;
+  } = {},
+): CrashCustodyMovementService {
+  return {
+    configuredRecipient: () => 'fixture-wallet:approved-session-custody',
+    prepareFixtureMovement:
+      overrides.prepareFixtureMovement ?? (async (input) => preparedCustodyIntent(input)),
+    requirePreparedFixture: async () => undefined,
+  } as unknown as CrashCustodyMovementService;
+}
+
+function preparedCustodyIntent(
+  input: Parameters<CrashCustodyMovementService['prepareFixtureMovement']>[0],
+) {
+  return {
+    approvedRecipient: 'fixture-wallet:approved-session-custody',
+    assetReference: input.assetReference,
+    id: 'crashcustody_fixture',
+    idempotencyKey: input.idempotencyKey,
+    network: 'solana-devnet' as const,
+    playerWalletReference: input.playerWalletReference,
+    policyHash: 'a'.repeat(64),
+    policyVersion: 'fixture-policy-v1',
+    recoveryReason: null,
+    requestedRecipient: 'fixture-wallet:approved-session-custody',
+    roundId: input.roundId,
+    schemaVersion: 'dailydraft.crash-custody-intent.v1' as const,
+    signingStatus: 'not-started' as const,
+    sourceWalletReference: input.sourceWalletReference,
+    stage: input.expectedStage,
+    status: 'prepared' as const,
+  };
 }
 
 function decisionInput(action: 'cash-out' | 'continue') {
