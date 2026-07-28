@@ -121,7 +121,7 @@ test('completes tabs, dialogs, cancellation, disclosure, share, and rematch with
   await page.keyboard.press('Enter');
   await expect(page.getByTestId(journeyTestIds.lobby)).toBeVisible();
   await expect(directTab).toHaveAttribute('aria-selected', 'true');
-  await expect(primaryAction).toHaveText(/Review \$50 rematch/);
+  await expect(primaryAction).toHaveText(/Review rematch · \$50 demo pool/);
 });
 
 test('exposes the same committed result without cinematic motion', async ({ journey, page }) => {

@@ -70,9 +70,25 @@ describe('duel entry stepper', () => {
 
     expect(html).toContain('Value-bearing transaction');
     expect(html).toContain('0.015 SOL');
-    expect(html).toContain('Not charged in this devnet step');
+    expect(html).toContain('Not charged or purchased');
     expect(html).toContain('Approve 0.015 SOL in wallet');
     expect(html).toContain('data-testid="duel-entry-confirm-funding"');
+  });
+
+  test('describes the selected tier as an unpurchased demo pool before fee review', () => {
+    walletState = wallet();
+    authenticationState = authentication({
+      sessionToken: 'session',
+      status: 'authenticated',
+    });
+
+    const html = renderStepper();
+
+    expect(html).toContain('Selected demo pool');
+    expect(html).toContain('$50.00');
+    expect(html).toContain('The pool value is not charged or purchased.');
+    expect(html).toContain('exact test-SOL platform fee');
+    expect(html).not.toContain('Selected pack');
   });
 
   test('keeps a rejected funding intent available for an explicit retry', () => {

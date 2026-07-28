@@ -14,6 +14,7 @@ import { publicProductCapabilities } from '../health/health.controller.js';
 
 type Readiness = Awaited<ReturnType<AdminService['getReadiness']>>;
 type GachaCapability = ReturnType<GachaRipService['capability']>;
+type DuelCapabilities = ReturnType<typeof publicProductCapabilities>;
 type DuelAdmission = Readonly<{
   allowedTiers: readonly number[];
   paused: boolean;
@@ -54,7 +55,7 @@ export class GamesCatalogService {
           : degradedGachaCatalogMode(),
         previewMode({
           description:
-            'Trade against a committed marketplace quote once inventory, custody, pricing, and settlement are implemented.',
+            'Walk through a scripted local marketplace UI with a fixed result while inventory, selection, custody, pricing, and settlement remain disabled.',
           href: '/games/marketplace-flip',
           id: 'flip',
           name: 'Marketplace Flip',
@@ -63,7 +64,7 @@ export class GamesCatalogService {
         }),
         previewMode({
           description:
-            'Build a card streak and choose whether to continue or cash out before a committed bust condition.',
+            'Walk through a fixed four-stage card script; only an attempt past the final stage triggers its local bust state.',
           href: '/games/crash',
           id: 'crash',
           name: 'Card Streak',
@@ -81,7 +82,13 @@ export function resolveDuelCatalogMode(
   readiness: Readiness,
   admission: DuelAdmission,
 ): GameCatalogMode {
-  const capabilities = publicProductCapabilities(readiness);
+  return resolveDuelCatalogModeFromCapabilities(publicProductCapabilities(readiness), admission);
+}
+
+export function resolveDuelCatalogModeFromCapabilities(
+  capabilities: DuelCapabilities,
+  admission: DuelAdmission,
+): GameCatalogMode {
   const packReady = capabilities.packs.some(
     (pack) => pack.enabled && admission.allowedTiers.includes(pack.tier),
   );
@@ -124,7 +131,7 @@ export function resolveDuelCatalogMode(
       status: 'verified',
     },
     description:
-      'Open the same sports pack tier against another wallet or an explicitly enabled house opponent.',
+      'Choose a server-provided DailyDraft Pokémon demo pool against another wallet or an explicitly enabled house opponent. The pool value is not charged or purchased; each player approves only the displayed test-SOL platform fee.',
     id: 'duel',
     name: 'Card Duel',
     reason: admission.paused
@@ -137,7 +144,7 @@ export function resolveDuelCatalogMode(
             ? 'Only the listed Duel actions are currently ready on Solana devnet.'
             : (capabilities.modes.direct.reason ??
               capabilities.modes.open.reason ??
-              'No admitted Duel pack tier is currently ready on Solana devnet.'),
+              'No admitted Duel demo-pool tier is currently ready on Solana devnet.'),
     state: fullyPlayable ? 'playable' : partiallyPlayable ? 'degraded' : 'unavailable',
   };
 }
@@ -168,7 +175,7 @@ function degradedDuelCatalogMode(): GameCatalogMode {
     availableActions: [],
     capabilitySource: { kind: 'runtime', name: 'duel-readiness', status: 'degraded' },
     description:
-      'Open the same sports pack tier against another wallet or an explicitly enabled house opponent.',
+      'Choose a server-provided DailyDraft Pokémon demo pool against another wallet or an explicitly enabled house opponent. The pool value is not charged or purchased; each player approves only the displayed test-SOL platform fee.',
     id: 'duel',
     name: 'Card Duel',
     reason: 'Duel readiness could not be verified. No Duel action is available.',

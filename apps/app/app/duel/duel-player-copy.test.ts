@@ -122,7 +122,7 @@ describe('duel player copy', () => {
     } as const;
 
     expect(getMatchmakingSearchCopy(session)).toBe(
-      'Searching for the same $50 pack. You can continue or cancel before funding starts.',
+      'Searching for an opponent in the $50 demo pool. You can continue or cancel before funding starts.',
     );
     expect(getMatchmakingSearchCopy({ ...session, state: 'matched' })).toBeNull();
   });
@@ -130,12 +130,14 @@ describe('duel player copy', () => {
   test('keeps payment, outcome, and demo-pool claims scoped to known facts', () => {
     const lobby = getLobbyEconomicsCopy();
     const payment = getDuelPaymentReviewCopy('0.001');
-    const poolRule = duelRules.find((rule) => rule.title === 'Pack source and odds');
+    const poolRule = duelRules.find((rule) => rule.title === 'Demo-pool source and odds');
     const winnerRule = duelRules.find((rule) => rule.title === 'How the winner is chosen');
 
-    expect(lobby).toContain('higher verified value wins both demo cards');
+    expect(lobby).toContain('pool value is not charged or purchased');
+    expect(lobby).toContain('both participants’ fees finalize');
     expect(lobby).not.toContain('market value');
-    expect(payment.description).toContain('The platform fee is exactly 0.001 SOL');
+    expect(payment.description).toContain('platform fee is exactly 0.001 test SOL');
+    expect(payment.description).toContain('approved separately');
     expect(payment.description).toContain('network fee and any recoverable rent');
     expect(getDuelPlayerStatus('settled').detail).toContain(
       'whether one pull led or the values tied',
@@ -148,7 +150,8 @@ describe('duel player copy', () => {
     );
     expect(poolRule?.body).toContain('server-provided');
     expect(poolRule?.body).not.toMatch(/five-card|1-in-5/);
-    expect(winnerRule?.body).toContain('higher verified value snapshot');
+    expect(winnerRule?.body).toContain('verified value snapshot');
+    expect(winnerRule?.body).toContain('public receipt');
     expect(winnerRule?.body).not.toContain('TCGPlayer');
   });
 

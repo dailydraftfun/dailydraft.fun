@@ -38,6 +38,23 @@ export interface McpAccess {
 
 const defaultAccess: McpAccess = { canPrepareTransactions: false };
 
+export const integrationSafetyGuidance = [
+  '# DailyDraft integration safety',
+  '',
+  '- Never request or transmit a wallet private key or seed phrase.',
+  '- Treat API duel status as an index; verify value-bearing state on Solana.',
+  '- Do not sign or submit transactions without explicit wallet confirmation.',
+  '- Prepare tools return unsigned intents only; they never sign, submit, or hold keys.',
+  '- Verify the program ID, accounts, amounts, mints, and expiry in the wallet.',
+  '',
+  '## Canonical player rules',
+  '',
+  '- Card Duel: https://app.dailydraft.fun/games/duel#rules',
+  '- Marketplace Flip: https://app.dailydraft.fun/games/marketplace-flip#rules (fixture only)',
+  '- Card Streak: https://app.dailydraft.fun/games/crash#rules (fixture only)',
+  '- Never present a fixture-only mode or unresolved tier as playable.',
+].join('\n');
+
 export function createDailyDraftServer(
   client = new DailyDraftApiClient(),
   access: McpAccess = defaultAccess,
@@ -191,15 +208,7 @@ export function createDailyDraftServer(
       contents: [
         {
           mimeType: 'text/markdown',
-          text: [
-            '# DailyDraft integration safety',
-            '',
-            '- Never request or transmit a wallet private key or seed phrase.',
-            '- Treat API duel status as an index; verify value-bearing state on Solana.',
-            '- Do not sign or submit transactions without explicit wallet confirmation.',
-            '- Prepare tools return unsigned intents only; they never sign, submit, or hold keys.',
-            '- Verify the program ID, accounts, amounts, mints, and expiry in the wallet.',
-          ].join('\n'),
+          text: integrationSafetyGuidance,
           uri: 'dailydraft://integration/safety',
         },
       ],

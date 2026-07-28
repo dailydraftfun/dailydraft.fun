@@ -1,0 +1,276 @@
+'use client';
+
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CheckCircleIcon,
+  LockKeyIcon,
+  ReceiptIcon,
+  ShieldWarningIcon,
+} from '@phosphor-icons/react/dist/ssr';
+import Link from 'next/link';
+import { useEffect, useRef } from 'react';
+import type { CapabilityLoadState } from '../duel-lobby-options';
+import { type GameRulesMode, gameRules } from './game-rules';
+import styles from './game-rules-overview.module.css';
+
+type RulesOverviewPresentation = {
+  actionDirection?: 'down' | 'up';
+  actionHref?: `#${string}`;
+  actionLabel?: string;
+  headingLevel?: 1 | 2;
+};
+
+type GameRulesOverviewProps = RulesOverviewPresentation &
+  (
+    | { capabilityState: CapabilityLoadState; mode: 'duel' }
+    | { capabilityState?: never; mode: Exclude<GameRulesMode, 'duel'> }
+  );
+
+type DuelReadiness = {
+  actionLabel: string;
+  detail: string;
+  label: string;
+  state: 'checking' | 'degraded' | 'enabled' | 'unavailable';
+};
+
+const modeLabels = {
+  direct: 'direct challenge',
+  house: 'house',
+  open: 'public matchmaking',
+} as const;
+
+export function activateRulesHashTarget(input: {
+  hash: string;
+  requestFrame: (callback: () => void) => unknown;
+  target: { focus: (options: FocusOptions) => void } | null;
+}): boolean {
+  if (input.hash !== '#rules' || !input.target) return false;
+  input.requestFrame(() => input.target?.focus({ preventScroll: true }));
+  return true;
+}
+
+export function resolveDuelRulesReadiness(state: CapabilityLoadState): DuelReadiness {
+  if (state.status === 'loading') {
+    return {
+      actionLabel: 'See capability check',
+      detail: 'Checking the current provider, opponent modes, and demo-pool tiers.',
+      label: 'Checking current capability',
+      state: 'checking',
+    };
+  }
+
+  if (state.status === 'error') {
+    return {
+      actionLabel: 'See capability check',
+      detail: state.message,
+      label: 'Capability unavailable',
+      state: 'unavailable',
+    };
+  }
+
+  const enabledModes = (Object.keys(modeLabels) as (keyof typeof modeLabels)[])
+    .filter((mode) => state.value.modes[mode].enabled)
+    .map((mode) => modeLabels[mode]);
+  const enabledTiers = state.value.packs
+    .filter((pack) => pack.enabled)
+    .map((pack) => `$${pack.tier} demo pool`);
+  const enabledDetail = `Enabled modes: ${enabledModes.join(', ') || 'none'}. Enabled tiers: ${enabledTiers.join(', ') || 'none'}.`;
+
+  if (!state.value.provider.ready) {
+    return {
+      actionLabel: 'See capability check',
+      detail: `The provider is not ready. ${enabledDetail}`,
+      label: 'Provider degraded',
+      state: 'degraded',
+    };
+  }
+
+  if (enabledModes.length === 0 || enabledTiers.length === 0) {
+    const reasons = [
+      ...Object.values(state.value.modes).map((mode) => mode.reason),
+      ...state.value.packs.map((pack) => pack.reason),
+    ].filter((reason): reason is string => Boolean(reason));
+    const reasonDetail = [...new Set(reasons)].join(' ');
+    return {
+      actionLabel: 'See capability check',
+      detail: `${enabledDetail}${reasonDetail ? ` ${reasonDetail}` : ''}`,
+      label: 'Duel unavailable',
+      state: 'unavailable',
+    };
+  }
+
+  return {
+    actionLabel: 'Review verified options',
+    detail: enabledDetail,
+    label: 'Devnet options verified',
+    state: 'enabled',
+  };
+}
+
+export function GameRulesOverview(props: GameRulesOverviewProps) {
+  const { actionDirection = 'down', actionHref, actionLabel, headingLevel = 1, mode } = props;
+  const rules = gameRules[mode];
+  const preview = rules.state === 'fixture-preview';
+  const sectionRef = useRef<HTMLElement>(null);
+  const RulesTitle = headingLevel === 1 ? 'h1' : 'h2';
+  const readiness =
+    mode === 'duel'
+      ? resolveDuelRulesReadiness(props.capabilityState)
+      : {
+          actionLabel: rules.previewLabel,
+          detail: '',
+          label: rules.statusLabel,
+          state: 'preview' as const,
+        };
+
+  useEffect(() => {
+    const focusRules = () => {
+      activateRulesHashTarget({
+        hash: window.location.hash,
+        requestFrame: (callback) => window.requestAnimationFrame(callback),
+        target: sectionRef.current,
+      });
+    };
+    focusRules();
+    window.addEventListener('hashchange', focusRules);
+    return () => window.removeEventListener('hashchange', focusRules);
+  }, []);
+
+  return (
+    <section
+      aria-labelledby={`${mode}-rules-title`}
+      className={styles.shell}
+      data-game-rules={mode}
+      data-readiness={readiness.state}
+      id="rules"
+      ref={sectionRef}
+      tabIndex={-1}
+    >
+      <header className={styles.masthead}>
+        <div>
+          <p className="proof-label">{rules.eyebrow}</p>
+          <RulesTitle className={styles.title} id={`${mode}-rules-title`}>
+            Know the outcome path
+            <span className="block text-lime">before the wallet.</span>
+          </RulesTitle>
+          <p className={styles.summary}>{rules.summary}</p>
+        </div>
+
+        <aside
+          aria-live={mode === 'duel' ? 'polite' : undefined}
+          aria-label={`${rules.name} readiness and wallet requirements`}
+          className={[
+            styles.statusDocket,
+            preview ? styles.previewStatus : '',
+            mode === 'duel' ? styles[`readiness-${readiness.state}`] : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
+          <div className={styles.statusLine}>
+            <span className={styles.statusDot} aria-hidden="true" />
+            {readiness.label}
+          </div>
+          {readiness.detail ? <p className={styles.readinessDetail}>{readiness.detail}</p> : null}
+          <p className={styles.wallet}>
+            <strong className="text-primary">Wallet requirement.</strong> {rules.wallet}
+          </p>
+          <Link className={styles.action} href={actionHref ?? rules.previewHref}>
+            {actionLabel ?? readiness.actionLabel}
+            {actionDirection === 'up' ? (
+              <ArrowUpIcon aria-hidden="true" size={15} weight="bold" />
+            ) : (
+              <ArrowDownIcon aria-hidden="true" size={15} weight="bold" />
+            )}
+          </Link>
+        </aside>
+      </header>
+
+      <ol aria-label={`${rules.name} player loop`} className={styles.loop}>
+        {rules.loop.map((step, index) => (
+          <li key={step.label}>
+            <span className={styles.step} aria-hidden="true">
+              {String(index + 1).padStart(2, '0')}
+            </span>
+            <div>
+              <strong>{step.label}</strong>
+              <p>{step.detail}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <dl aria-label={`${rules.name} operating rules`} className={styles.ruleGrid}>
+        {rules.facts.map((fact) => (
+          <div className={styles.ruleCard} key={fact.label}>
+            <dt>{fact.label}</dt>
+            <dd>{fact.detail}</dd>
+          </div>
+        ))}
+        <div className={styles.ruleCard}>
+          <dt>Custody</dt>
+          <dd>{rules.custody}</dd>
+        </div>
+        <div className={styles.ruleCard}>
+          <dt>Settlement</dt>
+          <dd>{rules.settlement}</dd>
+        </div>
+        <div className={styles.ruleCard}>
+          <dt>Refund boundary</dt>
+          <dd>{rules.refund}</dd>
+        </div>
+        <div className={styles.ruleCard}>
+          <dt>Receipt</dt>
+          <dd>{rules.receipt}</dd>
+        </div>
+      </dl>
+
+      <div className={styles.ledger}>
+        <header className={styles.ledgerHeader}>
+          <p className="proof-label flex items-center gap-2">
+            <ReceiptIcon aria-hidden="true" size={15} weight="fill" />
+            State ledger
+          </p>
+          <h2>Three facts, never one vague “done.”</h2>
+        </header>
+        <dl className={styles.ledgerFacts}>
+          {rules.stateLegend.map((fact, index) => (
+            <div className={styles.ledgerFact} key={fact.label}>
+              <dt className="flex items-center gap-2">
+                {index === 0 ? <LockKeyIcon aria-hidden="true" size={14} /> : null}
+                {index === 1 ? <CheckCircleIcon aria-hidden="true" size={14} /> : null}
+                {index === 2 ? <ReceiptIcon aria-hidden="true" size={14} /> : null}
+                {fact.label}
+              </dt>
+              <dd>{fact.detail}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <aside className={styles.gates} aria-labelledby={`${mode}-gates-title`}>
+          <p className="proof-label flex items-center gap-2">
+            <ShieldWarningIcon aria-hidden="true" size={15} weight="fill" />
+            Exact promotion gates
+          </p>
+          <h2 id={`${mode}-gates-title`}>
+            {preview ? 'Why this is not playable' : 'What the server and policy must allow'}
+          </h2>
+          <ul className={styles.gateList}>
+            {rules.gates.map((gate) => (
+              <li key={gate}>
+                <LockKeyIcon
+                  aria-hidden="true"
+                  className={styles.gateIcon}
+                  size={15}
+                  weight="fill"
+                />
+                <span>{gate}</span>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      </div>
+    </section>
+  );
+}

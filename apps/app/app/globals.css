@@ -756,7 +756,7 @@
   text-transform: uppercase;
 }
 
-.hero-copy h1 {
+.hero-copy h2 {
   margin: 18px 0 0;
   font-size: clamp(52px, 6.3vw, 92px);
   font-weight: 600;
@@ -764,7 +764,7 @@
   line-height: 0.94;
 }
 
-.hero-copy h1 em {
+.hero-copy h2 em {
   background: linear-gradient(90deg, var(--lime), #e6ffbe 58%, var(--gold));
   background-clip: text;
   color: transparent;
@@ -2478,7 +2478,7 @@
   .hero-copy {
     max-width: 760px;
   }
-  .hero-copy h1 {
+  .hero-copy h2 {
     font-size: clamp(58px, 10vw, 90px);
   }
   .match-card {
@@ -2534,7 +2534,7 @@
     align-items: stretch;
     flex-direction: column;
   }
-  .hero-copy h1 {
+  .hero-copy h2 {
     font-size: clamp(45px, 14vw, 68px);
   }
   .hero-copy > p {

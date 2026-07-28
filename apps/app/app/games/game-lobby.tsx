@@ -22,6 +22,7 @@ import {
   gateRuntimeActions,
   roadmapGameModes,
 } from './game-catalog';
+import { canonicalRulesHref, type GameRulesMode } from './game-rules';
 import { getGameCatalog, readCachedGameCatalog, writeCachedGameCatalog } from './games-client';
 import { VerifiedActivity } from './verified-activity';
 
@@ -176,6 +177,15 @@ export function GameLobby({
                   <ArrowRightIcon size={16} weight="bold" />
                 </Link>
               ))}
+              {primaryMode && hasCanonicalRules(primaryMode.id) ? (
+                <Link
+                  className="proof-secondary-action gap-2"
+                  href={canonicalRulesHref(primaryMode.id)}
+                >
+                  Read rules first
+                  <ReceiptIcon size={16} />
+                </Link>
+              ) : null}
               {!primaryMode ? (
                 <span
                   className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-tertiary px-4 py-2 text-sm font-semibold text-secondary"
@@ -325,12 +335,30 @@ function RuntimeLane({ mode }: { mode: GameCatalogMode }) {
       <p className="mt-4 text-base font-semibold text-primary">{mode.name}</p>
       <p className="mt-2 text-xs leading-5 text-secondary">{mode.reason}</p>
       {firstAction ? (
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+          <Link
+            className="inline-flex min-h-10 items-center gap-2 text-xs font-semibold text-lime"
+            href={firstAction.href}
+          >
+            {firstAction.label}
+            <ArrowRightIcon size={13} weight="bold" />
+          </Link>
+          {hasCanonicalRules(mode.id) ? (
+            <Link
+              className="inline-flex min-h-10 items-center gap-2 text-xs font-semibold text-primary"
+              href={canonicalRulesHref(mode.id)}
+            >
+              Read rules
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+      {!firstAction && hasCanonicalRules(mode.id) ? (
         <Link
-          className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-lime"
-          href={firstAction.href}
+          className="mt-3 inline-flex min-h-10 items-center gap-2 text-xs font-semibold text-primary"
+          href={canonicalRulesHref(mode.id)}
         >
-          {firstAction.label}
-          <ArrowRightIcon size={13} weight="bold" />
+          Read rules
         </Link>
       ) : null}
     </div>
@@ -351,9 +379,17 @@ function RoadmapMode({ mode }: { mode: GameCatalogMode }) {
         </div>
         <p className="mt-2 text-sm leading-6 text-secondary">{mode.description}</p>
         <p className="mt-3 text-xs leading-5 text-secondary">{mode.reason}</p>
-        {previewAction ? (
+        {hasCanonicalRules(mode.id) ? (
           <Link
-            className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-lime"
+            className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-lime"
+            href={canonicalRulesHref(mode.id)}
+          >
+            {previewAction ? 'Read rules & open fixture' : 'Read rules'}
+            <ArrowRightIcon size={14} weight="bold" />
+          </Link>
+        ) : previewAction ? (
+          <Link
+            className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-lime"
             href={previewAction.href}
           >
             {previewAction.label}
@@ -421,4 +457,8 @@ function formatAsOf(asOf: string): string {
   const hours = String(date.getUTCHours()).padStart(2, '0');
   const minutes = String(date.getUTCMinutes()).padStart(2, '0');
   return `${month} ${day} · ${hours}:${minutes} UTC`;
+}
+
+function hasCanonicalRules(mode: GameCatalogMode['id']): mode is GameRulesMode {
+  return mode === 'duel' || mode === 'flip' || mode === 'crash';
 }

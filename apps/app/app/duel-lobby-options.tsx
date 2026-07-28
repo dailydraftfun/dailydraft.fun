@@ -33,7 +33,9 @@ export function ProductCapabilityPanel({
         <SpinnerGapIcon className="wallet-spinner" size={22} />
         <div>
           <strong>Checking duel availability</strong>
-          <p>DailyDraft is verifying playable modes and pack tiers before showing an action.</p>
+          <p>
+            DailyDraft is verifying playable modes and demo-pool tiers before showing an action.
+          </p>
         </div>
       </div>
     );
@@ -152,8 +154,10 @@ export function PackTierChoices({
   return (
     <>
       <div className="section-label-row">
-        <span>{enabledCount === 1 ? 'Available pack' : 'Choose pack tier'}</span>
-        <span>{enabledCount === 1 ? 'Selected automatically' : 'Both players open one'}</span>
+        <span>{enabledCount === 1 ? 'Available demo pool' : 'Choose demo-pool tier'}</span>
+        <span>
+          {enabledCount === 1 ? 'Selected automatically' : 'Pool label · not amount charged'}
+        </span>
       </div>
       <div className="tier-grid">
         {capabilities.packs.map((pack) => {
@@ -184,7 +188,7 @@ export function PackTierChoices({
                 <SparkleIcon size={pack.tier === 100 ? 25 : 21} weight="fill" />
               </span>
               <span>
-                <strong>${pack.tier}</strong>
+                <strong>${pack.tier} pool</strong>
                 <small>{pack.name}</small>
               </span>
               <span className="tier-availability">

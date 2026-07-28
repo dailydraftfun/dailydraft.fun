@@ -86,8 +86,8 @@ describe('guided duel entry flow', () => {
 
   test('shows one plain-money summary before the wallet opens', () => {
     expect(getPlainMoneySummary(50, fundingIntent())).toEqual({
-      packPurchase: 'Not charged in this devnet step',
-      packTier: '$50.00',
+      demoPool: '$50.00 tier label',
+      demoPoolValue: 'Not charged or purchased',
       platformFee: '0.015 SOL',
       walletApproval: '0.015 SOL',
     });

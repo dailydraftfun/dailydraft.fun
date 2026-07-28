@@ -45,8 +45,8 @@ type DuelEntryStageInput = {
 };
 
 export type PlainMoneySummary = {
-  packTier: string;
-  packPurchase: string;
+  demoPool: string;
+  demoPoolValue: string;
   platformFee: string;
   walletApproval: string;
 };
@@ -96,8 +96,8 @@ export function getPlainMoneySummary(
 ): PlainMoneySummary {
   const platformFee = intent ? `${intent.feeAmountSol} SOL` : 'Calculated before signing';
   return {
-    packTier: `$${tier.toFixed(2)}`,
-    packPurchase: 'Not charged in this devnet step',
+    demoPool: `$${tier.toFixed(2)} tier label`,
+    demoPoolValue: 'Not charged or purchased',
     platformFee,
     walletApproval: intent ? platformFee : 'Nothing until you review the exact fee',
   };

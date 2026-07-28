@@ -22,7 +22,7 @@ export function fallbackGameCatalog(
     modes: [
       unavailableRuntimeMode({
         description:
-          'Open the same sports pack tier against another wallet or an explicitly enabled house opponent.',
+          'Choose a server-provided DailyDraft Pokémon demo pool against another wallet or an explicitly enabled house opponent. The pool value is not charged or purchased; each player approves only the displayed test-SOL platform fee.',
         id: 'duel',
         name: 'Card Duel',
         reason,
@@ -46,7 +46,7 @@ export function fallbackGameCatalog(
         ],
         capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
         description:
-          'Trade against a committed marketplace quote once inventory, custody, pricing, and settlement are implemented.',
+          'Walk through a scripted local marketplace UI with a fixed result while inventory, selection, custody, pricing, and settlement remain disabled.',
         id: 'flip',
         name: 'Marketplace Flip',
         reason:
@@ -59,7 +59,7 @@ export function fallbackGameCatalog(
         ],
         capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
         description:
-          'Build a card streak and choose whether to continue or cash out before a committed bust condition.',
+          'Walk through a fixed four-stage card script; only an attempt past the final stage triggers its local bust state.',
         id: 'crash',
         name: 'Card Streak',
         reason:

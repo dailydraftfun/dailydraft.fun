@@ -38,6 +38,7 @@ import {
   previewCards,
   previewModeTitles,
 } from './game-preview-data';
+import { GameRulesOverview } from './game-rules-overview';
 
 const modeCopy: Record<
   PreviewMode,
@@ -47,14 +48,14 @@ const modeCopy: Record<
     eyebrow: 'Card-stage retention loop',
     icon: <ChartLineUpIcon size={22} weight="bold" />,
     summary:
-      'Continue through committed card stages or cash out the fixture pot before the next stage busts.',
+      'Reveal a fixed four-card local script or cash out its fixture pot. Only an attempt past stage four triggers the scripted bust state.',
     title: previewModeTitles.crash,
   },
   flip: {
     eyebrow: 'Solo acquisition loop',
     icon: <CardsThreeIcon size={22} weight="fill" />,
     summary:
-      'Choose an eligible inventory pool, commit its probability band, reveal a selected card, then inspect acquisition finality.',
+      'Walk through a scripted local marketplace interface with one fixed card result and no draw, selection proof, purchase, or ownership change.',
     title: previewModeTitles.flip,
   },
   house: {
@@ -89,18 +90,20 @@ export function GameModePreview({
   const copy = modeCopy[mode];
   return (
     <main className="mx-auto flex min-h-[calc(100svh-7rem)] max-w-[1280px] flex-col gap-7 px-4 py-8 sm:px-6 sm:py-12">
+      {mode === 'flip' || mode === 'crash' ? <GameRulesOverview mode={mode} /> : null}
+
       <header className="grid gap-6 border-b border-border pb-7 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
         <div>
           <p className="proof-label flex items-center gap-2">
             <FlaskIcon size={15} weight="fill" />
             Full UX preview · no funds or assets
           </p>
-          <h1 className="mt-3 flex items-center gap-3 text-3xl font-semibold tracking-[-0.045em] text-primary sm:text-5xl">
+          <h2 className="mt-3 flex items-center gap-3 text-3xl font-semibold tracking-[-0.045em] text-primary sm:text-5xl">
             <span className="text-lime" aria-hidden="true">
               {copy.icon}
             </span>
             {copy.title}
-          </h1>
+          </h2>
           <p className="mt-4 max-w-3xl text-sm leading-6 text-secondary">{copy.summary}</p>
         </div>
         <aside className="rounded-xl border border-warning/25 bg-warning/5 p-5">
@@ -139,14 +142,16 @@ export function GameModePreview({
         ))}
       </nav>
 
-      {mode === 'flip' ? <FlipPreview initialStep={fixtureState.flipStep} /> : null}
-      {mode === 'crash' ? (
-        <CrashPreview
-          initialStage={fixtureState.crashStage}
-          initialStatus={fixtureState.crashStatus}
-        />
-      ) : null}
-      {mode === 'house' ? <HousePreview initialStep={fixtureState.houseStep} /> : null}
+      <div id="preview-lab">
+        {mode === 'flip' ? <FlipPreview initialStep={fixtureState.flipStep} /> : null}
+        {mode === 'crash' ? (
+          <CrashPreview
+            initialStage={fixtureState.crashStage}
+            initialStatus={fixtureState.crashStatus}
+          />
+        ) : null}
+        {mode === 'house' ? <HousePreview initialStep={fixtureState.houseStep} /> : null}
+      </div>
 
       <div className="flex flex-wrap gap-3">
         <Link className="proof-secondary-action" href="/games">
@@ -169,8 +174,8 @@ function FlipPreview({ initialStep = 0 }: { initialStep?: number }) {
     <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]" aria-label="Flip preview">
       <div className="proof-panel">
         <PreviewHeading
-          eyebrow="Committed pool"
-          title={step < 2 ? 'Choose one eligible inventory band' : 'The selected card is revealed'}
+          eyebrow="Scripted local fixture"
+          title={step < 2 ? 'Choose a display band' : 'The fixed example card is shown'}
         />
 
         {step < 2 ? (
@@ -179,47 +184,47 @@ function FlipPreview({ initialStep = 0 }: { initialStep?: number }) {
               <PoolChoice
                 active={pool === 'base'}
                 label="Base Set vault"
-                meta="12 eligible cards · $25"
+                meta="Display choice · $25 label"
                 onClick={() => setPool('base')}
               />
               <PoolChoice
                 active={pool === 'electric'}
                 label="Electric vault"
-                meta="18 eligible cards · $15"
+                meta="Display choice · $15 label"
                 onClick={() => setPool('electric')}
               />
               <PoolChoice
                 active={pool === 'graded'}
                 label="Graded vault"
-                meta="8 eligible cards · $50"
+                meta="Display choice · $50 label"
                 onClick={() => setPool('graded')}
               />
             </div>
 
             <div className="mt-6 overflow-hidden rounded-xl border border-border">
-              <ProbabilityRow band="Floor" chance="50%" detail="$10–$24.99 normalized value" />
-              <ProbabilityRow band="Core" chance="35%" detail="$25–$49.99 normalized value" />
-              <ProbabilityRow band="Chase" chance="15%" detail="$50+ normalized value" />
+              <ProbabilityRow band="Floor" chance="Display only" detail="$10–$24.99 label" />
+              <ProbabilityRow band="Core" chance="Display only" detail="$25–$49.99 label" />
+              <ProbabilityRow band="Chase" chance="Display only" detail="$50+ label" />
             </div>
 
             {step === 1 ? (
               <div className="mt-5 rounded-xl border border-lime/20 bg-lime/5 p-5" role="status">
                 <div className="flex items-center gap-3 text-lime">
                   <CheckCircleIcon size={20} weight="fill" />
-                  <strong className="text-sm">Fixture pool committed</strong>
+                  <strong className="text-sm">Local fixture advanced</strong>
                 </div>
                 <dl className="proof-definition-list mt-4">
                   <div>
-                    <dt>Rules version</dt>
-                    <dd className="font-mono">flip-fixture-v1</dd>
+                    <dt>Script</dt>
+                    <dd className="font-mono">flip-script-v1</dd>
                   </div>
                   <div>
-                    <dt>Pool snapshot</dt>
-                    <dd className="font-mono">{pool}-00042</dd>
+                    <dt>Band control</dt>
+                    <dd>{pool} · display only</dd>
                   </div>
                   <div>
-                    <dt>Acquisition</dt>
-                    <dd>Simulated only</dd>
+                    <dt>Selection proof</dt>
+                    <dd>None</dd>
                   </div>
                 </dl>
               </div>
@@ -231,21 +236,21 @@ function FlipPreview({ initialStep = 0 }: { initialStep?: number }) {
               type="button"
             >
               {step === 0 ? <LockKeyIcon size={16} /> : <SparkleIcon size={16} weight="fill" />}
-              {step === 0 ? 'Commit fixture draw' : 'Reveal selected fixture'}
+              {step === 0 ? 'Advance local script' : 'Show scripted card'}
             </button>
           </>
         ) : (
           <div className="mt-6 grid gap-6 sm:grid-cols-[15rem_minmax(0,1fr)] sm:items-center">
             <FlipReveal card={selectedCard} />
             <div>
-              <p className="proof-label">Chase band · selected reproducibly</p>
+              <p className="proof-label">Fixed Chase example · no draw performed</p>
               <h3 className="mt-2 text-2xl font-semibold text-primary">{selectedCard.name}</h3>
               <p className="mt-2 font-mono text-lg font-semibold text-lime">
                 ${selectedCard.value.toFixed(2)}
               </p>
               <p className="mt-4 text-sm leading-6 text-secondary">
-                The reveal proves the planned selection UI. Ownership remains pending because no
-                Marketplace purchase or transfer occurred.
+                This local script always shows the same example. It creates no pool snapshot, seed,
+                commitment, reproducible selection proof, purchase, or transfer.
               </p>
               {step === 2 ? (
                 <button
@@ -254,17 +259,17 @@ function FlipPreview({ initialStep = 0 }: { initialStep?: number }) {
                   type="button"
                 >
                   <ReceiptIcon size={16} />
-                  Review fixture receipt
+                  Review script summary
                 </button>
               ) : (
                 <ReceiptSummary
                   facts={[
-                    ['Selection', 'Reproducible fixture'],
+                    ['Selection', 'Fixed local script'],
+                    ['Commitment', 'None'],
                     ['Purchase', 'Not submitted'],
-                    ['Ownership', 'Not transferred'],
-                    ['Finality', 'Preview only'],
+                    ['Ownership', 'Unchanged'],
                   ]}
-                  title="Flip acquisition receipt"
+                  title="Flip script summary"
                 />
               )}
             </div>
@@ -275,10 +280,10 @@ function FlipPreview({ initialStep = 0 }: { initialStep?: number }) {
       <PreviewRail
         current={step}
         steps={[
-          ['1', 'Choose pool', 'Inventory and probability band'],
-          ['2', 'Commit', 'Rules and pool snapshot'],
-          ['3', 'Reveal', 'Selected card and value'],
-          ['4', 'Receipt', 'Purchase and ownership finality'],
+          ['1', 'Choose display', 'Control does not affect result'],
+          ['2', 'Advance', 'Local state only'],
+          ['3', 'Show example', 'Same fixed card every time'],
+          ['4', 'Summary', 'No proof, purchase, or transfer'],
         ]}
       />
     </section>
@@ -316,10 +321,12 @@ function CrashPreview({
             eyebrow={`Stage ${stage} of ${cards.length}`}
             title={
               status === 'active'
-                ? 'Continue the card run or cash out'
+                ? stage === cards.length
+                  ? 'Cash out or attempt past stage four'
+                  : 'Reveal the next fixed card or cash out'
                 : status === 'cashed'
                   ? 'Fixture pot cashed out'
-                  : 'The next committed stage busted'
+                  : 'The scripted run ended past stage four'
             }
           />
           <div className="sm:text-right">
@@ -346,7 +353,7 @@ function CrashPreview({
               type="button"
             >
               <TrendUpIcon size={17} weight="bold" />
-              Continue fixture run
+              {stage === cards.length ? 'Attempt past final stage' : 'Reveal next scripted stage'}
             </button>
             <button
               className="proof-primary-action min-h-12 gap-2"
@@ -361,7 +368,10 @@ function CrashPreview({
           <div className="mt-6">
             <ReceiptSummary
               facts={[
-                ['Terminal reason', status === 'cashed' ? 'Player cash-out' : 'Committed bust'],
+                [
+                  'Terminal reason',
+                  status === 'cashed' ? 'Player cash-out' : 'Scripted end after stage four',
+                ],
                 ['Stages resolved', String(revealed)],
                 ['Custody movement', 'None · fixture'],
                 ['Settlement', 'Preview only'],
@@ -377,20 +387,20 @@ function CrashPreview({
       </div>
 
       <aside className="proof-panel">
-        <p className="proof-label">Committed session</p>
-        <h2 className="mt-2 text-xl font-semibold text-primary">Decision contract</h2>
+        <p className="proof-label">Scripted session</p>
+        <h2 className="mt-2 text-xl font-semibold text-primary">Local decision fixture</h2>
         <dl className="proof-definition-list mt-5">
           <div>
             <dt>Rules</dt>
-            <dd className="font-mono">crash-fixture-v1</dd>
+            <dd className="font-mono">crash-script-v1</dd>
           </div>
           <div>
             <dt>Maximum stages</dt>
             <dd>4</dd>
           </div>
           <div>
-            <dt>Timeout default</dt>
-            <dd>Cash out</dd>
+            <dt>Bust trigger</dt>
+            <dd>Attempt past stage 4</dd>
           </div>
           <div>
             <dt>Live economics</dt>

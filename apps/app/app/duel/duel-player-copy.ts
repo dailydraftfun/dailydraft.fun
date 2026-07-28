@@ -17,15 +17,15 @@ export type DuelPlayerStatusCopy = {
 
 export const duelRules = [
   {
-    body: 'Each wallet approves the exact devnet platform fee shown before signing. Normal Solana network fees and recoverable token-account rent are additional. Pack purchase is not included.',
+    body: 'Each participant separately approves and escrows the exact test-SOL platform fee shown before signing. Normal Solana network fees and recoverable token-account rent are additional. The demo-pool value is not charged or purchased.',
     title: 'What you pay',
   },
   {
-    body: 'The preview selects from a server-provided DailyDraft Pokémon demo pool. Pool contents can change; Collector Crypt production packs and commercial odds are not active.',
-    title: 'Pack source and odds',
+    body: 'The selected $25, $50, or $100 tier is a label for a server-provided DailyDraft Pokémon demo pool—not an amount charged. Pool contents can change; Collector Crypt production packs and commercial odds are not active.',
+    title: 'Demo-pool source and odds',
   },
   {
-    body: 'The higher verified value snapshot recorded before either wallet pays wins both demo cards.',
+    body: 'The server compares its demo outcomes using the verified value snapshot recorded for the duel. Check the public receipt for the result and current asset state.',
     title: 'How the winner is chosen',
   },
   {
@@ -43,7 +43,7 @@ export const duelRules = [
 ] as const;
 
 export function getLobbyEconomicsCopy(): string {
-  return 'Approve the displayed devnet platform fee now; normal Solana network fees and recoverable account rent are additional, pack purchase is separate, and the higher verified value wins both demo cards.';
+  return 'Choose a server-provided demo-pool tier, then separately approve your displayed test-SOL platform fee. The pool value is not charged or purchased, and opening starts only after both participants’ fees finalize.';
 }
 
 type MatchmakingSearchSession = Pick<MatchmakingSession, 'state'> & {
@@ -52,19 +52,19 @@ type MatchmakingSearchSession = Pick<MatchmakingSession, 'state'> & {
 
 export function getMatchmakingSearchCopy(session: MatchmakingSearchSession): string | null {
   if (session.state !== 'searching') return null;
-  return `Searching for the same $${session.queue.tier} pack. You can continue or cancel before funding starts.`;
+  return `Searching for an opponent in the $${session.queue.tier} demo pool. You can continue or cancel before funding starts.`;
 }
 
 export function getDuelPaymentReviewCopy(feeAmountSol: string) {
   return {
-    description: `The platform fee is exactly ${feeAmountSol} SOL. Your wallet also shows the network fee and any recoverable rent. No pack is purchased in this transaction.`,
+    description: `Your platform fee is exactly ${feeAmountSol} test SOL and is approved separately from the other participant’s fee. Your wallet also shows the network fee and any recoverable rent. No pack or demo-pool value is purchased.`,
     heading: 'Review your duel payment',
     rows: [
       { label: 'Platform fee now', value: `${feeAmountSol} SOL` },
       { label: 'Additional costs', value: 'Network fee + recoverable rent' },
-      { label: 'Pack purchase', value: 'Not in this transaction' },
-      { label: 'Pack opening', value: 'After both wallets pay' },
-      { label: 'Winner receives', value: 'Both demo cards' },
+      { label: 'Demo-pool value', value: 'Not charged or purchased' },
+      { label: 'Opening begins', value: 'After both fees finalize' },
+      { label: 'Asset state', value: 'Shown on the public receipt' },
       { label: 'Cancellation', value: 'Before funding starts' },
     ],
     safety:

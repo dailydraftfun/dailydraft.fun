@@ -14,6 +14,7 @@ describe('game preview page contract', () => {
     const markup = renderToStaticMarkup(page);
 
     expect(metadata.title).toBe('Card Streak UX preview — DailyDraft Devnet');
+    expect(metadata.robots).toEqual({ follow: false, index: false, nocache: true });
     expect(markup).toContain('Full UX preview');
     expect(markup).toContain('Card Streak');
   });

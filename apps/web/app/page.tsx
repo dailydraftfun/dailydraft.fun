@@ -13,6 +13,7 @@ import {
 // `app.dailydraft.fun`. Defaulting to the apex would point the CTAs back at this same page. Vercel
 // stores a cleared variable as an empty string rather than as absent, so `??` would not fire.
 const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || 'https://app.dailydraft.fun';
+const rulesUrl = (path: string) => `${appUrl.replace(/\/$/, '')}${path}`;
 
 const steps = [
   {
@@ -60,6 +61,28 @@ const principles = [
   },
 ] as const;
 
+const ruleSurfaces = [
+  {
+    href: rulesUrl('/games/duel#rules'),
+    label: 'Runtime checked · devnet',
+    title: 'Card Duel',
+    detail: 'Comparison, wallet approval, custody, tie, refund, and receipt boundaries.',
+  },
+  {
+    href: rulesUrl('/games/marketplace-flip#rules'),
+    label: 'Fixture preview',
+    title: 'Marketplace Flip',
+    detail:
+      'Scripted local marketplace UX with a fixed result and no draw, purchase, or ownership change.',
+  },
+  {
+    href: rulesUrl('/games/crash#rules'),
+    label: 'Fixture preview',
+    title: 'Card Streak',
+    detail: 'Continue-or-stop rhythm without invented live odds, custody, or payout claims.',
+  },
+] as const;
+
 export default function LandingPage() {
   return (
     <main>
@@ -75,6 +98,7 @@ export default function LandingPage() {
           </a>
           <nav aria-label="Main navigation">
             <a href="#how-it-works">How it works</a>
+            <a href="#game-rules">Game rules</a>
             <a href="#trust">Trust</a>
             <a href="https://github.com/dailydraftfun/escrow">Open escrow</a>
           </nav>
@@ -166,6 +190,29 @@ export default function LandingPage() {
         <span>LIVE MATCH SCORING</span>
         <span>AUTO-ENTERED TOURNAMENTS</span>
         <span>SHAREABLE RESULTS</span>
+      </section>
+
+      <section id="game-rules" className="section-shell rules-section">
+        <div className="section-heading">
+          <span className="eyebrow">Browse before the wallet</span>
+          <h2>Every mode publishes its boundary.</h2>
+          <p>
+            Read the player loop, readiness gates, custody, refund, and settlement model on the same
+            canonical surface the product uses.
+          </p>
+        </div>
+        <div className="rule-surface-grid">
+          {ruleSurfaces.map((surface) => (
+            <a className="rule-surface-card" href={surface.href} key={surface.href}>
+              <span>{surface.label}</span>
+              <h3>{surface.title}</h3>
+              <p>{surface.detail}</p>
+              <strong>
+                Read canonical rules <ArrowRightIcon aria-hidden="true" size={15} />
+              </strong>
+            </a>
+          ))}
+        </div>
       </section>
 
       <section id="how-it-works" className="section-shell process-section">

@@ -8,7 +8,8 @@ type DuelPageProps = {
 
 export const metadata: Metadata = {
   title: 'Duel Arena — DailyDraft Devnet',
-  description: 'Challenge another collector to a server-owned sports card duel on Solana devnet.',
+  description:
+    'Compare server-provided DailyDraft demo pulls on Solana devnet. Demo-pool value is not charged or purchased; each participant approves only the displayed test-SOL platform fee.',
   robots: { follow: false, index: false, nocache: true },
 };
 

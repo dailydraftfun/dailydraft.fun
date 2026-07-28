@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import type { PublicDuelReceipt } from '../../duel/public-proof-client';
 
 mock.module('server-only', () => ({}));
@@ -23,7 +24,25 @@ function receipt(
 describe('canonical Duel Arena route', () => {
   test('publishes no-index Devnet metadata', () => {
     expect(metadata.title).toBe('Duel Arena — DailyDraft Devnet');
+    expect(metadata.description).toContain('DailyDraft demo pulls');
+    expect(metadata.description).toContain('not charged or purchased');
+    expect(metadata.description).toContain('test-SOL platform fee');
+    expect(metadata.description).not.toContain('sports card duel');
     expect(metadata.robots).toEqual({ follow: false, index: false, nocache: true });
+  });
+
+  test('delegates rules and the live arena to one capability-owning surface', () => {
+    const pageSource = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+    const arenaSource = readFileSync(new URL('../../duel-arena.tsx', import.meta.url), 'utf8');
+
+    expect(pageSource).toContain('<DuelArena');
+    expect(pageSource).not.toContain('GameRulesOverview');
+    expect(arenaSource).toContain(
+      '<GameRulesOverview capabilityState={capabilityState} mode="duel" />',
+    );
+    expect(arenaSource.indexOf('<GameRulesOverview')).toBeLessThan(
+      arenaSource.indexOf('id="duel-lobby"'),
+    );
   });
 
   test('preserves the challenge entry behavior', async () => {
