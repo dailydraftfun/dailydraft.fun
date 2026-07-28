@@ -7,7 +7,13 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { Message, PublicKey, Transaction } from '@solana/web3.js';
+import {
+  ComputeBudgetProgram,
+  Message,
+  PublicKey,
+  Transaction,
+  type TransactionInstruction,
+} from '@solana/web3.js';
 import bs58 from 'bs58';
 
 import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
@@ -40,6 +46,8 @@ const SOLANA_SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,96}$/;
 const MEMO_NONCE_PATTERN = /^gachapay_[a-f0-9]{32}$/;
 const AMOUNT_MINOR_PATTERN = /^[0-9]+$/;
 const GACHA_ACTIVE_PAYMENT_LOCK_NAMESPACE = 1_746_330_128;
+const MAX_COMPUTE_UNIT_LIMIT = 1_400_000;
+const MAX_COMPUTE_UNIT_PRICE_MICRO_LAMPORTS = 10_000_000n;
 
 export interface CreateGachaPaymentIntentInput {
   machineKey: string;
@@ -753,12 +761,10 @@ function validateSignedPaymentClaim(
     payerWallet: payment.payerWallet,
     recentBlockhash: message.recentBlockhash,
   });
-  const expectedMessage = Transaction.from(
+  const expectedTransaction = Transaction.from(
     Buffer.from(expected.serializedTransactionBase64, 'base64'),
-  ).serializeMessage();
-  if (!serializedMessageEquals(transaction.serializeMessage(), expectedMessage)) {
-    throw new ConflictException('Signed transaction does not match the Gacha payment intent');
-  }
+  );
+  assertWalletTransactionMatchesIntent(transaction, expectedTransaction);
 
   const signature = requireSignature(bs58.encode(payerSignature.signature));
   const envelope = {
@@ -809,8 +815,87 @@ function requireSignedTransaction(value: string): Buffer {
   return decoded;
 }
 
-function serializedMessageEquals(actual: Buffer, expected: Buffer): boolean {
-  return actual.length === expected.length && actual.equals(expected);
+/**
+ * Phantom may add a bounded Compute Budget prefix for its user-selected
+ * priority fee after the app validates the unsigned message. That prefix only
+ * changes the payer's network fee; the value-bearing transfer and memo must
+ * still match the server-built intent instruction-for-instruction.
+ */
+function assertWalletTransactionMatchesIntent(actual: Transaction, expected: Transaction): void {
+  const prefixLength = actual.instructions.findIndex(
+    (instruction) => !instruction.programId.equals(ComputeBudgetProgram.programId),
+  );
+  const computePrefixLength = prefixLength === -1 ? actual.instructions.length : prefixLength;
+  const computePrefix = actual.instructions.slice(0, computePrefixLength);
+  const valueInstructions = actual.instructions.slice(computePrefixLength);
+
+  assertBoundedComputeBudgetPrefix(computePrefix);
+  if (
+    valueInstructions.length !== expected.instructions.length ||
+    !valueInstructions.every((instruction, index) =>
+      transactionInstructionEquals(instruction, expected.instructions[index]),
+    )
+  ) {
+    throw new ConflictException('Signed transaction does not match the Gacha payment intent');
+  }
+}
+
+function assertBoundedComputeBudgetPrefix(instructions: readonly TransactionInstruction[]): void {
+  if (instructions.length > 2) {
+    throw new ConflictException('Signed transaction added unsupported priority fee instructions');
+  }
+  const seen = new Set<number>();
+  for (const instruction of instructions) {
+    if (!instruction.programId.equals(ComputeBudgetProgram.programId) || instruction.keys.length) {
+      throw new ConflictException('Signed transaction added unsupported priority fee instructions');
+    }
+    const discriminator = instruction.data[0];
+    if (discriminator === undefined || seen.has(discriminator)) {
+      throw new ConflictException('Signed transaction added unsupported priority fee instructions');
+    }
+    seen.add(discriminator);
+    if (discriminator === 2) {
+      if (
+        instruction.data.length !== 5 ||
+        instruction.data.readUInt32LE(1) < 1 ||
+        instruction.data.readUInt32LE(1) > MAX_COMPUTE_UNIT_LIMIT
+      ) {
+        throw new ConflictException('Signed transaction added an unsafe compute unit limit');
+      }
+      continue;
+    }
+    if (discriminator === 3) {
+      if (
+        instruction.data.length !== 9 ||
+        instruction.data.readBigUInt64LE(1) > MAX_COMPUTE_UNIT_PRICE_MICRO_LAMPORTS
+      ) {
+        throw new ConflictException('Signed transaction added an unsafe priority fee');
+      }
+      continue;
+    }
+    throw new ConflictException('Signed transaction added unsupported priority fee instructions');
+  }
+}
+
+function transactionInstructionEquals(
+  actual: TransactionInstruction,
+  expected: TransactionInstruction | undefined,
+): boolean {
+  return Boolean(
+    expected &&
+      actual.programId.equals(expected.programId) &&
+      actual.data.equals(expected.data) &&
+      actual.keys.length === expected.keys.length &&
+      actual.keys.every((key, index) => {
+        const expectedKey = expected.keys[index];
+        return (
+          expectedKey !== undefined &&
+          key.pubkey.equals(expectedKey.pubkey) &&
+          key.isSigner === expectedKey.isSigner &&
+          key.isWritable === expectedKey.isWritable
+        );
+      }),
+  );
 }
 
 async function lockActivePayment(

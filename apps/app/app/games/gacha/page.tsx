@@ -12,15 +12,15 @@ export function generateMetadata(): Metadata {
 
 export default function GachaPage() {
   return (
-    <main className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-10 sm:px-6 lg:py-14">
-      <header className="border-b border-border pb-6">
-        <p className="proof-label">Live game · server gated</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-[-0.045em] text-primary sm:text-5xl">
-          Sports Pack Gacha
+    <main className="mx-auto grid w-full max-w-6xl gap-5 px-4 py-6 sm:px-6 lg:py-8">
+      <header>
+        <p className="proof-label">Live on devnet</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.045em] text-primary sm:text-4xl">
+          Rip a pack.
         </h1>
-        <p className="mt-4 max-w-3xl text-sm leading-6 text-secondary">
-          Choose a sport and tier, review the server-committed odds and deposit, then reveal the
-          exact card settled by the game service.
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-secondary">
+          Pick your sport, crack the seal, and watch your card reveal. Every pull is committed
+          before your wallet opens.
         </p>
       </header>
       <FlipMachine />

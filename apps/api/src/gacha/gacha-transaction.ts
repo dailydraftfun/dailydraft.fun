@@ -57,6 +57,9 @@ export function buildGachaPaymentTransaction(
   const mint = new PublicKey(input.mint);
   const destination = new PublicKey(input.destinationTokenAccount);
   const source = getAssociatedTokenAddressSync(mint, payer);
+  if (source.equals(destination)) {
+    throw new Error('Gacha payment source and house destination token accounts must differ');
+  }
 
   const transaction = new Transaction({
     blockhash: input.recentBlockhash,

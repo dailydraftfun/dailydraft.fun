@@ -25,6 +25,13 @@ import { WalletTransactionNotBroadcastError } from '../../solana/wallet-transact
 import { createClientSeed, type FlipFundingPhase } from './flip-machine-flow';
 import type { FlipMachineAction } from './flip-machine-state';
 
+class UnbroadcastIntentReplacedError extends Error {
+  constructor() {
+    super('The previous approval expired before broadcast. Nothing was sent.');
+    this.name = 'UnbroadcastIntentReplacedError';
+  }
+}
+
 /**
  * The two multi-step rip sequences, lifted out of the component.
  *
@@ -390,9 +397,17 @@ export async function confirmFlipRip(
       };
     }
     if (claimStarted && !broadcastStarted) {
+      if (cause instanceof UnbroadcastIntentReplacedError) {
+        return {
+          message: 'Your previous approval expired before it was sent. Rip again when ready.',
+          status: 'retryable',
+        };
+      }
       return {
-        message:
-          'The server signature claim could not be reconciled. Nothing was broadcast, and this intent remains locked for safe recovery.',
+        message: `Nothing was sent. Recovery is holding this exact pack safely. ${describeFlipError(
+          cause,
+          'The signed payment could not be verified.',
+        )}`,
         status: 'failed',
       };
     }
@@ -428,10 +443,26 @@ export async function claimOrRecoverSignature(
       throw claimError;
     }
     if (!isAuthoritativeIntent(active, { ...input, intentId })) {
+      if (isProvenUnbroadcastReplacement(active, { ...input, intentId })) {
+        throw new UnbroadcastIntentReplacedError();
+      }
       throw claimError;
     }
     return active;
   }
+}
+
+function isProvenUnbroadcastReplacement(
+  intent: GachaPaymentIntent,
+  input: { address: string; intentId: string; machineKey: string },
+): boolean {
+  return (
+    intent.intentId !== input.intentId &&
+    intent.machineKey === input.machineKey &&
+    intent.payerWallet === input.address &&
+    intent.signature === null &&
+    intent.status === 'PENDING'
+  );
 }
 
 function isAuthoritativeIntent(
@@ -492,6 +523,12 @@ export async function reconcileSignedFlipRip(
     events.onSignature(signature);
     return await completeBroadcastFlipRip(input, signature, events, io);
   } catch (cause: unknown) {
+    if (cause instanceof UnbroadcastIntentReplacedError) {
+      return {
+        message: 'Your previous approval expired before it was sent. Rip again when ready.',
+        status: 'retryable',
+      };
+    }
     return {
       message: describeFlipError(
         cause,

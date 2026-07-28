@@ -2,7 +2,15 @@ import { readSignedTransactionSignature } from '../../solana/wallet-transaction'
 
 type FlipRecoveryStorage = Pick<Storage, 'getItem' | 'removeItem' | 'setItem'>;
 
-export const FLIP_PAYMENT_RECOVERY_STORAGE_KEY = 'dailydraft:flip-payment-recovery:v2';
+type PersistedFlipPaymentRecovery = Partial<FlipPaymentRecoveryBase> & {
+  signature?: unknown;
+  signedTransactionBase64?: unknown;
+  status?: string;
+  version?: number;
+};
+
+export const FLIP_PAYMENT_RECOVERY_STORAGE_KEY = 'dailydraft:flip-payment-recovery:v3';
+export const FLIP_PAYMENT_RECOVERY_V2_STORAGE_KEY = 'dailydraft:flip-payment-recovery:v2';
 export const FLIP_PAYMENT_RECOVERY_LEGACY_STORAGE_KEY = 'dailydraft:flip-payment-recovery:v1';
 export const FLIP_PAYMENT_RECOVERY_STALE_AFTER_MS = 24 * 60 * 60 * 1_000;
 
@@ -16,14 +24,14 @@ type FlipPaymentRecoveryBase = {
   serverSeedHash: string;
   sourceTokenAccount: string | null;
   updatedAt: string;
-  version: 2;
+  version: 3;
 };
 
 export type FlipPaymentRecovery =
   | (FlipPaymentRecoveryBase & {
       signature: null;
       signedTransactionBase64: null;
-      status: 'broadcast-unknown';
+      status: 'awaiting-signature';
     })
   | (FlipPaymentRecoveryBase & {
       signature: string;
@@ -43,7 +51,7 @@ export type FlipPaymentRecoveryRead =
 
 export type FlipPaymentRecoveryInput = Omit<FlipPaymentRecoveryBase, 'updatedAt' | 'version'>;
 
-export function createUnknownFlipPaymentRecovery(
+export function createAwaitingFlipPaymentRecovery(
   input: FlipPaymentRecoveryInput,
   updatedAt = new Date().toISOString(),
 ): FlipPaymentRecovery {
@@ -51,9 +59,9 @@ export function createUnknownFlipPaymentRecovery(
     ...input,
     signature: null,
     signedTransactionBase64: null,
-    status: 'broadcast-unknown',
+    status: 'awaiting-signature',
     updatedAt,
-    version: 2,
+    version: 3,
   };
 }
 
@@ -99,6 +107,7 @@ export function readFlipPaymentRecovery(
   let rawValue: string | null;
   try {
     rawValue = storage.getItem(FLIP_PAYMENT_RECOVERY_STORAGE_KEY);
+    if (!rawValue) rawValue = storage.getItem(FLIP_PAYMENT_RECOVERY_V2_STORAGE_KEY);
     if (!rawValue) rawValue = storage.getItem(FLIP_PAYMENT_RECOVERY_LEGACY_STORAGE_KEY);
   } catch {
     return { status: 'invalid' };
@@ -106,13 +115,14 @@ export function readFlipPaymentRecovery(
   if (!rawValue) return { status: 'empty' };
 
   try {
-    const parsed = JSON.parse(rawValue) as Partial<FlipPaymentRecovery> & { version?: number };
-    const parsedVersion = (parsed as unknown as { version?: number }).version;
+    const parsed = JSON.parse(rawValue) as PersistedFlipPaymentRecovery;
+    const parsedVersion = parsed.version;
     const record = migrateFlipPaymentRecovery(parsed);
     if (!record || !isFlipPaymentRecovery(record, now)) return { status: 'invalid' };
-    if (parsedVersion === 1) {
+    if (parsedVersion !== 3) {
       try {
         storage.setItem(FLIP_PAYMENT_RECOVERY_STORAGE_KEY, JSON.stringify(record));
+        storage.removeItem(FLIP_PAYMENT_RECOVERY_V2_STORAGE_KEY);
         storage.removeItem(FLIP_PAYMENT_RECOVERY_LEGACY_STORAGE_KEY);
       } catch {
         // The valid in-memory migration remains usable. The legacy record stays
@@ -145,6 +155,7 @@ export function storeFlipPaymentRecovery(
 export function clearFlipPaymentRecovery(storage: Pick<Storage, 'removeItem'>): boolean {
   try {
     storage.removeItem(FLIP_PAYMENT_RECOVERY_STORAGE_KEY);
+    storage.removeItem(FLIP_PAYMENT_RECOVERY_V2_STORAGE_KEY);
     storage.removeItem(FLIP_PAYMENT_RECOVERY_LEGACY_STORAGE_KEY);
     return true;
   } catch {
@@ -158,7 +169,7 @@ function isFlipPaymentRecovery(
 ): value is FlipPaymentRecovery {
   const updatedAt = typeof value.updatedAt === 'string' ? Date.parse(value.updatedAt) : Number.NaN;
   const signatureValid =
-    value.status === 'broadcast-unknown'
+    value.status === 'awaiting-signature'
       ? value.signature === null && value.signedTransactionBase64 === null
       : value.status === 'signed-claim-pending'
         ? isSignature(value.signature) &&
@@ -168,7 +179,7 @@ function isFlipPaymentRecovery(
           value.signedTransactionBase64 === null;
 
   return (
-    value.version === 2 &&
+    value.version === 3 &&
     signatureValid &&
     isBoundedIdentifier(value.commitmentId) &&
     isBoundedIdentifier(value.intentId) &&
@@ -186,21 +197,36 @@ function isFlipPaymentRecovery(
 }
 
 function migrateFlipPaymentRecovery(
-  value: Partial<FlipPaymentRecovery> & { version?: number },
+  value: PersistedFlipPaymentRecovery,
 ): FlipPaymentRecovery | null {
-  if (value.version === 2) return value as FlipPaymentRecovery;
+  if (value.version === 3) return value as FlipPaymentRecovery;
   if (
-    value.version !== 1 ||
-    (value.status !== 'broadcast-unknown' && value.status !== 'signature-known')
+    value.version === 2 &&
+    (value.status === 'broadcast-unknown' ||
+      value.status === 'signed-claim-pending' ||
+      value.status === 'signature-known')
   ) {
+    return {
+      ...(value as unknown as FlipPaymentRecoveryBase),
+      signature: value.signature ?? null,
+      signedTransactionBase64: value.signedTransactionBase64 ?? null,
+      status: value.status === 'broadcast-unknown' ? 'awaiting-signature' : value.status,
+      version: 3,
+    } as FlipPaymentRecovery;
+  }
+  // V1 `broadcast-unknown` came from combined sign-and-send wallets. A crash
+  // could therefore happen after broadcast but before the signature callback,
+  // so that legacy state must remain invalid/fail-closed instead of being
+  // reclassified as a sign-only pre-broadcast record.
+  if (value.version !== 1 || value.status !== 'signature-known') {
     return null;
   }
   return {
     ...(value as unknown as FlipPaymentRecoveryBase),
     signature: value.signature ?? null,
     signedTransactionBase64: null,
-    status: value.status,
-    version: 2,
+    status: 'signature-known',
+    version: 3,
   } as FlipPaymentRecovery;
 }
 

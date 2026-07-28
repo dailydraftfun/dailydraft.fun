@@ -80,53 +80,53 @@ export type FlipStageDescription = { detail: string; label: string };
 
 const STAGE_COPY: Record<FlipStage, FlipStageDescription> = {
   blocked: {
-    detail: 'The server closed a capability gate, so no rip can be priced right now.',
-    label: 'Machine closed',
+    detail: 'This sealed pool is temporarily unavailable. No payment can be started.',
+    label: 'Pack offline',
   },
   confirming: {
-    detail: 'Waiting for the network to confirm your deposit before the seed is revealed.',
-    label: 'Confirming deposit',
+    detail: 'Your payment is on Solana. The pack will open automatically after confirmation.',
+    label: 'Locking in your pack',
   },
   connect: {
-    detail: 'Connect a Wallet Standard wallet on devnet to price a rip.',
-    label: 'Connect your wallet',
+    detail: 'Connect a devnet wallet to open this sealed sports pack.',
+    label: 'Ready when you are',
   },
   'delivery-failed': {
-    detail: 'The deposit settled, but the provider did not deliver the selected card.',
-    label: 'Delivery failed',
+    detail: 'The payment settled, but card delivery needs operator recovery.',
+    label: 'Delivery delayed',
   },
   'funding-review': {
-    detail: 'Review the exact deposit your wallet is about to approve.',
-    label: 'Review the deposit',
+    detail: 'One wallet approval opens this exact pack.',
+    label: 'Your pack is sealed',
   },
   'funding-signature': {
-    detail: 'Approve the transfer in your wallet. Nothing is charged until you sign.',
-    label: 'Approve in your wallet',
+    detail: 'Approve the displayed USDC amount. Nothing moves until you sign.',
+    label: 'Open your wallet',
   },
-  loading: { detail: 'Reading the machine capability.', label: 'Checking the machine' },
+  loading: { detail: 'Loading the sealed pool and committed odds.', label: 'Warming up' },
   preparing: {
-    detail: 'Sealing the odds commitment and building your deposit transaction.',
-    label: 'Preparing your rip',
+    detail: 'Locking the pool, odds, and price before your wallet opens.',
+    label: 'Sealing your pack',
   },
   recovery: {
-    detail: 'Something interrupted the rip. Your deposit intent is still recoverable.',
-    label: 'Recover this rip',
+    detail: 'Your previous pack is protected while DailyDraft resumes the exact saved attempt.',
+    label: 'Pack protected',
   },
   revealed: {
-    detail: 'The server seed is revealed and the pull is final.',
-    label: 'Card revealed',
+    detail: 'The committed pack is open and the pull is final.',
+    label: 'You pulled',
   },
   review: {
-    detail: 'Pick a sport and tier, then commit the rip.',
-    label: 'Choose your pack',
+    detail: 'Choose a sport and pack, then rip it.',
+    label: 'Pick. Rip. Reveal.',
   },
   ripping: {
-    detail: 'The payment is verified. Revealing the committed pull.',
-    label: 'Ripping the pack',
+    detail: 'Payment verified. The reveal is now determined and opening.',
+    label: 'Opening your pack',
   },
   verifying: {
-    detail: 'Checking your transfer against the sealed payment intent.',
-    label: 'Verifying your deposit',
+    detail: 'Matching the confirmed payment to your sealed pack.',
+    label: 'Almost there',
   },
 };
 

@@ -14,9 +14,10 @@ import {
 } from './flip-machine';
 import {
   attachFlipSignedTransaction,
-  createUnknownFlipPaymentRecovery,
+  createAwaitingFlipPaymentRecovery,
   FLIP_PAYMENT_RECOVERY_LEGACY_STORAGE_KEY,
   FLIP_PAYMENT_RECOVERY_STORAGE_KEY,
+  FLIP_PAYMENT_RECOVERY_V2_STORAGE_KEY,
 } from './flip-payment-recovery';
 
 describe('flip machine controller', () => {
@@ -92,12 +93,12 @@ describe('flip machine controller', () => {
     );
 
     expect(html).toContain('data-stage="loading"');
-    expect(html).toContain('Checking the machine');
+    expect(html).toContain('Warming up');
     expect(html).not.toContain('<button');
   });
 
   test('clears browser recovery only for a proven terminal outcome', () => {
-    const record = createUnknownFlipPaymentRecovery({
+    const record = createAwaitingFlipPaymentRecovery({
       commitmentId: 'gachaseed_123',
       intentId: 'gachapay_123',
       machineKey: 'dailydraft-devnet-football-10000',
@@ -127,8 +128,39 @@ describe('flip machine controller', () => {
     expect(recoveryRef.current).toBeNull();
     expect(removed).toEqual([
       FLIP_PAYMENT_RECOVERY_STORAGE_KEY,
+      FLIP_PAYMENT_RECOVERY_V2_STORAGE_KEY,
       FLIP_PAYMENT_RECOVERY_LEGACY_STORAGE_KEY,
     ]);
+  });
+
+  test('clears a pre-sign reload record because sign-only wallets cannot have broadcast it', () => {
+    const record = createAwaitingFlipPaymentRecovery({
+      commitmentId: 'gachaseed_123',
+      intentId: 'gachapay_123',
+      machineKey: 'dailydraft-devnet-football-10000',
+      mint: 'M'.repeat(32),
+      oddsVersion: 3,
+      payerWallet: 'P'.repeat(32),
+      serverSeedHash: 'a'.repeat(64),
+      sourceTokenAccount: 'S'.repeat(32),
+    });
+    const values = new Map([[FLIP_PAYMENT_RECOVERY_STORAGE_KEY, JSON.stringify(record)]]);
+    const actions: unknown[] = [];
+    const recoveryRef = { current: record };
+
+    hydrateRecovery(
+      {
+        getItem: (key) => values.get(key) ?? null,
+        removeItem: (key) => values.delete(key),
+        setItem: (key, value) => values.set(key, value),
+      },
+      recoveryRef,
+      (action) => actions.push(action),
+    );
+
+    expect(recoveryRef.current).toBeNull();
+    expect(actions).toEqual([{ type: 'recovery-cleared' }]);
+    expect(values.size).toBe(0);
   });
 
   test('hydrates mismatched signed bytes as an invalid fail-closed recovery state', () => {
@@ -139,7 +171,7 @@ describe('flip machine controller', () => {
       Uint8Array.from([1, ...new Uint8Array(64).fill(9), 2]),
     );
     const corrupt = attachFlipSignedTransaction(
-      createUnknownFlipPaymentRecovery({
+      createAwaitingFlipPaymentRecovery({
         commitmentId: 'gachaseed_123',
         intentId: 'gachapay_123',
         machineKey: 'dailydraft-devnet-football-10000',

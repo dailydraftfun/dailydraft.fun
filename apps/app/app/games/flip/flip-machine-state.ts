@@ -64,6 +64,7 @@ export type FlipMachineAction =
   | { prepared: PreparedGachaPaymentTransaction; type: 'prepared-updated' }
   | { message: string; type: 'prepare-failed' }
   | { record: FlipPaymentRecovery; stale: boolean; type: 'recovery-hydrated' }
+  | { record: FlipPaymentRecovery; type: 'recovery-synchronized' }
   | { type: 'recovery-cleared' }
   | { type: 'recovery-invalid' }
   | { phase: FlipFundingPhase; type: 'funding-phase-changed' }
@@ -165,7 +166,7 @@ export function flipMachineReducer(
         recoveredMachine !== undefined && recoveredMachine.machineKey !== state.machine.machineKey;
       return {
         ...state,
-        broadcastUnknown: action.record.status === 'broadcast-unknown',
+        broadcastUnknown: false,
         error: action.stale
           ? 'This saved payment is old, but it remains locked until Solana reconciliation is terminal.'
           : 'A saved payment was restored without opening another wallet prompt.',
@@ -179,6 +180,14 @@ export function flipMachineReducer(
         snapshot: machineChanged ? null : state.snapshot,
       };
     }
+    case 'recovery-synchronized':
+      return {
+        ...state,
+        broadcastUnknown: false,
+        recovery: action.record,
+        recoveryInvalid: false,
+        signature: action.record.signature,
+      };
     case 'recovery-invalid':
       return {
         ...state,
