@@ -721,6 +721,7 @@ model FlipInventorySnapshot {
   sealedAt                    DateTime?
   createdAt                   DateTime                     @default(now())
   entries                     FlipInventorySnapshotEntry[]
+  sessionPoolCommitments      FlipSessionPoolCommitment[]
 
   @@unique([poolKey, revision])
   @@unique([poolKey, contentHash])
@@ -773,6 +774,63 @@ model FlipInventorySnapshotEntry {
   @@unique([snapshotId, providerAssetReference])
   @@unique([snapshotId, providerListingReference])
   @@index([snapshotId, eligible, ordinal])
+}
+
+/// Reviewed, versioned fixture-only Flip probability and economic configuration.
+/// Rules are sealed before use and remain append-only after review.
+model FlipRuleSet {
+  id                     String                      @id
+  rulesKey               String
+  version                Int
+  schemaVersion          String
+  calculatorVersion      String
+  activation             String
+  poolKey                String
+  inventoryPolicyVersion String
+  currency               String                      @default("USDC")
+  decimals               Int                         @default(6)
+  stakeAmount            String
+  feeAmount              String
+  houseEdgePpm           Int
+  probabilityScalePpm    Int                         @default(1000000)
+  bands                  Json
+  rulesHash              String
+  reviewReference        String
+  reviewedAt             DateTime
+  sealedAt               DateTime?
+  createdAt              DateTime                    @default(now())
+  sessionPoolCommitments FlipSessionPoolCommitment[]
+
+  @@unique([rulesKey, version])
+  @@unique([rulesKey, rulesHash])
+  @@index([poolKey, createdAt])
+}
+
+/// Immutable rules-and-pool binding created before a synthetic/preview Flip session.
+/// `outcomeSpace` contains only public inventory references and normalized values;
+/// no entropy, provider credentials, or other secret selection material is stored.
+model FlipSessionPoolCommitment {
+  id                   String                @id
+  sessionReference     String                @unique
+  rulesetId            String
+  snapshotId           String
+  poolKey              String
+  rulesVersion         Int
+  snapshotRevision     Int
+  rulesHash            String
+  snapshotContentHash  String
+  poolCommitmentHash   String
+  eligibleOutcomeCount Int
+  outcomeSpace         Json
+  committedAt          DateTime
+  sealedAt             DateTime?
+  createdAt            DateTime              @default(now())
+  ruleset              FlipRuleSet           @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
+  snapshot             FlipInventorySnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  @@index([rulesetId, committedAt])
+  @@index([snapshotId, committedAt])
+  @@index([poolKey, committedAt])
 }
 
 /// One configured Collector Crypt sports pack machine.
