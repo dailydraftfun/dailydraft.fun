@@ -410,6 +410,19 @@ BEGIN
       RAISE EXCEPTION 'Flip session pool outcome space does not match eligible snapshot entries';
     END IF;
 
+    IF EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(stored_rules."bands") required_band
+      WHERE (required_band->>'probabilityPpm')::NUMERIC > 0
+        AND NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(expected_outcome_space) outcome
+          WHERE outcome->>'bandLabel' = required_band->>'label'
+        )
+    ) THEN
+      RAISE EXCEPTION 'Flip session pool does not cover every positive-probability rules band';
+    END IF;
+
     BEGIN
       parsed_preimage := NEW."poolCanonicalPreimage"::JSONB;
     EXCEPTION

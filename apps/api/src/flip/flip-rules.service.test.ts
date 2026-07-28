@@ -463,6 +463,9 @@ describe('Flip rules migration contract', () => {
     expect(migration).toContain('jsonb_agg(');
     expect(migration).toContain('ORDER BY entry."ordinal"');
     expect(migration).toContain(
+      'Flip session pool does not cover every positive-probability rules band',
+    );
+    expect(migration).toContain(
       'stored_rules."inventoryPolicyVersion" <> stored_snapshot."policyVersion"',
     );
     expect(migration).toContain('stored_rules."stakeAmount" <> stored_snapshot."stakeAmount"');

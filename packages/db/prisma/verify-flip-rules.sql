@@ -151,6 +151,115 @@ UPDATE "FlipInventorySnapshot"
 SET "sealedAt" = '2026-08-03T12:00:30Z'
 WHERE "id" = 'flipsnap_rules_verify';
 
+-- A separately sealed, internally valid snapshot that covers only the base and
+-- plus bands. It must not be usable with rules that assign positive probability
+-- to chase.
+INSERT INTO "FlipInventorySnapshot" (
+  "id",
+  "poolKey",
+  "revision",
+  "schemaVersion",
+  "policyVersion",
+  "provider",
+  "policyHash",
+  "contentHash",
+  "policy",
+  "stakeAmount",
+  "minimumValueAmount",
+  "maximumValueAmount",
+  "minimumLiquidityBasisPoints",
+  "minimumEligibleItems",
+  "maximumEligibleItems",
+  "maximumExposureAmount",
+  "maximumSourceAgeMs",
+  "maximumFutureSkewMs",
+  "eligibleCount",
+  "excludedCount",
+  "eligibleValueAmount",
+  "evaluatedAt"
+)
+SELECT
+  'flipsnap_rules_missing_chase',
+  "poolKey",
+  2,
+  "schemaVersion",
+  "policyVersion",
+  "provider",
+  "policyHash",
+  repeat('c', 64),
+  "policy",
+  "stakeAmount",
+  "minimumValueAmount",
+  "maximumValueAmount",
+  "minimumLiquidityBasisPoints",
+  2,
+  "maximumEligibleItems",
+  "maximumExposureAmount",
+  "maximumSourceAgeMs",
+  "maximumFutureSkewMs",
+  2,
+  0,
+  '50000000',
+  "evaluatedAt"
+FROM "FlipInventorySnapshot"
+WHERE "id" = 'flipsnap_rules_verify';
+
+INSERT INTO "FlipInventorySnapshotEntry" (
+  "id",
+  "snapshotId",
+  "ordinal",
+  "eligible",
+  "exclusionReasons",
+  "providerAssetReference",
+  "providerListingReference",
+  "providerCollectionReference",
+  "providerGraderReference",
+  "normalizedCollection",
+  "normalizedGrader",
+  "liquidityBasisPoints",
+  "inventorySourceTimestamp",
+  "listingValueAmount",
+  "listingValueCurrency",
+  "listingValueDecimals",
+  "listingValueProviderReference",
+  "listingValueSourceTimestamp",
+  "eligibilityListingValueAmount",
+  "eligibilityListingValueCurrency",
+  "eligibilityListingValueDecimals",
+  "eligibilityListingValueSourceTimestamp"
+)
+SELECT
+  "id" || '_missing_chase',
+  'flipsnap_rules_missing_chase',
+  "ordinal",
+  "eligible",
+  "exclusionReasons",
+  "providerAssetReference",
+  "providerListingReference",
+  "providerCollectionReference",
+  "providerGraderReference",
+  "normalizedCollection",
+  "normalizedGrader",
+  "liquidityBasisPoints",
+  "inventorySourceTimestamp",
+  "listingValueAmount",
+  "listingValueCurrency",
+  "listingValueDecimals",
+  "listingValueProviderReference",
+  "listingValueSourceTimestamp",
+  "eligibilityListingValueAmount",
+  "eligibilityListingValueCurrency",
+  "eligibilityListingValueDecimals",
+  "eligibilityListingValueSourceTimestamp"
+FROM "FlipInventorySnapshotEntry"
+WHERE "snapshotId" = 'flipsnap_rules_verify'
+  AND "ordinal" < 2
+ORDER BY "ordinal";
+
+UPDATE "FlipInventorySnapshot"
+SET "sealedAt" = '2026-08-03T12:00:31Z'
+WHERE "id" = 'flipsnap_rules_missing_chase';
+
 INSERT INTO "FlipRuleSet" (
   "id",
   "rulesKey",
@@ -384,6 +493,56 @@ BEGIN
   EXCEPTION
     WHEN raise_exception THEN
       IF SQLERRM <> 'Flip session pool commitment sources are invalid or unsealed' THEN
+        RAISE;
+      END IF;
+  END;
+END
+$verification$;
+
+DO $verification$
+BEGIN
+  BEGIN
+    INSERT INTO "FlipSessionPoolCommitment" (
+      "id",
+      "sessionReference",
+      "rulesetId",
+      "snapshotId",
+      "poolKey",
+      "rulesVersion",
+      "snapshotRevision",
+      "rulesHash",
+      "snapshotContentHash",
+      "poolCanonicalPreimage",
+      "poolCommitmentHash",
+      "eligibleOutcomeCount",
+      "outcomeSpace",
+      "committedAt"
+    ) VALUES (
+      'flipcommit_missing_chase',
+      'flip_session_missing_chase',
+      'fliprules_verify',
+      'flipsnap_rules_missing_chase',
+      'flip-pokemon-50',
+      1,
+      2,
+      '57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c',
+      repeat('c', 64),
+      $pool${"outcomeSpace":[{"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},{"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"}],"rulesHash":"57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c","schemaVersion":"dailydraft.flip-session-pool-commitment.v1","snapshotContentHash":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}$pool$,
+      'fdacdd0001430957853cbebf90bf5f9ba03b456329a32b2ee40473928d371d45',
+      2,
+      '[
+        {"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},
+        {"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"}
+      ]'::jsonb,
+      '2026-08-03T12:02:00Z'
+    );
+    UPDATE "FlipSessionPoolCommitment"
+    SET "sealedAt" = '2026-08-03T12:02:01Z'
+    WHERE "id" = 'flipcommit_missing_chase';
+    RAISE EXCEPTION 'Flip commitment without chase coverage was sealed';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'Flip session pool does not cover every positive-probability rules band' THEN
         RAISE;
       END IF;
   END;
