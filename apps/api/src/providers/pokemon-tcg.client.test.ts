@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { fetchCard, parseCard } from './pokemon-tcg.client.js';
+import { fetchCard, fetchCards, parseCard, parseCards } from './pokemon-tcg.client.js';
 
 describe('Pokémon TCG card snapshots', () => {
   test('converts the authoritative USD market price to exact USDC micro-units', () => {
@@ -27,6 +27,25 @@ describe('Pokémon TCG card snapshots', () => {
     const unknownVariant = card();
     unknownVariant.data.tcgplayer.prices = { unlimitedHolofoil: { market: 10 } };
     expect(() => parseCard(unknownVariant)).toThrow('no positive USD market price');
+  });
+
+  test('selects an exact ordered subset from a set response', () => {
+    const charizard = card().data;
+    const alakazam = {
+      ...card().data,
+      id: 'base1-1',
+      name: 'Alakazam',
+    };
+
+    expect(parseCards({ data: [charizard, alakazam] }, ['base1-1', 'base1-4'])).toEqual([
+      expect.objectContaining({ cardId: 'base1-1', displayName: 'Alakazam' }),
+      expect.objectContaining({ cardId: 'base1-4', displayName: 'Charizard' }),
+    ]);
+    expect(() => parseCards({ data: [charizard] }, ['base1-1'])).toThrow('omitted card base1-1');
+    expect(() => parseCards({ data: [charizard, charizard] }, ['base1-4'])).toThrow(
+      'duplicate card',
+    );
+    expect(() => parseCards({ data: {} }, ['base1-4'])).toThrow('invalid card batch');
   });
 });
 
@@ -107,6 +126,50 @@ describe('Pokémon TCG requests', () => {
     ).rejects.toThrow('Pokémon TCG API returned 404');
 
     expect(requests).toBe(1);
+  });
+
+  test('loads a same-set card pool with one canonical batch request', async () => {
+    const requests: string[] = [];
+    const charizard = card().data;
+    const alakazam = {
+      ...card().data,
+      id: 'base1-1',
+      name: 'Alakazam',
+    };
+
+    const result = await fetchCards(['base1-1', 'base1-4'], {
+      fetcher: async (input) => {
+        requests.push(String(input));
+        return Response.json({ data: [charizard, alakazam] });
+      },
+      retries: 0,
+      retryDelayMs: 0,
+      timeoutMs: 20_000,
+    });
+
+    expect(result.map((snapshot) => snapshot.cardId)).toEqual(['base1-1', 'base1-4']);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain('q=set.id%3Abase1');
+    expect(requests[0]).toContain('pageSize=250');
+  });
+
+  test('rejects invalid batch shapes before provider I/O', async () => {
+    let requests = 0;
+    const options = {
+      fetcher: async () => {
+        requests += 1;
+        return Response.json({ data: [] });
+      },
+      retries: 0,
+      retryDelayMs: 0,
+      timeoutMs: 20_000,
+    };
+
+    await expect(fetchCards([], options)).rejects.toThrow('batch size is invalid');
+    await expect(fetchCards(['base1-1', 'base1-1'], options)).rejects.toThrow('duplicate ID');
+    await expect(fetchCards(['base1-1', 'base2-1'], options)).rejects.toThrow('must use one set');
+    await expect(fetchCards(['notcanonical'], options)).rejects.toThrow('has no canonical set');
+    expect(requests).toBe(0);
   });
 });
 

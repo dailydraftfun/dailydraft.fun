@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
-import { PokemonTcgClient } from '../providers/pokemon-tcg.client.js';
+import { type PokemonTcgCardSnapshot, PokemonTcgClient } from '../providers/pokemon-tcg.client.js';
 import {
   DEVNET_DEMO_VALUATION_POLICY,
   DEVNET_DEMO_VALUATION_POLICY_HASH,
@@ -67,7 +66,10 @@ const CARD_POOL = Object.freeze([
   'base1-5',
   'base1-6',
   'base1-7',
-  'base1-8',
+  // Machamp currently has no supported positive TCGPlayer market variant, so
+  // it cannot pass the pinned valuation policy. Beedrill replaces it while
+  // preserving a sixteen-card real-market pool.
+  'base1-17',
   'base1-9',
   'base1-10',
   'base1-11',
@@ -95,6 +97,7 @@ const DEVNET_MACHINES: readonly SportsPackGachaMachine[] = Object.freeze(
 @Injectable()
 export class DevnetSportsPackGachaProvider extends SportsPackGachaProvider {
   readonly mode = 'dailydraft-devnet' as const;
+  #poolPromise: Promise<ReadonlyMap<string, PokemonTcgCardSnapshot>> | undefined;
 
   constructor(
     private readonly pokemon: PokemonTcgClient,
@@ -151,40 +154,42 @@ export class DevnetSportsPackGachaProvider extends SportsPackGachaProvider {
     // market data rather than a self-referential one.
     const observedAt = new Date();
     const graderReference = `dailydraft-devnet-vault:${this.signer.publicKey.toBase58()}`;
+    const pool = await this.loadCardPool();
 
     return Object.freeze(
-      await Promise.all(
-        machineCardIds(machineIndex).map(async (cardId) => {
-          const card = await this.pokemon.getCard(cardId);
-          const providerCardReference = `${GACHA_DEVNET_POOL_VERSION}:${machine.machineKey}:${cardId}`;
+      machineCardIds(machineIndex).map((cardId) => {
+        const card = pool.get(cardId);
+        if (!card) {
+          throw new ServiceUnavailableException(`Gacha devnet card ${cardId} is unavailable`);
+        }
+        const providerCardReference = `${GACHA_DEVNET_POOL_VERSION}:${machine.machineKey}:${cardId}`;
 
-          return Object.freeze({
-            assetReference: `devnet:sports-pack:${machine.machineKey}:${cardId}:${this.signer
-              .referenceMac(providerCardReference)
-              .slice(0, 32)}`,
-            displayName: card.displayName,
-            graded: true,
-            graderReference,
-            insuredValue: Object.freeze({
-              amount: card.marketValueMicroUsdc,
-              currency: 'USDC' as const,
-              decimals: 6 as const,
-              providerReference: `pokemon-tcg:${cardId}:${card.priceVariant}:${card.priceUpdatedAt}`,
-              sourceTimestamp: card.sourceTimestamp,
-            }),
-            inventorySourceTimestamp: observedAt,
-            poolOpen: true,
-            providerCardReference,
-            sport: machine.sport,
-            tierEnabled: true,
-            // `SportsPackGachaCard` has no dedicated policy-hash field, so the
-            // pinned valuation policy travels in the valuation source reference
-            // that the snapshot seals into its content hash.
-            valuationSourceReference: `${DEVNET_DEMO_VALUATION_POLICY.policyVersion}:${DEVNET_DEMO_VALUATION_POLICY_HASH}:${cardId}`,
-            vaulted: true,
-          });
-        }),
-      ),
+        return Object.freeze({
+          assetReference: `devnet:sports-pack:${machine.machineKey}:${cardId}:${this.signer
+            .referenceMac(providerCardReference)
+            .slice(0, 32)}`,
+          displayName: card.displayName,
+          graded: true,
+          graderReference,
+          insuredValue: Object.freeze({
+            amount: card.marketValueMicroUsdc,
+            currency: 'USDC' as const,
+            decimals: 6 as const,
+            providerReference: `pokemon-tcg:${cardId}:${card.priceVariant}:${card.priceUpdatedAt}`,
+            sourceTimestamp: card.sourceTimestamp,
+          }),
+          inventorySourceTimestamp: observedAt,
+          poolOpen: true,
+          providerCardReference,
+          sport: machine.sport,
+          tierEnabled: true,
+          // `SportsPackGachaCard` has no dedicated policy-hash field, so the
+          // pinned valuation policy travels in the valuation source reference
+          // that the snapshot seals into its content hash.
+          valuationSourceReference: `${DEVNET_DEMO_VALUATION_POLICY.policyVersion}:${DEVNET_DEMO_VALUATION_POLICY_HASH}:${cardId}`,
+          vaulted: true,
+        });
+      }),
     );
   }
 
@@ -214,6 +219,19 @@ export class DevnetSportsPackGachaProvider extends SportsPackGachaProvider {
       action,
       this.signer.referenceMac(`${action}:${parts.join(':')}`),
     ].join(':');
+  }
+
+  private async loadCardPool(): Promise<ReadonlyMap<string, PokemonTcgCardSnapshot>> {
+    if (!this.#poolPromise) {
+      const pending = this.pokemon
+        .getCards(CARD_POOL)
+        .then((cards) => new Map(cards.map((card) => [card.cardId, card])));
+      this.#poolPromise = pending;
+      void pending.catch(() => {
+        if (this.#poolPromise === pending) this.#poolPromise = undefined;
+      });
+    }
+    return this.#poolPromise;
   }
 }
 
