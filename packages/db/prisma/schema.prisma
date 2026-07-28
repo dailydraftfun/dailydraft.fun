@@ -794,6 +794,7 @@ model FlipRuleSet {
   houseEdgePpm           Int
   probabilityScalePpm    Int                         @default(1000000)
   bands                  Json
+  rulesCanonicalPreimage String
   rulesHash              String
   reviewReference        String
   reviewedAt             DateTime
@@ -810,23 +811,24 @@ model FlipRuleSet {
 /// `outcomeSpace` contains only public inventory references and normalized values;
 /// no entropy, provider credentials, or other secret selection material is stored.
 model FlipSessionPoolCommitment {
-  id                   String                @id
-  sessionReference     String                @unique
-  rulesetId            String
-  snapshotId           String
-  poolKey              String
-  rulesVersion         Int
-  snapshotRevision     Int
-  rulesHash            String
-  snapshotContentHash  String
-  poolCommitmentHash   String
-  eligibleOutcomeCount Int
-  outcomeSpace         Json
-  committedAt          DateTime
-  sealedAt             DateTime?
-  createdAt            DateTime              @default(now())
-  ruleset              FlipRuleSet           @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
-  snapshot             FlipInventorySnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  id                    String                @id
+  sessionReference      String                @unique
+  rulesetId             String
+  snapshotId            String
+  poolKey               String
+  rulesVersion          Int
+  snapshotRevision      Int
+  rulesHash             String
+  snapshotContentHash   String
+  poolCanonicalPreimage String
+  poolCommitmentHash    String
+  eligibleOutcomeCount  Int
+  outcomeSpace          Json
+  committedAt           DateTime
+  sealedAt              DateTime?
+  createdAt             DateTime              @default(now())
+  ruleset               FlipRuleSet           @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
+  snapshot              FlipInventorySnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
 
   @@index([rulesetId, committedAt])
   @@index([snapshotId, committedAt])

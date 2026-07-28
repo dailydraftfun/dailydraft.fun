@@ -4,6 +4,7 @@ import type { DatabaseClient } from '@dailydraft/db';
 
 import { FLIP_INVENTORY_SCHEMA_VERSION } from './flip-inventory-snapshot.service.js';
 import {
+  canonicalFlipRuleSetPreimage,
   createFixtureFlipRuleSet,
   FLIP_PROBABILITY_SCALE_PPM,
   type FlipRuleSet,
@@ -36,6 +37,9 @@ describe('versioned Flip rules', () => {
     const validated = validateFlipRuleSet(rules);
 
     expect(validated.rulesHash).toBe(hashFlipRuleSet(stripHash(rules)));
+    expect(canonicalFlipRuleSetPreimage(stripHash(rules))).toBe(
+      '{"activation":"fixture-only","bands":[{"label":"base","minimumValueAmount":"0","probabilityPpm":700000},{"label":"plus","minimumValueAmount":"25000000","probabilityPpm":250000},{"label":"chase","minimumValueAmount":"50000000","probabilityPpm":50000}],"calculatorVersion":"dailydraft.flip-outcome-bands.v1","currency":"USDC","decimals":6,"feeAmount":"2000000","houseEdgePpm":50000,"inventoryPolicyVersion":"flip-fixture-policy-v1","poolKey":"flip-pokemon-50","probabilityScalePpm":1000000,"reviewedAt":"2026-08-03T12:01:00.000Z","reviewReference":"fixture-review/flip-rules-v1","rulesKey":"flip-pokemon-50-fixture","schemaVersion":"dailydraft.flip-rules.v1","stakeAmount":"50000000","version":1}',
+    );
     expect(validated.rulesHash).toBe(
       '57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c',
     );
@@ -172,6 +176,9 @@ describe('Flip session pool commitment', () => {
     expect(first).toEqual(replay);
     expect(first.poolCommitmentHash).toBe(
       'da050f415fce611ca4658647501a5667a0816d6e7da586462bd47e42a5439c4e',
+    );
+    expect(first.poolCanonicalPreimage).toBe(
+      '{"outcomeSpace":[{"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},{"bandLabel":"plus","listingValueAmount":"30000000","ordinal":2,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},{"bandLabel":"chase","listingValueAmount":"60000000","ordinal":4,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}],"rulesHash":"57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c","schemaVersion":"dailydraft.flip-session-pool-commitment.v1","snapshotContentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
     );
     expect(first.outcomeSpace).toEqual([
       {
@@ -328,6 +335,9 @@ describe('FlipRulesService', () => {
     expect(replay).toEqual({ ...first, created: false });
     expect(database.rules).toHaveLength(1);
     expect(database.rules[0]?.sealedAt).toBeInstanceOf(Date);
+    expect(database.rules[0]?.rulesCanonicalPreimage).toBe(
+      canonicalFlipRuleSetPreimage(stripHash(rules)),
+    );
     expect(database.advisoryLocks).toBe(2);
   });
 
@@ -375,6 +385,9 @@ describe('FlipRulesService', () => {
     });
     expect(replay).toEqual({ ...first, created: false });
     expect(database.commitments).toHaveLength(1);
+    expect(database.commitments[0]?.poolCanonicalPreimage).toBe(
+      '{"outcomeSpace":[{"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},{"bandLabel":"plus","listingValueAmount":"30000000","ordinal":2,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},{"bandLabel":"chase","listingValueAmount":"60000000","ordinal":4,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}],"rulesHash":"57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c","schemaVersion":"dailydraft.flip-session-pool-commitment.v1","snapshotContentHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
+    );
     await expect(
       service.createFixtureSessionPoolCommitment({
         ...input,
@@ -441,6 +454,20 @@ describe('Flip rules migration contract', () => {
 
     expect(migration).toContain('CREATE TABLE "FlipRuleSet"');
     expect(migration).toContain('CREATE TABLE "FlipSessionPoolCommitment"');
+    expect(migration).toContain('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    expect(migration).toContain('"rulesCanonicalPreimage" TEXT NOT NULL');
+    expect(migration).toContain('"poolCanonicalPreimage" TEXT NOT NULL');
+    expect(migration).toContain('"dailydraft_canonical_jsonb"');
+    expect(migration).toContain('digest(convert_to(NEW."rulesCanonicalPreimage", \'UTF8\')');
+    expect(migration).toContain('digest(convert_to(NEW."poolCanonicalPreimage", \'UTF8\')');
+    expect(migration).toContain('jsonb_agg(');
+    expect(migration).toContain('ORDER BY entry."ordinal"');
+    expect(migration).toContain(
+      'stored_rules."inventoryPolicyVersion" <> stored_snapshot."policyVersion"',
+    );
+    expect(migration).toContain('stored_rules."stakeAmount" <> stored_snapshot."stakeAmount"');
+    expect(migration).toContain('stored_rules."currency" <> stored_snapshot."stakeCurrency"');
+    expect(migration).toContain('stored_rules."decimals" <> stored_snapshot."stakeDecimals"');
     expect(migration).toContain('BEFORE INSERT OR UPDATE OR DELETE ON "FlipRuleSet"');
     expect(migration).toContain('BEFORE INSERT OR UPDATE OR DELETE ON "FlipSessionPoolCommitment"');
     expect(migration).toContain('DEFERRABLE INITIALLY DEFERRED');
@@ -562,12 +589,14 @@ interface StoredRule extends Omit<FlipRuleSet, 'bands' | 'reviewedAt'> {
   bands: unknown;
   id: string;
   reviewedAt: Date;
+  rulesCanonicalPreimage: string;
   sealedAt: Date | null;
 }
 
 interface StoredCommitment {
   eligibleOutcomeCount: number;
   id: string;
+  poolCanonicalPreimage: string;
   poolCommitmentHash: string;
   rulesHash: string;
   rulesetId: string;

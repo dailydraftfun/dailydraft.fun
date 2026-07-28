@@ -91,6 +91,7 @@ export interface PreparedFlipSessionPoolCommitment {
   committedAt: Date;
   eligibleOutcomeCount: number;
   outcomeSpace: readonly FlipEligibleOutcome[];
+  poolCanonicalPreimage: string;
   poolCommitmentHash: string;
   poolKey: string;
   rulesHash: string;
@@ -213,6 +214,7 @@ export class FlipRulesService {
           probabilityScalePpm: validated.probabilityScalePpm,
           reviewReference: validated.reviewReference,
           reviewedAt: new Date(validated.reviewedAt),
+          rulesCanonicalPreimage: canonicalFlipRuleSetPreimage(validated),
           rulesHash: validated.rulesHash,
           rulesKey: validated.rulesKey,
           schemaVersion: validated.schemaVersion,
@@ -352,6 +354,7 @@ export class FlipRulesService {
           eligibleOutcomeCount: prepared.eligibleOutcomeCount,
           id,
           outcomeSpace: prepared.outcomeSpace as unknown as Prisma.InputJsonValue,
+          poolCanonicalPreimage: prepared.poolCanonicalPreimage,
           poolCommitmentHash: prepared.poolCommitmentHash,
           poolKey: prepared.poolKey,
           rulesHash: prepared.rulesHash,
@@ -384,7 +387,28 @@ export class FlipRulesService {
 }
 
 export function hashFlipRuleSet(rules: UnsignedFlipRuleSet): string {
-  return sha256(rules);
+  return sha256Preimage(canonicalFlipRuleSetPreimage(rules));
+}
+
+export function canonicalFlipRuleSetPreimage(rules: UnsignedFlipRuleSet): string {
+  return stableStringify({
+    activation: rules.activation,
+    bands: rules.bands,
+    calculatorVersion: rules.calculatorVersion,
+    currency: rules.currency,
+    decimals: rules.decimals,
+    feeAmount: rules.feeAmount,
+    houseEdgePpm: rules.houseEdgePpm,
+    inventoryPolicyVersion: rules.inventoryPolicyVersion,
+    poolKey: rules.poolKey,
+    probabilityScalePpm: rules.probabilityScalePpm,
+    reviewedAt: rules.reviewedAt,
+    reviewReference: rules.reviewReference,
+    rulesKey: rules.rulesKey,
+    schemaVersion: rules.schemaVersion,
+    stakeAmount: rules.stakeAmount,
+    version: rules.version,
+  });
 }
 
 export function validateFlipRuleSet(value: unknown): FlipRuleSet {
@@ -668,16 +692,18 @@ export function prepareFlipSessionPoolCommitment(input: {
   }
 
   const frozenOutcomeSpace = Object.freeze(outcomeSpace);
-  const poolCommitmentHash = sha256({
+  const poolCanonicalPreimage = stableStringify({
     outcomeSpace: frozenOutcomeSpace,
     rulesHash: rules.rulesHash,
     schemaVersion: FLIP_SESSION_POOL_COMMITMENT_SCHEMA_VERSION,
     snapshotContentHash: snapshot.contentHash,
   });
+  const poolCommitmentHash = sha256Preimage(poolCanonicalPreimage);
   return Object.freeze({
     committedAt,
     eligibleOutcomeCount: frozenOutcomeSpace.length,
     outcomeSpace: frozenOutcomeSpace,
+    poolCanonicalPreimage,
     poolCommitmentHash,
     poolKey: rules.poolKey,
     rulesHash: rules.rulesHash,
@@ -838,8 +864,8 @@ function contractError(code: FlipRulesErrorCode, message: string): FlipRulesCont
   return new FlipRulesContractError(code, message);
 }
 
-function sha256(value: unknown): string {
-  return createHash('sha256').update(stableStringify(value)).digest('hex');
+function sha256Preimage(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 function createId(prefix: string): string {

@@ -164,6 +164,7 @@ INSERT INTO "FlipRuleSet" (
   "feeAmount",
   "houseEdgePpm",
   "bands",
+  "rulesCanonicalPreimage",
   "rulesHash",
   "reviewReference",
   "reviewedAt"
@@ -184,7 +185,8 @@ INSERT INTO "FlipRuleSet" (
     {"label":"plus","minimumValueAmount":"25000000","probabilityPpm":250000},
     {"label":"chase","minimumValueAmount":"50000000","probabilityPpm":50000}
   ]'::jsonb,
-  repeat('c', 64),
+  $rules${"activation":"fixture-only","bands":[{"label":"base","minimumValueAmount":"0","probabilityPpm":700000},{"label":"plus","minimumValueAmount":"25000000","probabilityPpm":250000},{"label":"chase","minimumValueAmount":"50000000","probabilityPpm":50000}],"calculatorVersion":"dailydraft.flip-outcome-bands.v1","currency":"USDC","decimals":6,"feeAmount":"2000000","houseEdgePpm":50000,"inventoryPolicyVersion":"flip-fixture-policy-v1","poolKey":"flip-pokemon-50","probabilityScalePpm":1000000,"reviewedAt":"2026-08-03T12:01:00.000Z","reviewReference":"fixture-review/flip-rules-v1","rulesKey":"flip-pokemon-50-fixture","schemaVersion":"dailydraft.flip-rules.v1","stakeAmount":"50000000","version":1}$rules$,
+  '57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c',
   'fixture-review/flip-rules-v1',
   '2026-08-03T12:01:00Z'
 );
@@ -206,6 +208,127 @@ $verification$;
 UPDATE "FlipRuleSet"
 SET "sealedAt" = '2026-08-03T12:01:30Z'
 WHERE "id" = 'fliprules_verify';
+
+CREATE FUNCTION pg_temp.expect_invalid_flip_ruleset(
+  candidate_bands JSONB,
+  candidate_preimage TEXT,
+  candidate_hash TEXT,
+  expected_error TEXT
+) RETURNS VOID AS $verification$
+BEGIN
+  BEGIN
+    INSERT INTO "FlipRuleSet" (
+      "id", "rulesKey", "version", "schemaVersion", "calculatorVersion",
+      "activation", "poolKey", "inventoryPolicyVersion", "stakeAmount",
+      "feeAmount", "houseEdgePpm", "bands", "rulesCanonicalPreimage",
+      "rulesHash", "reviewReference", "reviewedAt"
+    ) VALUES (
+      'fliprules_invalid',
+      'flip-pokemon-50-fixture-invalid',
+      2,
+      'dailydraft.flip-rules.v1',
+      'dailydraft.flip-outcome-bands.v1',
+      'fixture-only',
+      'flip-pokemon-50',
+      'flip-fixture-policy-v1',
+      '50000000',
+      '2000000',
+      50000,
+      candidate_bands,
+      candidate_preimage,
+      candidate_hash,
+      'fixture-review/flip-rules-invalid',
+      '2026-08-03T12:01:00Z'
+    );
+    UPDATE "FlipRuleSet"
+    SET "sealedAt" = '2026-08-03T12:01:30Z'
+    WHERE "id" = 'fliprules_invalid';
+    RAISE EXCEPTION 'invalid Flip ruleset was sealed';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> expected_error THEN
+        RAISE;
+      END IF;
+  END;
+END;
+$verification$ LANGUAGE plpgsql;
+
+SELECT pg_temp.expect_invalid_flip_ruleset(
+  '[{"label":"base","minimumValueAmount":"0","probabilityPpm":1000000,"secret":"no"}]'::JSONB,
+  '{}',
+  repeat('d', 64),
+  'Flip ruleset bands are invalid'
+);
+
+SELECT pg_temp.expect_invalid_flip_ruleset(
+  '[{"label":"base","minimumValueAmount":"1","probabilityPpm":1000000}]'::JSONB,
+  '{}',
+  repeat('d', 64),
+  'Flip ruleset band minimum is invalid'
+);
+
+SELECT pg_temp.expect_invalid_flip_ruleset(
+  '[
+    {"label":"base","minimumValueAmount":"0","probabilityPpm":500000},
+    {"label":"base","minimumValueAmount":"1","probabilityPpm":500000}
+  ]'::JSONB,
+  '{}',
+  repeat('d', 64),
+  'Flip ruleset band labels are invalid'
+);
+
+SELECT pg_temp.expect_invalid_flip_ruleset(
+  '[
+    {"label":"base","minimumValueAmount":"0","probabilityPpm":500000},
+    {"label":"plus","minimumValueAmount":"1","probabilityPpm":499999}
+  ]'::JSONB,
+  '{}',
+  repeat('d', 64),
+  'Flip ruleset probabilities must total 1000000 PPM'
+);
+
+SELECT pg_temp.expect_invalid_flip_ruleset(
+  '[
+    {"label":"base","minimumValueAmount":"0","probabilityPpm":500000},
+    {"label":"plus","minimumValueAmount":"18446744073709551616","probabilityPpm":500000}
+  ]'::JSONB,
+  '{}',
+  repeat('d', 64),
+  'Flip ruleset band minimum is invalid'
+);
+
+SELECT pg_temp.expect_invalid_flip_ruleset(
+  '[
+    {"label":"base","minimumValueAmount":"0","probabilityPpm":700000},
+    {"label":"plus","minimumValueAmount":"25000000","probabilityPpm":250000},
+    {"label":"chase","minimumValueAmount":"50000000","probabilityPpm":50000}
+  ]'::JSONB,
+  $rules${"activation":"fixture-only","bands":[{"label":"base","minimumValueAmount":"0","probabilityPpm":700000},{"label":"plus","minimumValueAmount":"25000000","probabilityPpm":250000},{"label":"chase","minimumValueAmount":"50000000","probabilityPpm":50000}],"calculatorVersion":"dailydraft.flip-outcome-bands.v1","currency":"USDC","decimals":6,"feeAmount":"2000000","houseEdgePpm":50000,"inventoryPolicyVersion":"flip-fixture-policy-v1","poolKey":"flip-pokemon-50","probabilityScalePpm":1000000,"reviewedAt":"2026-08-03T12:01:00.000Z","reviewReference":"fixture-review/flip-rules-invalid","rulesKey":"flip-pokemon-50-fixture-invalid","schemaVersion":"dailydraft.flip-rules.v1","serverSeed":"secret","stakeAmount":"50000000","version":2}$rules$,
+  repeat('d', 64),
+  'Flip ruleset canonical preimage does not match authoritative fields'
+);
+
+SELECT pg_temp.expect_invalid_flip_ruleset(
+  '[
+    {"label":"base","minimumValueAmount":"0","probabilityPpm":700000},
+    {"label":"plus","minimumValueAmount":"25000000","probabilityPpm":250000},
+    {"label":"chase","minimumValueAmount":"50000000","probabilityPpm":50000}
+  ]'::JSONB,
+  $rules$ {"activation":"fixture-only","bands":[{"label":"base","minimumValueAmount":"0","probabilityPpm":700000},{"label":"plus","minimumValueAmount":"25000000","probabilityPpm":250000},{"label":"chase","minimumValueAmount":"50000000","probabilityPpm":50000}],"calculatorVersion":"dailydraft.flip-outcome-bands.v1","currency":"USDC","decimals":6,"feeAmount":"2000000","houseEdgePpm":50000,"inventoryPolicyVersion":"flip-fixture-policy-v1","poolKey":"flip-pokemon-50","probabilityScalePpm":1000000,"reviewedAt":"2026-08-03T12:01:00.000Z","reviewReference":"fixture-review/flip-rules-invalid","rulesKey":"flip-pokemon-50-fixture-invalid","schemaVersion":"dailydraft.flip-rules.v1","stakeAmount":"50000000","version":2}$rules$,
+  repeat('d', 64),
+  'Flip ruleset canonical preimage is not canonical'
+);
+
+SELECT pg_temp.expect_invalid_flip_ruleset(
+  '[
+    {"label":"base","minimumValueAmount":"0","probabilityPpm":700000},
+    {"label":"plus","minimumValueAmount":"25000000","probabilityPpm":250000},
+    {"label":"chase","minimumValueAmount":"50000000","probabilityPpm":50000}
+  ]'::JSONB,
+  $rules${"activation":"fixture-only","bands":[{"label":"base","minimumValueAmount":"0","probabilityPpm":700000},{"label":"plus","minimumValueAmount":"25000000","probabilityPpm":250000},{"label":"chase","minimumValueAmount":"50000000","probabilityPpm":50000}],"calculatorVersion":"dailydraft.flip-outcome-bands.v1","currency":"USDC","decimals":6,"feeAmount":"2000000","houseEdgePpm":50000,"inventoryPolicyVersion":"flip-fixture-policy-v1","poolKey":"flip-pokemon-50","probabilityScalePpm":1000000,"reviewedAt":"2026-08-03T12:01:00.000Z","reviewReference":"fixture-review/flip-rules-invalid","rulesKey":"flip-pokemon-50-fixture-invalid","schemaVersion":"dailydraft.flip-rules.v1","stakeAmount":"50000000","version":2}$rules$,
+  repeat('d', 64),
+  'Flip ruleset hash does not match canonical preimage'
+);
 
 DO $verification$
 BEGIN
@@ -232,6 +355,7 @@ BEGIN
       "snapshotRevision",
       "rulesHash",
       "snapshotContentHash",
+      "poolCanonicalPreimage",
       "poolCommitmentHash",
       "eligibleOutcomeCount",
       "outcomeSpace",
@@ -246,7 +370,8 @@ BEGIN
       1,
       repeat('d', 64),
       repeat('b', 64),
-      repeat('e', 64),
+      $pool${"outcomeSpace":[{"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},{"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},{"bandLabel":"chase","listingValueAmount":"60000000","ordinal":2,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}],"rulesHash":"57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c","schemaVersion":"dailydraft.flip-session-pool-commitment.v1","snapshotContentHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}$pool$,
+      '5b6e3576011f44beefdc0bd41b78521e67f3e921f91c39c778412e2f9321fd9e',
       3,
       '[
         {"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},
@@ -275,6 +400,7 @@ INSERT INTO "FlipSessionPoolCommitment" (
   "snapshotRevision",
   "rulesHash",
   "snapshotContentHash",
+  "poolCanonicalPreimage",
   "poolCommitmentHash",
   "eligibleOutcomeCount",
   "outcomeSpace",
@@ -287,9 +413,10 @@ INSERT INTO "FlipSessionPoolCommitment" (
   'flip-pokemon-50',
   1,
   1,
-  repeat('c', 64),
+  '57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c',
   repeat('b', 64),
-  repeat('e', 64),
+  $pool${"outcomeSpace":[{"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},{"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},{"bandLabel":"chase","listingValueAmount":"60000000","ordinal":2,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}],"rulesHash":"57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c","schemaVersion":"dailydraft.flip-session-pool-commitment.v1","snapshotContentHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}$pool$,
+  '5b6e3576011f44beefdc0bd41b78521e67f3e921f91c39c778412e2f9321fd9e',
   3,
   '[
     {"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},
@@ -332,5 +459,91 @@ BEGIN
   END;
 END
 $verification$;
+
+CREATE FUNCTION pg_temp.expect_invalid_flip_commitment(
+  candidate_outcome_space JSONB,
+  candidate_preimage TEXT,
+  candidate_hash TEXT,
+  expected_error TEXT
+) RETURNS VOID AS $verification$
+BEGIN
+  BEGIN
+    INSERT INTO "FlipSessionPoolCommitment" (
+      "id", "sessionReference", "rulesetId", "snapshotId", "poolKey",
+      "rulesVersion", "snapshotRevision", "rulesHash", "snapshotContentHash",
+      "poolCanonicalPreimage", "poolCommitmentHash", "eligibleOutcomeCount",
+      "outcomeSpace", "committedAt"
+    ) VALUES (
+      'flipcommit_invalid_seal',
+      'flip_session_invalid_seal',
+      'fliprules_verify',
+      'flipsnap_rules_verify',
+      'flip-pokemon-50',
+      1,
+      1,
+      '57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c',
+      repeat('b', 64),
+      candidate_preimage,
+      candidate_hash,
+      3,
+      candidate_outcome_space,
+      '2026-08-03T12:02:00Z'
+    );
+    UPDATE "FlipSessionPoolCommitment"
+    SET "sealedAt" = '2026-08-03T12:02:01Z'
+    WHERE "id" = 'flipcommit_invalid_seal';
+    RAISE EXCEPTION 'invalid Flip session pool commitment was sealed';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> expected_error THEN
+        RAISE;
+      END IF;
+  END;
+END;
+$verification$ LANGUAGE plpgsql;
+
+SELECT pg_temp.expect_invalid_flip_commitment(
+  '[
+    {"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base","serverSeed":"secret"},
+    {"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},
+    {"bandLabel":"chase","listingValueAmount":"60000000","ordinal":2,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}
+  ]'::JSONB,
+  $pool${"outcomeSpace":[{"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},{"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},{"bandLabel":"chase","listingValueAmount":"60000000","ordinal":2,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}],"rulesHash":"57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c","schemaVersion":"dailydraft.flip-session-pool-commitment.v1","snapshotContentHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}$pool$,
+  '5b6e3576011f44beefdc0bd41b78521e67f3e921f91c39c778412e2f9321fd9e',
+  'Flip session pool outcome space does not match eligible snapshot entries'
+);
+
+SELECT pg_temp.expect_invalid_flip_commitment(
+  '[
+    {"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},
+    {"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},
+    {"bandLabel":"chase","listingValueAmount":"60000000","ordinal":2,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}
+  ]'::JSONB,
+  $pool${"outcomeSpace":[{"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},{"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},{"bandLabel":"chase","listingValueAmount":"60000000","ordinal":2,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}],"rulesHash":"57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c","schemaVersion":"dailydraft.flip-session-pool-commitment.v1","serverSeed":"secret","snapshotContentHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}$pool$,
+  repeat('f', 64),
+  'Flip session pool canonical preimage does not match authoritative evidence'
+);
+
+SELECT pg_temp.expect_invalid_flip_commitment(
+  '[
+    {"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},
+    {"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},
+    {"bandLabel":"chase","listingValueAmount":"60000000","ordinal":2,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}
+  ]'::JSONB,
+  $pool$ {"outcomeSpace":[{"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},{"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},{"bandLabel":"chase","listingValueAmount":"60000000","ordinal":2,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}],"rulesHash":"57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c","schemaVersion":"dailydraft.flip-session-pool-commitment.v1","snapshotContentHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}$pool$,
+  repeat('f', 64),
+  'Flip session pool canonical preimage is not canonical'
+);
+
+SELECT pg_temp.expect_invalid_flip_commitment(
+  '[
+    {"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},
+    {"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},
+    {"bandLabel":"chase","listingValueAmount":"60000000","ordinal":2,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}
+  ]'::JSONB,
+  $pool${"outcomeSpace":[{"bandLabel":"base","listingValueAmount":"20000000","ordinal":0,"providerAssetReference":"asset_base","providerListingReference":"listing_base"},{"bandLabel":"plus","listingValueAmount":"30000000","ordinal":1,"providerAssetReference":"asset_plus","providerListingReference":"listing_plus"},{"bandLabel":"chase","listingValueAmount":"60000000","ordinal":2,"providerAssetReference":"asset_chase","providerListingReference":"listing_chase"}],"rulesHash":"57f27d0fe13e7b22aee0066427330d7934857749c8bb75899db82c521c4bb27c","schemaVersion":"dailydraft.flip-session-pool-commitment.v1","snapshotContentHash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}$pool$,
+  repeat('f', 64),
+  'Flip session pool hash does not match canonical preimage'
+);
 
 ROLLBACK;

@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE "FlipRuleSet" (
     "id" TEXT NOT NULL,
     "rulesKey" TEXT NOT NULL,
@@ -14,6 +16,7 @@ CREATE TABLE "FlipRuleSet" (
     "houseEdgePpm" INTEGER NOT NULL,
     "probabilityScalePpm" INTEGER NOT NULL DEFAULT 1000000,
     "bands" JSONB NOT NULL,
+    "rulesCanonicalPreimage" TEXT NOT NULL,
     "rulesHash" TEXT NOT NULL,
     "reviewReference" TEXT NOT NULL,
     "reviewedAt" TIMESTAMP(3) NOT NULL,
@@ -32,6 +35,7 @@ CREATE TABLE "FlipSessionPoolCommitment" (
     "snapshotRevision" INTEGER NOT NULL,
     "rulesHash" TEXT NOT NULL,
     "snapshotContentHash" TEXT NOT NULL,
+    "poolCanonicalPreimage" TEXT NOT NULL,
     "poolCommitmentHash" TEXT NOT NULL,
     "eligibleOutcomeCount" INTEGER NOT NULL,
     "outcomeSpace" JSONB NOT NULL,
@@ -85,12 +89,15 @@ ADD CONSTRAINT "FlipRuleSet_contract_check" CHECK (
   AND "decimals" = 6
   AND "stakeAmount" ~ '^(0|[1-9][0-9]*)$'
   AND "stakeAmount"::NUMERIC > 0
+  AND "stakeAmount"::NUMERIC <= 18446744073709551615
   AND "feeAmount" ~ '^(0|[1-9][0-9]*)$'
   AND "feeAmount"::NUMERIC <= "stakeAmount"::NUMERIC
+  AND "feeAmount"::NUMERIC <= 18446744073709551615
   AND "houseEdgePpm" BETWEEN 0 AND 1000000
   AND "probabilityScalePpm" = 1000000
   AND jsonb_typeof("bands") = 'array'
   AND jsonb_array_length("bands") BETWEEN 1 AND 16
+  AND octet_length("rulesCanonicalPreimage") BETWEEN 1 AND 65536
   AND "rulesHash" ~ '^[a-f0-9]{64}$'
   AND char_length("reviewReference") BETWEEN 1 AND 240
 );
@@ -103,16 +110,69 @@ ADD CONSTRAINT "FlipSessionPoolCommitment_contract_check" CHECK (
   AND "rulesHash" ~ '^[a-f0-9]{64}$'
   AND "snapshotContentHash" ~ '^[a-f0-9]{64}$'
   AND "poolCommitmentHash" ~ '^[a-f0-9]{64}$'
+  AND octet_length("poolCanonicalPreimage") BETWEEN 1 AND 1048576
   AND "eligibleOutcomeCount" > 0
   AND jsonb_typeof("outcomeSpace") = 'array'
   AND jsonb_array_length("outcomeSpace") = "eligibleOutcomeCount"
 );
+
+-- Mirrors the application's stableStringify contract for the bounded JSON
+-- shapes in this migration. The C collation fixes object-key ordering and
+-- array ordinality is preserved exactly.
+CREATE FUNCTION "dailydraft_canonical_jsonb"(candidate JSONB) RETURNS TEXT AS $$
+DECLARE
+  canonical TEXT;
+BEGIN
+  CASE jsonb_typeof(candidate)
+    WHEN 'object' THEN
+      SELECT
+        '{' || COALESCE(
+          string_agg(
+            to_jsonb(entry.key)::TEXT
+              || ':'
+              || "dailydraft_canonical_jsonb"(entry.value),
+            ',' ORDER BY entry.key COLLATE "C"
+          ),
+          ''
+        ) || '}'
+      INTO canonical
+      FROM jsonb_each(candidate) entry;
+      RETURN canonical;
+    WHEN 'array' THEN
+      SELECT
+        '[' || COALESCE(
+          string_agg(
+            "dailydraft_canonical_jsonb"(entry.value),
+            ',' ORDER BY entry.ordinality
+          ),
+          ''
+        ) || ']'
+      INTO canonical
+      FROM jsonb_array_elements(candidate) WITH ORDINALITY entry(value, ordinality);
+      RETURN canonical;
+    ELSE
+      RETURN candidate::TEXT;
+  END CASE;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
 -- Both records follow the existing Flip inventory sealing model: create
 -- unsealed inside a transaction, reconcile metadata, seal exactly once, and
 -- reject every later update or delete.
 
 CREATE FUNCTION "reject_flip_ruleset_mutation"() RETURNS trigger AS $$
+DECLARE
+  band JSONB;
+  band_index INTEGER;
+  band_key_count INTEGER;
+  band_label TEXT;
+  band_minimum NUMERIC;
+  band_probability NUMERIC;
+  expected_preimage JSONB;
+  labels TEXT[] := ARRAY[]::TEXT[];
+  parsed_preimage JSONB;
+  previous_minimum NUMERIC := -1;
+  probability_total NUMERIC := 0;
 BEGIN
   IF TG_OP = 'INSERT' THEN
     IF NEW."sealedAt" IS NULL THEN
@@ -126,6 +186,101 @@ BEGIN
     AND NEW."sealedAt" IS NOT NULL
     AND (to_jsonb(NEW) - 'sealedAt') = (to_jsonb(OLD) - 'sealedAt')
   ) THEN
+    FOR band, band_index IN
+      SELECT value, ordinality::INTEGER
+      FROM jsonb_array_elements(NEW."bands") WITH ORDINALITY
+      ORDER BY ordinality
+    LOOP
+      IF jsonb_typeof(band) <> 'object' THEN
+        RAISE EXCEPTION 'Flip ruleset bands are invalid';
+      END IF;
+      SELECT count(*) INTO band_key_count FROM jsonb_object_keys(band);
+      IF (
+        band_key_count <> 3
+        OR NOT band ? 'label'
+        OR NOT band ? 'minimumValueAmount'
+        OR NOT band ? 'probabilityPpm'
+        OR jsonb_typeof(band->'label') <> 'string'
+        OR jsonb_typeof(band->'minimumValueAmount') <> 'string'
+        OR jsonb_typeof(band->'probabilityPpm') <> 'number'
+      ) THEN
+        RAISE EXCEPTION 'Flip ruleset bands are invalid';
+      END IF;
+
+      band_label := band->>'label';
+      IF (
+        band_label !~ '^[a-z0-9][a-z0-9._:-]{0,127}$'
+        OR band_label = ANY(labels)
+      ) THEN
+        RAISE EXCEPTION 'Flip ruleset band labels are invalid';
+      END IF;
+      labels := array_append(labels, band_label);
+
+      IF (band->>'minimumValueAmount') !~ '^(0|[1-9][0-9]*)$' THEN
+        RAISE EXCEPTION 'Flip ruleset band minimum is invalid';
+      END IF;
+      band_minimum := (band->>'minimumValueAmount')::NUMERIC;
+      IF (
+        band_minimum > 18446744073709551615
+        OR band_minimum <= previous_minimum
+        OR (band_index = 1 AND band_minimum <> 0)
+      ) THEN
+        RAISE EXCEPTION 'Flip ruleset band minimum is invalid';
+      END IF;
+      previous_minimum := band_minimum;
+
+      IF (band->>'probabilityPpm') !~ '^[1-9][0-9]*$' THEN
+        RAISE EXCEPTION 'Flip ruleset band probability is invalid';
+      END IF;
+      band_probability := (band->>'probabilityPpm')::NUMERIC;
+      IF band_probability > 1000000 THEN
+        RAISE EXCEPTION 'Flip ruleset band probability is invalid';
+      END IF;
+      probability_total := probability_total + band_probability;
+    END LOOP;
+
+    IF probability_total <> 1000000 THEN
+      RAISE EXCEPTION 'Flip ruleset probabilities must total 1000000 PPM';
+    END IF;
+
+    BEGIN
+      parsed_preimage := NEW."rulesCanonicalPreimage"::JSONB;
+    EXCEPTION
+      WHEN others THEN
+        RAISE EXCEPTION 'Flip ruleset canonical preimage is invalid JSON';
+    END;
+    expected_preimage := jsonb_build_object(
+      'activation', NEW."activation",
+      'bands', NEW."bands",
+      'calculatorVersion', NEW."calculatorVersion",
+      'currency', NEW."currency",
+      'decimals', NEW."decimals",
+      'feeAmount', NEW."feeAmount",
+      'houseEdgePpm', NEW."houseEdgePpm",
+      'inventoryPolicyVersion', NEW."inventoryPolicyVersion",
+      'poolKey', NEW."poolKey",
+      'probabilityScalePpm', NEW."probabilityScalePpm",
+      'reviewedAt', to_char(NEW."reviewedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+      'reviewReference', NEW."reviewReference",
+      'rulesKey', NEW."rulesKey",
+      'schemaVersion', NEW."schemaVersion",
+      'stakeAmount', NEW."stakeAmount",
+      'version', NEW."version"
+    );
+    IF parsed_preimage <> expected_preimage THEN
+      RAISE EXCEPTION 'Flip ruleset canonical preimage does not match authoritative fields';
+    END IF;
+    IF NEW."rulesCanonicalPreimage" <> "dailydraft_canonical_jsonb"(expected_preimage) THEN
+      RAISE EXCEPTION 'Flip ruleset canonical preimage is not canonical';
+    END IF;
+    IF (
+      encode(
+        digest(convert_to(NEW."rulesCanonicalPreimage", 'UTF8'), 'sha256'),
+        'hex'
+      ) <> NEW."rulesHash"
+    ) THEN
+      RAISE EXCEPTION 'Flip ruleset hash does not match canonical preimage';
+    END IF;
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'Flip rulesets are append-only';
@@ -156,6 +311,15 @@ DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION "require_flip_ruleset_sealed"();
 
 CREATE FUNCTION "reject_flip_session_pool_commitment_mutation"() RETURNS trigger AS $$
+DECLARE
+  actual_outcome_count BIGINT;
+  expected_outcome_space JSONB;
+  expected_preimage JSONB;
+  parsed_preimage JSONB;
+  rules_found BOOLEAN;
+  snapshot_found BOOLEAN;
+  stored_rules RECORD;
+  stored_snapshot RECORD;
 BEGIN
   IF TG_OP = 'INSERT' THEN
     IF NEW."sealedAt" IS NULL THEN
@@ -169,6 +333,87 @@ BEGIN
     AND NEW."sealedAt" IS NOT NULL
     AND (to_jsonb(NEW) - 'sealedAt') = (to_jsonb(OLD) - 'sealedAt')
   ) THEN
+    SELECT "bands", "rulesHash", "sealedAt"
+    INTO stored_rules
+    FROM "FlipRuleSet"
+    WHERE "id" = NEW."rulesetId";
+    rules_found := FOUND;
+
+    SELECT "contentHash", "eligibleCount", "sealedAt"
+    INTO stored_snapshot
+    FROM "FlipInventorySnapshot"
+    WHERE "id" = NEW."snapshotId";
+    snapshot_found := FOUND;
+
+    IF NOT rules_found OR NOT snapshot_found THEN
+      RAISE EXCEPTION 'Flip session pool commitment sources are invalid or unsealed';
+    END IF;
+    IF stored_rules."sealedAt" IS NULL OR stored_snapshot."sealedAt" IS NULL THEN
+      RAISE EXCEPTION 'Flip session pool commitment sources are invalid or unsealed';
+    END IF;
+
+    SELECT
+      count(*),
+      COALESCE(
+        jsonb_agg(
+          jsonb_build_object(
+            'bandLabel', selected_band.label,
+            'listingValueAmount', entry."eligibilityListingValueAmount",
+            'ordinal', entry."ordinal",
+            'providerAssetReference', entry."providerAssetReference",
+            'providerListingReference', entry."providerListingReference"
+          )
+          ORDER BY entry."ordinal"
+        ),
+        '[]'::JSONB
+      )
+    INTO actual_outcome_count, expected_outcome_space
+    FROM "FlipInventorySnapshotEntry" entry
+    CROSS JOIN LATERAL (
+      SELECT band->>'label' AS label
+      FROM jsonb_array_elements(stored_rules."bands") band
+      WHERE (band->>'minimumValueAmount')::NUMERIC
+        <= entry."eligibilityListingValueAmount"::NUMERIC
+      ORDER BY (band->>'minimumValueAmount')::NUMERIC DESC
+      LIMIT 1
+    ) selected_band
+    WHERE entry."snapshotId" = NEW."snapshotId"
+      AND entry."eligible";
+
+    IF (
+      actual_outcome_count <> NEW."eligibleOutcomeCount"
+      OR actual_outcome_count <> stored_snapshot."eligibleCount"
+      OR NEW."outcomeSpace" <> expected_outcome_space
+    ) THEN
+      RAISE EXCEPTION 'Flip session pool outcome space does not match eligible snapshot entries';
+    END IF;
+
+    BEGIN
+      parsed_preimage := NEW."poolCanonicalPreimage"::JSONB;
+    EXCEPTION
+      WHEN others THEN
+        RAISE EXCEPTION 'Flip session pool canonical preimage is invalid JSON';
+    END;
+    expected_preimage := jsonb_build_object(
+      'outcomeSpace', expected_outcome_space,
+      'rulesHash', stored_rules."rulesHash",
+      'schemaVersion', 'dailydraft.flip-session-pool-commitment.v1',
+      'snapshotContentHash', stored_snapshot."contentHash"
+    );
+    IF parsed_preimage <> expected_preimage THEN
+      RAISE EXCEPTION 'Flip session pool canonical preimage does not match authoritative evidence';
+    END IF;
+    IF NEW."poolCanonicalPreimage" <> "dailydraft_canonical_jsonb"(expected_preimage) THEN
+      RAISE EXCEPTION 'Flip session pool canonical preimage is not canonical';
+    END IF;
+    IF (
+      encode(
+        digest(convert_to(NEW."poolCanonicalPreimage", 'UTF8'), 'sha256'),
+        'hex'
+      ) <> NEW."poolCommitmentHash"
+    ) THEN
+      RAISE EXCEPTION 'Flip session pool hash does not match canonical preimage';
+    END IF;
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'Flip session pool commitments are append-only';
@@ -187,7 +432,11 @@ DECLARE
   stored_snapshot RECORD;
 BEGIN
   SELECT
+    "currency",
+    "decimals",
+    "inventoryPolicyVersion",
     "poolKey",
+    "stakeAmount",
     "version",
     "rulesHash",
     "reviewedAt",
@@ -199,11 +448,15 @@ BEGIN
 
   SELECT
     "poolKey",
+    "policyVersion",
     "revision",
     "contentHash",
     "eligibleCount",
     "evaluatedAt",
-    "sealedAt"
+    "sealedAt",
+    "stakeAmount",
+    "stakeCurrency",
+    "stakeDecimals"
   INTO stored_snapshot
   FROM "FlipInventorySnapshot"
   WHERE "id" = NEW."snapshotId";
@@ -218,6 +471,10 @@ BEGIN
     OR stored_snapshot."sealedAt" IS NULL
     OR NEW."poolKey" <> stored_rules."poolKey"
     OR NEW."poolKey" <> stored_snapshot."poolKey"
+    OR stored_rules."inventoryPolicyVersion" <> stored_snapshot."policyVersion"
+    OR stored_rules."stakeAmount" <> stored_snapshot."stakeAmount"
+    OR stored_rules."currency" <> stored_snapshot."stakeCurrency"
+    OR stored_rules."decimals" <> stored_snapshot."stakeDecimals"
     OR NEW."rulesVersion" <> stored_rules."version"
     OR NEW."snapshotRevision" <> stored_snapshot."revision"
     OR NEW."rulesHash" <> stored_rules."rulesHash"
