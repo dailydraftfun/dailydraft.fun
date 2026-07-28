@@ -5,6 +5,7 @@ import type { Money } from '../domain.js';
 import { calculateCrashBust, calculateCrashPot } from './crash-calculators.js';
 // biome-ignore lint/style/useImportType: Nest uses the state service class as a runtime injection token.
 import {
+  assertCrashRoundRuleBinding,
   CRASH_CUSTODY_FIXTURE_VERSION,
   CRASH_PAYMENT_FIXTURE_VERSION,
   CRASH_PROVIDER_FIXTURE_VERSION,
@@ -53,16 +54,24 @@ export class CrashDecisionService {
   ) {}
 
   async currentStage(roundId: string, playerWallet: string): Promise<CrashCurrentStage> {
+    const rules = this.requireRules();
     const found = await this.state.findRound(roundId);
     assertRoundPlayer(found, playerWallet);
-    return toCurrentStage(await this.state.resumeFixtureRound(roundId));
+    assertCrashRoundRuleBinding(found, rules);
+    const current = await this.state.resumeFixtureRound(roundId);
+    assertRoundPlayer(current, playerWallet);
+    assertCrashRoundRuleBinding(current, rules);
+    return toCurrentStage(current);
   }
 
   async decide(input: CrashPlayerDecisionInput): Promise<CrashCurrentStage> {
     const rules = this.requireRules();
     const found = await this.state.findRound(input.roundId);
     assertRoundPlayer(found, input.playerWallet);
+    assertCrashRoundRuleBinding(found, rules);
     let current = await this.state.resumeFixtureRound(input.roundId);
+    assertRoundPlayer(current, input.playerWallet);
+    assertCrashRoundRuleBinding(current, rules);
 
     const replay = findPlayerReplay(current, input);
     if (replay) return toCurrentStage(current);
@@ -81,6 +90,7 @@ export class CrashDecisionService {
       }
       current = await this.state.resumeFixtureRound(input.roundId);
       assertRoundPlayer(current, input.playerWallet);
+      assertCrashRoundRuleBinding(current, rules);
       if (!findPlayerReplay(current, input) && current.status !== 'defaulted') {
         throw new CrashStateMachineError(
           'INVALID_TRANSITION',

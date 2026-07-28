@@ -452,7 +452,7 @@ export class CrashStageStateService {
           async (transaction) => {
             const current = await transaction.crashRound.findUnique({ where: { id: roundId } });
             if (!current) throw stateError('NOT_FOUND', `Crash round ${roundId} was not found`);
-            assertRuleBinding(current, rules);
+            assertCrashRoundRuleBinding(current, rules);
             if (current.status !== DatabaseCrashRoundStatus.ACTIVE) {
               throw stateError('INVALID_TRANSITION', 'A terminal Crash round cannot transition');
             }
@@ -888,7 +888,20 @@ interface ResolvedTransition {
   terminalReason: string | null;
 }
 
-function assertRuleBinding(current: CrashRoundRow, rules: CrashStateRules): void {
+type CrashRoundRuleBinding = Pick<
+  CrashRoundSnapshot,
+  | 'architectureVersion'
+  | 'calculatorVersion'
+  | 'rulesHash'
+  | 'rulesVersion'
+  | 'stateMachineRulesHash'
+  | 'stateMachineVersion'
+>;
+
+export function assertCrashRoundRuleBinding(
+  current: CrashRoundRuleBinding,
+  rules: CrashStateRules,
+): void {
   if (
     current.architectureVersion !== rules.architectureVersion ||
     current.stateMachineVersion !== rules.stateMachineVersion ||

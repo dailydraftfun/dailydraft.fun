@@ -244,6 +244,9 @@ describe('CrashDecisionService', () => {
     const state = stateHarness(activeRound());
     const missingRules = new CrashDecisionService(state.service, null);
 
+    await expect(missingRules.currentStage(ROUND_ID, WALLET)).rejects.toMatchObject({
+      code: 'DISABLED',
+    });
     await expect(missingRules.decide(decisionInput('continue'))).rejects.toMatchObject({
       code: 'DISABLED',
     });
@@ -253,6 +256,24 @@ describe('CrashDecisionService', () => {
         'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW',
       ),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  test('rejects reconnect and exact replay under a different valid rule binding', async () => {
+    const reconnect = new CrashDecisionService(
+      stateHarness(activeRound()).service,
+      ALTERNATE_RULES,
+    );
+    await expect(reconnect.currentStage(ROUND_ID, WALLET)).rejects.toMatchObject({
+      code: 'DISABLED',
+    });
+
+    const replay = new CrashDecisionService(
+      stateHarness(terminalRound('cash-out')).service,
+      ALTERNATE_RULES,
+    );
+    await expect(replay.decide(decisionInput('cash-out'))).rejects.toMatchObject({
+      code: 'DISABLED',
+    });
   });
 
   test('loads only parseable explicitly configured fixture rules', () => {
@@ -464,6 +485,14 @@ const UNSIGNED_RULES = {
 const RULES: CrashStateRules = {
   ...UNSIGNED_RULES,
   stateMachineRulesHash: hashCrashStateRules(UNSIGNED_RULES),
+};
+const ALTERNATE_UNSIGNED_RULES = {
+  ...UNSIGNED_RULES,
+  architectureVersion: 'synthetic-player-decisions-architecture-v2',
+} as const satisfies UnsignedCrashStateRules;
+const ALTERNATE_RULES: CrashStateRules = {
+  ...ALTERNATE_UNSIGNED_RULES,
+  stateMachineRulesHash: hashCrashStateRules(ALTERNATE_UNSIGNED_RULES),
 };
 
 function usdc(amount: string) {
