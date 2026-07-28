@@ -2,9 +2,14 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import {
   contractFixtures,
   createRgsExternalProof,
+  GAME_AVAILABILITY_SCHEMA_VERSION,
   GAME_CATALOG_SCHEMA_VERSION,
   type GameCatalog,
+  type PublicGameAvailability,
+  type PublicGameAvailabilityMode,
   rgsCompatibilityFixtures,
+  VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION,
+  type VerifiedGameActivityPage,
 } from '@dailydraft/contracts';
 import { DuelSide as DatabaseDuelSide } from '@dailydraft/db';
 import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js';
@@ -82,10 +87,17 @@ describe('API response schema gate', () => {
       'GachaRip',
       'GameCatalog',
       'PublicDuelResult',
+      'PublicGameAvailability',
+      'PublicGameAvailabilityMode',
+      'PublicGameAvailabilityMode',
+      'PublicGameAvailabilityMode',
+      'PublicGameAvailabilityMode',
       'PublicPostDuelCardActionState',
       'RgsExternalProof',
       'RgsModeList',
       'RgsSeededProof',
+      'VerifiedGameActivity',
+      'VerifiedGameActivityPage',
     ]);
   });
 
@@ -171,6 +183,26 @@ function buildResponsePayloadCases(): ResponsePayloadCase[] {
       payload: gameCatalogPayload(),
       schema: 'GameCatalog',
       source: 'GamesCatalogService.getCatalog()',
+    },
+    {
+      payload: gameAvailabilityPayload(),
+      schema: 'PublicGameAvailability',
+      source: 'GamesLobbyService.getAvailability()',
+    },
+    ...gameAvailabilityStateFixtures().map((payload) => ({
+      payload,
+      schema: 'PublicGameAvailabilityMode',
+      source: `GamesLobbyService.getAvailability().modes[${payload.state}]`,
+    })),
+    {
+      payload: verifiedActivityPayload(),
+      schema: 'VerifiedGameActivityPage',
+      source: 'GamesLobbyService.getVerifiedActivity()',
+    },
+    {
+      payload: verifiedActivityPayload().data[0],
+      schema: 'VerifiedGameActivity',
+      source: 'GamesLobbyService.getVerifiedActivity().data[0]',
     },
     {
       payload: contractFixtures.rgsModes.response,
@@ -285,6 +317,99 @@ function gameCatalogPayload(): GameCatalog {
     ],
     network: 'solana-devnet',
     schemaVersion: GAME_CATALOG_SCHEMA_VERSION,
+  };
+}
+
+function gameAvailabilityPayload(): PublicGameAvailability {
+  const [playable, preview, , unavailable] = gameAvailabilityStateFixtures();
+  if (!playable || !preview || !unavailable) {
+    throw new Error('Game availability fixtures must cover public states');
+  }
+  return {
+    asOf: '2026-07-28T12:00:00.000Z',
+    modes: [
+      playable,
+      preview,
+      {
+        ...unavailable,
+        id: 'crash',
+      },
+    ],
+    network: 'solana-devnet',
+    schemaVersion: GAME_AVAILABILITY_SCHEMA_VERSION,
+  };
+}
+
+function gameAvailabilityStateFixtures(): PublicGameAvailabilityMode[] {
+  const asOf = '2026-07-28T12:00:00.000Z';
+  return [
+    {
+      asOf,
+      availableActions: [
+        { href: '/games/duel', id: 'direct-challenge', label: 'Challenge a wallet' },
+      ],
+      capabilitySource: { kind: 'runtime', name: 'duel-readiness', status: 'verified' },
+      id: 'duel',
+      reason: 'Direct Duel challenges are ready on Solana devnet.',
+      state: 'playable',
+    },
+    {
+      asOf,
+      availableActions: [
+        {
+          href: '/games/marketplace-flip',
+          id: 'view-preview',
+          label: 'View fixture preview',
+        },
+      ],
+      capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
+      id: 'flip',
+      reason: 'Fixture preview only.',
+      state: 'preview',
+    },
+    {
+      asOf,
+      availableActions: [],
+      capabilitySource: { kind: 'runtime', name: 'duel-readiness', status: 'degraded' },
+      id: 'duel',
+      reason: 'Duel readiness could not be verified.',
+      state: 'degraded',
+    },
+    {
+      asOf,
+      availableActions: [],
+      capabilitySource: { kind: 'runtime', name: 'duel-readiness', status: 'gated' },
+      id: 'duel',
+      reason: 'Duel play is unavailable under the current real-value policy.',
+      state: 'unavailable',
+    },
+  ];
+}
+
+function verifiedActivityPayload(): VerifiedGameActivityPage {
+  return {
+    asOf: '2026-07-28T12:00:00.000Z',
+    data: [
+      {
+        activityId: 'duel:duel_activity000001',
+        mode: 'duel',
+        occurredAt: '2026-07-28T11:59:00.000Z',
+        participants: [
+          { label: '9xQe…9gJ1', side: 'creator' },
+          { label: 'Gk8Z…MQyW', side: 'opponent' },
+        ],
+        receiptHref: '/duels/duel_activity000001/receipt',
+        result: 'winner-verified',
+        resultHref: '/rgs/rounds/duel/duel_activity000001/proof',
+        resultSummary: '9xQe…9gJ1 won a verified Sports Pack Duel.',
+        tier: { amount: '50000000', currency: 'USDC', decimals: 6 },
+        title: 'Sports Pack Duel settled',
+        verification: 'settled-rgs-proof',
+      },
+    ],
+    hasMore: false,
+    nextCursor: null,
+    schemaVersion: VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION,
   };
 }
 
