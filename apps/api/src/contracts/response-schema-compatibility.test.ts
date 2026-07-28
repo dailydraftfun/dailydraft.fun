@@ -2,9 +2,15 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import {
   contractFixtures,
   createRgsExternalProof,
+  GAME_AVAILABILITY_SCHEMA_VERSION,
   GAME_CATALOG_SCHEMA_VERSION,
   type GameCatalog,
+  type PublicGameAvailability,
+  type PublicGameAvailabilityMode,
   rgsCompatibilityFixtures,
+  VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION,
+  type VerifiedGameActivityPage,
+  verifiedGameActivityContractFixtures,
 } from '@dailydraft/contracts';
 import { DuelSide as DatabaseDuelSide } from '@dailydraft/db';
 import Ajv2020, { type ValidateFunction } from 'ajv/dist/2020.js';
@@ -82,10 +88,19 @@ describe('API response schema gate', () => {
       'GachaRip',
       'GameCatalog',
       'PublicDuelResult',
+      'PublicGameAvailability',
+      'PublicGameAvailabilityMode',
+      'PublicGameAvailabilityMode',
+      'PublicGameAvailabilityMode',
+      'PublicGameAvailabilityMode',
       'PublicPostDuelCardActionState',
       'RgsExternalProof',
       'RgsModeList',
       'RgsSeededProof',
+      'VerifiedGameActivity',
+      'VerifiedGameActivity',
+      'VerifiedGameActivity',
+      'VerifiedGameActivityPage',
     ]);
   });
 
@@ -172,6 +187,26 @@ function buildResponsePayloadCases(): ResponsePayloadCase[] {
       schema: 'GameCatalog',
       source: 'GamesCatalogService.getCatalog()',
     },
+    {
+      payload: gameAvailabilityPayload(),
+      schema: 'PublicGameAvailability',
+      source: 'GamesLobbyService.getAvailability()',
+    },
+    ...gameAvailabilityStateFixtures().map((payload) => ({
+      payload,
+      schema: 'PublicGameAvailabilityMode',
+      source: `GamesLobbyService.getAvailability().modes[${payload.state}]`,
+    })),
+    {
+      payload: verifiedActivityPayload(),
+      schema: 'VerifiedGameActivityPage',
+      source: 'GamesLobbyService.getVerifiedActivity()',
+    },
+    ...Object.values(verifiedGameActivityContractFixtures).map((payload) => ({
+      payload,
+      schema: 'VerifiedGameActivity',
+      source: `Verified game activity ${payload.mode} contract fixture`,
+    })),
     {
       payload: contractFixtures.rgsModes.response,
       schema: 'RgsModeList',
@@ -285,6 +320,82 @@ function gameCatalogPayload(): GameCatalog {
     ],
     network: 'solana-devnet',
     schemaVersion: GAME_CATALOG_SCHEMA_VERSION,
+  };
+}
+
+function gameAvailabilityPayload(): PublicGameAvailability {
+  const [playable, preview, , unavailable] = gameAvailabilityStateFixtures();
+  if (!playable || !preview || !unavailable) {
+    throw new Error('Game availability fixtures must cover public states');
+  }
+  return {
+    asOf: '2026-07-28T12:00:00.000Z',
+    modes: [
+      playable,
+      preview,
+      {
+        ...unavailable,
+        id: 'crash',
+      },
+    ],
+    network: 'solana-devnet',
+    schemaVersion: GAME_AVAILABILITY_SCHEMA_VERSION,
+  };
+}
+
+function gameAvailabilityStateFixtures(): PublicGameAvailabilityMode[] {
+  const asOf = '2026-07-28T12:00:00.000Z';
+  return [
+    {
+      asOf,
+      availableActions: [
+        { href: '/games/duel', id: 'direct-challenge', label: 'Challenge a wallet' },
+      ],
+      capabilitySource: { kind: 'runtime', name: 'duel-readiness', status: 'verified' },
+      id: 'duel',
+      reason: 'Direct Duel challenges are ready on Solana devnet.',
+      state: 'playable',
+    },
+    {
+      asOf,
+      availableActions: [
+        {
+          href: '/games/marketplace-flip',
+          id: 'view-preview',
+          label: 'View fixture preview',
+        },
+      ],
+      capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
+      id: 'flip',
+      reason: 'Fixture preview only.',
+      state: 'preview',
+    },
+    {
+      asOf,
+      availableActions: [],
+      capabilitySource: { kind: 'runtime', name: 'duel-readiness', status: 'degraded' },
+      id: 'duel',
+      reason: 'Duel readiness could not be verified.',
+      state: 'degraded',
+    },
+    {
+      asOf,
+      availableActions: [],
+      capabilitySource: { kind: 'runtime', name: 'duel-readiness', status: 'gated' },
+      id: 'duel',
+      reason: 'Duel play is unavailable under the current real-value policy.',
+      state: 'unavailable',
+    },
+  ];
+}
+
+function verifiedActivityPayload(): VerifiedGameActivityPage {
+  return {
+    asOf: '2026-07-28T12:00:00.000Z',
+    data: Object.values(verifiedGameActivityContractFixtures),
+    hasMore: false,
+    nextCursor: null,
+    schemaVersion: VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION,
   };
 }
 

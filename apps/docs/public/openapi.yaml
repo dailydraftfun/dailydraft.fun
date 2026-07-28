@@ -190,6 +190,83 @@ paths:
                 $ref: '#/components/schemas/GameCatalog'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /games/availability:
+    get:
+      operationId: getGameAvailability
+      tags: [Games]
+      summary: Resolve public Duel, Flip, and Crash availability
+      description: |
+        Publishes stable player-facing mode identifiers, actions, reasons, and
+        capability sources. Duel is derived from runtime readiness, operator
+        controls, risk admission, and the existing real-value policy. Flip and
+        Crash remain explicit previews. This projection cannot make a mode playable.
+      x-dailydraft-availability: devnet-preview
+      responses:
+        '200':
+          description: Current fail-closed public mode availability
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicGameAvailability'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /games/activity:
+    get:
+      operationId: listVerifiedGameActivity
+      tags: [Games]
+      summary: List recent publicly verifiable game activity
+      description: |
+        Returns only settled rounds whose complete non-mock RGS proof and public
+        receipt are resolvable. Direct wallet identifiers, private match state,
+        transaction intents, and unsettled outcomes are never projected. Results
+        are ordered by occurredAt descending, stable mode ID ascending, and
+        immutable round ID descending.
+        Flip and Crash remain absent until their engines emit the same eligible
+        receipt and proof evidence.
+      x-dailydraft-availability: devnet
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            maxLength: 483
+            pattern: '^v1\.[A-Za-z0-9_-]{1,480}$'
+      responses:
+        '200':
+          description: Bounded page of verified public activity
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: public, max-age=30, stale-while-revalidate=120
+            X-Robots-Tag:
+              schema:
+                type: string
+                const: noindex, nofollow, noarchive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifiedGameActivityPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /gacha/capability:
     get:
       operationId: getGachaCapability
@@ -2541,6 +2618,134 @@ components:
         schemaVersion:
           type: string
           const: dailydraft.game-catalog.v1
+    PublicGameModeId:
+      type: string
+      enum: [duel, flip, crash]
+    PublicGameAvailabilityMode:
+      type: object
+      additionalProperties: false
+      required: [asOf, availableActions, capabilitySource, id, reason, state]
+      properties:
+        asOf:
+          type: string
+          format: date-time
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/GameCatalogAction'
+        capabilitySource:
+          $ref: '#/components/schemas/GameCapabilitySource'
+        id:
+          $ref: '#/components/schemas/PublicGameModeId'
+        reason:
+          type: string
+          minLength: 1
+        state:
+          type: string
+          enum: [degraded, playable, preview, unavailable]
+    PublicGameAvailability:
+      type: object
+      additionalProperties: false
+      required: [asOf, modes, network, schemaVersion]
+      properties:
+        asOf:
+          type: string
+          format: date-time
+        modes:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/PublicGameAvailabilityMode'
+        network:
+          type: string
+          const: solana-devnet
+        schemaVersion:
+          type: string
+          const: dailydraft.game-availability.v1
+    VerifiedGameActivity:
+      type: object
+      additionalProperties: false
+      required:
+        - activityId
+        - mode
+        - occurredAt
+        - participants
+        - receiptHref
+        - result
+        - resultHref
+        - resultSummary
+        - tier
+        - title
+        - verification
+      properties:
+        activityId:
+          type: string
+          pattern: '^(duel|flip|crash):[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$'
+        mode:
+          $ref: '#/components/schemas/PublicGameModeId'
+        occurredAt:
+          type: string
+          format: date-time
+        participants:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, role]
+            properties:
+              label:
+                type: string
+                minLength: 1
+                maxLength: 32
+              role:
+                type: string
+                enum: [house, player]
+        receiptHref:
+          type: string
+          pattern: '^/v1/[A-Za-z0-9/_:.-]+$'
+        result:
+          type: string
+          description: Extensible mode-specific outcome token, such as acquired, bust, cashed-out, completed, tie, or winner-verified.
+          pattern: '^[a-z][a-z0-9-]{1,63}$'
+        resultHref:
+          type: string
+          pattern: '^/v1/rgs/rounds/(duel|flip|crash)/[A-Za-z0-9][A-Za-z0-9._:-]{0,239}/proof$'
+        resultSummary:
+          type: string
+          minLength: 1
+        tier:
+          $ref: '#/components/schemas/Money'
+        title:
+          type: string
+          minLength: 1
+        verification:
+          type: string
+          const: settled-rgs-proof
+    VerifiedGameActivityPage:
+      type: object
+      additionalProperties: false
+      required: [asOf, data, hasMore, nextCursor, schemaVersion]
+      properties:
+        asOf:
+          type: string
+          format: date-time
+        data:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/VerifiedGameActivity'
+        hasMore:
+          type: boolean
+        nextCursor:
+          type: [string, 'null']
+          maxLength: 483
+          pattern: '^v1\.[A-Za-z0-9_-]{1,480}$'
+        schemaVersion:
+          type: string
+          const: dailydraft.verified-game-activity.v1
     GachaMachineKey:
       type: string
       pattern: '^[a-z0-9][a-z0-9._:-]{0,127}$'
