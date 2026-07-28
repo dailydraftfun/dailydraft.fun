@@ -33,7 +33,9 @@ export function ProductCapabilityPanel({
         <SpinnerGapIcon className="wallet-spinner" size={22} />
         <div>
           <strong>Checking duel availability</strong>
-          <p>DailyDraft is verifying playable modes and demo-pool tiers before showing an action.</p>
+          <p>
+            DailyDraft is verifying playable modes and demo-pool tiers before showing an action.
+          </p>
         </div>
       </div>
     );
