@@ -23,6 +23,7 @@ import {
   roadmapGameModes,
 } from './game-catalog';
 import { getGameCatalog, readCachedGameCatalog, writeCachedGameCatalog } from './games-client';
+import { VerifiedActivity } from './verified-activity';
 
 const gameIcons: Record<GameCatalogMode['id'], ReactNode> = {
   crash: <ChartLineUpIcon size={25} weight="bold" />,
@@ -228,6 +229,8 @@ export function GameLobby({
           ))}
         </div>
       </section>
+
+      <VerifiedActivity compact />
 
       <section
         className="grid overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3"

@@ -13,6 +13,9 @@ describe('game lobby', () => {
     expect(markup).toContain('Marketplace Flip');
     expect(markup).toContain('Card Streak');
     expect(markup).toContain('Honest roadmap');
+    expect(markup).toContain('Verified recent activity');
+    expect(markup).toContain('Settled proof only');
+    expect(markup).toContain('href="/games/activity"');
     expect(markup).toContain('Fixture preview');
     expect(markup).toContain('Jul 27 · 20:00 UTC');
     expect(markup).not.toContain('Fantasy Tournaments');

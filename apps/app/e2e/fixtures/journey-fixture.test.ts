@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { journeyTestIds } from '../../app/e2e/journey-test-ids';
 import { parseProductCapabilities } from '../../app/solana/duel-client';
-import { DuelJourneyFixture } from './journey-fixture';
+import { DuelJourneyFixture, journeyOpponentWallet } from './journey-fixture';
 
 describe('deterministic duel journey fixture', () => {
   test('replays the same wallet, RPC, duel, and provider contract for a seed', () => {
@@ -63,6 +63,30 @@ describe('deterministic duel journey fixture', () => {
         ]),
       }),
     );
+  });
+
+  test('serves pseudonymous settled activity without exposing fixture wallets', () => {
+    const fixture = new DuelJourneyFixture('verified-activity');
+    const response = fixture.handleApi({ method: 'GET', path: '/games/activity?limit=4' });
+    const serialized = JSON.stringify(response.body);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      data: [
+        {
+          mode: 'duel',
+          participants: [
+            { label: 'Player 7K2M', role: 'player' },
+            { label: 'Player P4Q9', role: 'player' },
+          ],
+          result: 'winner-verified',
+          verification: 'settled-rgs-proof',
+        },
+      ],
+      schemaVersion: 'dailydraft.verified-game-activity.v1',
+    });
+    expect(serialized).not.toContain('11111111111111111111111111111111');
+    expect(serialized).not.toContain(journeyOpponentWallet);
   });
 
   test('keeps preflight reconciliation matched until a funding submission exists', () => {
