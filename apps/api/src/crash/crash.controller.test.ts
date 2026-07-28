@@ -1,3 +1,5 @@
+import 'reflect-metadata';
+
 import { describe, expect, test } from 'bun:test';
 import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
