@@ -1058,7 +1058,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     const { service, session } = await createDatabaseSessionAt(
       databaseA,
       fixture,
-      'awaiting-stake',
+      'stake-confirmed',
     );
     const recoveryEvidence = {
       reasonCode: 'FIXTURE_RECOVERY',
@@ -1077,13 +1077,10 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     });
     await expect(
       databaseA.$transaction(async (transaction) => {
-        const admissionDecisionId = await admitRawStake(transaction, fixture);
         await transaction.flipSession.update({
           data: {
-            admissionDecisionId,
-            stakeAmount: '50000000',
-            stakeCurrency: 'USDC',
-            stakeDecimals: 6,
+            purchasedAt: new Date('2026-07-28T16:00:00.000Z'),
+            purchaseReference: 'fixture-purchase:injected-recovery',
             status: FlipSessionStatus.RECOVERY_REQUIRED,
             version: { increment: 1 },
           },
@@ -1092,7 +1089,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
         await transaction.flipSessionTransition.create({
           data: {
             evidence: recoveryEvidence,
-            fromStatus: FlipSessionStatus.AWAITING_STAKE,
+            fromStatus: FlipSessionStatus.STAKE_CONFIRMED,
             id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
             kind: FlipSessionTransitionKind.RECOVERY_REQUESTED,
             poolCommitmentHash: null,
@@ -1109,7 +1106,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
       }),
     ).rejects.toThrow('exact lifecycle action');
     await expect(service.findSession(session.id)).resolves.toMatchObject({
-      status: 'awaiting-stake',
+      status: 'stake-confirmed',
       version: session.version,
     });
   });
