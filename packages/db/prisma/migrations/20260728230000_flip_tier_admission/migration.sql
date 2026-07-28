@@ -120,6 +120,9 @@ ALTER TABLE "FlipSession"
   FOREIGN KEY ("admissionDecisionId") REFERENCES "FlipTierAdmissionDecision"("id")
   ON DELETE RESTRICT ON UPDATE CASCADE;
 
+-- Funded rows may predate this migration and therefore have no historical
+-- admission evidence to bind. The insert/update trigger below rejects every
+-- new stake without an allowed decision while leaving those rows recoverable.
 ALTER TABLE "FlipSession"
   ADD CONSTRAINT "FlipSession_admission_binding_check" CHECK (
     (
@@ -138,13 +141,12 @@ ALTER TABLE "FlipSession"
         'SETTLED'
       )
       AND "stakeAmount" IS NOT NULL
-      AND "admissionDecisionId" IS NOT NULL
     )
     OR (
       "status" IN ('RECOVERY_REQUIRED', 'RECOVERED', 'FAILED')
       AND (
         ("stakeAmount" IS NULL AND "admissionDecisionId" IS NULL)
-        OR ("stakeAmount" IS NOT NULL AND "admissionDecisionId" IS NOT NULL)
+        OR "stakeAmount" IS NOT NULL
       )
     )
   );
@@ -158,6 +160,9 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION "validate_flip_tier_admission_decision"() RETURNS trigger AS $$
 DECLARE
   commitment "FlipSessionPoolCommitment"%ROWTYPE;
+  expected_policy_hash TEXT;
+  health_observed_at TIMESTAMP(3);
+  ruleset "FlipRuleSet"%ROWTYPE;
   snapshot "FlipInventorySnapshot"%ROWTYPE;
 BEGIN
   IF NEW."poolCommitmentId" IS NULL THEN
@@ -176,9 +181,13 @@ BEGIN
     SELECT * INTO snapshot
     FROM "FlipInventorySnapshot"
     WHERE "id" = commitment."snapshotId";
+    SELECT * INTO ruleset
+    FROM "FlipRuleSet"
+    WHERE "id" = commitment."rulesetId";
     IF
       commitment."id" IS NULL
       OR snapshot."id" IS NULL
+      OR ruleset."id" IS NULL
       OR commitment."sessionReference" <> NEW."sessionReference"
       OR commitment."poolCommitmentHash" <> NEW."poolCommitmentHash"
       OR commitment."rulesHash" <> NEW."rulesHash"
@@ -216,6 +225,80 @@ BEGIN
   THEN
     RAISE EXCEPTION 'Flip tier admission provider health binding is invalid';
   END IF;
+
+  IF NEW."allowed" THEN
+    BEGIN
+      health_observed_at := (NEW."providerHealth"->>'observedAt')::TIMESTAMP(3);
+    EXCEPTION
+      WHEN others THEN
+        RAISE EXCEPTION 'Flip allowed tier admission decision is semantically invalid';
+    END;
+
+    expected_policy_hash := encode(
+      digest(
+        convert_to(
+          '{"inventoryPolicyHash":' || to_jsonb(snapshot."policyHash")::TEXT
+          || ',"maximumEligibleItems":' || snapshot."maximumEligibleItems"::TEXT
+          || ',"maximumExposureAmount":' || to_jsonb(snapshot."maximumExposureAmount")::TEXT
+          || ',"maximumFutureSkewMs":' || snapshot."maximumFutureSkewMs"::TEXT
+          || ',"maximumSourceAgeMs":' || snapshot."maximumSourceAgeMs"::TEXT
+          || ',"minimumEligibleItems":' || snapshot."minimumEligibleItems"::TEXT
+          || ',"policyVersion":' || to_jsonb(NEW."policyVersion")::TEXT
+          || ',"poolCommitmentHash":' || to_jsonb(commitment."poolCommitmentHash")::TEXT
+          || ',"rulesHash":' || to_jsonb(ruleset."rulesHash")::TEXT
+          || ',"snapshotContentHash":' || to_jsonb(snapshot."contentHash")::TEXT
+          || ',"tierKey":' || to_jsonb(NEW."tierKey")::TEXT
+          || '}',
+          'UTF8'
+        ),
+        'sha256'
+      ),
+      'hex'
+    );
+
+    IF
+      commitment."sealedAt" IS NULL
+      OR ruleset."sealedAt" IS NULL
+      OR snapshot."sealedAt" IS NULL
+      OR commitment."poolKey" IS DISTINCT FROM ruleset."poolKey"
+      OR commitment."poolKey" IS DISTINCT FROM snapshot."poolKey"
+      OR commitment."rulesVersion" IS DISTINCT FROM ruleset."version"
+      OR commitment."snapshotRevision" IS DISTINCT FROM snapshot."revision"
+      OR commitment."rulesHash" IS DISTINCT FROM ruleset."rulesHash"
+      OR commitment."snapshotContentHash" IS DISTINCT FROM snapshot."contentHash"
+      OR commitment."eligibleOutcomeCount" IS DISTINCT FROM snapshot."eligibleCount"
+      OR ruleset."activation" <> 'fixture-only'
+      OR ruleset."schemaVersion" <> 'dailydraft.flip-rules.v1'
+      OR ruleset."calculatorVersion" <> 'dailydraft.flip-outcome-bands.v1'
+      OR ruleset."probabilityScalePpm" <> 1000000
+      OR ruleset."currency" <> 'USDC'
+      OR ruleset."decimals" <> 6
+      OR snapshot."schemaVersion" <> 'dailydraft.flip-inventory.v1'
+      OR snapshot."stakeCurrency" <> ruleset."currency"
+      OR snapshot."stakeDecimals" <> ruleset."decimals"
+      OR snapshot."stakeAmount" <> ruleset."stakeAmount"
+      OR ruleset."inventoryPolicyVersion" <> snapshot."policyVersion"
+      OR NEW."tierKey" <> ruleset."currency" || ':' || ruleset."decimals" || ':' || ruleset."stakeAmount"
+      OR NEW."providerHealth"->>'status' <> 'healthy'
+      OR NEW."providerHealth"->>'provider' <> snapshot."provider"
+      OR NEW."providerHealth"->>'poolKey' <> commitment."poolKey"
+      OR NEW."evaluatedAt" < commitment."committedAt"
+      OR EXTRACT(EPOCH FROM (NEW."evaluatedAt" - snapshot."evaluatedAt")) * 1000
+        > snapshot."maximumSourceAgeMs"
+      OR EXTRACT(EPOCH FROM (NEW."evaluatedAt" - snapshot."evaluatedAt")) * 1000
+        < -snapshot."maximumFutureSkewMs"
+      OR EXTRACT(EPOCH FROM (NEW."evaluatedAt" - health_observed_at)) * 1000
+        > snapshot."maximumSourceAgeMs"
+      OR EXTRACT(EPOCH FROM (NEW."evaluatedAt" - health_observed_at)) * 1000
+        < -snapshot."maximumFutureSkewMs"
+      OR snapshot."eligibleCount" < snapshot."minimumEligibleItems"
+      OR snapshot."eligibleCount" > snapshot."maximumEligibleItems"
+      OR snapshot."eligibleValueAmount"::NUMERIC > snapshot."maximumExposureAmount"::NUMERIC
+      OR NEW."policyHash" <> expected_policy_hash
+    THEN
+      RAISE EXCEPTION 'Flip allowed tier admission decision is semantically invalid';
+    END IF;
+  END IF;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -250,10 +333,29 @@ CREATE FUNCTION "protect_flip_session_admission_binding"() RETURNS trigger AS $$
 DECLARE
   decision "FlipTierAdmissionDecision"%ROWTYPE;
 BEGIN
-  IF NEW."admissionDecisionId" IS NOT DISTINCT FROM OLD."admissionDecisionId" THEN
+  IF TG_OP = 'INSERT' THEN
+    IF
+      NEW."stakeAmount" IS NULL
+      AND NEW."admissionDecisionId" IS NULL
+    THEN
+      RETURN NEW;
+    END IF;
+    IF
+      NEW."stakeAmount" IS NULL
+      OR NEW."admissionDecisionId" IS NULL
+    THEN
+      RAISE EXCEPTION 'Flip stake requires an allowed admission decision';
+    END IF;
+  ELSIF NEW."admissionDecisionId" IS NOT DISTINCT FROM OLD."admissionDecisionId" THEN
+    IF
+      OLD."status" = 'AWAITING_STAKE'
+      AND NEW."status" = 'STAKE_CONFIRMED'
+      AND NEW."admissionDecisionId" IS NULL
+    THEN
+      RAISE EXCEPTION 'Flip stake requires an allowed admission decision';
+    END IF;
     RETURN NEW;
-  END IF;
-  IF
+  ELSIF
     OLD."admissionDecisionId" IS NOT NULL
     OR OLD."status" <> 'AWAITING_STAKE'
     OR NEW."status" <> 'STAKE_CONFIRMED'
@@ -278,5 +380,5 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER "FlipSession_admission_binding_immutable"
-BEFORE UPDATE ON "FlipSession"
+BEFORE INSERT OR UPDATE ON "FlipSession"
 FOR EACH ROW EXECUTE FUNCTION "protect_flip_session_admission_binding"();

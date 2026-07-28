@@ -293,6 +293,114 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     ).rejects.toThrow('Flip tier admission state may only advance monotonically');
   });
 
+  test('rejects raw allowed admission decisions that forge provider, freshness, or policy meaning', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'raw-admission-semantics');
+    const { session } = await createDatabaseSessionAt(databaseA, fixture, 'stake-confirmed');
+    const stored = await databaseA.flipTierAdmissionDecision.findFirstOrThrow({
+      where: { allowed: true, sessionReference: session.id },
+    });
+    const commitment = await databaseA.flipSessionPoolCommitment.findUniqueOrThrow({
+      include: { ruleset: true, snapshot: true },
+      where: { id: fixture.commitmentId },
+    });
+    if (
+      !stored.providerHealth ||
+      typeof stored.providerHealth !== 'object' ||
+      Array.isArray(stored.providerHealth)
+    ) {
+      throw new Error('stored admission decision has no provider health');
+    }
+    const healthy = stored.providerHealth as Record<string, string>;
+    const changedHealth = (overrides: Record<string, string>) => {
+      const providerHealth = { ...healthy, ...overrides };
+      return {
+        providerHealth: providerHealth as Prisma.InputJsonValue,
+        providerHealthHash: hash(stableStringify(providerHealth)),
+      };
+    };
+    const policyHash = (tierKey: string) =>
+      hash(
+        stableStringify({
+          inventoryPolicyHash: commitment.snapshot.policyHash,
+          maximumEligibleItems: commitment.snapshot.maximumEligibleItems,
+          maximumExposureAmount: commitment.snapshot.maximumExposureAmount,
+          maximumFutureSkewMs: commitment.snapshot.maximumFutureSkewMs,
+          maximumSourceAgeMs: commitment.snapshot.maximumSourceAgeMs,
+          minimumEligibleItems: commitment.snapshot.minimumEligibleItems,
+          policyVersion: stored.policyVersion,
+          poolCommitmentHash: commitment.poolCommitmentHash,
+          rulesHash: commitment.rulesHash,
+          snapshotContentHash: commitment.snapshotContentHash,
+          tierKey,
+        }),
+      );
+    const staleEvaluation = new Date('2026-08-03T12:03:00.001Z');
+    const forgedTierKey = 'USDC:6:50000001';
+    const vectors: Array<{
+      label: string;
+      overrides: Partial<Prisma.FlipTierAdmissionDecisionUncheckedCreateInput>;
+    }> = [
+      { label: 'provider outage', overrides: changedHealth({ status: 'outage' }) },
+      {
+        label: 'wrong provider',
+        overrides: changedHealth({ provider: 'different-marketplace' }),
+      },
+      { label: 'wrong pool', overrides: changedHealth({ poolKey: 'different-pool' }) },
+      {
+        label: 'stale provider health',
+        overrides: changedHealth({ observedAt: '2026-08-03T12:01:29.999Z' }),
+      },
+      {
+        label: 'future provider health',
+        overrides: changedHealth({ observedAt: '2026-08-03T12:02:31.001Z' }),
+      },
+      {
+        label: 'stale inventory snapshot',
+        overrides: {
+          evaluatedAt: staleEvaluation,
+          ...changedHealth({ observedAt: staleEvaluation.toISOString() }),
+        },
+      },
+      { label: 'wrong admission policy hash', overrides: { policyHash: '0'.repeat(64) } },
+      {
+        label: 'tier that disagrees with rules stake',
+        overrides: {
+          policyHash: policyHash(forgedTierKey),
+          tierKey: forgedTierKey,
+        },
+      },
+    ];
+
+    for (const vector of vectors) {
+      await expect(
+        Promise.resolve(
+          databaseA.flipTierAdmissionDecision.create({
+            data: {
+              allowed: true,
+              evaluatedAt: stored.evaluatedAt,
+              id: `flipadmission_${crypto.randomUUID().replaceAll('-', '')}`,
+              inventoryPolicyHash: stored.inventoryPolicyHash,
+              policyHash: stored.policyHash,
+              policyVersion: stored.policyVersion,
+              poolCommitmentHash: stored.poolCommitmentHash,
+              poolCommitmentId: stored.poolCommitmentId,
+              providerHealth: stored.providerHealth as Prisma.InputJsonValue,
+              providerHealthHash: stored.providerHealthHash,
+              reason: null,
+              reenableBoundary: null,
+              rulesHash: stored.rulesHash,
+              sessionReference: stored.sessionReference,
+              snapshotContentHash: stored.snapshotContentHash,
+              tierKey: stored.tierKey,
+              ...vector.overrides,
+            },
+          }),
+        ),
+        vector.label,
+      ).rejects.toThrow('Flip allowed tier admission decision is semantically invalid');
+    }
+  });
+
   test('database and service both prevent reveal finality before acquisition and transfer', async () => {
     const fixture = await prepareDatabaseFixture(databaseA, 'reveal-guard');
     const clock = new DatabaseTestClock();

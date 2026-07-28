@@ -619,8 +619,22 @@ describe('durable fixture-only Flip session state machine', () => {
     expect(admissionMigration).toContain('FlipTierAdmissionState_monotonic');
     expect(admissionMigration).toContain('FlipSession_admission_binding_immutable');
     expect(admissionMigration).toContain('Flip stake requires an allowed admission decision');
+    expect(admissionMigration).toContain(
+      'Flip allowed tier admission decision is semantically invalid',
+    );
+    expect(admissionMigration).toContain(`NEW."providerHealth"->>'status' <> 'healthy'`);
+    expect(admissionMigration).toContain(
+      `NEW."tierKey" <> ruleset."currency" || ':' || ruleset."decimals"`,
+    );
+    expect(admissionMigration).toContain('BEFORE INSERT OR UPDATE ON "FlipSession"');
     expect(admissionMigration).toContain("'provider_health_missing'");
     expect(admissionMigration).toContain('"admissionDecisionId" IS NOT NULL');
+    expect(admissionMigration).toContain(
+      `ELSIF NEW."admissionDecisionId" IS NOT DISTINCT FROM OLD."admissionDecisionId"`,
+    );
+    expect(admissionMigration).toContain(
+      'Funded rows may predate this migration and therefore have no historical',
+    );
   });
 });
 
