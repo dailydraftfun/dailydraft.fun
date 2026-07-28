@@ -254,8 +254,18 @@ sealed, append-only revision.
 The snapshot service accepts provider fixtures only and has no HTTP controller
 or live marketplace client. It also requires
 `DAILYDRAFT_FLIP_FIXTURE_MODE=true` in tests, local development, or an
-explicit non-production preview. Production remains fail-closed until the separate
-reviewed rules, acquisition, legal, and promotion gates are complete.
+explicit non-production preview. Before the fixture lifecycle accepts a stake,
+`DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE` must contain the exact JSON health
+contract from `src/providers/fixtures/flip-provider-health-contract.v1.json`.
+Admission rechecks the sealed #116 inventory snapshot against its reviewed
+freshness, eligible-count, exposure, and #117 outcome-band bindings. Missing,
+stale, malformed, degraded, or outage evidence suspends that stake tier with a
+stable reason while already-funded sessions retain settlement and recovery.
+Every admission decision is append-only and binds the accepted session to the
+exact pool, rules, inventory-policy, and provider-health hashes. This is
+fixture/preview evidence only; it adds no live provider health capability.
+Production remains fail-closed until the separate reviewed rules, acquisition,
+legal, and promotion gates are complete.
 
 Flip outcome selection is likewise an internal fixture service with no public
 HTTP or OpenAPI surface. It selects only from the sealed outcome space committed
@@ -269,6 +279,21 @@ transition. Exact retries and restart recovery reproduce that proof, while a
 changed entropy envelope, transition key, committed pool, or proof fails closed.
 This path requires `DAILYDRAFT_FLIP_FIXTURE_MODE=true` in a non-production
 environment and does not define or approve a production entropy source.
+
+Flip acquisition is also internal and fixture/devnet-only. A sealed acquisition
+policy must be bound one-to-one to the selected session's reviewed rules before
+the pool commitment is created. It commits exact provider/source custody,
+house-inventory custody, and one failure code for each reviewed `refund`,
+`reselection`, and `substitute` branch. Each selected outcome expands into one
+immutable purchase and transfer plan whose request keys and hashes are bound to
+the finalized selection proof. Recovery reconciles a provider key before any
+execution; an ambiguous or lost response is reconcile-only, while a confirmed
+rejection may enter only its pre-reviewed branch. A purchased asset retained by
+the house is written once through the canonical inventory and treasury ledger.
+The existing session database triggers reject purchase, transfer, and reveal
+transitions without the exact finalized operation/receipt. No live marketplace
+client, credential, signer, mainnet path, controller, or OpenAPI route is
+introduced.
 
 `SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every
 worker validates the official devnet genesis hash before reading transaction

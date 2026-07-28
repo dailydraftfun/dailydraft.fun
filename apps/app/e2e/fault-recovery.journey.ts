@@ -101,8 +101,8 @@ test.describe('deterministic duel failure recovery', () => {
     const duelId = journey.snapshot().duel?.id;
     expect(journey.snapshot().duel?.status).toBe('waiting');
 
-    await page.reload();
-    const restoredStepper = await authenticateRestoredStepper(page);
+    await reloadWithRestoredSession(page);
+    const restoredStepper = page.getByTestId(entryTestIds.stepper);
 
     await expect(restoredStepper).toHaveAttribute('data-stage', 'waiting');
     await expect(page.getByTestId(journeyTestIds.persistedDuel)).toContainText(
@@ -147,8 +147,8 @@ test.describe('deterministic duel failure recovery', () => {
     expect(journey.snapshot().duel?.status).toBe('committing');
     expect(requestsEndingWith(journey.snapshot().requests, '/submissions')).toHaveLength(1);
 
-    await page.reload();
-    const restoredStepper = await authenticateRestoredStepper(page);
+    await reloadWithRestoredSession(page);
+    const restoredStepper = page.getByTestId(entryTestIds.stepper);
     await expect(restoredStepper).toHaveAttribute('data-stage', 'recovery');
     await expect(restoredStepper).toContainText('Resume confirmation without signing');
 
@@ -184,8 +184,7 @@ test.describe('deterministic duel failure recovery', () => {
       if (checkpoint === 'opening') expect(committedHash).toBeUndefined();
       else expect(committedHash).toBeTruthy();
 
-      await page.reload();
-      await authenticateFromWalletMenu(page);
+      await reloadWithRestoredSession(page);
 
       await expect(page.getByTestId(journeyTestIds.battle)).toBeVisible();
       expect(journey.snapshot().duel?.status).toBe(checkpoint);
@@ -239,13 +238,6 @@ async function enterEntryReview(page: Page): Promise<Locator> {
   return stepper;
 }
 
-async function authenticateRestoredStepper(page: Page): Promise<Locator> {
-  const stepper = page.getByTestId(entryTestIds.stepper);
-  await expect(stepper).toHaveAttribute('data-stage', 'authenticate');
-  await authenticateStepper(stepper, page);
-  return stepper;
-}
-
 async function authenticateStepper(stepper: Locator, page: Page): Promise<void> {
   await stepper.getByTestId(entryTestIds.authenticate).click();
   await Promise.all([
@@ -254,14 +246,10 @@ async function authenticateStepper(stepper: Locator, page: Page): Promise<void> 
   ]);
 }
 
-async function authenticateFromWalletMenu(page: Page): Promise<void> {
-  await expect(page.getByTestId(journeyTestIds.walletMenu)).toContainText('1111…1111');
-  await page.getByTestId(journeyTestIds.walletMenu).click();
-  await page.getByTestId(journeyTestIds.walletAuthenticationPrepare).click();
-  await Promise.all([
-    page.waitForResponse(`${journeyApiOrigin}/auth/sessions`),
-    page.getByTestId(journeyTestIds.walletAuthenticationSign).click(),
-  ]);
+async function reloadWithRestoredSession(page: Page): Promise<void> {
+  const restored = page.waitForResponse(`${journeyApiOrigin}/auth/session`);
+  await page.reload();
+  await restored;
 }
 
 function requestsEndingWith(requests: string[], suffix: string): string[] {

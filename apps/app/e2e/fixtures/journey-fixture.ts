@@ -249,6 +249,16 @@ export class DuelJourneyFixture {
         wallet: CREATOR_WALLET,
       });
     }
+    if (method === 'GET' && path === '/auth/session') {
+      const authorizationError = this.#requireAuthorization(request.authorization);
+      return (
+        authorizationError ??
+        ok({
+          network: 'solana-devnet',
+          wallet: CREATOR_WALLET,
+        })
+      );
+    }
     if (method === 'POST' && path === '/auth/session/revoke') {
       this.#authenticated = false;
       return { body: null, status: 204 };

@@ -75,6 +75,7 @@ export function DuelEntryStepper({
     pending ||
     fundingPhase === 'signing' ||
     fundingPhase === 'confirming' ||
+    authentication.status === 'restoring' ||
     authentication.status === 'signing';
   const dialog = useDialogFocus({
     active: true,
@@ -221,8 +222,8 @@ export function DuelEntryStepper({
         <Separator className="bg-border" />
         <div className="duel-stepper-footer">
           <p>
-            Closing keeps a local recovery pointer, never a session token, signature, or private
-            key.
+            Closing keeps a recovery pointer and a short-lived same-tab session. Signatures and
+            private keys are never stored.
           </p>
           <div>
             <Button
@@ -341,19 +342,21 @@ function AuthenticateStep() {
         <Button
           type="button"
           onClick={authentication.prepare}
-          disabled={authentication.status === 'preparing'}
+          disabled={authentication.status === 'preparing' || authentication.status === 'restoring'}
           data-testid="duel-entry-auth-prepare"
         >
-          {authentication.status === 'preparing' ? (
+          {authentication.status === 'preparing' || authentication.status === 'restoring' ? (
             <SpinnerGapIcon className="wallet-spinner" size={17} />
           ) : (
             <ShieldCheckIcon size={17} />
           )}
-          {authentication.status === 'preparing'
-            ? 'Preparing authentication'
-            : authentication.error
-              ? 'Retry authentication'
-              : 'Review authentication message'}
+          {authentication.status === 'restoring'
+            ? 'Restoring wallet session'
+            : authentication.status === 'preparing'
+              ? 'Preparing authentication'
+              : authentication.error
+                ? 'Retry authentication'
+                : 'Review authentication message'}
         </Button>
       )}
     </div>

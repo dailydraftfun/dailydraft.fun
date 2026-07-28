@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "dailydraft.flip-provider-health-contract-fixture.v1",
+  "healthy": {
+    "observedAt": "2026-07-28T16:00:00.000Z",
+    "poolKey": "flip-pokemon-50",
+    "provider": "fixture-marketplace",
+    "schemaVersion": "dailydraft.flip-provider-health-fixture.v1",
+    "status": "healthy"
+  },
+  "outage": {
+    "observedAt": "2026-07-28T16:00:00.000Z",
+    "poolKey": "flip-pokemon-50",
+    "provider": "fixture-marketplace",
+    "schemaVersion": "dailydraft.flip-provider-health-fixture.v1",
+    "status": "outage"
+  }
+}

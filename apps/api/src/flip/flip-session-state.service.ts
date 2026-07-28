@@ -5,11 +5,22 @@ import {
   FlipSessionTransitionKind as DatabaseFlipSessionTransitionKind,
   type Prisma,
 } from '@dailydraft/db';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 import type { Money } from '../domain.js';
 import { stableStringify } from '../providers/valuation-policy.js';
+import {
+  EnvironmentFlipProviderHealthAdapter,
+  FLIP_PROVIDER_HEALTH_ADAPTER,
+  type FlipProviderHealthAdapter,
+} from './flip-tier-admission.policy.js';
+import {
+  admitFlipStake,
+  FlipTierAdmissionError,
+  persistRejectedFlipTierAdmission,
+  readFlipProviderHealth,
+} from './flip-tier-admission.service.js';
 
 export const FLIP_SESSION_STATE_MACHINE_VERSION = 'dailydraft.flip-session-state.v1' as const;
 export const FLIP_STAKE_FIXTURE_VERSION = 'dailydraft.flip-stake-fixture.v1' as const;
@@ -344,6 +355,9 @@ export class FlipSessionStateService {
     @Inject(DATABASE_CLIENT) private readonly database: DatabaseClient,
     @Inject(FLIP_SESSION_CLOCK) private readonly clock: FlipSessionClock,
     @Inject(FLIP_SESSION_ENVIRONMENT) private readonly environment: NodeJS.ProcessEnv,
+    @Optional()
+    @Inject(FLIP_PROVIDER_HEALTH_ADAPTER)
+    private readonly providerHealthAdapter?: FlipProviderHealthAdapter,
   ) {}
 
   async createFixtureSession(input: CreateFixtureFlipSessionInput): Promise<FlipSessionSnapshot> {
@@ -464,6 +478,13 @@ export class FlipSessionStateService {
     if (replay) return replay;
 
     const now = this.clock.now();
+    const providerHealth =
+      normalized.kind === 'confirm-stake'
+        ? await readFlipProviderHealth(
+            this.providerHealthAdapter ??
+              new EnvironmentFlipProviderHealthAdapter(this.environment),
+          )
+        : null;
     try {
       return await this.database
         .$transaction(
@@ -485,7 +506,13 @@ export class FlipSessionStateService {
               );
             }
 
-            const resolved = await resolveAction(transaction, current, normalized, now);
+            const resolved = await resolveAction(
+              transaction,
+              current,
+              normalized,
+              now,
+              providerHealth,
+            );
             const updated = await transaction.flipSession.updateMany({
               data: {
                 ...resolved.update,
@@ -530,6 +557,9 @@ export class FlipSessionStateService {
         requestHash,
       );
       if (concurrentReplay) return concurrentReplay;
+      if (error instanceof FlipTierAdmissionError) {
+        await persistRejectedFlipTierAdmission(this.database, error, sessionReference);
+      }
       throw error;
     }
   }
@@ -655,6 +685,7 @@ async function resolveAction(
   current: FlipSessionRow,
   action: NormalizedAction,
   now: Date,
+  providerHealth: unknown,
 ): Promise<ResolvedAction> {
   if (action.kind === 'request-recovery') {
     if (current.status === DatabaseFlipSessionStatus.RECOVERY_REQUIRED) {
@@ -702,6 +733,14 @@ async function resolveAction(
   switch (action.kind) {
     case 'confirm-stake': {
       requireStatus(current, DatabaseFlipSessionStatus.AWAITING_STAKE, action.kind);
+      const admissionDecisionId = await admitFlipStake(transaction, {
+        evaluatedAt: now,
+        providerHealth,
+        sessionReference: current.id,
+        stakeAmount: action.evidence.amount.amount,
+        stakeCurrency: action.evidence.amount.currency,
+        stakeDecimals: action.evidence.amount.decimals,
+      });
       return {
         evidence: action.evidence,
         kind: DatabaseFlipSessionTransitionKind.STAKE_CONFIRMED,
@@ -710,6 +749,7 @@ async function resolveAction(
         terminalReason: null,
         toStatus: DatabaseFlipSessionStatus.STAKE_CONFIRMED,
         update: {
+          admissionDecisionId,
           stakeAmount: action.evidence.amount.amount,
           stakeCurrency: action.evidence.amount.currency,
           stakeDecimals: action.evidence.amount.decimals,
