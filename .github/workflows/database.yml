@@ -79,6 +79,7 @@ jobs:
           src/crash/crash-stage-state.database.test.ts
           src/crash/crash-settlement.database.test.ts
           src/flip/flip-rules.database.test.ts
+          src/flip/flip-session-state.database.test.ts
           src/gacha/gacha-payment-idempotency.database.test.ts
       - name: Validate Prisma schema
         run: bun --filter @dailydraft/db db:validate
