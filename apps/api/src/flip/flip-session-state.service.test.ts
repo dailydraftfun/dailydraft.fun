@@ -19,12 +19,80 @@ import {
 
 const FIXTURE_ENVIRONMENT = {
   DAILYDRAFT_FLIP_FIXTURE_MODE: 'true',
+  DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE: JSON.stringify({
+    observedAt: '2026-07-28T16:00:00.000Z',
+    poolKey: 'flip-pokemon-50',
+    provider: 'fixture-marketplace',
+    schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+    status: 'healthy',
+  }),
   NODE_ENV: 'test',
 } satisfies NodeJS.ProcessEnv;
 const START = new Date('2026-07-28T16:00:00.000Z');
 const PLAYER = 'fixture-wallet:flip-player';
 
 describe('durable fixture-only Flip session state machine', () => {
+  test('suspends the affected tier before stake and deterministically re-enables on recovery', async () => {
+    const fixture = harness('flip-tier-suspension', providerEnvironment('outage'));
+    const created = await fixture.create();
+
+    await expect(
+      fixture.service.transition(created.id, {
+        ...stakeAction(),
+        expectedVersion: created.version,
+      }),
+    ).rejects.toMatchObject({
+      code: 'TIER_SUSPENDED',
+      decision: {
+        reason: 'provider_outage',
+        reenableBoundary: 'fresh_provider_health',
+        tierKey: 'USDC:6:50000000',
+      },
+    });
+    await expect(fixture.service.findSession(created.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: 1,
+    });
+    expect(fixture.database.admissionState('USDC:6:50000000')).toMatchObject({
+      disabled: true,
+      reason: 'provider_outage',
+    });
+    expect(fixture.database.admissionDecisions()).toHaveLength(1);
+
+    const recovered = await fixture
+      .serviceFor(providerEnvironment('healthy'))
+      .transition(created.id, {
+        ...stakeAction(),
+        expectedVersion: created.version,
+      });
+    expect(recovered).toMatchObject({ status: 'stake-confirmed', version: 2 });
+    expect(fixture.database.admissionState('USDC:6:50000000')).toMatchObject({
+      disabled: false,
+      reason: null,
+      version: 2,
+    });
+    expect(fixture.database.admissionDecisions()).toHaveLength(2);
+  });
+
+  test('keeps recovery and settlement available for already-funded sessions during outage', async () => {
+    const settlementFixture = harness('flip-funded-settlement');
+    const revealReady = await settlementFixture.advanceTo('reveal-ready');
+    const settled = await settlementFixture
+      .serviceFor(providerEnvironment('outage'))
+      .transition(revealReady.id, {
+        ...settleAction(settlementFixture),
+        expectedVersion: revealReady.version,
+      });
+    expect(settled.status).toBe('settled');
+
+    const recoveryFixture = harness('flip-funded-recovery');
+    const poolCommitted = await recoveryFixture.advanceTo('pool-committed');
+    const recovery = await recoveryFixture
+      .serviceFor(providerEnvironment('outage'))
+      .transition(poolCommitted.id, recoveryAction(poolCommitted.version));
+    expect(recovery.status).toBe('recovery-required');
+  });
+
   test('resumes at every non-terminal lifecycle boundary and settles exactly once', async () => {
     const fixture = harness('flip-session-resume');
     let session = await fixture.create();
@@ -538,6 +606,41 @@ describe('durable fixture-only Flip session state machine', () => {
     expect(migration).toContain('"transferReference" IS NOT NULL');
     expect(migration).toContain('"revealReadyReference" IS NOT NULL');
     expect(migration).toContain('Flip session transition is invalid');
+
+    const admissionMigration = readFileSync(
+      new URL(
+        '../../../../packages/db/prisma/migrations/20260728230000_flip_tier_admission/migration.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+    expect(admissionMigration).toContain('FlipTierAdmissionDecision_append_only');
+    expect(admissionMigration).toContain('FlipTierAdmissionDecision_validate_contract');
+    expect(admissionMigration).toContain('FlipTierAdmissionState_monotonic');
+    expect(admissionMigration).toContain('FlipSession_admission_binding_immutable');
+    expect(admissionMigration).toContain('Flip stake requires an allowed admission decision');
+    expect(admissionMigration).toContain(
+      'Flip stake requires a current allowed admission decision',
+    );
+    expect(admissionMigration).toContain('pg_current_xact_id()::TEXT');
+    expect(admissionMigration).toContain('FOR SHARE');
+    expect(admissionMigration).toContain('current_state."disabled"');
+    expect(admissionMigration).toContain(
+      'Flip allowed tier admission decision is semantically invalid',
+    );
+    expect(admissionMigration).toContain(`NEW."providerHealth"->>'status' <> 'healthy'`);
+    expect(admissionMigration).toContain(
+      `NEW."tierKey" <> ruleset."currency" || ':' || ruleset."decimals"`,
+    );
+    expect(admissionMigration).toContain('BEFORE INSERT OR UPDATE ON "FlipSession"');
+    expect(admissionMigration).toContain("'provider_health_missing'");
+    expect(admissionMigration).toContain('"admissionDecisionId" IS NOT NULL');
+    expect(admissionMigration).toContain(
+      `ELSIF NEW."admissionDecisionId" IS NOT DISTINCT FROM OLD."admissionDecisionId"`,
+    );
+    expect(admissionMigration).toContain(
+      'Funded rows may predate this migration and therefore have no historical',
+    );
   });
 });
 
@@ -682,6 +785,8 @@ function harness(sessionId: string, environment: NodeJS.ProcessEnv = FIXTURE_ENV
   );
   const restart = () =>
     new FlipSessionStateService(database as unknown as DatabaseClient, clock, environment);
+  const serviceFor = (nextEnvironment: NodeJS.ProcessEnv) =>
+    new FlipSessionStateService(database as unknown as DatabaseClient, clock, nextEnvironment);
   const create = () =>
     service.createFixtureSession({
       playerWalletReference: PLAYER,
@@ -711,7 +816,21 @@ function harness(sessionId: string, environment: NodeJS.ProcessEnv = FIXTURE_ENV
     database,
     restart,
     service,
+    serviceFor,
     sessionId,
+  };
+}
+
+function providerEnvironment(status: 'healthy' | 'outage'): NodeJS.ProcessEnv {
+  return {
+    ...FIXTURE_ENVIRONMENT,
+    DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE: JSON.stringify({
+      observedAt: START.toISOString(),
+      poolKey: 'flip-pokemon-50',
+      provider: 'fixture-marketplace',
+      schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+      status,
+    }),
   };
 }
 
@@ -743,18 +862,55 @@ function fixtureCommitment(sessionReference: string): MemoryCommitment {
       },
     ],
     poolCommitmentHash: hash(`pool:${sessionReference}`),
+    poolKey: 'flip-pokemon-50',
     rulesHash: hash(`rules:${sessionReference}`),
+    rulesVersion: 1,
     ruleset: {
       activation: 'fixture-only',
+      bands: [
+        { label: 'base', minimumValueAmount: '0', probabilityPpm: 700_000 },
+        { label: 'plus', minimumValueAmount: '25000000', probabilityPpm: 250_000 },
+        { label: 'chase', minimumValueAmount: '50000000', probabilityPpm: 50_000 },
+      ],
+      calculatorVersion: 'dailydraft.flip-outcome-bands.v1',
       currency: 'USDC',
       decimals: 6,
+      id: 'fliprules_fixture',
+      inventoryPolicyVersion: 'flip-fixture-policy-v1',
+      poolKey: 'flip-pokemon-50',
+      probabilityScalePpm: 1_000_000,
       rulesHash: hash(`rules:${sessionReference}`),
+      schemaVersion: 'dailydraft.flip-rules.v1',
       sealedAt: new Date('2026-07-28T15:58:00.000Z'),
       stakeAmount: '50000000',
+      version: 1,
     },
     sealedAt: new Date('2026-07-28T15:59:00.000Z'),
     sessionReference,
+    snapshot: {
+      contentHash: hash(`snapshot:${sessionReference}`),
+      eligibleCount: 3,
+      eligibleValueAmount: '110000000',
+      evaluatedAt: new Date('2026-07-28T15:59:30.000Z'),
+      id: 'flipsnap_fixture',
+      maximumEligibleItems: 20,
+      maximumExposureAmount: '1000000000',
+      maximumFutureSkewMs: 1_000,
+      maximumSourceAgeMs: 60_000,
+      minimumEligibleItems: 3,
+      policyHash: hash(`policy:${sessionReference}`),
+      policyVersion: 'flip-fixture-policy-v1',
+      poolKey: 'flip-pokemon-50',
+      provider: 'fixture-marketplace',
+      schemaVersion: 'dailydraft.flip-inventory.v1',
+      sealedAt: new Date('2026-07-28T15:59:00.000Z'),
+      stakeAmount: '50000000',
+      stakeCurrency: 'USDC',
+      stakeDecimals: 6,
+    },
     snapshotContentHash: hash(`snapshot:${sessionReference}`),
+    snapshotId: 'flipsnap_fixture',
+    snapshotRevision: 1,
   };
 }
 
@@ -793,22 +949,56 @@ interface MemoryCommitment {
     providerListingReference: string;
   }>;
   poolCommitmentHash: string;
+  poolKey: string;
   rulesHash: string;
+  rulesVersion: number;
   ruleset: {
     activation: string;
+    bands: Array<{ label: string; minimumValueAmount: string; probabilityPpm: number }>;
+    calculatorVersion: string;
     currency: string;
     decimals: number;
+    id: string;
+    inventoryPolicyVersion: string;
+    poolKey: string;
+    probabilityScalePpm: number;
     rulesHash: string;
+    schemaVersion: string;
     sealedAt: Date | null;
     stakeAmount: string;
+    version: number;
   };
   sealedAt: Date | null;
   sessionReference: string;
+  snapshot: {
+    contentHash: string;
+    eligibleCount: number;
+    eligibleValueAmount: string;
+    evaluatedAt: Date;
+    id: string;
+    maximumEligibleItems: number;
+    maximumExposureAmount: string;
+    maximumFutureSkewMs: number;
+    maximumSourceAgeMs: number;
+    minimumEligibleItems: number;
+    policyHash: string;
+    policyVersion: string;
+    poolKey: string;
+    provider: string;
+    schemaVersion: string;
+    sealedAt: Date | null;
+    stakeAmount: string;
+    stakeCurrency: string;
+    stakeDecimals: number;
+  };
   snapshotContentHash: string;
+  snapshotId: string;
+  snapshotRevision: number;
 }
 
 type MemorySession = {
   activationMode: string;
+  admissionDecisionId: string | null;
   createdAt: Date;
   id: string;
   playerWalletReference: string;
@@ -859,6 +1049,8 @@ class MemoryFlipDatabase {
   readonly #commitment: MemoryCommitment;
   readonly #sessions = new Map<string, MemorySession>();
   readonly #transitions: MemoryTransition[] = [];
+  readonly #admissionDecisions: Array<Record<string, unknown>> = [];
+  readonly #admissionStates = new Map<string, Record<string, unknown>>();
 
   constructor(commitment: MemoryCommitment) {
     this.#commitment = commitment;
@@ -871,6 +1063,7 @@ class MemoryFlipDatabase {
       const now = input.updatedAt;
       const session: MemorySession = {
         activationMode: input.activationMode,
+        admissionDecisionId: null,
         createdAt: now,
         id: input.id,
         playerWalletReference: input.playerWalletReference,
@@ -981,8 +1174,49 @@ class MemoryFlipDatabase {
   };
 
   readonly flipSessionPoolCommitment = {
-    findUnique: async ({ where }: { where: { id: string } }) =>
-      where.id === this.#commitment.id ? structuredClone(this.#commitment) : null,
+    findUnique: async ({ where }: { where: { id?: string; sessionReference?: string } }) =>
+      where.id === this.#commitment.id ||
+      where.sessionReference === this.#commitment.sessionReference
+        ? structuredClone(this.#commitment)
+        : null,
+  };
+
+  readonly flipTierAdmissionDecision = {
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      this.#admissionDecisions.push(structuredClone(data));
+      return structuredClone(data);
+    },
+  };
+
+  readonly flipTierAdmissionState = {
+    findUnique: async ({ where }: { where: { tierKey: string } }) => {
+      const state = this.#admissionStates.get(where.tierKey);
+      return state ? structuredClone(state) : null;
+    },
+    upsert: async ({
+      create,
+      update,
+      where,
+    }: {
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+      where: { tierKey: string };
+    }) => {
+      const existing = this.#admissionStates.get(where.tierKey);
+      const next = existing
+        ? {
+            ...existing,
+            ...structuredClone(update),
+            version:
+              typeof update.version === 'object' && update.version
+                ? Number(existing.version ?? 1) +
+                  Number((update.version as { increment: number }).increment)
+                : update.version,
+          }
+        : { ...structuredClone(create), version: 1 };
+      this.#admissionStates.set(where.tierKey, next);
+      return structuredClone(next);
+    },
   };
 
   async $transaction<T>(operation: (transaction: this) => Promise<T>): Promise<T> {
@@ -1009,6 +1243,15 @@ class MemoryFlipDatabase {
 
   transitionCount(sessionId: string): number {
     return this.#transitions.filter((transition) => transition.sessionId === sessionId).length;
+  }
+
+  admissionDecisions(): Array<Record<string, unknown>> {
+    return structuredClone(this.#admissionDecisions);
+  }
+
+  admissionState(tierKey: string): Record<string, unknown> | null {
+    const state = this.#admissionStates.get(tierKey);
+    return state ? structuredClone(state) : null;
   }
 
   private withTransitions(session: MemorySession) {

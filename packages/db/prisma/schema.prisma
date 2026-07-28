@@ -1126,8 +1126,8 @@ model FlipRuleSet {
 /// `outcomeSpace` contains only public inventory references and normalized values;
 /// no entropy, provider credentials, or other secret selection material is stored.
 model FlipSessionPoolCommitment {
-  id                    String                     @id
-  sessionReference      String                     @unique
+  id                    String                      @id
+  sessionReference      String                      @unique
   rulesetId             String
   snapshotId            String
   poolKey               String
@@ -1141,11 +1141,12 @@ model FlipSessionPoolCommitment {
   outcomeSpace          Json
   committedAt           DateTime
   sealedAt              DateTime?
-  createdAt             DateTime                   @default(now())
-  ruleset               FlipRuleSet                @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
-  snapshot              FlipInventorySnapshot      @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  createdAt             DateTime                    @default(now())
+  ruleset               FlipRuleSet                 @relation(fields: [rulesetId], references: [id], onDelete: Restrict)
+  snapshot              FlipInventorySnapshot       @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
   session               FlipSession?
   selectionProof        FlipOutcomeSelectionProof?
+  admissionDecisions    FlipTierAdmissionDecision[]
 
   @@index([rulesetId, committedAt])
   @@index([snapshotId, committedAt])
@@ -1161,6 +1162,7 @@ model FlipSession {
   status                   FlipSessionStatus          @default(AWAITING_STAKE)
   version                  Int                        @default(1)
   playerWalletReference    String
+  admissionDecisionId      String?                    @unique
   stakeAmount              String?
   stakeCurrency            String?
   stakeDecimals            Int?
@@ -1184,12 +1186,58 @@ model FlipSession {
   createdAt                DateTime                   @default(now())
   updatedAt                DateTime                   @updatedAt
   poolCommitment           FlipSessionPoolCommitment? @relation(fields: [poolCommitmentId], references: [id], onDelete: Restrict)
+  admissionDecision        FlipTierAdmissionDecision? @relation(fields: [admissionDecisionId], references: [id], onDelete: Restrict)
   transitions              FlipSessionTransition[]
   selectionProof           FlipOutcomeSelectionProof?
 
   @@index([status, updatedAt])
   @@index([playerWalletReference, createdAt])
   @@index([rulesHash, createdAt])
+}
+
+/// Append-only admission evidence evaluated immediately before a fixture stake is accepted.
+/// Denied rows remain auditable even though the stake transition itself is rolled back.
+model FlipTierAdmissionDecision {
+  id                        String                     @id
+  sessionReference          String
+  tierKey                   String
+  allowed                   Boolean
+  reason                    String?
+  reenableBoundary          String?
+  policyVersion             String
+  policyHash                String
+  providerHealth            Json?
+  providerHealthHash        String?
+  poolCommitmentId          String?
+  poolCommitmentHash        String?
+  rulesHash                 String?
+  snapshotContentHash       String?
+  inventoryPolicyHash       String?
+  stakeBindingTransactionId String?
+  evaluatedAt               DateTime
+  createdAt                 DateTime                   @default(now())
+  poolCommitment            FlipSessionPoolCommitment? @relation(fields: [poolCommitmentId], references: [id], onDelete: Restrict)
+  admittedSession           FlipSession?
+
+  @@index([sessionReference, evaluatedAt])
+  @@index([tierKey, evaluatedAt])
+  @@index([allowed, reason, evaluatedAt])
+}
+
+/// Latest fail-closed state for one fixture stake tier. Historical decisions stay append-only.
+model FlipTierAdmissionState {
+  tierKey             String   @id
+  disabled            Boolean  @default(false)
+  reason              String?
+  reenableBoundary    String?
+  policyHash          String
+  rulesHash           String?
+  snapshotContentHash String?
+  providerHealthHash  String?
+  evaluatedAt         DateTime
+  version             Int      @default(1)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
 /// Append-only evidence for one accepted Marketplace Flip lifecycle transition.
