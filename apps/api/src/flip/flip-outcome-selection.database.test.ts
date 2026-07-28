@@ -36,6 +36,13 @@ const describeDatabase =
   process.env.REQUIRE_DB_INTEGRATION === '1' && databaseUrl ? describe : describe.skip;
 const FIXTURE_ENVIRONMENT = {
   DAILYDRAFT_FLIP_FIXTURE_MODE: 'true',
+  DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE: JSON.stringify({
+    observedAt: '2026-08-03T12:03:00.000Z',
+    poolKey: 'fixture-pool-pending',
+    provider: 'fixture-marketplace',
+    schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+    status: 'healthy',
+  }),
   NODE_ENV: 'test',
 } satisfies NodeJS.ProcessEnv;
 
@@ -410,6 +417,13 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
   const poolKey = `dbtest-flip-selection-pool-${suffix}`;
   const policyVersion = `dbtest-flip-selection-policy-${suffix}`;
   const rulesKey = `dbtest-flip-selection-rules-${suffix}`;
+  FIXTURE_ENVIRONMENT.DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE = JSON.stringify({
+    observedAt: '2026-08-03T12:03:00.000Z',
+    poolKey,
+    provider: 'fixture-marketplace',
+    schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+    status: 'healthy',
+  });
   const inventory = new FlipInventorySnapshotService(database);
   const snapshot = await inventory.createFixtureSnapshot({
     candidates: [
@@ -418,7 +432,7 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
       candidate('plus', '30000000'),
       candidate('chase', '60000000'),
     ],
-    evaluatedAt: new Date('2026-08-03T12:00:00.000Z'),
+    evaluatedAt: new Date('2026-08-03T12:02:00.000Z'),
     policy: policy(poolKey, policyVersion),
   });
   const rulesService = new FlipRulesService(database);
@@ -552,7 +566,7 @@ function policy(poolKey: string, policyVersion: string): FlipInventorySnapshotPo
 }
 
 function candidate(reference: string, amount: string): FlipInventoryCandidate {
-  const sourceTimestamp = new Date('2026-08-03T11:59:30.000Z');
+  const sourceTimestamp = new Date('2026-08-03T12:01:30.000Z');
   return {
     buybackValue: null,
     displayedValue: null,

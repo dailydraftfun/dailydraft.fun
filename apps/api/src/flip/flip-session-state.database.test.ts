@@ -1708,7 +1708,7 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
       candidate('plus', '30000000'),
       candidate('chase', '60000000'),
     ],
-    evaluatedAt: new Date('2026-08-03T12:00:00.000Z'),
+    evaluatedAt: new Date('2026-08-03T12:02:00.000Z'),
     policy: policy(poolKey, policyVersion),
   });
   const rulesService = new FlipRulesService(database);
@@ -1987,7 +1987,7 @@ function policy(poolKey: string, policyVersion: string): FlipInventorySnapshotPo
 }
 
 function candidate(reference: string, amount: string): FlipInventoryCandidate {
-  const sourceTimestamp = new Date('2026-08-03T11:59:30.000Z');
+  const sourceTimestamp = new Date('2026-08-03T12:01:30.000Z');
   return {
     buybackValue: null,
     displayedValue: null,
