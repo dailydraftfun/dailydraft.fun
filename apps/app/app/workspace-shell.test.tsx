@@ -38,6 +38,8 @@ describe('workspace shell', () => {
     expect(markup).toContain('grid-cols-2');
     expect(markup).not.toContain('Card Duels');
     expect(markup).toContain('Games content');
+    expect(markup).toContain('Devnet preview uses test SOL and test assets only');
+    expect(markup).not.toContain('devnet-disclosure');
     expect(markup).toContain(`data-testid="${journeyTestIds.walletMenu}"`);
   });
 

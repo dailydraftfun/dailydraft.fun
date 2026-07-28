@@ -32,6 +32,10 @@ describe('workspace shell contract', () => {
     expect(markup).toContain('DailyDraft');
     expect(markup).not.toContain('Pack Duel');
     expect(markup).not.toContain('Card Duels');
-    expect(markup).toContain('Devnet');
+    expect(markup).toContain('hidden sm:inline');
+    expect(markup).toContain(
+      'Devnet preview uses test SOL and test assets only; no mainnet funds.',
+    );
+    expect(markup).not.toContain('devnet-disclosure');
   });
 });
