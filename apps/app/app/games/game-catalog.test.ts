@@ -22,6 +22,10 @@ describe('game catalog client', () => {
     expect(catalog.modes.slice(0, 2).every((mode) => mode.availableActions.length === 0)).toBe(
       true,
     );
+    expect(catalog.modes[0]?.description).toContain('server-provided DailyDraft Pokémon demo pool');
+    expect(catalog.modes[0]?.description).toContain('pool value is not charged or purchased');
+    expect(catalog.modes[0]?.description).toContain('displayed test-SOL platform fee');
+    expect(catalog.modes[0]?.description).not.toContain('sports pack tier');
     expect(roadmapGameModes(catalog).map((mode) => mode.id)).toEqual([
       'duel',
       'gacha',

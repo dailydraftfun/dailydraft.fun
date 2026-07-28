@@ -106,6 +106,26 @@ describe('duel arena contract', () => {
     expect(markup).toContain('Solana devnet MVP');
   });
 
+  test('prioritizes the active duel with one battle h1 and a state-valid rules return anchor', () => {
+    const source = readFileSync(new URL('./duel-arena.tsx', import.meta.url), 'utf8');
+    const activeStart = source.indexOf("if (phase !== 'lobby' && liveDuel && persistedDuel)");
+    const lobbyStart = source.indexOf('<main className="lobby-shell"', activeStart);
+    const activeView = source.slice(activeStart, lobbyStart);
+    const battle = activeView.indexOf('<section className="battle-shell"');
+    const rules = activeView.indexOf('<GameRulesOverview');
+
+    expect(activeStart).toBeGreaterThanOrEqual(0);
+    expect(lobbyStart).toBeGreaterThan(activeStart);
+    expect(activeView).toContain('id="duel-battle"');
+    expect(activeView).toContain('<h1 data-testid={journeyTestIds.duelHeadline}>');
+    expect(activeView).not.toContain('<h2 data-testid={journeyTestIds.duelHeadline}>');
+    expect(activeView).toContain('actionHref="#duel-battle"');
+    expect(activeView).toContain('actionLabel="Return to active duel"');
+    expect(activeView).toContain('headingLevel={2}');
+    expect(battle).toBeGreaterThanOrEqual(0);
+    expect(rules).toBeGreaterThan(battle);
+  });
+
   test('starts each replacement confirmation scope before opening the wallet prompt', () => {
     const source = readFileSync(new URL('./duel-arena.tsx', import.meta.url), 'utf8');
     const approveStart = source.indexOf('async function approveIntent()');

@@ -1832,10 +1832,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
     return (
       <main className="duel-experience" data-testid={journeyTestIds.battle}>
-        <div className="mx-auto max-w-[1400px] px-4 pt-8 sm:px-6 sm:pt-12">
-          <GameRulesOverview capabilityState={capabilityState} mode="duel" />
-        </div>
-        <div className="duel-topline">
+        <div className="duel-topline" id="duel-battle" tabIndex={-1}>
           <button
             type="button"
             className="text-button"
@@ -1859,7 +1856,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               <span className="eyebrow">
                 <SwordIcon size={14} weight="fill" /> {battleEyebrowLabel(liveDuel.tier)}
               </span>
-              <h2 data-testid={journeyTestIds.duelHeadline}>{presentationHeadline}</h2>
+              <h1 data-testid={journeyTestIds.duelHeadline}>{presentationHeadline}</h1>
             </div>
             <div
               className={`phase-indicator phase-${showResolution ? 'result' : phase === 'result' ? 'opening' : phase}`}
@@ -2045,6 +2042,16 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             </div>
           )}
         </section>
+        <div className="mx-auto max-w-[1400px] px-4 pb-8 pt-12 sm:px-6 sm:pb-12">
+          <GameRulesOverview
+            actionDirection="up"
+            actionHref="#duel-battle"
+            actionLabel="Return to active duel"
+            capabilityState={capabilityState}
+            headingLevel={2}
+            mode="duel"
+          />
+        </div>
       </main>
     );
   }

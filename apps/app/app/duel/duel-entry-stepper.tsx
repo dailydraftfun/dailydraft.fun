@@ -385,14 +385,14 @@ function ReviewStep({
       </div>
       <div className="duel-entry-selection">
         <span>
-          Selected pack <strong>${tier.toFixed(2)}</strong>
+          Selected demo pool <strong>${tier.toFixed(2)}</strong>
         </span>
         <span>
           Opponent <strong>{modeLabel(mode)}</strong>
         </span>
         <p>
-          Continue to calculate the fee. The next screen is the single money summary shown before
-          any transaction wallet prompt.
+          The pool value is not charged or purchased. Continue to calculate the exact test-SOL
+          platform fee before any transaction wallet prompt.
         </p>
       </div>
       <Button

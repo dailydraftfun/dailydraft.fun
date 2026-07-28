@@ -71,7 +71,29 @@ test('reports no serious or critical violations across the deterministic duel jo
   await expectNoSeriousOrCriticalViolations(page, 'transaction review');
 
   await page.getByTestId('duel-entry-confirm-funding').click();
-  await expect(page.getByTestId(journeyTestIds.battle)).toBeVisible();
+  const battle = page.getByTestId(journeyTestIds.battle);
+  await expect(battle).toBeVisible();
+  await expect(battle.getByRole('heading', { level: 1 })).toBeVisible();
+  const activeRules = battle.locator('#rules');
+  await expect(
+    activeRules.getByRole('heading', { level: 2, name: /Know the outcome path/ }),
+  ).toBeVisible();
+  await expect(activeRules.getByRole('link', { name: 'Return to active duel' })).toHaveAttribute(
+    'href',
+    '#duel-battle',
+  );
+  await expect(battle.locator('#duel-battle')).toBeVisible();
+  expect(
+    await battle
+      .locator('.battle-shell')
+      .evaluate(
+        (battleShell, rules) =>
+          Boolean(
+            battleShell.compareDocumentPosition(rules as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+          ),
+        await activeRules.elementHandle(),
+      ),
+  ).toBe(true);
   await expect(page.getByLabel('Reveal progress')).toBeVisible();
   await expectNoSeriousOrCriticalViolations(page, 'reveal');
 

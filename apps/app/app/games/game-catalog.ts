@@ -22,7 +22,7 @@ export function fallbackGameCatalog(
     modes: [
       unavailableRuntimeMode({
         description:
-          'Open the same sports pack tier against another wallet or an explicitly enabled house opponent.',
+          'Choose a server-provided DailyDraft Pokémon demo pool against another wallet or an explicitly enabled house opponent. The pool value is not charged or purchased; each player approves only the displayed test-SOL platform fee.',
         id: 'duel',
         name: 'Card Duel',
         reason,

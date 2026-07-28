@@ -74,6 +74,25 @@ describe('browse-first game rules overview', () => {
     }
   });
 
+  test('supports active Duel semantics and a state-valid return action', () => {
+    const active = renderToStaticMarkup(
+      <GameRulesOverview
+        actionDirection="up"
+        actionHref="#duel-battle"
+        actionLabel="Return to active duel"
+        capabilityState={{ status: 'ready', value: capabilities }}
+        headingLevel={2}
+        mode="duel"
+      />,
+    );
+
+    expect(active).toContain('href="#duel-battle"');
+    expect(active).toContain('Return to active duel');
+    expect(active).toContain('<h2');
+    expect(active).not.toContain('<h1');
+    expect(active).not.toContain('href="#duel-lobby"');
+  });
+
   test('derives the Duel readiness docket from the existing capability state', () => {
     expect(resolveDuelRulesReadiness({ status: 'loading' })).toEqual(
       expect.objectContaining({ label: 'Checking current capability', state: 'checking' }),

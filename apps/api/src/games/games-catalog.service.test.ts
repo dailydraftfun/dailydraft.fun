@@ -23,6 +23,10 @@ describe('games catalog', () => {
       'house-opponent',
     ]);
     expect(mode.availableActions.every((action) => action.href === '/games/duel')).toBe(true);
+    expect(mode.description).toContain('server-provided DailyDraft Pokémon demo pool');
+    expect(mode.description).toContain('pool value is not charged or purchased');
+    expect(mode.description).toContain('displayed test-SOL platform fee');
+    expect(mode.description).not.toContain('sports pack tier');
   });
 
   test('fails Duel closed when no pack tier is ready', () => {
@@ -114,6 +118,8 @@ describe('games catalog', () => {
     expect(catalog.modes.slice(0, 2).every((mode) => mode.availableActions.length === 0)).toBe(
       true,
     );
+    expect(catalog.modes[0]?.description).toContain('pool value is not charged or purchased');
+    expect(catalog.modes[0]?.description).not.toContain('sports pack tier');
   });
 });
 

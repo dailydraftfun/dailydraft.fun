@@ -124,7 +124,7 @@ export function resolveDuelCatalogMode(
       status: 'verified',
     },
     description:
-      'Open the same sports pack tier against another wallet or an explicitly enabled house opponent.',
+      'Choose a server-provided DailyDraft Pokémon demo pool against another wallet or an explicitly enabled house opponent. The pool value is not charged or purchased; each player approves only the displayed test-SOL platform fee.',
     id: 'duel',
     name: 'Card Duel',
     reason: admission.paused
@@ -137,7 +137,7 @@ export function resolveDuelCatalogMode(
             ? 'Only the listed Duel actions are currently ready on Solana devnet.'
             : (capabilities.modes.direct.reason ??
               capabilities.modes.open.reason ??
-              'No admitted Duel pack tier is currently ready on Solana devnet.'),
+              'No admitted Duel demo-pool tier is currently ready on Solana devnet.'),
     state: fullyPlayable ? 'playable' : partiallyPlayable ? 'degraded' : 'unavailable',
   };
 }
@@ -168,7 +168,7 @@ function degradedDuelCatalogMode(): GameCatalogMode {
     availableActions: [],
     capabilitySource: { kind: 'runtime', name: 'duel-readiness', status: 'degraded' },
     description:
-      'Open the same sports pack tier against another wallet or an explicitly enabled house opponent.',
+      'Choose a server-provided DailyDraft Pokémon demo pool against another wallet or an explicitly enabled house opponent. The pool value is not charged or purchased; each player approves only the displayed test-SOL platform fee.',
     id: 'duel',
     name: 'Card Duel',
     reason: 'Duel readiness could not be verified. No Duel action is available.',

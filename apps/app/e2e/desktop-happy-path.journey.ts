@@ -62,7 +62,7 @@ test('completes the deterministic desktop duel from lobby through share and rema
   ]);
 
   await expect(stepper).toHaveAttribute('data-stage', 'review');
-  await expect(stepper).toContainText('Selected pack $50.00');
+  await expect(stepper).toContainText('Selected demo pool $50.00');
   await expect(stepper).toContainText('Opponent Public matchmaking');
   await stepper.getByTestId(entryTestIds.prepareFunding).click();
 

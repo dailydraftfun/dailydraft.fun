@@ -1886,7 +1886,7 @@
   justify-content: space-between;
   gap: 20px;
 }
-.battle-heading h2 {
+.battle-heading h1 {
   margin: 8px 0 0;
   font-size: clamp(31px, 4vw, 52px);
   font-weight: 600;
@@ -2654,7 +2654,7 @@
   .battle-heading {
     align-items: flex-start;
   }
-  .battle-heading h2 {
+  .battle-heading h1 {
     font-size: 31px;
   }
   .phase-indicator {

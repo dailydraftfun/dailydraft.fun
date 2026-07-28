@@ -2,6 +2,7 @@
 
 import {
   ArrowDownIcon,
+  ArrowUpIcon,
   CheckCircleIcon,
   LockKeyIcon,
   ReceiptIcon,
@@ -13,9 +14,18 @@ import type { CapabilityLoadState } from '../duel-lobby-options';
 import { type GameRulesMode, gameRules } from './game-rules';
 import styles from './game-rules-overview.module.css';
 
-type GameRulesOverviewProps =
-  | { capabilityState: CapabilityLoadState; mode: 'duel' }
-  | { capabilityState?: never; mode: Exclude<GameRulesMode, 'duel'> };
+type RulesOverviewPresentation = {
+  actionDirection?: 'down' | 'up';
+  actionHref?: `#${string}`;
+  actionLabel?: string;
+  headingLevel?: 1 | 2;
+};
+
+type GameRulesOverviewProps = RulesOverviewPresentation &
+  (
+    | { capabilityState: CapabilityLoadState; mode: 'duel' }
+    | { capabilityState?: never; mode: Exclude<GameRulesMode, 'duel'> }
+  );
 
 type DuelReadiness = {
   actionLabel: string;
@@ -99,10 +109,11 @@ export function resolveDuelRulesReadiness(state: CapabilityLoadState): DuelReadi
 }
 
 export function GameRulesOverview(props: GameRulesOverviewProps) {
-  const { mode } = props;
+  const { actionDirection = 'down', actionHref, actionLabel, headingLevel = 1, mode } = props;
   const rules = gameRules[mode];
   const preview = rules.state === 'fixture-preview';
   const sectionRef = useRef<HTMLElement>(null);
+  const RulesTitle = headingLevel === 1 ? 'h1' : 'h2';
   const readiness =
     mode === 'duel'
       ? resolveDuelRulesReadiness(props.capabilityState)
@@ -139,10 +150,10 @@ export function GameRulesOverview(props: GameRulesOverviewProps) {
       <header className={styles.masthead}>
         <div>
           <p className="proof-label">{rules.eyebrow}</p>
-          <h1 className={styles.title} id={`${mode}-rules-title`}>
+          <RulesTitle className={styles.title} id={`${mode}-rules-title`}>
             Know the outcome path
             <span className="block text-lime">before the wallet.</span>
-          </h1>
+          </RulesTitle>
           <p className={styles.summary}>{rules.summary}</p>
         </div>
 
@@ -165,9 +176,13 @@ export function GameRulesOverview(props: GameRulesOverviewProps) {
           <p className={styles.wallet}>
             <strong className="text-primary">Wallet requirement.</strong> {rules.wallet}
           </p>
-          <Link className={styles.action} href={rules.previewHref}>
-            {readiness.actionLabel}
-            <ArrowDownIcon aria-hidden="true" size={15} weight="bold" />
+          <Link className={styles.action} href={actionHref ?? rules.previewHref}>
+            {actionLabel ?? readiness.actionLabel}
+            {actionDirection === 'up' ? (
+              <ArrowUpIcon aria-hidden="true" size={15} weight="bold" />
+            ) : (
+              <ArrowDownIcon aria-hidden="true" size={15} weight="bold" />
+            )}
           </Link>
         </aside>
       </header>
