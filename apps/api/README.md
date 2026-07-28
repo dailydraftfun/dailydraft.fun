@@ -257,6 +257,19 @@ or live marketplace client. It also requires
 explicit non-production preview. Production remains fail-closed until the separate
 reviewed rules, acquisition, legal, and promotion gates are complete.
 
+Flip outcome selection is likewise an internal fixture service with no public
+HTTP or OpenAPI surface. It selects only from the sealed outcome space committed
+to the durable session and never re-reads inventory, listings, purchase results,
+or provider state after that commitment. An upstream-approved fixture entropy
+envelope is canonicalized and hashed; its payload is never persisted. The
+append-only `FlipOutcomeSelectionProof` records the approved entropy reference
+and hash, rules/pool/snapshot hashes, deterministic PPM roll, band mapping,
+within-band index, selected ordinal, and the exact `SELECTION_RECORDED`
+transition. Exact retries and restart recovery reproduce that proof, while a
+changed entropy envelope, transition key, committed pool, or proof fails closed.
+This path requires `DAILYDRAFT_FLIP_FIXTURE_MODE=true` in a non-production
+environment and does not define or approve a production entropy source.
+
 `SOLANA_RPC_URL` defaults server-side to `https://api.devnet.solana.com`; every
 worker validates the official devnet genesis hash before reading transaction
 state. Funding preparation additionally requires `ESCROW_PROGRAM_ID`,

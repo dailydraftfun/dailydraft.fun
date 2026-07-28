@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { FlipInventorySnapshotService } from './flip-inventory-snapshot.service.js';
+import { FlipOutcomeSelectionService } from './flip-outcome-selection.service.js';
 import { FlipRulesService } from './flip-rules.service.js';
 import {
   FLIP_SESSION_CLOCK,
@@ -14,9 +15,15 @@ import {
  * promotion remain separate human-reviewed gates.
  */
 @Module({
-  exports: [FlipInventorySnapshotService, FlipRulesService, FlipSessionStateService],
+  exports: [
+    FlipInventorySnapshotService,
+    FlipOutcomeSelectionService,
+    FlipRulesService,
+    FlipSessionStateService,
+  ],
   providers: [
     FlipInventorySnapshotService,
+    FlipOutcomeSelectionService,
     FlipRulesService,
     FlipSessionStateService,
     {
