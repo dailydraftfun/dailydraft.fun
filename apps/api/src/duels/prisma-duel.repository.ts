@@ -439,42 +439,7 @@ export class PrismaDuelRepository extends DuelRepository {
       orderBy: { createdAt: 'asc' },
       where: { duelId },
     });
-    return transactions.map((transaction) => ({
-      action: toApiTransactionAction(transaction.action),
-      checkAttempts: transaction.checkAttempts,
-      confirmationStatus:
-        transaction.confirmationStatus === 'confirmed' ||
-        transaction.confirmationStatus === 'finalized'
-          ? transaction.confirmationStatus
-          : null,
-      confirmedAt: transaction.confirmedAt?.toISOString() ?? null,
-      createdAt: transaction.createdAt.toISOString(),
-      duelId: transaction.duelId,
-      errorCode: transaction.errorCode,
-      errorMessage: transaction.errorMessage,
-      expiresAt: transaction.expiresAt?.toISOString() ?? null,
-      feeAmountLamports: readStringMetadata(transaction.metadata, 'feeAmountLamports'),
-      id: transaction.id,
-      finalizedAt: transaction.finalizedAt?.toISOString() ?? null,
-      lastCheckedAt: transaction.lastCheckedAt?.toISOString() ?? null,
-      lastValidBlockHeight: transaction.lastValidBlockHeight?.toString() ?? null,
-      network: 'solana-devnet',
-      providerReference: transaction.providerReference,
-      recentBlockhash: transaction.recentBlockhash,
-      recoveredAt: transaction.recoveredAt?.toISOString() ?? null,
-      recoveryAlertCode:
-        transaction.recoveryAlertCode === 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH'
-          ? transaction.recoveryAlertCode
-          : null,
-      recoveryCandidateAt: transaction.recoveryCandidateAt?.toISOString() ?? null,
-      recoveryCandidateSignature: transaction.recoveryCandidateSignature,
-      signature: transaction.signature,
-      status: toApiTransactionStatus(transaction.status),
-      submittedAt: transaction.submittedAt?.toISOString() ?? null,
-      stuckAt: transaction.stuckAt?.toISOString() ?? null,
-      updatedAt: transaction.updatedAt.toISOString(),
-      wallet: transaction.wallet,
-    }));
+    return transactions.map(toDuelTransaction);
   }
 
   async transition(input: TransitionDuelRecord): Promise<Duel> {
@@ -780,7 +745,7 @@ function matchesQuery(
   );
 }
 
-function toDuel(row: {
+export function toDuel(row: {
   cancellationReason: string | null;
   createdAt: Date;
   creatorWallet: string;
@@ -856,6 +821,72 @@ function toDuel(row: {
     updatedAt: row.updatedAt.toISOString(),
     version: row.version,
     winnerWallet: row.winnerWallet,
+  };
+}
+
+export function toDuelTransaction(transaction: {
+  action: DuelTransactionAction;
+  checkAttempts: number;
+  confirmationStatus: string | null;
+  confirmedAt: Date | null;
+  createdAt: Date;
+  duelId: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  expiresAt: Date | null;
+  finalizedAt: Date | null;
+  id: string;
+  lastCheckedAt: Date | null;
+  lastValidBlockHeight: bigint | null;
+  metadata: Prisma.JsonValue | null;
+  providerReference: string | null;
+  recentBlockhash: string | null;
+  recoveredAt: Date | null;
+  recoveryAlertCode: string | null;
+  recoveryCandidateAt: Date | null;
+  recoveryCandidateSignature: string | null;
+  signature: string | null;
+  status: DuelTransactionStatus;
+  stuckAt: Date | null;
+  submittedAt: Date | null;
+  updatedAt: Date;
+  wallet: string;
+}): DuelTransactionRecord {
+  return {
+    action: toApiTransactionAction(transaction.action),
+    checkAttempts: transaction.checkAttempts,
+    confirmationStatus:
+      transaction.confirmationStatus === 'confirmed' ||
+      transaction.confirmationStatus === 'finalized'
+        ? transaction.confirmationStatus
+        : null,
+    confirmedAt: transaction.confirmedAt?.toISOString() ?? null,
+    createdAt: transaction.createdAt.toISOString(),
+    duelId: transaction.duelId,
+    errorCode: transaction.errorCode,
+    errorMessage: transaction.errorMessage,
+    expiresAt: transaction.expiresAt?.toISOString() ?? null,
+    feeAmountLamports: readStringMetadata(transaction.metadata, 'feeAmountLamports'),
+    id: transaction.id,
+    finalizedAt: transaction.finalizedAt?.toISOString() ?? null,
+    lastCheckedAt: transaction.lastCheckedAt?.toISOString() ?? null,
+    lastValidBlockHeight: transaction.lastValidBlockHeight?.toString() ?? null,
+    network: 'solana-devnet',
+    providerReference: transaction.providerReference,
+    recentBlockhash: transaction.recentBlockhash,
+    recoveredAt: transaction.recoveredAt?.toISOString() ?? null,
+    recoveryAlertCode:
+      transaction.recoveryAlertCode === 'UNBOUND_FINALIZED_ESCROW_STATE_MISMATCH'
+        ? transaction.recoveryAlertCode
+        : null,
+    recoveryCandidateAt: transaction.recoveryCandidateAt?.toISOString() ?? null,
+    recoveryCandidateSignature: transaction.recoveryCandidateSignature,
+    signature: transaction.signature,
+    status: toApiTransactionStatus(transaction.status),
+    submittedAt: transaction.submittedAt?.toISOString() ?? null,
+    stuckAt: transaction.stuckAt?.toISOString() ?? null,
+    updatedAt: transaction.updatedAt.toISOString(),
+    wallet: transaction.wallet,
   };
 }
 

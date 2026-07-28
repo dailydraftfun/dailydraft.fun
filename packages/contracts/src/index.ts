@@ -4,6 +4,7 @@ import { pullRarityFixtures } from './pull-rarity.js';
 import { rgsCompatibilityFixtures } from './rgs.js';
 
 export * from './game-catalog.js';
+export * from './game-lobby.js';
 export * from './pull-rarity.js';
 export * from './rgs.js';
 
@@ -270,6 +271,26 @@ export const contractOperations = [
   },
   {
     auth: 'none',
+    errorStatuses: [429, 503],
+    idempotencyRequired: false,
+    method: 'get',
+    operationId: 'getGameAvailability',
+    path: '/games/availability',
+    requestRequired: false,
+    successStatus: 200,
+  },
+  {
+    auth: 'none',
+    errorStatuses: [400, 429, 503],
+    idempotencyRequired: false,
+    method: 'get',
+    operationId: 'listVerifiedGameActivity',
+    path: '/games/activity',
+    requestRequired: false,
+    successStatus: 200,
+  },
+  {
+    auth: 'none',
     errorStatuses: [400, 429],
     idempotencyRequired: false,
     method: 'post',
@@ -390,7 +411,7 @@ export const contractOperations = [
   },
 ] as const satisfies readonly ContractOperation[];
 
-export const CONTRACT_FIXTURE_VERSION = '2026-07-27.v11+ee5893123b77';
+export const CONTRACT_FIXTURE_VERSION = '2026-07-28.v12+d1b2d628107a';
 
 export function contractFixtureFingerprint(): string {
   return createHash('sha256')
