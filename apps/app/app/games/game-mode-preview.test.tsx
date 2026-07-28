@@ -42,6 +42,10 @@ describe('game mode preview', () => {
     );
 
     expect(configure).toContain('Choose one eligible inventory band');
+    expect(configure).toContain('data-game-rules="flip"');
+    expect(configure.match(/<h1\b/g)).toHaveLength(1);
+    expect(configure).toContain('Commercial + provider gated');
+    expect(configure).toContain('href="#preview-lab"');
     expect(configure).toContain('Commit fixture draw');
     expect(committed).toContain('Fixture pool committed');
     expect(revealed).toContain('Charizard · Base Set');
@@ -63,6 +67,8 @@ describe('game mode preview', () => {
     );
 
     expect(active).toContain('Continue fixture run');
+    expect(active).toContain('data-game-rules="crash"');
+    expect(active).toContain('Architecture + policy gated');
     expect(active).toContain('Cash out fixture pot');
     expect(active).toContain('data-choreography-beat="settled"');
     expect(active).toContain('data-choreography-rarity="uncommon"');

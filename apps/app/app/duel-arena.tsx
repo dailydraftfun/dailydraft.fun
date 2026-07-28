@@ -1835,7 +1835,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               <span className="eyebrow">
                 <SwordIcon size={14} weight="fill" /> {battleEyebrowLabel(liveDuel.tier)}
               </span>
-              <h1 data-testid={journeyTestIds.duelHeadline}>{presentationHeadline}</h1>
+              <h2 data-testid={journeyTestIds.duelHeadline}>{presentationHeadline}</h2>
             </div>
             <div
               className={`phase-indicator phase-${showResolution ? 'result' : phase === 'result' ? 'opening' : phase}`}
@@ -2026,17 +2026,17 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }
 
   return (
-    <main className="lobby-shell" data-testid={journeyTestIds.lobby}>
+    <main className="lobby-shell" data-testid={journeyTestIds.lobby} id="duel-lobby">
       <section className="lobby-hero">
         <div className="hero-copy">
           <span className="eyebrow">
             <LightningIcon size={14} weight="fill" /> Solana devnet MVP
           </span>
-          <h1>
+          <h2>
             Rip together.
             <br />
             <em>Winner takes all.</em>
-          </h1>
+          </h2>
           <p>{getLobbyEconomicsCopy()}</p>
           <div className="hero-proof-row">
             <span>

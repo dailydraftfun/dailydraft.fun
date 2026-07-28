@@ -23,9 +23,10 @@ describe('game lobby', () => {
 
     expect(markup).toContain('href="/games/duel"');
     expect(markup).toContain('href="/games/gacha"');
-    expect(markup).toContain('href="/games/marketplace-flip"');
+    expect(markup).toContain('href="/games/marketplace-flip#rules"');
     expect(markup).not.toContain('href="/games/flip"');
-    expect(markup).toContain('href="/games/crash"');
+    expect(markup).toContain('href="/games/crash#rules"');
+    expect(markup).toContain('href="/games/duel#rules"');
     expect(markup).toContain('Play the house');
     expect(markup).not.toContain('href="/overview"');
     expect(markup).not.toContain('href="/games/house"');

@@ -38,6 +38,7 @@ import {
   previewCards,
   previewModeTitles,
 } from './game-preview-data';
+import { GameRulesOverview } from './game-rules-overview';
 
 const modeCopy: Record<
   PreviewMode,
@@ -89,18 +90,20 @@ export function GameModePreview({
   const copy = modeCopy[mode];
   return (
     <main className="mx-auto flex min-h-[calc(100svh-7rem)] max-w-[1280px] flex-col gap-7 px-4 py-8 sm:px-6 sm:py-12">
+      {mode === 'flip' || mode === 'crash' ? <GameRulesOverview mode={mode} /> : null}
+
       <header className="grid gap-6 border-b border-border pb-7 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
         <div>
           <p className="proof-label flex items-center gap-2">
             <FlaskIcon size={15} weight="fill" />
             Full UX preview · no funds or assets
           </p>
-          <h1 className="mt-3 flex items-center gap-3 text-3xl font-semibold tracking-[-0.045em] text-primary sm:text-5xl">
+          <h2 className="mt-3 flex items-center gap-3 text-3xl font-semibold tracking-[-0.045em] text-primary sm:text-5xl">
             <span className="text-lime" aria-hidden="true">
               {copy.icon}
             </span>
             {copy.title}
-          </h1>
+          </h2>
           <p className="mt-4 max-w-3xl text-sm leading-6 text-secondary">{copy.summary}</p>
         </div>
         <aside className="rounded-xl border border-warning/25 bg-warning/5 p-5">
@@ -139,14 +142,16 @@ export function GameModePreview({
         ))}
       </nav>
 
-      {mode === 'flip' ? <FlipPreview initialStep={fixtureState.flipStep} /> : null}
-      {mode === 'crash' ? (
-        <CrashPreview
-          initialStage={fixtureState.crashStage}
-          initialStatus={fixtureState.crashStatus}
-        />
-      ) : null}
-      {mode === 'house' ? <HousePreview initialStep={fixtureState.houseStep} /> : null}
+      <div id="preview-lab">
+        {mode === 'flip' ? <FlipPreview initialStep={fixtureState.flipStep} /> : null}
+        {mode === 'crash' ? (
+          <CrashPreview
+            initialStage={fixtureState.crashStage}
+            initialStatus={fixtureState.crashStatus}
+          />
+        ) : null}
+        {mode === 'house' ? <HousePreview initialStep={fixtureState.houseStep} /> : null}
+      </div>
 
       <div className="flex flex-wrap gap-3">
         <Link className="proof-secondary-action" href="/games">

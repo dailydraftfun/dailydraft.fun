@@ -1,0 +1,325 @@
+.shell {
+  position: relative;
+  isolation: isolate;
+  scroll-margin-top: 11rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--lime) 22%, transparent);
+  border-radius: 16px;
+  background:
+    linear-gradient(108deg, rgba(184, 255, 90, 0.055), transparent 42%), var(--bg-secondary);
+}
+
+.shell::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(184, 255, 90, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(184, 255, 90, 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+  content: "";
+  mask-image: linear-gradient(to right, black, transparent 72%);
+  pointer-events: none;
+}
+
+.masthead {
+  display: grid;
+  gap: 24px;
+  border-bottom: 1px solid var(--color-border);
+  padding: 24px;
+}
+
+.title {
+  max-width: 780px;
+  margin: 10px 0 0;
+  color: var(--text-primary);
+  font-size: clamp(2.15rem, 8vw, 4.75rem);
+  font-weight: 650;
+  letter-spacing: -0.062em;
+  line-height: 0.94;
+}
+
+.summary {
+  max-width: 720px;
+  margin: 18px 0 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.statusDocket {
+  align-self: stretch;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.24);
+  padding: 18px;
+}
+
+.statusLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--lime);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 12px currentColor;
+}
+
+.previewStatus .statusLine {
+  color: var(--gold);
+}
+
+.wallet {
+  margin: 14px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.action {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  border: 1px solid color-mix(in srgb, var(--lime) 36%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--lime) 8%, transparent);
+  padding: 10px 14px;
+  color: var(--lime);
+  font-size: 13px;
+  font-weight: 700;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+
+.action:hover {
+  border-color: color-mix(in srgb, var(--lime) 58%, transparent);
+  background: color-mix(in srgb, var(--lime) 13%, transparent);
+  transform: translateY(-1px);
+}
+
+.loop {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.loop li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  border-bottom: 1px solid var(--color-border);
+  padding: 18px 20px;
+}
+
+.loop li:last-child {
+  border-bottom: 0;
+}
+
+.step {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--lime) 32%, transparent);
+  border-radius: 7px;
+  color: var(--lime);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.loop strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.loop p {
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ruleGrid {
+  display: grid;
+  border-top: 1px solid var(--color-border);
+}
+
+.ruleCard {
+  padding: 20px;
+}
+
+.ruleCard + .ruleCard {
+  border-top: 1px solid var(--color-border);
+}
+
+.ruleCard dt {
+  color: var(--lime);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ruleCard dd {
+  margin: 9px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.ledger {
+  display: grid;
+  border-top: 1px solid var(--color-border);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.ledgerHeader {
+  padding: 20px;
+}
+
+.ledgerHeader h2,
+.gates h2 {
+  margin: 8px 0 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  letter-spacing: -0.025em;
+}
+
+.ledgerFacts {
+  display: grid;
+  margin: 0;
+}
+
+.ledgerFact {
+  display: grid;
+  grid-template-columns: minmax(76px, 0.28fr) minmax(0, 1fr);
+  gap: 14px;
+  border-top: 1px solid var(--color-border);
+  padding: 16px 20px;
+}
+
+.ledgerFact dt {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.ledgerFact dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.gates {
+  border-top: 1px solid var(--color-border);
+  padding: 20px;
+}
+
+.gateList {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gateList li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.gateIcon {
+  margin-top: 1px;
+  color: var(--gold);
+}
+
+@media (min-width: 760px) {
+  .masthead {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
+    align-items: end;
+    padding: 32px;
+  }
+
+  .loop {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .loop li {
+    border-right: 1px solid var(--color-border);
+    border-bottom: 0;
+  }
+
+  .loop li:last-child {
+    border-right: 0;
+  }
+
+  .ruleGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ruleCard + .ruleCard {
+    border-top: 0;
+    border-left: 1px solid var(--color-border);
+  }
+
+  .ledger {
+    grid-template-columns: minmax(210px, 0.36fr) minmax(0, 1fr);
+  }
+
+  .ledgerFacts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-left: 1px solid var(--color-border);
+  }
+
+  .ledgerFact {
+    grid-template-columns: 1fr;
+    align-content: start;
+    border-top: 0;
+    border-left: 1px solid var(--color-border);
+  }
+
+  .ledgerFact:first-child {
+    border-left: 0;
+  }
+
+  .gates {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action {
+    transition: none;
+  }
+
+  .action:hover {
+    transform: none;
+  }
+}

@@ -30,6 +30,13 @@ describe('landing page contract', () => {
     expect(markup).toContain('https://github.com/dailydraftfun/escrow');
   });
 
+  test('deep-links every game explanation to the canonical product rules', () => {
+    expect(markup).toContain('Browse before the wallet');
+    expect(markup).toContain('href="https://app.dailydraft.fun/games/duel#rules"');
+    expect(markup).toContain('href="https://app.dailydraft.fun/games/marketplace-flip#rules"');
+    expect(markup).toContain('href="https://app.dailydraft.fun/games/crash#rules"');
+  });
+
   test('states the devnet limit and drops the pack-duel framing', () => {
     expect(markup).toContain('demo assets have no real-world value');
     expect(markup).not.toContain('Two packs');

@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import type { PublicDuelReceipt } from '../../duel/public-proof-client';
 
 mock.module('server-only', () => ({}));
@@ -24,6 +25,15 @@ describe('canonical Duel Arena route', () => {
   test('publishes no-index Devnet metadata', () => {
     expect(metadata.title).toBe('Duel Arena — DailyDraft Devnet');
     expect(metadata.robots).toEqual({ follow: false, index: false, nocache: true });
+  });
+
+  test('places the canonical browse-first rules before the live arena', () => {
+    const source = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+
+    expect(source.indexOf('<GameRulesOverview mode="duel" />')).toBeGreaterThan(-1);
+    expect(source.indexOf('<GameRulesOverview mode="duel" />')).toBeLessThan(
+      source.indexOf('<DuelArena'),
+    );
   });
 
   test('preserves the challenge entry behavior', async () => {
