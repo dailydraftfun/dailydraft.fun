@@ -201,6 +201,7 @@ function parseEvent(value: unknown): CrashReceiptEvent {
     !isIso(value.occurredAt) ||
     typeof value.reference !== 'string' ||
     !/^crashref_[a-f0-9]{32}$/.test(value.reference) ||
+    !isScheduledDeadline(value.scheduledDeadline, value.kind) ||
     !Number.isInteger(value.stage) ||
     Number(value.stage) < 1 ||
     !(value.amount === null || isMoney(value.amount)) ||
@@ -279,6 +280,16 @@ function isSafeNextAction(value: unknown): value is CrashSafeNextAction {
 
 function isDeadline(value: unknown, status: unknown): value is string | null {
   return status === 'active' ? isIso(value) : value === null;
+}
+
+function isScheduledDeadline(value: unknown, kind: unknown): value is string | null {
+  if (
+    ['custody-prepared', 'custody-recovery-required'].includes(String(kind)) ||
+    String(kind).startsWith('settlement-')
+  ) {
+    return value === null;
+  }
+  return value === null || isIso(value);
 }
 
 function isResolution(

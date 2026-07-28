@@ -2745,6 +2745,7 @@ components:
         - kind
         - occurredAt
         - reference
+        - scheduledDeadline
         - stage
         - terminalReason
       properties:
@@ -2779,6 +2780,9 @@ components:
           type: string
           maxLength: 240
           pattern: '^crashref_[a-f0-9]{32}$'
+        scheduledDeadline:
+          type: [string, 'null']
+          format: date-time
         stage:
           type: integer
           minimum: 1

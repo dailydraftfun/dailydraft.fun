@@ -88,6 +88,24 @@ describe('Crash history client', () => {
         events: [{ ...receipt().events[0], reference: 'crashcustody_internal_intent' }],
       }),
     ).toThrow('malformed private history');
+    expect(() =>
+      parseCrashReceipt({
+        ...receipt(),
+        events: [{ ...receipt().events[0], scheduledDeadline: 'not-a-deadline' }],
+      }),
+    ).toThrow('malformed private history');
+    expect(() =>
+      parseCrashReceipt({
+        ...receipt(),
+        events: [{ ...receipt().events[0], scheduledDeadline: undefined }],
+      }),
+    ).toThrow('malformed private history');
+    expect(() =>
+      parseCrashReceipt({
+        ...receipt(),
+        events: [{ ...receipt().events[1], scheduledDeadline: '2026-07-28T18:00:31.000Z' }],
+      }),
+    ).toThrow('malformed private history');
   });
 
   test('surfaces configuration and HTTP failures without fabricating cached history', async () => {
@@ -243,6 +261,7 @@ function receipt() {
         kind: 'round-started',
         occurredAt: '2026-07-28T18:00:00.000Z',
         reference: `crashref_${'1'.repeat(32)}`,
+        scheduledDeadline: '2026-07-28T18:00:30.000Z',
         stage: 1,
         terminalReason: null,
       },
@@ -253,6 +272,7 @@ function receipt() {
         kind: 'settlement-recovery-required',
         occurredAt: '2026-07-28T18:00:04.000Z',
         reference: `crashref_${'2'.repeat(32)}`,
+        scheduledDeadline: null,
         stage: 1,
         terminalReason: 'PROVIDER_RESULT_AMBIGUOUS',
       },

@@ -72,6 +72,7 @@ describeDatabase('Crash stage state machine against a real Postgres', () => {
       roundId: `${ROUND_PREFIX}-resume`,
       rules: RULES,
     });
+    clock.advance(1_000);
     const decision = continueDecision(round.version);
 
     const concurrent = await Promise.all([
@@ -85,6 +86,10 @@ describeDatabase('Crash stage state machine against a real Postgres', () => {
     const resumed = await restarted.findRound(round.id);
     expect(resumed.transitions).toHaveLength(2);
     expect(resumed.transitions.map(({ sequence }) => sequence)).toEqual([1, 2]);
+    expect(resumed.transitions.map(({ scheduledDeadline }) => scheduledDeadline)).toEqual([
+      '2026-07-28T13:00:10.000Z',
+      '2026-07-28T13:00:11.000Z',
+    ]);
     expect(resumed.transitions[1]).toMatchObject({
       payment: { schemaVersion: CRASH_PAYMENT_FIXTURE_VERSION },
       outcome: {

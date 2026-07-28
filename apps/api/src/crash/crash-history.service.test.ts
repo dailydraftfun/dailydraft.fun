@@ -65,8 +65,15 @@ describe('CrashHistoryService', () => {
     expect(receipt.events[1]).toMatchObject({
       amount: { amount: '2000000', currency: 'USDC', decimals: 6 },
       decision: 'continue',
+      scheduledDeadline: '2026-07-28T18:00:31.000Z',
       stage: 2,
     });
+    expect(receipt.events.map(({ scheduledDeadline }) => scheduledDeadline)).toEqual([
+      '2026-07-28T18:00:30.000Z',
+      '2026-07-28T18:00:31.000Z',
+      null,
+      null,
+    ]);
     expect(receipt.events[1]?.reference).toMatch(/^crashref_[a-f0-9]{32}$/);
     expect(receipt.finality).toEqual({
       custody: 'not-final',

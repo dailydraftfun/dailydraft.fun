@@ -82,6 +82,7 @@ export type CrashReceiptEvent = {
     | 'stage-continued';
   occurredAt: string;
   reference: string;
+  scheduledDeadline: string | null;
   stage: number;
   terminalReason: string | null;
 };

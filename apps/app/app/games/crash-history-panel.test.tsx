@@ -68,6 +68,8 @@ describe('Crash history presentation', () => {
     expect(markup).toContain('Custody: not-final · Settlement: recovery-required');
     expect(markup).toContain('Provider signatures and wallet addresses are intentionally excluded');
     expect(markup).toContain('PROVIDER RESULT AMBIGUOUS');
+    expect(markup).toContain('Deadline scheduled');
+    expect(markup).toContain('2026-07-28T18:00:31.000Z');
     expect(markup).toContain('Load older runs');
   });
 
@@ -201,11 +203,23 @@ function receipt(): CrashReceipt {
     events: [
       {
         amount: { amount: '2500000', currency: 'USDC', decimals: 6 },
-        decision: 'cash-out',
+        decision: 'continue',
+        eventId: 'transition:2',
+        kind: 'stage-continued',
+        occurredAt: '2026-07-28T18:00:01.000Z',
+        reference: `crashref_${'1'.repeat(32)}`,
+        scheduledDeadline: '2026-07-28T18:00:31.000Z',
+        stage: 2,
+        terminalReason: null,
+      },
+      {
+        amount: null,
+        decision: null,
         eventId: 'settlement:1',
         kind: 'settlement-recovery-required',
         occurredAt: '2026-07-28T18:00:04.000Z',
         reference: `crashref_${'2'.repeat(32)}`,
+        scheduledDeadline: null,
         stage: 2,
         terminalReason: 'PROVIDER_RESULT_AMBIGUOUS',
       },

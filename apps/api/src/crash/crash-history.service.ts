@@ -293,6 +293,7 @@ function transitionEvent(transition: CrashRoundSnapshot['transitions'][number]):
     kind: kinds[transition.kind],
     occurredAt: transition.createdAt,
     reference: publicReference('transition', transition.transitionKey),
+    scheduledDeadline: transition.scheduledDeadline,
     stage: transition.toStage,
     terminalReason: transition.terminalReason,
   };
@@ -306,6 +307,7 @@ function custodyEvent(intent: CrashHistoryMetadata['custodyIntents'][number]): C
     kind: intent.status === 'PREPARED' ? 'custody-prepared' : 'custody-recovery-required',
     occurredAt: intent.createdAt.toISOString(),
     reference: publicReference('custody', intent.id),
+    scheduledDeadline: null,
     stage: intent.stage,
     terminalReason: null,
   };
@@ -331,6 +333,7 @@ function settlementEvent(
           : 'settlement-prepared',
     occurredAt: operation.finalizedAt ?? operation.updatedAt ?? operation.createdAt,
     reference: publicReference('settlement', operation.operationKey),
+    scheduledDeadline: null,
     stage: operation.stage ?? operation.sequence,
     terminalReason: publicRecoveryCode(operation.failureCode),
   };

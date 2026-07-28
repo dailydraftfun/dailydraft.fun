@@ -361,6 +361,14 @@ function ReceiptDetail({
               {event.decision ? ` · ${event.decision}` : ''}
               {event.terminalReason ? ` · ${event.terminalReason.replaceAll('_', ' ')}` : ''}
             </p>
+            {event.scheduledDeadline ? (
+              <p className="mt-1 text-xs text-secondary">
+                Deadline scheduled{' '}
+                <time dateTime={event.scheduledDeadline}>
+                  {formatTimestamp(event.scheduledDeadline)}
+                </time>
+              </p>
+            ) : null}
             <p className="mt-1 truncate font-mono text-[10px] text-muted">{event.reference}</p>
           </li>
         ))}
