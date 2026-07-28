@@ -305,7 +305,7 @@ the pure calculators. Each `CrashRound` is bound to immutable architecture,
 state-machine, calculator, economic-rule, and risk-rule references. Its append-only
 `CrashTransition` ledger records the optimistic round version as its sequence,
 plus every accepted decision, deadline, fixture payment, provider and custody
-outcome, pot change, settlement receipt, and terminal reason. A service restart
+outcome, pot change, settlement promise, and terminal reason. A service restart
 resumes exclusively from those rows; no process-memory checkpoint is part of
 the contract.
 
@@ -351,7 +351,29 @@ Missing, malformed, ambiguous, mismatched, or alternate-recipient custody
 configuration records deterministic `RECOVERY_REQUIRED` evidence with
 `NOT_STARTED` signing status and stops the decision before state mutation.
 
-Both routes remain fail-closed unless `DAILYDRAFT_CRASH_FIXTURE_MODE=true` is
+Terminal outcomes are settled by `src/crash/crash-settlement.service.ts`.
+The terminal transition commits the promised payout; it is not proof that side
+effects finalized. One immutable `CrashSettlement` plan expands that promise
+into ordered purchase, open, transfer, and optional liquidation operations.
+Each operation has a canonical provider request key and request hash. Recovery
+always reconciles that key before retrying. An ambiguous signature or lost
+response becomes `RECONCILE_ONLY`, so reconnects and service restarts cannot
+sign a second movement. A definitely-not-applied result is the only path that
+becomes retryable.
+
+Cash out transfers every acquired fixture asset plus the exact committed
+proceeds to the player. Bust and deadline forfeit route every acquired asset to
+the exact committed house inventory recipient and disposition. The round is
+marked settlement `SETTLED` only after every operation has finalized. Its
+receipt binds all provider result hashes and signatures, terminal
+outcome/value/payout evidence, and the immutable architecture, state-machine,
+calculator, economic, risk, custody, settlement, and inventory policy hashes.
+Bust inventory is recorded once in the canonical house inventory and treasury
+ledger. `POST /v1/crash/rounds/:roundId/settlement/reconciliation` lets only the
+owning wallet resume this fixture lifecycle; the public response exposes
+bounded status and the receipt hash, not internal wallet or provider evidence.
+
+All three routes remain fail-closed unless `DAILYDRAFT_CRASH_FIXTURE_MODE=true` is
 set in test, local development, or a non-production Vercel preview.
 `DAILYDRAFT_CRASH_FIXTURE_RULES_JSON` must contain the complete hash-committed
 `fixture-only` state, calculator, and nested risk rules already bound to the
@@ -360,8 +382,12 @@ fresh synthetic provider/pool health fixture. Continue
 also requires `DAILYDRAFT_CRASH_FIXTURE_CUSTODY_POLICY_JSON` with one
 hash-committed fixture/devnet policy whose architecture, rules, and approved
 `fixture-wallet:` session custody exactly match that round. These controls do
-not construct, sign, or broadcast a Solana transaction and do not enable
-production Crash.
+not enable production Crash. Settlement additionally requires
+`DAILYDRAFT_CRASH_FIXTURE_SETTLEMENT_POLICY_JSON` with exact matching
+architecture, calculator, state, risk, and custody policy references plus the
+already-reviewed house inventory policy, its approved inventory custody, and
+its `hold` or `liquidate` disposition. The default provider is synthetic and
+does not construct, sign, or broadcast a Solana transaction.
 Production Vercel explicitly rejects fixture mode, and the product capability
 continues to report `playable: false`. Live architecture, economics, custody,
 provider integration, and promotion remain separate HITL gates.

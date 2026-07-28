@@ -773,6 +773,9 @@ type MemoryRound = {
   riskRulesHash: string | null;
   riskRulesVersion: string | null;
   riskStartedAt: Date | null;
+  settledAt: Date | null;
+  settlementReceiptHash: string | null;
+  settlementStatus: 'NOT_REQUIRED' | 'PENDING' | 'RECOVERY_REQUIRED' | 'SETTLED';
   stage: number;
   stateMachineRulesHash: string;
   stateMachineVersion: string;
@@ -838,6 +841,9 @@ class MemoryCrashDatabase {
         riskRulesHash: input.riskRulesHash,
         riskRulesVersion: input.riskRulesVersion,
         riskStartedAt: input.riskStartedAt,
+        settledAt: null,
+        settlementReceiptHash: null,
+        settlementStatus: 'NOT_REQUIRED',
         stage: input.stage,
         stateMachineRulesHash: input.stateMachineRulesHash,
         stateMachineVersion: input.stateMachineVersion,
@@ -910,6 +916,7 @@ class MemoryCrashDatabase {
       data: {
         decisionDeadline: Date | null;
         potAmount?: string;
+        settlementStatus?: 'NOT_REQUIRED' | 'PENDING' | 'RECOVERY_REQUIRED' | 'SETTLED';
         stage?: number;
         status: CrashRoundStatus;
         terminalAt?: Date | null;
@@ -937,6 +944,9 @@ class MemoryCrashDatabase {
       }
       round.decisionDeadline = data.decisionDeadline;
       if (data.potAmount !== undefined) round.potAmount = data.potAmount;
+      if (data.settlementStatus !== undefined) {
+        round.settlementStatus = data.settlementStatus;
+      }
       if (data.stage !== undefined) round.stage = data.stage;
       round.status = data.status;
       round.terminalAt = data.terminalAt ?? null;

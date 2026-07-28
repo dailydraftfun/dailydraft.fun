@@ -62,6 +62,20 @@ export class CrashController {
     setPrivateHeaders(response);
     return current;
   }
+
+  @Post(':roundId/settlement/reconciliation')
+  @HttpCode(200)
+  async reconcileSettlement(
+    @Param() params: CrashRoundParams,
+    @CurrentDuelAuthentication() authentication: DuelAuthentication,
+    @Res({ passthrough: true }) response: FastifyReply,
+  ) {
+    const current = await translateCrashErrors(() =>
+      this.decisions.reconcileSettlement(params.roundId, requireWalletSession(authentication)),
+    );
+    setPrivateHeaders(response);
+    return current;
+  }
 }
 
 function setPrivateHeaders(response: FastifyReply): void {

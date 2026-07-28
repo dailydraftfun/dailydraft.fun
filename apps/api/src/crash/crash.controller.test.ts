@@ -106,6 +106,48 @@ describe('CrashController', () => {
     expect(calls).toEqual([[ROUND_ID, WALLET]]);
   });
 
+  test('binds settlement reconciliation to the same authenticated wallet and private response', async () => {
+    const calls: string[][] = [];
+    const service = {
+      reconcileSettlement: async (roundId: string, wallet: string) => {
+        calls.push([roundId, wallet]);
+        return {
+          ...CURRENT,
+          availableActions: [],
+          settlement: {
+            finalizedOperationCount: 3,
+            receiptHash: 'a'.repeat(64),
+            recoveryReason: null,
+            status: 'settled',
+          },
+          status: 'cashed-out',
+        };
+      },
+    } as unknown as CrashDecisionService;
+    const headers = new Map<string, string>();
+    const response = {
+      header: (name: string, value: string) => {
+        headers.set(name, value);
+        return response;
+      },
+    } as unknown as FastifyReply;
+
+    const result = await new CrashController(service).reconcileSettlement(
+      { roundId: ROUND_ID },
+      session(),
+      response,
+    );
+
+    expect(result.settlement.status).toBe('settled');
+    expect(calls).toEqual([[ROUND_ID, WALLET]]);
+    expect(headers).toEqual(
+      new Map([
+        ['cache-control', 'private, no-store'],
+        ['x-robots-tag', 'noindex, nofollow, noarchive'],
+      ]),
+    );
+  });
+
   test('refuses non-wallet callers without revealing whether the round exists', async () => {
     const service = {
       currentStage: async () => CURRENT,
@@ -159,6 +201,12 @@ const CURRENT: CrashCurrentStage = {
   pot: { amount: '1000000', currency: 'USDC', decimals: 6 },
   roundId: ROUND_ID,
   schemaVersion: CRASH_PLAYER_DECISION_SCHEMA_VERSION,
+  settlement: {
+    finalizedOperationCount: 0,
+    receiptHash: null,
+    recoveryReason: null,
+    status: 'not-required',
+  },
   stage: 2,
   status: 'active',
   terminalReason: null,

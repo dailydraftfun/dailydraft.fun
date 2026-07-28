@@ -279,8 +279,10 @@ paths:
       description: |
         Reconnects the authenticated player to the durable current stage. If
         its deadline has passed, the pre-disclosed forfeit is committed before
-        the response is returned. The response exposes no provider, custody,
-        settlement, or synthetic wallet evidence.
+        the response is returned. Terminal reads also resume the deterministic
+        fixture settlement and expose only its bounded recovery status and
+        receipt hash, never provider signatures, custody references, or
+        synthetic wallet evidence.
       x-dailydraft-availability: preview-fixture-only
       parameters:
         - $ref: '#/components/parameters/CrashRoundId'
@@ -350,6 +352,48 @@ paths:
                 $ref: '#/components/schemas/CrashCurrentStage'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /crash/rounds/{roundId}/settlement/reconciliation:
+    post:
+      operationId: reconcileCrashSettlement
+      tags: [Crash]
+      security:
+        - walletSession: []
+      summary: Resume a terminal fixture-preview Crash settlement
+      description: |
+        Reconciles every deterministic provider request before considering a
+        retry. Ambiguous or lost responses remain recoverable under the
+        original request key and never create a second signed side effect.
+        Crash remains fixture-preview only and this route cannot move live
+        assets or enable production capability.
+      x-dailydraft-availability: preview-fixture-only
+      parameters:
+        - $ref: '#/components/parameters/CrashRoundId'
+      responses:
+        '200':
+          description: Canonical stage and bounded settlement recovery status
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+            X-Robots-Tag:
+              schema:
+                type: string
+                const: noindex, nofollow, noarchive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrashCurrentStage'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -2256,6 +2300,7 @@ components:
         - pot
         - roundId
         - schemaVersion
+        - settlement
         - stage
         - status
         - terminalReason
@@ -2288,6 +2333,27 @@ components:
         schemaVersion:
           type: string
           const: dailydraft.crash-player-decision.v1
+        settlement:
+          type: object
+          additionalProperties: false
+          required:
+            - finalizedOperationCount
+            - receiptHash
+            - recoveryReason
+            - status
+          properties:
+            finalizedOperationCount:
+              type: integer
+              minimum: 0
+            receiptHash:
+              type: [string, 'null']
+              pattern: '^[a-f0-9]{64}$'
+            recoveryReason:
+              type: [string, 'null']
+              maxLength: 480
+            status:
+              type: string
+              enum: [not-required, pending, recovery-required, settled]
         stage:
           type: integer
           minimum: 1
