@@ -39,6 +39,7 @@ const OTHER_SIGNATURE =
   '2VfUX9dqLgYtGZ4L5aVSLpNRBUEWXcCrLMdBGSBs4rMKcHTghMTU4hUGVbcTfaCMBrGxNW1TnBrGjJPzvXNMRTgQ';
 const OTHER_BLOCKHASH = ATTACKER_KEYPAIR.publicKey.toBase58();
 const MACHINE_KEY = 'collector-crypt-football-50000000-devnet-fixture';
+const RETIRED_DEVNET_MACHINE_KEY = 'dailydraft-devnet-football-50000000';
 const TIER_PRICE = 50_000_000n;
 
 const ORIGINAL_ENV = {
@@ -354,12 +355,58 @@ describe('GachaPaymentService.createIntent', () => {
 
   test('refuses a machine that is not accepting rips', async () => {
     configureDevnet();
-    const database = new PaymentDatabase({ active: false });
+    const database = new PaymentDatabase({
+      active: false,
+      machineKey: RETIRED_DEVNET_MACHINE_KEY,
+    });
     const service = new GachaPaymentService(asClient(database), new PaymentRpc());
 
     await expect(
-      service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER }),
+      service.createIntent({ machineKey: RETIRED_DEVNET_MACHINE_KEY, payerWallet: PAYER }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  test('resumes an existing pending intent after its legacy machine is retired', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const pending = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    const stored = database.payments[0];
+    if (!stored) throw new Error('Expected a persisted Gacha payment');
+    stored.machineKey = RETIRED_DEVNET_MACHINE_KEY;
+    stored.activeMachineKey = RETIRED_DEVNET_MACHINE_KEY;
+
+    await expect(
+      service.createIntent({ machineKey: RETIRED_DEVNET_MACHINE_KEY, payerWallet: PAYER }),
+    ).resolves.toEqual({
+      ...pending,
+      machineKey: RETIRED_DEVNET_MACHINE_KEY,
+      resumed: true,
+    });
+  });
+
+  test('resumes an existing verified intent after its legacy machine is retired', async () => {
+    configureDevnet();
+    const database = new PaymentDatabase();
+    const service = new GachaPaymentService(asClient(database), new PaymentRpc());
+    const intent = await service.createIntent({ machineKey: MACHINE_KEY, payerWallet: PAYER });
+    const stored = database.payments[0];
+    if (!stored) throw new Error('Expected a persisted Gacha payment');
+    stored.machineKey = RETIRED_DEVNET_MACHINE_KEY;
+    stored.activeMachineKey = RETIRED_DEVNET_MACHINE_KEY;
+    stored.signature = SIGNATURE;
+    stored.status = GachaRipPaymentStatus.VERIFIED;
+    stored.verifiedAt = new Date();
+
+    await expect(
+      service.createIntent({ machineKey: RETIRED_DEVNET_MACHINE_KEY, payerWallet: PAYER }),
+    ).resolves.toMatchObject({
+      intentId: intent.intentId,
+      machineKey: RETIRED_DEVNET_MACHINE_KEY,
+      resumed: true,
+      signature: SIGNATURE,
+      status: GachaRipPaymentStatus.VERIFIED,
+    });
   });
 
   test('rejects a payer wallet that is not a Solana address', async () => {
@@ -1126,7 +1173,9 @@ class PaymentDatabase {
   readonly payments: StoredPayment[] = [];
   private transactionTail: Promise<void> = Promise.resolve();
 
-  constructor(private readonly machine: { active: boolean } = { active: true }) {}
+  constructor(
+    private readonly machine: { active: boolean; machineKey?: string } = { active: true },
+  ) {}
 
   /** Drag an intent's window into the past without waiting out the real TTL. */
   expire(intentId: string): void {
@@ -1136,7 +1185,7 @@ class PaymentDatabase {
 
   readonly gachaMachine = {
     findUnique: async ({ where }: { where: { machineKey: string } }) => {
-      if (where.machineKey !== MACHINE_KEY) return null;
+      if (where.machineKey !== (this.machine.machineKey ?? MACHINE_KEY)) return null;
       return {
         active: this.machine.active,
         tierPriceCurrency: 'USDC',

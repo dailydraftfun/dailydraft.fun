@@ -66,6 +66,12 @@ jobs:
           psql "$database_url" \
             --set ON_ERROR_STOP=1 \
             --file packages/db/prisma/verify-flip-rules.sql
+      - name: Verify devnet Gacha pack-price migration contract
+        run: |
+          database_url="${DATABASE_URL%%\?*}"
+          psql "$database_url" \
+            --set ON_ERROR_STOP=1 \
+            --file packages/db/prisma/verify-devnet-gacha-pack-prices.sql
       - name: Generate Prisma client
         run: bun --filter @dailydraft/db db:generate
       - name: Exercise raw SQL against the real driver
