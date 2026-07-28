@@ -11,7 +11,7 @@ export const PRODUCTION_REQUIRED_ENVIRONMENT_KEYS = [
   ...DEPLOYED_REQUIRED_ENVIRONMENT_KEYS,
   'CRON_SECRET',
   'DAILYDRAFT_PROVIDER_MODE',
-  'DAILYDRAFT_TRUSTED_PROXIES',
+  'DAILYDRAFT_TRUSTED_PROXY_HOSTS',
 ] as const;
 
 export type DeploymentProfile = 'local' | 'preview' | 'production';

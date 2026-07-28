@@ -8,8 +8,10 @@ describe('house treasury controller contract', () => {
     expect(source).toContain('@UseGuards(IntegrationKeyGuard)');
     expect(source).toContain("@Put('inventory/:inventoryId/disposition')");
     expect(source).toContain("@Post('inventory/:inventoryId/disposition/complete')");
+    expect(source).toContain("@Post('inventory/:inventoryId/disposition/delist')");
     expect(source).toContain('this.treasury.setDisposition(params.inventoryId, input)');
     expect(source).toContain('this.treasury.completeDisposition(params.inventoryId, input)');
+    expect(source).toContain('this.treasury.delistInventory(params.inventoryId, input)');
   });
 
   test('keeps cron and manual reconciliation on the worker-key boundary', () => {
@@ -19,6 +21,6 @@ describe('house treasury controller contract', () => {
   });
 
   test('marks every treasury response no-store', () => {
-    expect(source.match(/@Header\('cache-control', 'no-store'\)/g)).toHaveLength(4);
+    expect(source.match(/@Header\('cache-control', 'no-store'\)/g)).toHaveLength(5);
   });
 });

@@ -108,7 +108,7 @@ function validEnvironment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv 
     DAILYDRAFT_AUTH_DOMAIN: 'dailydraft.example',
     DAILYDRAFT_NETWORK: 'solana-devnet',
     DAILYDRAFT_PROVIDER_MODE: 'dailydraft-devnet',
-    DAILYDRAFT_TRUSTED_PROXIES: '172.18.0.2',
+    DAILYDRAFT_TRUSTED_PROXY_HOSTS: 'shipshit-caddy',
     PORT: '3003',
     VERCEL_ENV: 'production',
     ...overrides,

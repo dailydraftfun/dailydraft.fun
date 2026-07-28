@@ -6,6 +6,7 @@ readonly aws_region="us-west-1"
 readonly parameter_path="/dailydraft/api/prod/"
 readonly image_key="${1:-}"
 readonly sha="${2:-}"
+readonly caddy_fragment_key="${3:-}"
 
 if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Expected a full lowercase Git SHA as the second argument" >&2
@@ -17,6 +18,11 @@ if [[ "$image_key" != "images/dailydraft-${sha}.tar.gz" ]]; then
   exit 2
 fi
 
+if [[ "$caddy_fragment_key" != "fragments/dailydraft-${sha}.caddy" ]]; then
+  echo "Caddy fragment key does not match the requested Git SHA" >&2
+  exit 2
+fi
+
 readonly image="dailydraft:${sha}"
 readonly container="api-dailydraft-fun"
 readonly candidate="${container}-candidate"
@@ -24,11 +30,50 @@ readonly environment_directory="/etc/dailydraft"
 readonly environment_file="${environment_directory}/dailydraft.env"
 readonly unit_directory="/etc/systemd/system"
 readonly artifact_directory="/var/lib/dailydraft"
+readonly caddy_deploy_lock="/var/lock/dailydraft-caddy-deploy.lock"
+readonly previous_container="${container}-previous"
 
 install -d -m 700 "$environment_directory" "$artifact_directory"
+exec 9>"$caddy_deploy_lock"
+if ! flock -w 120 9; then
+  echo "Timed out waiting for the DailyDraft host deployment lock" >&2
+  exit 1
+fi
 temporary_environment="$(mktemp "${environment_directory}/dailydraft.env.XXXXXX")"
 artifact_file="$(mktemp "${artifact_directory}/dailydraft.XXXXXX.tar.gz")"
-trap 'rm -f "$temporary_environment" "$artifact_file"' EXIT
+caddy_fragment_file="$(mktemp "${artifact_directory}/dailydraft.XXXXXX.caddy")"
+caddy_main_candidate="$(mktemp "${artifact_directory}/Caddyfile.XXXXXX")"
+caddy_main_backup="$(mktemp "${artifact_directory}/Caddyfile.backup.XXXXXX")"
+caddy_main_installed=false
+candidate_promoted=false
+cutover_started=false
+previous_container_available=false
+release_committed=false
+cleanup() {
+  if [[ "$release_committed" != "true" ]]; then
+    docker rm -f "$candidate" >/dev/null 2>&1 || true
+  fi
+  if [[ "$cutover_started" == "true" && "$release_committed" != "true" ]]; then
+    if [[ "$candidate_promoted" == "true" ]]; then
+      docker rm -f "$container" >/dev/null 2>&1 || true
+    fi
+    if [[ "$previous_container_available" == "true" ]]; then
+      docker rename "$previous_container" "$container" >/dev/null 2>&1 || true
+    fi
+  fi
+  if [[ "$caddy_main_installed" == "true" && "$release_committed" != "true" ]]; then
+    dd if="$caddy_main_backup" of="$caddy_main_source" conv=fsync status=none || true
+    docker exec shipshit-caddy caddy reload --config /etc/caddy/Caddyfile || true
+  fi
+  rm -f \
+    "$temporary_environment" \
+    "$artifact_file" \
+    "$caddy_fragment_file" \
+    "$caddy_main_candidate" \
+    "$caddy_main_backup" \
+    "${temporary_unit:-}"
+}
+trap cleanup EXIT
 umask 077
 
 parameter_rows="$(
@@ -70,11 +115,10 @@ while IFS=$'\t' read -r parameter_name parameter_value; do
     DB_MASTER_PASSWORD|API_DOMAIN)
       continue
       ;;
-    CADDY_NETWORK|DAILYDRAFT_TRUSTED_PROXIES)
+    CADDY_NETWORK|DAILYDRAFT_TRUSTED_PROXIES|DAILYDRAFT_TRUSTED_PROXY_HOSTS)
       # Host-side routing control, not application configuration. Kept out of the
-      # container environment. The trusted proxy address is derived from Docker
-      # after selecting the exact network, so a stale SSM value cannot collapse
-      # all per-client rate-limit buckets onto the Caddy peer address.
+      # container environment. The API trusts the stable Caddy Docker DNS identity,
+      # not an SSM override or deploy-time IP snapshot.
       if [[ "$parameter_key" == "CADDY_NETWORK" ]]; then
         caddy_network_override="$parameter_value"
       fi
@@ -88,11 +132,9 @@ done <<<"$parameter_rows"
 # One network name per line. A bare {{$k}} range concatenates every name into a
 # single unusable string as soon as shipshit-caddy fronts a second tenant network.
 caddy_networks=()
-declare -A caddy_network_addresses=()
-while IFS=$'\t' read -r caddy_network caddy_address; do
-  if [[ -n "$caddy_network" && -n "$caddy_address" ]]; then
+while IFS=$'\t' read -r caddy_network _caddy_address; do
+  if [[ -n "$caddy_network" ]]; then
     caddy_networks+=("$caddy_network")
-    caddy_network_addresses["$caddy_network"]="$caddy_address"
   fi
 done < <(
   docker inspect \
@@ -126,19 +168,18 @@ else
   network="${caddy_networks[0]}"
 fi
 
-trusted_proxy="${caddy_network_addresses[$network]:-}"
-if [[ -z "$trusted_proxy" ]]; then
-  echo "shipshit-caddy has no IPv4 address on Docker network ${network}" >&2
-  exit 1
-fi
-
 printf '%s\n' \
   "NODE_ENV=production" \
   "PORT=3000" \
-  "DAILYDRAFT_TRUSTED_PROXIES=${trusted_proxy}" \
+  "DAILYDRAFT_TRUSTED_PROXY_HOSTS=shipshit-caddy" \
   >>"$temporary_environment"
 install -m 600 "$temporary_environment" "$environment_file"
 
+aws s3 cp \
+  "s3://${artifact_bucket}/${caddy_fragment_key}" \
+  "$caddy_fragment_file" \
+  --region "$aws_region" \
+  --only-show-errors
 aws s3 cp \
   "s3://${artifact_bucket}/${image_key}" \
   "$artifact_file" \
@@ -183,10 +224,133 @@ if [[ "$candidate_healthy" != "true" ]]; then
   exit 1
 fi
 
-docker rm -f "$container" >/dev/null 2>&1 || true
-docker rename "$candidate" "$container"
-docker update --restart unless-stopped "$container" >/dev/null
-docker exec shipshit-caddy caddy reload --config /etc/caddy/Caddyfile
+# Caddy's main file is a read-only file bind inside the container, while /config
+# is a persistent writable Docker volume. Keep immutable, exact-SHA fragments in
+# that volume and import the exact release artifact from the shared main file.
+# This survives Caddy recreation without coupling the API to Caddy's ephemeral IP.
+IFS=$'\t' read -r caddy_config_source caddy_config_writable < <(
+  docker inspect \
+    -f '{{range .Mounts}}{{if eq .Destination "/config"}}{{.Source}}{{"\t"}}{{.RW}}{{end}}{{end}}' \
+    shipshit-caddy
+)
+IFS=$'\t' read -r caddy_main_source _caddy_main_writable < <(
+  docker inspect \
+    -f '{{range .Mounts}}{{if eq .Destination "/etc/caddy/Caddyfile"}}{{.Source}}{{"\t"}}{{.RW}}{{end}}{{end}}' \
+    shipshit-caddy
+)
+if [[ -z "$caddy_config_source" || "$caddy_config_writable" != "true" ]]; then
+  echo "shipshit-caddy must have a writable persistent /config mount" >&2
+  exit 1
+fi
+if [[ -z "$caddy_main_source" || ! -f "$caddy_main_source" ]]; then
+  echo "shipshit-caddy must bind a host Caddyfile at /etc/caddy/Caddyfile" >&2
+  exit 1
+fi
+
+readonly caddy_fragment_name="dailydraft-${sha}.caddy"
+readonly caddy_fragment_target="${caddy_config_source}/${caddy_fragment_name}"
+readonly caddy_candidate_name="dailydraft-Caddyfile-${sha}"
+readonly caddy_candidate_target="${caddy_config_source}/${caddy_candidate_name}"
+
+install -m 600 "$caddy_fragment_file" "$caddy_fragment_target"
+cp -p "$caddy_main_source" "$caddy_main_backup"
+
+# Replace either the managed import or the one legacy inline DailyDraft block.
+# Refuse an unterminated block rather than risking another tenant's configuration.
+if ! awk -v fragment="/config/${caddy_fragment_name}" '
+  BEGIN {
+    begin = "# BEGIN DAILYDRAFT MANAGED"
+    end = "# END DAILYDRAFT MANAGED"
+    legacy = "# Import into the shipshit-caddy Caddyfile. api.dailydraft.fun resolves to"
+  }
+  function managed_block() {
+    print begin
+    print "import " fragment
+    print end
+    emitted = 1
+  }
+  $0 == begin {
+    if (!emitted) managed_block()
+    in_managed = 1
+    next
+  }
+  in_managed {
+    if ($0 == end) in_managed = 0
+    next
+  }
+  index($0, legacy) == 1 {
+    if (!emitted) managed_block()
+    in_legacy = 1
+    next
+  }
+  in_legacy && $0 == "# BEGIN CORNERSHOPDEV" {
+    in_legacy = 0
+    print
+    next
+  }
+  in_legacy { next }
+  { print }
+  END {
+    if (in_managed || in_legacy) exit 42
+    if (!emitted) {
+      print ""
+      managed_block()
+    }
+  }
+' "$caddy_main_backup" >"$caddy_main_candidate"; then
+  echo "Could not safely render the managed DailyDraft Caddy import" >&2
+  exit 1
+fi
+
+install -m 600 "$caddy_main_candidate" "$caddy_candidate_target"
+if ! docker exec shipshit-caddy caddy validate --config "/config/${caddy_candidate_name}"; then
+  echo "Candidate Caddy configuration failed validation" >&2
+  exit 1
+fi
+
+# The host is shared with deployments outside this repository. The lock prevents
+# overlapping DailyDraft releases; this compare prevents overwriting another
+# tenant that does not yet participate in the same host-wide lock.
+if ! cmp -s "$caddy_main_backup" "$caddy_main_source"; then
+  echo "Shared Caddyfile changed while preparing the DailyDraft import" >&2
+  exit 1
+fi
+# Preserve the inode behind the live file bind. Caddy continues serving its
+# already-loaded config until the validated replacement is explicitly reloaded.
+caddy_main_installed=true
+if ! dd if="$caddy_main_candidate" of="$caddy_main_source" conv=fsync status=none; then
+  # A failed in-place write can leave the bind source truncated. Put the verified
+  # prior bytes back before returning so a later Caddy restart cannot boot a
+  # partially written shared-host configuration.
+  dd if="$caddy_main_backup" of="$caddy_main_source" conv=fsync status=none || true
+  echo "Could not install the managed Caddy import" >&2
+  exit 1
+fi
+if ! docker exec shipshit-caddy caddy validate --config /etc/caddy/Caddyfile ||
+  ! docker exec shipshit-caddy caddy reload --config /etc/caddy/Caddyfile
+then
+  dd if="$caddy_main_backup" of="$caddy_main_source" conv=fsync status=none
+  caddy_main_installed=false
+  docker exec shipshit-caddy caddy reload --config /etc/caddy/Caddyfile || true
+  echo "Caddy validation or reload failed; restored the previous config" >&2
+  exit 1
+fi
+
+docker rm -f "$previous_container" >/dev/null 2>&1 || true
+cutover_started=true
+if docker inspect "$container" >/dev/null 2>&1; then
+  previous_container_available=true
+  docker rename "$container" "$previous_container"
+fi
+candidate_promoted=true
+if ! docker rename "$candidate" "$container"; then
+  echo "Could not promote the candidate API container; restored the previous container" >&2
+  exit 1
+fi
+if ! docker update --restart unless-stopped "$container" >/dev/null; then
+  echo "Could not apply the live restart policy; restored the previous container" >&2
+  exit 1
+fi
 
 # This host is shared with other tenants, so an unbounded image set is a
 # host-wide outage rather than a local one. docker images lists newest first;
@@ -206,7 +370,6 @@ fi
 # Installing a cron daemon would be a host-wide change on a box shared with other
 # tenants; namespaced units are not.
 temporary_unit="$(mktemp)"
-trap 'rm -f "$temporary_environment" "$artifact_file" "$temporary_unit"' EXIT
 
 install_reconciliation_timer() {
   local job="$1" calendar="$2"
@@ -252,4 +415,8 @@ systemctl enable --now dailydraft-reconcile-solana.timer dailydraft-reconcile-tr
 # behind would silently double-fire if anyone ever installs one.
 rm -f /etc/cron.d/dailydraft
 
+release_committed=true
+if [[ "$previous_container_available" == "true" ]]; then
+  docker rm -f "$previous_container" >/dev/null 2>&1 || true
+fi
 echo "DailyDraft API deployed: ${image}"

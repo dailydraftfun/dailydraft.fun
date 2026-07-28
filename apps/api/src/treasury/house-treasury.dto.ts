@@ -1,5 +1,15 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class HouseInventoryQuery {
   @IsOptional()
@@ -30,6 +40,14 @@ export class HouseDispositionRequest {
   @MaxLength(160)
   @Matches(/^[A-Za-z0-9 _:-]{3,160}$/)
   reason!: string;
+
+  @IsOptional()
+  @Matches(/^[A-Za-z0-9._:-]{3,80}$/)
+  provider?: string;
+
+  @IsOptional()
+  @Matches(/^[A-Za-z0-9._:-]{8,240}$/)
+  providerListingReference?: string;
 }
 
 export class CompleteHouseDispositionRequest {
@@ -50,6 +68,58 @@ export class CompleteHouseDispositionRequest {
   @Min(6)
   @Max(6)
   realizedDecimals!: number;
+
+  @IsString()
+  @MaxLength(160)
+  @Matches(/^[A-Za-z0-9 _:-]{3,160}$/)
+  reason!: string;
+
+  @IsOptional()
+  @Matches(/^[A-Za-z0-9._:-]{3,80}$/)
+  provider?: string;
+
+  @IsOptional()
+  @Matches(/^[A-Za-z0-9._:-]{8,240}$/)
+  providerListingReference?: string;
+
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  providerSaleAt?: string;
+
+  @IsOptional()
+  @Matches(/^[a-f0-9]{64}$/)
+  providerSaleEvidenceHash?: string;
+
+  @IsOptional()
+  @Matches(/^[A-Za-z0-9._:-]{8,240}$/)
+  providerSaleReference?: string;
+
+  @IsOptional()
+  @Matches(/^[a-f0-9]{64}$/)
+  providerSaleSignature?: string;
+}
+
+export class DelistHouseInventoryRequest {
+  @IsISO8601({ strict: true })
+  cancelledAt!: string;
+
+  @Matches(/^[a-f0-9]{64}$/)
+  providerCancellationEvidenceHash!: string;
+
+  @Matches(/^[a-f0-9]{64}$/)
+  providerCancellationSignature!: string;
+
+  @Matches(/^[A-Za-z0-9._:-]{8,240}$/)
+  providerCancellationReference!: string;
+
+  @Matches(/^[A-Za-z0-9:_-]{8,160}$/)
+  operationKey!: string;
+
+  @Matches(/^[A-Za-z0-9._:-]{3,80}$/)
+  provider!: string;
+
+  @Matches(/^[A-Za-z0-9._:-]{8,240}$/)
+  providerListingReference!: string;
 
   @IsString()
   @MaxLength(160)

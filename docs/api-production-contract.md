@@ -28,20 +28,35 @@ Nest, or the database client. Both preview and production deployments require:
 
 Production additionally requires `CRON_SECRET`,
 `DAILYDRAFT_PROVIDER_MODE=dailydraft-devnet`, and an explicit
-`DAILYDRAFT_TRUSTED_PROXIES`. The production deploy derives the last value from
-the exact `shipshit-caddy` address on the selected Docker network; it does not
-accept a potentially stale SSM override. URLs, domains, ports, and secrets are
-validated without writing their values to the conformance report.
+`DAILYDRAFT_TRUSTED_PROXY_HOSTS`. Production pins the last value to the stable
+`shipshit-caddy` Docker DNS identity; it does not accept an SSM override or
+snapshot Caddy's ephemeral container IP. The API resolves that identity before
+startup and refreshes it every five seconds. A DNS failure retains the last
+verified address, while forwarded headers from any other peer fail closed before
+rate limiting. Caddy rotation therefore cannot merge unrelated clients into one
+proxy-address bucket. URLs, domains, ports, and secrets are validated without
+writing their values to the conformance report.
 Every required key has a deterministic missing-value fixture.
 
 The HTTP boundary accepts browser origins only from `CORS_ORIGINS`, preserves a
 canonical `x-request-id` or assigns one, and publishes bounded rate-limit
-metadata. Forwarded headers are trusted only from literal addresses listed in
-`DAILYDRAFT_TRUSTED_PROXIES`; malformed forwarding from a trusted proxy is
-rejected, while forwarding from every other peer is ignored. Structured request
+metadata. Literal addresses listed in `DAILYDRAFT_TRUSTED_PROXIES` remain
+available for bounded local/preview use. Production resolves
+`DAILYDRAFT_TRUSTED_PROXY_HOSTS` and atomically replaces the dynamic trusted set
+after each successful refresh. Malformed forwarding from a trusted proxy and
+all forwarding from every other peer are rejected. Structured request
 logs contain route, method, status, duration, request ID, remote address, and
 rate-limit counters only—never headers, credentials, bodies, or provider
 payloads. Unmatched routes are logged without query strings or fragments.
+
+The deploy workflow uploads `deploy/dailydraft/Caddyfile.fragment` under an
+exact-Git-SHA S3 key alongside the image and host script. The host installs that
+immutable fragment into Caddy's persistent `/config` volume, renders its exact
+SHA into the single managed import, and validates the candidate before touching
+the shared host Caddyfile. A host lock serializes DailyDraft releases and a
+snapshot comparison refuses to overwrite another tenant's concurrent change.
+Interrupted installation, validation, or reload restores the previous Caddyfile
+without cutting over the API container.
 
 Preview persistence is classified as `ephemeral-preview`; it must never be
 treated as release evidence. Production persistence is classified as

@@ -59,12 +59,16 @@ jobs:
       # /usr/local/bin/deploy-dailydraft used to be installed by hand, so edits to
       # the tracked script changed nothing on the host and the two drifted apart
       # silently. Shipping it alongside the image pins both to the same commit.
-      - name: Upload host deploy script
+      - name: Upload host deployment artifacts
         run: |
           set -euo pipefail
           aws s3 cp \
             deploy/dailydraft/deploy-dailydraft.sh \
             "s3://${ARTIFACT_BUCKET}/scripts/deploy-dailydraft-${GITHUB_SHA}.sh" \
+            --only-show-errors
+          aws s3 cp \
+            deploy/dailydraft/Caddyfile.fragment \
+            "s3://${ARTIFACT_BUCKET}/fragments/dailydraft-${GITHUB_SHA}.caddy" \
             --only-show-errors
 
       - name: Deploy through Systems Manager
@@ -72,6 +76,7 @@ jobs:
           set -euo pipefail
           image_key="images/dailydraft-${GITHUB_SHA}.tar.gz"
           script_key="scripts/deploy-dailydraft-${GITHUB_SHA}.sh"
+          caddy_fragment_key="fragments/dailydraft-${GITHUB_SHA}.caddy"
           # AWS-RunShellScript concatenates these into one bash script, so the
           # leading set and the temporary file carry across the whole sequence.
           parameters="$(
@@ -80,6 +85,7 @@ jobs:
               --arg region "$AWS_REGION" \
               --arg script_key "$script_key" \
               --arg image_key "$image_key" \
+              --arg caddy_fragment_key "$caddy_fragment_key" \
               --arg sha "$GITHUB_SHA" \
               '{commands: [
                  "set -euo pipefail",
@@ -87,7 +93,7 @@ jobs:
                  "aws s3 cp \"s3://\($bucket)/\($script_key)\" \"$script_file\" --region \($region) --only-show-errors",
                  "install -m 755 \"$script_file\" /usr/local/bin/deploy-dailydraft",
                  "rm -f \"$script_file\"",
-                 "/usr/local/bin/deploy-dailydraft \($image_key|@sh) \($sha|@sh)"
+                 "/usr/local/bin/deploy-dailydraft \($image_key|@sh) \($sha|@sh) \($caddy_fragment_key|@sh)"
                ]}'
           )"
           command_id="$(

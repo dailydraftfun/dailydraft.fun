@@ -9,7 +9,11 @@ import {
 } from '@dailydraft/db';
 
 import { SolanaRpcGateway } from '../transactions/solana-rpc.client.js';
-import { ACTIVE_HOUSE_RESERVATION_STATUSES } from './house-treasury.policy.js';
+import {
+  ACTIVE_HOUSE_RESERVATION_STATUSES,
+  HOUSE_TREASURY_EXPOSURE_LOCK_KEY,
+  reserveHouseExposure,
+} from './house-treasury.policy.js';
 import { HouseTreasuryService } from './house-treasury.service.js';
 
 const HOT_WALLET = 'DeWQgPfic3khpn4F7QPu7AHoqyJbKuRk9vKZXdxo12Eu';
@@ -109,6 +113,67 @@ describe('HouseTreasuryService', () => {
       }),
     ]);
     expect(harness.inventory.every((asset) => asset.lastReconciledSlot === '1')).toBe(true);
+  });
+
+  test('does not admit exposure across an interleaved inventory discrepancy creation', async () => {
+    const discrepancyWriteStarted = deferred<void>();
+    const releaseDiscrepancyWrite = deferred<void>();
+    const admissionWaitingForExposureLock = deferred<void>();
+    const harness = inventoryAdmissionInterleavingDatabase({
+      admissionWaitingForExposureLock,
+      discrepancyWriteStarted,
+      releaseDiscrepancyWrite,
+    });
+    const service = new HouseTreasuryService(
+      harness.database as never,
+      new InventoryReconciliationRpc(),
+    );
+
+    const reconciliation = withHouseEnvironment(() => service.reconcileOnChain());
+    await discrepancyWriteStarted.promise;
+    const admission = harness.database.$transaction((transaction) =>
+      reserveHouseExposure(
+        transaction as never,
+        {
+          amount: '10000000',
+          currency: 'USDC',
+          decimals: 6,
+          duelId: 'duel_interleaved_discrepancy',
+          playerWallet: COLD_OWNER,
+          tier: 10,
+        },
+        {
+          DAILYDRAFT_HOUSE_DAILY_LOSS_LIMIT_USDC_MICRO: '100000000',
+          DAILYDRAFT_HOUSE_DEVNET_FUNDING_SIGNER: HOT_WALLET,
+          DAILYDRAFT_HOUSE_DEVNET_USDC_MINT: USDC_MINT,
+          DAILYDRAFT_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT: TOKEN_ACCOUNT,
+          DAILYDRAFT_HOUSE_DEVNET_WALLET: HOT_WALLET,
+          DAILYDRAFT_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY: COLD_OWNER,
+          DAILYDRAFT_HOUSE_ENABLED: 'true',
+          DAILYDRAFT_HOUSE_MAX_ACTIVE_PER_WALLET: '2',
+          DAILYDRAFT_HOUSE_MAX_CONCURRENT_PER_TIER: '2',
+          DAILYDRAFT_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO: '100000000',
+          DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO: '20000000',
+          DAILYDRAFT_NETWORK: 'solana-devnet',
+        },
+      ),
+    );
+    await admissionWaitingForExposureLock.promise;
+
+    expect(harness.reservations).toEqual([]);
+    expect(harness.events.slice(-2)).toEqual([
+      `inventory:lock:${HOUSE_TREASURY_EXPOSURE_LOCK_KEY}`,
+      `admission:wait:${HOUSE_TREASURY_EXPOSURE_LOCK_KEY}`,
+    ]);
+
+    releaseDiscrepancyWrite.resolve();
+    await reconciliation;
+    await expect(admission).rejects.toThrow(
+      'House tier is disabled: unresolved treasury reconciliation discrepancy',
+    );
+    expect(harness.reservations).toEqual([]);
+    expect(harness.discrepancies).toHaveLength(1);
+    expect(harness.events).toContain(`admission:lock:${HOUSE_TREASURY_EXPOSURE_LOCK_KEY}`);
   });
 
   test('records a slot-bound treasury discrepancy without rewriting prior ledger evidence', async () => {
@@ -727,6 +792,196 @@ function inventoryReconciliationDatabase() {
     inventory,
     ledger,
   };
+}
+
+function inventoryAdmissionInterleavingDatabase(input: {
+  admissionWaitingForExposureLock: Deferred<void>;
+  discrepancyWriteStarted: Deferred<void>;
+  releaseDiscrepancyWrite: Deferred<void>;
+}) {
+  const base = inventoryReconciliationDatabase();
+  const reservations: unknown[] = [];
+  const events: string[] = [];
+  const exposureKey = `constant:${HOUSE_TREASURY_EXPOSURE_LOCK_KEY}`;
+  const locks = new DeterministicAdvisoryLocks((transactionName, lockKey) => {
+    if (transactionName === 'admission' && lockKey === exposureKey) {
+      events.push(`admission:wait:${HOUSE_TREASURY_EXPOSURE_LOCK_KEY}`);
+      input.admissionWaitingForExposureLock.resolve();
+    }
+  });
+  let transactionSequence = 0;
+  const discrepancyStore = reconciliationDiscrepancyStore(base.discrepancies);
+  const transactionBase = {
+    $queryRaw: () => Promise.resolve([{ paused: false }]),
+    houseInventoryAsset: {
+      updateMany: ({
+        data,
+        where,
+      }: {
+        data: {
+          lastReconciledAt: Date;
+          lastReconciledSlot: string;
+          reconciliationError: string | null;
+          status: HouseInventoryStatus;
+          version: { increment: number };
+        };
+        where: { id: string; version: number };
+      }) => {
+        const row = base.inventory.find(
+          (candidate) => candidate.id === where.id && candidate.version === where.version,
+        );
+        if (!row) return Promise.resolve({ count: 0 });
+        row.lastReconciledAt = data.lastReconciledAt;
+        row.lastReconciledSlot = data.lastReconciledSlot;
+        row.reconciliationError = data.reconciliationError;
+        row.status = data.status;
+        row.version += data.version.increment;
+        return Promise.resolve({ count: 1 });
+      },
+    },
+    houseReconciliationDiscrepancy: {
+      ...discrepancyStore,
+      count: () =>
+        Promise.resolve(
+          base.discrepancies.filter(
+            (row) =>
+              typeof row === 'object' &&
+              row !== null &&
+              (!('resolvedAt' in row) || row.resolvedAt === null),
+          ).length,
+        ),
+      upsert: async (request: Parameters<typeof discrepancyStore.upsert>[0]) => {
+        input.discrepancyWriteStarted.resolve();
+        await input.releaseDiscrepancyWrite.promise;
+        return discrepancyStore.upsert(request);
+      },
+    },
+    houseTreasuryLedgerEntry: {
+      create: ({ data }: { data: LedgerWrite }) => {
+        base.ledger.push(data);
+        return Promise.resolve(data);
+      },
+      findMany: () => Promise.resolve([]),
+      findUnique: ({ where }: { where: { idempotencyKey: string } }) =>
+        Promise.resolve(
+          base.ledger.find((entry) => entry.idempotencyKey === where.idempotencyKey) ?? null,
+        ),
+    },
+    houseTreasuryReservation: {
+      count: () => Promise.resolve(0),
+      create: ({ data }: { data: unknown }) => {
+        reservations.push(data);
+        return Promise.resolve(data);
+      },
+      findMany: () => Promise.resolve([]),
+      findUnique: () => Promise.resolve(null),
+    },
+    houseTreasurySnapshot: {
+      findUnique: () => Promise.resolve(null),
+      upsert: () => Promise.resolve({}),
+    },
+  };
+  const database = {
+    $transaction: async <T>(
+      operation: (
+        client: typeof transactionBase & { $executeRaw: (...args: unknown[]) => Promise<number> },
+      ) => Promise<T>,
+    ) => {
+      transactionSequence += 1;
+      const transactionName =
+        transactionSequence === 1
+          ? 'snapshot'
+          : transactionSequence <= 3
+            ? 'inventory'
+            : 'admission';
+      const transactionId = `${transactionName}-${transactionSequence}`;
+      const client = {
+        ...transactionBase,
+        $executeRaw: async (_query: unknown, ...values: unknown[]) => {
+          const lockKey =
+            values.length === 1
+              ? `constant:${String(values[0])}`
+              : `namespace:${String(values[1])}:${String(values[0])}`;
+          await locks.acquire(transactionId, transactionName, lockKey);
+          if (lockKey === exposureKey) {
+            events.push(`${transactionName}:lock:${HOUSE_TREASURY_EXPOSURE_LOCK_KEY}`);
+          }
+          return 1;
+        },
+      };
+      try {
+        return await operation(client);
+      } finally {
+        locks.releaseAll(transactionId);
+      }
+    },
+    houseInventoryAsset: { findMany: () => Promise.resolve(base.inventory) },
+  };
+  return {
+    database,
+    discrepancies: base.discrepancies,
+    events,
+    reservations,
+  };
+}
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve = (_value: T) => {};
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+class DeterministicAdvisoryLocks {
+  private readonly owners = new Map<string, string>();
+  private readonly queues = new Map<
+    string,
+    Array<{ resolve: () => void; transactionId: string }>
+  >();
+  private readonly transactionLocks = new Map<string, Set<string>>();
+
+  constructor(private readonly onWait: (transactionName: string, lockKey: string) => void) {}
+
+  async acquire(transactionId: string, transactionName: string, lockKey: string): Promise<void> {
+    const owner = this.owners.get(lockKey);
+    if (!owner || owner === transactionId) {
+      this.owners.set(lockKey, transactionId);
+      this.remember(transactionId, lockKey);
+      return;
+    }
+    this.onWait(transactionName, lockKey);
+    await new Promise<void>((resolve) => {
+      const queue = this.queues.get(lockKey) ?? [];
+      queue.push({ resolve, transactionId });
+      this.queues.set(lockKey, queue);
+    });
+    this.remember(transactionId, lockKey);
+  }
+
+  releaseAll(transactionId: string): void {
+    for (const lockKey of this.transactionLocks.get(transactionId) ?? []) {
+      const next = this.queues.get(lockKey)?.shift();
+      if (next) {
+        this.owners.set(lockKey, next.transactionId);
+        next.resolve();
+      } else {
+        this.owners.delete(lockKey);
+      }
+    }
+    this.transactionLocks.delete(transactionId);
+  }
+
+  private remember(transactionId: string, lockKey: string): void {
+    const held = this.transactionLocks.get(transactionId) ?? new Set<string>();
+    held.add(lockKey);
+    this.transactionLocks.set(transactionId, held);
+  }
 }
 
 function summaryDatabase(discrepancies: Array<Record<string, unknown>> = []) {

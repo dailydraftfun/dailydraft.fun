@@ -95,7 +95,10 @@ closed unless all three server-only values below are configured. None may use a
 | `DAILYDRAFT_HOUSE_MAX_CONCURRENT_PER_TIER` | House reservation limit per tier; defaults to 1. |
 | `DAILYDRAFT_HOUSE_ALLOWED_DISPOSITIONS` | Operator inventory workflow allowlist; defaults to `hold,manual_review`. |
 | `CORS_ORIGINS` | Explicit allowed browser origins. |
-| `DAILYDRAFT_TRUSTED_PROXIES` | Exact reverse-proxy peer IPs trusted for forwarded client identity. Production derives the Caddy address from the selected Docker network at deploy time; do not maintain a separate SSM override. |
+| `DAILYDRAFT_TRUSTED_PROXIES` | Optional literal reverse-proxy peers for local/preview use. Production does not snapshot Caddy's ephemeral IP. |
+| `DAILYDRAFT_TRUSTED_PROXY_HOSTS` | Stable reverse-proxy DNS identities refreshed at runtime. Production deploys set this to `shipshit-caddy`; do not maintain an SSM override. |
+| `DAILYDRAFT_TRUSTED_PROXY_REFRESH_MS` | Optional DNS refresh interval, bounded from one to sixty seconds and defaulting to five seconds. |
+| `DAILYDRAFT_MARKETPLACE_PROVIDER_KEYS` | Optional JSON map of provider IDs to 32+ character HMAC keys. Listing sale/delist transitions fail closed until the relevant provider key is configured. |
 
 ## House treasury authority and operating procedure
 

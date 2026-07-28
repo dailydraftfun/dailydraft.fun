@@ -27,8 +27,10 @@ import {
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from '../transactions/solana-rpc.client.js';
+import { assertHouseProviderEvidence, providerReferenceKey } from './house-provider-evidence.js';
 import type {
   CompleteHouseDispositionRequest,
+  DelistHouseInventoryRequest,
   HouseDispositionRequest,
   HouseInventoryQuery,
 } from './house-treasury.dto.js';
@@ -45,6 +47,7 @@ import {
 const LIFECYCLE_BATCH_LIMIT = 100;
 const HOUSE_INVENTORY_LOCK_NAMESPACE = 1_324_771_909;
 const HOUSE_TREASURY_RECONCILIATION_LOCK_NAMESPACE = 1_324_771_910;
+const HOUSE_INVENTORY_DISPOSITION_LOCK_NAMESPACE = 1_324_771_911;
 
 @Injectable()
 export class HouseTreasuryService {
@@ -359,6 +362,12 @@ export class HouseTreasuryService {
           : HouseInventoryStatus.HELD
         : HouseInventoryStatus.RECONCILIATION_REQUIRED;
       const changed = await this.database.$transaction(async (transaction) => {
+        await acquireAdvisoryTransactionLock(transaction, HOUSE_TREASURY_EXPOSURE_LOCK_KEY);
+        await acquireNamespacedAdvisoryTransactionLock(
+          transaction,
+          asset.assetReference,
+          HOUSE_INVENTORY_LOCK_NAMESPACE,
+        );
         const update = await transaction.houseInventoryAsset.updateMany({
           data: {
             lastReconciledAt: verifiedAt,
@@ -628,6 +637,11 @@ export class HouseTreasuryService {
   async setDisposition(inventoryId: string, input: HouseDispositionRequest) {
     const config = readHouseTreasuryConfig();
     return this.database.$transaction(async (transaction) => {
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        inventoryId,
+        HOUSE_INVENTORY_DISPOSITION_LOCK_NAMESPACE,
+      );
       const row = await transaction.houseInventoryAsset.findUnique({ where: { id: inventoryId } });
       if (!row) throw new NotFoundException(`Inventory asset ${inventoryId} was not found`);
       const idempotencyKey = `inventory-disposition:${input.operationKey}`;
@@ -641,8 +655,11 @@ export class HouseTreasuryService {
       if (row.status === HouseInventoryStatus.DISPOSED) {
         throw new ConflictException('Disposed inventory cannot be reassigned');
       }
-      if (row.listingState === HouseInventoryListingState.LISTED && input.disposition !== 'list') {
+      if (row.listingState === HouseInventoryListingState.LISTED) {
         throw new ConflictException('Listed inventory must be delisted before reassignment');
+      }
+      if (input.disposition === 'list' && (!input.provider || !input.providerListingReference)) {
+        throw new ConflictException('Listing requires durable provider listing evidence');
       }
       const decision = dispositionDecision(row, input.disposition, config.allowedDispositions);
       const now = new Date();
@@ -673,6 +690,10 @@ export class HouseTreasuryService {
         metadata: {
           disposition: decision.disposition.toLowerCase(),
           operationKey: input.operationKey,
+          ...(input.provider ? { provider: input.provider } : {}),
+          ...(input.providerListingReference
+            ? { providerListingReference: input.providerListingReference }
+            : {}),
           reason: decision.reason ?? input.reason,
           requestedDisposition: input.disposition,
         },
@@ -682,11 +703,134 @@ export class HouseTreasuryService {
     });
   }
 
-  async completeDisposition(inventoryId: string, input: CompleteHouseDispositionRequest) {
+  async delistInventory(inventoryId: string, input: DelistHouseInventoryRequest) {
+    const cancelledAt = new Date(input.cancelledAt);
+    if (!Number.isFinite(cancelledAt.getTime())) {
+      throw new ConflictException('Provider cancellation time is invalid');
+    }
+    assertHouseProviderEvidence(
+      input.provider,
+      {
+        cancelledAt: cancelledAt.toISOString(),
+        inventoryId,
+        provider: input.provider,
+        providerCancellationReference: input.providerCancellationReference,
+        providerListingReference: input.providerListingReference,
+        status: 'cancelled',
+      },
+      {
+        hash: input.providerCancellationEvidenceHash,
+        signature: input.providerCancellationSignature,
+      },
+    );
     return this.database.$transaction(async (transaction) => {
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        inventoryId,
+        HOUSE_INVENTORY_DISPOSITION_LOCK_NAMESPACE,
+      );
       const row = await transaction.houseInventoryAsset.findUnique({ where: { id: inventoryId } });
       if (!row) throw new NotFoundException(`Inventory asset ${inventoryId} was not found`);
-      const idempotencyKey = `inventory-disposed:${input.operationKey}`;
+      const idempotencyKey = `inventory-delisted:${providerReferenceKey(
+        input.provider,
+        input.providerCancellationReference,
+      )}`;
+      const replay = await transaction.houseTreasuryLedgerEntry.findUnique({
+        where: { idempotencyKey },
+      });
+      if (replay) {
+        assertDelistReplay(replay, row.id, input);
+        return row;
+      }
+      if (
+        row.status !== HouseInventoryStatus.LISTED ||
+        row.listingState !== HouseInventoryListingState.LISTED ||
+        row.disposition !== HouseInventoryDisposition.LIST
+      ) {
+        throw new ConflictException('Only actively listed inventory can be delisted');
+      }
+      const listed = await transaction.houseTreasuryLedgerEntry.findFirst({
+        orderBy: { createdAt: 'desc' },
+        where: {
+          inventoryId: row.id,
+          type: HouseTreasuryLedgerType.INVENTORY_DISPOSITION_SET,
+        },
+      });
+      const listingMetadata = jsonRecord(listed?.metadata ?? null);
+      if (
+        listingMetadata?.disposition !== 'list' ||
+        listingMetadata.provider !== input.provider ||
+        listingMetadata.providerListingReference !== input.providerListingReference
+      ) {
+        throw new ConflictException(
+          'Provider cancellation evidence does not match the active listing',
+        );
+      }
+      if (
+        !listed ||
+        cancelledAt < listed.createdAt ||
+        cancelledAt.getTime() > Date.now() + 5 * 60 * 1_000
+      ) {
+        throw new ConflictException(
+          'Provider cancellation time must follow the active listing and not be in the future',
+        );
+      }
+      const changed = await transaction.houseInventoryAsset.updateMany({
+        data: {
+          listingState: HouseInventoryListingState.UNLISTED,
+          status: HouseInventoryStatus.HELD,
+          version: { increment: 1 },
+        },
+        where: {
+          disposition: HouseInventoryDisposition.LIST,
+          id: row.id,
+          listingState: HouseInventoryListingState.LISTED,
+          status: HouseInventoryStatus.LISTED,
+          version: row.version,
+        },
+      });
+      if (changed.count !== 1) throw new ConflictException('Inventory state changed');
+      await appendLedger(transaction, {
+        amount: row.acquisitionValueAmount,
+        ...(row.crashRoundId ? { crashRoundId: row.crashRoundId } : {}),
+        currency: row.acquisitionValueCurrency,
+        decimals: row.acquisitionValueDecimals,
+        ...(row.duelId ? { duelId: row.duelId } : {}),
+        idempotencyKey,
+        inventoryId: row.id,
+        metadata: {
+          cancelledAt: cancelledAt.toISOString(),
+          operationKey: input.operationKey,
+          provider: input.provider,
+          providerCancellationEvidenceHash: input.providerCancellationEvidenceHash,
+          providerCancellationReference: input.providerCancellationReference,
+          providerCancellationSignature: input.providerCancellationSignature,
+          providerListingReference: input.providerListingReference,
+          reason: input.reason,
+          transition: 'delist',
+        },
+        type: HouseTreasuryLedgerType.INVENTORY_DISPOSITION_SET,
+      });
+      return transaction.houseInventoryAsset.findUniqueOrThrow({ where: { id: row.id } });
+    });
+  }
+
+  async completeDisposition(inventoryId: string, input: CompleteHouseDispositionRequest) {
+    return this.database.$transaction(async (transaction) => {
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        inventoryId,
+        HOUSE_INVENTORY_DISPOSITION_LOCK_NAMESPACE,
+      );
+      const row = await transaction.houseInventoryAsset.findUnique({ where: { id: inventoryId } });
+      if (!row) throw new NotFoundException(`Inventory asset ${inventoryId} was not found`);
+      const idempotencyKey =
+        input.provider && input.providerSaleReference
+          ? `inventory-disposed:${providerReferenceKey(
+              input.provider,
+              input.providerSaleReference,
+            )}`
+          : `inventory-disposed:${input.operationKey}`;
       const replay = await transaction.houseTreasuryLedgerEntry.findUnique({
         where: { idempotencyKey },
       });
@@ -713,6 +857,22 @@ export class HouseTreasuryService {
         row.listingState === HouseInventoryListingState.LISTED
       ) {
         throw new ConflictException('Listed inventory cannot complete a buyback before delisting');
+      }
+      if (
+        row.disposition === HouseInventoryDisposition.LIST &&
+        row.listingState !== HouseInventoryListingState.LISTED
+      ) {
+        throw new ConflictException('Unlisted inventory cannot complete a listing sale');
+      }
+      const listingCompletion =
+        row.disposition === HouseInventoryDisposition.LIST
+          ? await assertActiveListingCompletion(transaction, row, input)
+          : null;
+      if (
+        row.disposition !== HouseInventoryDisposition.LIST &&
+        dispositionCompletionCarriesProviderEvidence(input)
+      ) {
+        throw new ConflictException('Buyback completion cannot carry marketplace sale evidence');
       }
       const gross = storedAmount(input.realizedAmount);
       const fee = storedAmount(input.feeAmount);
@@ -752,6 +912,7 @@ export class HouseTreasuryService {
           gainLossAmount: gainLoss.toString(),
           grossAmount: input.realizedAmount,
           operationKey: input.operationKey,
+          ...(listingCompletion ?? {}),
           reason: input.reason,
         },
         type: HouseTreasuryLedgerType.INVENTORY_DISPOSED,
@@ -1114,9 +1275,126 @@ function assertDispositionReplay(
   if (
     ledger.inventoryId !== inventoryId ||
     metadata?.operationKey !== input.operationKey ||
-    metadata?.requestedDisposition !== input.disposition
+    metadata?.requestedDisposition !== input.disposition ||
+    (input.disposition === 'list' &&
+      (metadata.provider !== input.provider ||
+        metadata.providerListingReference !== input.providerListingReference))
   ) {
     throw new ConflictException('Disposition operation key was already used for another request');
+  }
+}
+
+async function assertActiveListingCompletion(
+  transaction: Prisma.TransactionClient,
+  row: {
+    id: string;
+  },
+  input: CompleteHouseDispositionRequest,
+): Promise<{
+  provider: string;
+  providerListingReference: string;
+  providerSaleAt: string;
+  providerSaleEvidenceHash: string;
+  providerSaleReference: string;
+  providerSaleSignature: string;
+}> {
+  if (
+    !input.provider ||
+    !input.providerListingReference ||
+    !input.providerSaleAt ||
+    !input.providerSaleEvidenceHash ||
+    !input.providerSaleReference ||
+    !input.providerSaleSignature
+  ) {
+    throw new ConflictException('Listing sale completion requires exact provider sale evidence');
+  }
+  const listed = await transaction.houseTreasuryLedgerEntry.findFirst({
+    orderBy: { createdAt: 'desc' },
+    where: {
+      inventoryId: row.id,
+      type: HouseTreasuryLedgerType.INVENTORY_DISPOSITION_SET,
+    },
+  });
+  const listingMetadata = jsonRecord(listed?.metadata ?? null);
+  if (
+    listingMetadata?.disposition !== 'list' ||
+    listingMetadata.provider !== input.provider ||
+    listingMetadata.providerListingReference !== input.providerListingReference
+  ) {
+    throw new ConflictException('Provider sale evidence does not match the active listing');
+  }
+  const providerSaleAt = new Date(input.providerSaleAt);
+  if (
+    !Number.isFinite(providerSaleAt.getTime()) ||
+    !listed ||
+    providerSaleAt < listed.createdAt ||
+    providerSaleAt.getTime() > Date.now() + 5 * 60 * 1_000
+  ) {
+    throw new ConflictException(
+      'Provider sale time must follow the active listing and not be in the future',
+    );
+  }
+  const canonicalSaleAt = providerSaleAt.toISOString();
+  assertHouseProviderEvidence(
+    input.provider,
+    {
+      feeAmount: input.feeAmount,
+      inventoryId: row.id,
+      provider: input.provider,
+      providerListingReference: input.providerListingReference,
+      providerSaleAt: canonicalSaleAt,
+      providerSaleReference: input.providerSaleReference,
+      realizedAmount: input.realizedAmount,
+      realizedCurrency: input.realizedCurrency,
+      realizedDecimals: input.realizedDecimals,
+      status: 'sold',
+    },
+    {
+      hash: input.providerSaleEvidenceHash,
+      signature: input.providerSaleSignature,
+    },
+  );
+  return {
+    provider: input.provider,
+    providerListingReference: input.providerListingReference,
+    providerSaleAt: canonicalSaleAt,
+    providerSaleEvidenceHash: input.providerSaleEvidenceHash,
+    providerSaleReference: input.providerSaleReference,
+    providerSaleSignature: input.providerSaleSignature,
+  };
+}
+
+function dispositionCompletionCarriesProviderEvidence(
+  input: CompleteHouseDispositionRequest,
+): boolean {
+  return Boolean(
+    input.provider ||
+      input.providerListingReference ||
+      input.providerSaleAt ||
+      input.providerSaleEvidenceHash ||
+      input.providerSaleReference ||
+      input.providerSaleSignature,
+  );
+}
+
+function assertDelistReplay(
+  ledger: { inventoryId: string | null; metadata: Prisma.JsonValue | null },
+  inventoryId: string,
+  input: DelistHouseInventoryRequest,
+): void {
+  const metadata = jsonRecord(ledger.metadata);
+  if (
+    ledger.inventoryId !== inventoryId ||
+    metadata?.operationKey !== input.operationKey ||
+    metadata.provider !== input.provider ||
+    metadata.providerListingReference !== input.providerListingReference ||
+    metadata.providerCancellationReference !== input.providerCancellationReference ||
+    metadata.providerCancellationEvidenceHash !== input.providerCancellationEvidenceHash ||
+    metadata.providerCancellationSignature !== input.providerCancellationSignature ||
+    metadata.cancelledAt !== new Date(input.cancelledAt).toISOString() ||
+    metadata.reason !== input.reason
+  ) {
+    throw new ConflictException('Delist operation key was already used for another result');
   }
 }
 
@@ -1130,7 +1408,15 @@ function assertDispositionCompletionReplay(
     ledger.inventoryId !== inventoryId ||
     metadata?.operationKey !== input.operationKey ||
     metadata?.grossAmount !== input.realizedAmount ||
-    metadata?.feeAmount !== input.feeAmount
+    metadata?.feeAmount !== input.feeAmount ||
+    metadata?.reason !== input.reason ||
+    metadata?.provider !== input.provider ||
+    metadata?.providerListingReference !== input.providerListingReference ||
+    metadata?.providerSaleAt !==
+      (input.providerSaleAt ? new Date(input.providerSaleAt).toISOString() : undefined) ||
+    metadata?.providerSaleEvidenceHash !== input.providerSaleEvidenceHash ||
+    metadata?.providerSaleReference !== input.providerSaleReference ||
+    metadata?.providerSaleSignature !== input.providerSaleSignature
   ) {
     throw new ConflictException('Disposition completion key was already used for another result');
   }

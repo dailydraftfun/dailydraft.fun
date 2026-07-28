@@ -8,6 +8,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { AppModule } from './app.module.js';
 import { ProblemDetailsFilter } from './common/problem-details.filter.js';
 import {
+  createTrustedProxyPolicy,
   registerRequestBoundary,
   resolveRequestBoundaryConfig,
   resolveRequestId,
@@ -22,12 +23,27 @@ export interface CreateAppOptions {
 export async function createApp(options: CreateAppOptions = {}): Promise<NestFastifyApplication> {
   validateDeploymentEnvironment();
   const requestBoundary = resolveRequestBoundaryConfig();
+  const trustedProxyPolicy = await createTrustedProxyPolicy(requestBoundary, {
+    onRefreshError: (error) => {
+      console.error(
+        JSON.stringify({
+          error: error instanceof Error ? error.message : 'Unknown proxy DNS refresh error',
+          event: 'trusted_proxy_dns_refresh_failed',
+        }),
+      );
+    },
+  });
   const adapter = new FastifyAdapter({
     genReqId: (request: IncomingMessage) => resolveRequestId(request.headers['x-request-id']),
-    trustProxy:
-      requestBoundary.trustedProxies.length > 0 ? [...requestBoundary.trustedProxies] : false,
+    trustProxy: (address) => trustedProxyPolicy.isTrusted(address),
   });
-  registerRequestBoundary(adapter.getInstance(), requestBoundary);
+  adapter.getInstance().addHook('onClose', (_instance, done) => {
+    trustedProxyPolicy.close();
+    done();
+  });
+  registerRequestBoundary(adapter.getInstance(), requestBoundary, {
+    isTrustedProxy: (address) => trustedProxyPolicy.isTrusted(address),
+  });
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter);
   await app.get(GachaRipService).bootstrapConfiguredMachines();

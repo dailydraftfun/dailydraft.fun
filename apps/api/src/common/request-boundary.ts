@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { Logger } from '@nestjs/common';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -6,12 +7,15 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$/;
 const DEFAULT_RATE_LIMIT = 120;
 const DEFAULT_RATE_WINDOW_MS = 60_000;
+const DEFAULT_TRUSTED_PROXY_REFRESH_MS = 5_000;
 const MAX_RATE_LIMIT_CLIENTS = 10_000;
 
 export interface RequestBoundaryConfig {
   allowedOrigins: readonly string[];
   rateLimit: number;
   rateWindowMs: number;
+  trustedProxyHosts: readonly string[];
+  trustedProxyRefreshMs: number;
   trustedProxies: readonly string[];
 }
 
@@ -31,8 +35,20 @@ export interface RequestBoundaryLog {
 }
 
 export interface RequestBoundaryOptions {
+  isTrustedProxy?: (address: string) => boolean;
   log?: (entry: RequestBoundaryLog) => void;
   now?: () => number;
+}
+
+export interface TrustedProxyPolicy {
+  close(): void;
+  isTrusted(address: string): boolean;
+  refresh(): Promise<void>;
+}
+
+export interface TrustedProxyPolicyOptions {
+  lookup?: typeof lookup;
+  onRefreshError?: (error: unknown) => void;
 }
 
 interface RateLimitState {
@@ -45,6 +61,7 @@ export function resolveRequestBoundaryConfig(
 ): RequestBoundaryConfig {
   const allowedOrigins = canonicalOrigins(environment.CORS_ORIGINS);
   const trustedProxies = canonicalTrustedProxies(environment.DAILYDRAFT_TRUSTED_PROXIES);
+  const trustedProxyHosts = canonicalTrustedProxyHosts(environment.DAILYDRAFT_TRUSTED_PROXY_HOSTS);
   return {
     allowedOrigins,
     rateLimit: boundedInteger(environment.DAILYDRAFT_RATE_LIMIT, DEFAULT_RATE_LIMIT, 1, 10_000),
@@ -54,7 +71,62 @@ export function resolveRequestBoundaryConfig(
       1_000,
       3_600_000,
     ),
+    trustedProxyHosts,
+    trustedProxyRefreshMs: boundedInteger(
+      environment.DAILYDRAFT_TRUSTED_PROXY_REFRESH_MS,
+      DEFAULT_TRUSTED_PROXY_REFRESH_MS,
+      1_000,
+      60_000,
+    ),
     trustedProxies,
+  };
+}
+
+export async function createTrustedProxyPolicy(
+  config: Pick<
+    RequestBoundaryConfig,
+    'trustedProxies' | 'trustedProxyHosts' | 'trustedProxyRefreshMs'
+  >,
+  options: TrustedProxyPolicyOptions = {},
+): Promise<TrustedProxyPolicy> {
+  const resolve = options.lookup ?? lookup;
+  let dynamicAddresses = new Set<string>();
+  let refreshInFlight: Promise<void> | undefined;
+  const staticAddresses = new Set(config.trustedProxies);
+
+  const refresh = (): Promise<void> => {
+    if (refreshInFlight) return refreshInFlight;
+    refreshInFlight = (async () => {
+      const next = new Set<string>();
+      for (const host of config.trustedProxyHosts) {
+        const addresses = await resolve(host, { all: true, verbatim: true });
+        if (addresses.length === 0) {
+          throw new Error(`Trusted proxy host ${host} resolved without an address`);
+        }
+        for (const { address } of addresses) next.add(address);
+      }
+      dynamicAddresses = next;
+    })().finally(() => {
+      refreshInFlight = undefined;
+    });
+    return refreshInFlight;
+  };
+
+  if (config.trustedProxyHosts.length > 0) await refresh();
+  const timer =
+    config.trustedProxyHosts.length > 0
+      ? setInterval(() => {
+          void refresh().catch(options.onRefreshError ?? (() => undefined));
+        }, config.trustedProxyRefreshMs)
+      : undefined;
+  timer?.unref();
+
+  return {
+    close: () => {
+      if (timer) clearInterval(timer);
+    },
+    isTrusted: (address) => staticAddresses.has(address) || dynamicAddresses.has(address),
+    refresh,
   };
 }
 
@@ -73,6 +145,8 @@ export function registerRequestBoundary(
   const now = options.now ?? Date.now;
   const logger = new Logger('HttpRequestBoundary');
   const log = options.log ?? ((entry) => logger.log(JSON.stringify(entry)));
+  const isTrustedProxy =
+    options.isTrustedProxy ?? ((address: string) => config.trustedProxies.includes(address));
   const startedAt = new WeakMap<FastifyRequest, number>();
   const rateLimits = new Map<string, RateLimitState>();
 
@@ -81,7 +155,7 @@ export function registerRequestBoundary(
     startedAt.set(request, observedAt);
     response.header('x-request-id', request.id);
 
-    const forwardedIssue = forwardedHeaderIssue(request, config.trustedProxies);
+    const forwardedIssue = forwardedHeaderIssue(request, isTrustedProxy);
     if (forwardedIssue) {
       sendBoundaryProblem(response, request.id, 400, forwardedIssue);
       return;
@@ -164,19 +238,30 @@ function consumeRateLimit(
 
 function forwardedHeaderIssue(
   request: FastifyRequest,
-  trustedProxies: readonly string[],
+  isTrustedProxy: (address: string) => boolean,
 ): string | null {
   const remoteAddress = request.raw.socket.remoteAddress ?? '';
-  if (!trustedProxies.includes(remoteAddress)) return null;
+  const forwardingHeaders = [
+    request.headers['x-forwarded-for'],
+    request.headers['x-forwarded-host'],
+    request.headers['x-forwarded-proto'],
+  ];
+  if (!isTrustedProxy(remoteAddress)) {
+    return forwardingHeaders.some((header) => header !== undefined)
+      ? 'Forwarded headers require a trusted proxy'
+      : null;
+  }
 
   const forwardedFor = request.headers['x-forwarded-for'];
+  if (forwardedFor === undefined) {
+    return 'Trusted proxy omitted x-forwarded-for';
+  }
   if (
-    forwardedFor !== undefined &&
-    (typeof forwardedFor !== 'string' ||
-      forwardedFor
-        .split(',')
-        .map((address) => address.trim())
-        .some((address) => isIP(address) === 0))
+    typeof forwardedFor !== 'string' ||
+    forwardedFor
+      .split(',')
+      .map((address) => address.trim())
+      .some((address) => isIP(address) === 0)
   ) {
     return 'Trusted proxy supplied malformed x-forwarded-for';
   }
@@ -231,6 +316,23 @@ function canonicalTrustedProxies(value: string | undefined): string[] {
     throw new Error('DAILYDRAFT_TRUSTED_PROXIES must contain only literal IP addresses');
   }
   return [...new Set(proxies)].sort();
+}
+
+function canonicalTrustedProxyHosts(value: string | undefined): string[] {
+  if (!value?.trim()) return [];
+  const hosts = value.split(',').map((host) => host.trim().toLowerCase());
+  if (
+    hosts.some(
+      (host) =>
+        host.length > 253 ||
+        !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(
+          host,
+        ),
+    )
+  ) {
+    throw new Error('DAILYDRAFT_TRUSTED_PROXY_HOSTS must contain only DNS hostnames');
+  }
+  return [...new Set(hosts)].sort();
 }
 
 function boundedInteger(
