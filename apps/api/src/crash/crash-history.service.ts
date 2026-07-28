@@ -245,7 +245,7 @@ export class CrashHistoryService {
         expectedOperationCount: settlement?.expectedOperationCount ?? 0,
         finalizedOperationCount: settlement?.finalizedOperationCount ?? 0,
         receiptHash: settlement?.receiptHash ?? round.settlementReceiptHash,
-        recoveryReason: safeRecoveryReason(settlement?.recoveryReason),
+        recoveryReason: publicRecoveryCode(settlement?.recoveryReason),
         status: settlementStatus,
       },
       stage: round.stage,
@@ -354,7 +354,7 @@ function settlementEvent(
     occurredAt: (operation.finalizedAt ?? operation.updatedAt ?? operation.createdAt).toISOString(),
     reference: publicReference('settlement', operation.operationKey),
     stage: operation.stage ?? operation.sequence,
-    terminalReason: safeRecoveryReason(operation.failureCode),
+    terminalReason: publicRecoveryCode(operation.failureCode),
   };
 }
 
@@ -553,9 +553,9 @@ function safeNextAction(
   return 'review-receipt';
 }
 
-function safeRecoveryReason(value: string | null | undefined): string | null {
+function publicRecoveryCode(value: string | null | undefined): string | null {
   if (!value) return null;
-  return /^[A-Za-z0-9._:-]{1,240}$/.test(value) ? value : 'RECOVERY_REQUIRED';
+  return /^[A-Z][A-Z0-9_]{0,119}$/.test(value) ? value : 'RECOVERY_REQUIRED';
 }
 
 function compareEvents(left: CrashReceiptEvent, right: CrashReceiptEvent): number {

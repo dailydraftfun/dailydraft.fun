@@ -942,6 +942,7 @@ function assertVerifiedSettlement(
   if (round.settlementStatus !== settlement.status) {
     throw invalidSettlementEvidence('round and settlement status conflict');
   }
+  verifiedPublicRecoveryReason(settlement);
 
   if (settlement.status === 'SETTLED') {
     const recomputed = settlementReceipt(settlement, terminal);
@@ -971,17 +972,30 @@ function assertVerifiedSettlement(
   ) {
     throw invalidSettlementEvidence('non-final settlement claims finality');
   }
-  const recoveryOperations = settlement.operations.filter(
-    ({ status }) => status === 'RECOVERY_REQUIRED',
-  );
+}
+
+function verifiedPublicRecoveryReason(settlement: SettlementRecord): string | null {
+  const recovering = settlement.operations.filter(({ status }) => status === 'RECOVERY_REQUIRED');
+  if (settlement.status !== 'RECOVERY_REQUIRED') {
+    if (recovering.length > 0 || settlement.recoveryReason !== null) {
+      throw invalidSettlementEvidence('recovery state is ambiguous');
+    }
+    return null;
+  }
+  const operation = recovering[0];
   if (
-    (settlement.status === 'RECOVERY_REQUIRED' &&
-      (recoveryOperations.length === 0 || !settlement.recoveryReason)) ||
-    (settlement.status === 'PENDING' &&
-      (recoveryOperations.length > 0 || settlement.recoveryReason !== null))
+    recovering.length !== 1 ||
+    !operation?.failureCode ||
+    settlement.recoveryReason !== `${operation.id}:${operation.failureCode}`
   ) {
     throw invalidSettlementEvidence('recovery state is ambiguous');
   }
+  assertOperationEvidence(operation);
+  return publicRecoveryCode(operation.failureCode);
+}
+
+function publicRecoveryCode(value: string): string {
+  return /^[A-Z][A-Z0-9_]{0,119}$/.test(value) ? value : 'RECOVERY_REQUIRED';
 }
 
 function assertOperationEvidence(operation: SettlementRecord['operations'][number]): void {
@@ -1293,7 +1307,7 @@ function toSnapshot(row: SettlementRecord): CrashSettlementSnapshot {
           | 'recovery-required',
       })),
     receiptHash: row.receiptHash,
-    recoveryReason: row.recoveryReason,
+    recoveryReason: verifiedPublicRecoveryReason(row),
     roundId: row.roundId,
     settlementPolicyHash: row.settlementPolicyHash,
     settlementPolicyVersion: row.settlementPolicyVersion,

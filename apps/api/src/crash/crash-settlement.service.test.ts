@@ -144,6 +144,27 @@ describe('Crash settlement recovery', () => {
     expect(fixture.provider.effectCount(kind)).toBe(1);
   });
 
+  test('derives the public recovery code from the verified operation without serializing its id', async () => {
+    const fixture = settlementFixture({ outcome: 'cash-out' });
+    fixture.provider.failDefinitelyOnce('transfer');
+
+    const recovery = await fixture.service.resumeFixtureSettlement(ROUND_ID);
+    const operation = fixture.database.operations[0];
+    const settlement = fixture.database.settlement;
+    if (!operation?.id || !settlement) throw new Error('recovery evidence required');
+    const operationId = String(operation.id);
+    const failureCode = 'FIXTURE_TRANSFER_NOT_APPLIED';
+
+    expect(settlement.recoveryReason).toBe(`${operationId}:${failureCode}`);
+    expect(recovery.recoveryReason).toBe(failureCode);
+    expect(JSON.stringify(recovery)).not.toContain(operationId);
+
+    settlement.recoveryReason = `crashsettlementop_wrong:${failureCode}`;
+    await expect(fixture.service.findFixtureSettlement(ROUND_ID)).rejects.toMatchObject({
+      code: 'INVALID_EVIDENCE',
+    });
+  });
+
   test('lost provider response reconciles the original request without a second signing', async () => {
     const fixture = settlementFixture({ outcome: 'cash-out' });
     fixture.provider.loseResponseAfterEffect('transfer');

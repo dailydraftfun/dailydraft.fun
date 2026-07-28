@@ -309,7 +309,7 @@ describe('CrashHistoryService', () => {
             status: 'prepared',
           },
         ],
-        recoveryReason: 'unsafe reason with spaces',
+        recoveryReason: 'crashsettlementop_internal_01:PROVIDER_RESULT_AMBIGUOUS',
       }),
     ).getReceipt(ROUND_ID, WALLET);
 
@@ -333,6 +333,7 @@ describe('CrashHistoryService', () => {
       ]),
     );
     expect(receipt.settlement.recoveryReason).toBe('RECOVERY_REQUIRED');
+    expect(JSON.stringify(receipt)).not.toContain('crashsettlementop_internal_01');
   });
 
   test.each([
