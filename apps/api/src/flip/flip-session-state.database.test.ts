@@ -386,7 +386,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
         });
         await transaction.flipSessionTransition.create({
           data: {
-            evidence,
+            evidence: evidence as unknown as Prisma.InputJsonValue,
             fromStatus: FlipSessionStatus.AWAITING_STAKE,
             id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
             kind,
@@ -440,7 +440,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
       Promise.resolve(
         databaseA.flipSessionTransition.create({
           data: {
-            evidence,
+            evidence: evidence as unknown as Prisma.InputJsonValue,
             fromStatus: FlipSessionStatus.AWAITING_STAKE,
             id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
             kind: FlipSessionTransitionKind.STAKE_CONFIRMED,
@@ -508,7 +508,7 @@ describeDatabase('Flip session state machine against two real Postgres connectio
         });
         await transaction.flipSessionTransition.create({
           data: {
-            evidence,
+            evidence: evidence as unknown as Prisma.InputJsonValue,
             fromStatus: FlipSessionStatus.AWAITING_STAKE,
             id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
             kind: FlipSessionTransitionKind.STAKE_CONFIRMED,
@@ -528,6 +528,477 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     await expect(service.findSession(session.id)).resolves.toMatchObject({
       status: 'awaiting-stake',
       version: 1,
+    });
+  });
+
+  test('rejects fractional lexical integers even when their numeric values match', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'fractional-request-version');
+    const { service, session } = await createDatabaseSessionAt(
+      databaseA,
+      fixture,
+      'awaiting-stake',
+    );
+    const evidence = {
+      amount: usdc('50000000'),
+      reference: 'fixture-stake:fractional-version',
+      schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+      status: 'fixture-confirmed' as const,
+    };
+    const requestPayload =
+      `{"action":{"evidence":${stableStringify(evidence)},` +
+      `"expectedVersion":${session.version}.0,"kind":"confirm-stake",` +
+      '"transitionKey":"fractional-version"},' +
+      `"stateMachineVersion":"${FLIP_SESSION_STATE_MACHINE_VERSION}"}`;
+
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.update({
+          data: {
+            stakeAmount: '50000000',
+            stakeCurrency: 'USDC',
+            stakeDecimals: 6,
+            status: FlipSessionStatus.STAKE_CONFIRMED,
+            version: { increment: 1 },
+          },
+          where: { id: session.id },
+        });
+        await transaction.flipSessionTransition.create({
+          data: {
+            evidence: evidence as unknown as Prisma.InputJsonValue,
+            fromStatus: FlipSessionStatus.AWAITING_STAKE,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind: FlipSessionTransitionKind.STAKE_CONFIRMED,
+            poolCommitmentHash: null,
+            requestHash: hash(requestPayload),
+            requestPayload,
+            selectedAssetReference: null,
+            sequence: session.version + 1,
+            sessionId: session.id,
+            terminalReason: null,
+            toStatus: FlipSessionStatus.STAKE_CONFIRMED,
+            transitionKey: 'fractional-version',
+          },
+        });
+      }),
+    ).rejects.toThrow('request payload is invalid');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: session.version,
+    });
+  });
+
+  test('rejects fractional lexical pool counts and selection ordinals in raw JSONB evidence', async () => {
+    const poolFixture = await prepareDatabaseFixture(databaseA, 'fractional-pool-count');
+    const { service: poolService, session: staked } = await createDatabaseSessionAt(
+      databaseA,
+      poolFixture,
+      'stake-confirmed',
+    );
+    const commitment = await databaseA.flipSessionPoolCommitment.findUniqueOrThrow({
+      where: { id: poolFixture.commitmentId },
+    });
+    const poolEvidence = stableStringify({
+      eligibleOutcomeCount: commitment.eligibleOutcomeCount,
+      poolCommitmentHash: commitment.poolCommitmentHash,
+      poolCommitmentId: commitment.id,
+      rulesHash: commitment.rulesHash,
+      snapshotContentHash: commitment.snapshotContentHash,
+    }).replace(
+      `"eligibleOutcomeCount":${commitment.eligibleOutcomeCount}`,
+      `"eligibleOutcomeCount":${commitment.eligibleOutcomeCount}.0`,
+    );
+    const poolPayload = stableStringify({
+      action: {
+        evidence: { poolCommitmentId: commitment.id },
+        expectedVersion: staked.version,
+        kind: 'commit-pool',
+        transitionKey: 'fractional-pool-count',
+      },
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.update({
+          data: {
+            poolCommitmentHash: commitment.poolCommitmentHash,
+            poolCommitmentId: commitment.id,
+            rulesHash: commitment.rulesHash,
+            snapshotContentHash: commitment.snapshotContentHash,
+            status: FlipSessionStatus.POOL_COMMITTED,
+            version: { increment: 1 },
+          },
+          where: { id: staked.id },
+        });
+        await insertRawTransition(transaction, {
+          evidence: poolEvidence,
+          fromStatus: 'STAKE_CONFIRMED',
+          kind: 'POOL_COMMITTED',
+          poolCommitmentHash: commitment.poolCommitmentHash,
+          requestHash: hash(poolPayload),
+          requestPayload: poolPayload,
+          selectedAssetReference: null,
+          sequence: staked.version + 1,
+          sessionId: staked.id,
+          terminalReason: null,
+          toStatus: 'POOL_COMMITTED',
+          transitionKey: 'fractional-pool-count',
+        });
+      }),
+    ).rejects.toThrow('pool transition evidence is invalid');
+    await expect(poolService.findSession(staked.id)).resolves.toMatchObject({
+      status: 'stake-confirmed',
+      version: staked.version,
+    });
+
+    const selectionFixture = await prepareDatabaseFixture(databaseA, 'fractional-ordinal');
+    const { service: selectionService, session: pooled } = await createDatabaseSessionAt(
+      databaseA,
+      selectionFixture,
+      'pool-committed',
+    );
+    const selectionEvidence = stableStringify({
+      ...selectionFixture.selected,
+      reference: 'fixture-selection:fractional-ordinal',
+      resultHash: hash('fractional-ordinal'),
+      schemaVersion: FLIP_SELECTION_FIXTURE_VERSION,
+    }).replace(
+      `"ordinal":${selectionFixture.selected.ordinal}`,
+      `"ordinal":${selectionFixture.selected.ordinal}.0`,
+    );
+    const selectionPayload = stableStringify({
+      action: {
+        evidence: {
+          ...selectionFixture.selected,
+          reference: 'fixture-selection:fractional-ordinal',
+          resultHash: hash('fractional-ordinal'),
+          schemaVersion: FLIP_SELECTION_FIXTURE_VERSION,
+        },
+        expectedVersion: pooled.version,
+        kind: 'record-selection',
+        transitionKey: 'fractional-ordinal',
+      },
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    }).replace(
+      `"ordinal":${selectionFixture.selected.ordinal}`,
+      `"ordinal":${selectionFixture.selected.ordinal}.0`,
+    );
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.update({
+          data: {
+            selectedAssetReference: selectionFixture.selected.providerAssetReference,
+            selectedBandLabel: selectionFixture.selected.bandLabel,
+            selectedListingReference: selectionFixture.selected.providerListingReference,
+            selectedOrdinal: selectionFixture.selected.ordinal,
+            selectedValueAmount: selectionFixture.selected.listingValueAmount,
+            status: FlipSessionStatus.SELECTION_RECORDED,
+            version: { increment: 1 },
+          },
+          where: { id: pooled.id },
+        });
+        await insertRawTransition(transaction, {
+          evidence: selectionEvidence,
+          fromStatus: 'POOL_COMMITTED',
+          kind: 'SELECTION_RECORDED',
+          poolCommitmentHash: pooled.poolCommitment?.poolCommitmentHash ?? null,
+          requestHash: hash(selectionPayload),
+          requestPayload: selectionPayload,
+          selectedAssetReference: selectionFixture.selected.providerAssetReference,
+          sequence: pooled.version + 1,
+          sessionId: pooled.id,
+          terminalReason: null,
+          toStatus: 'SELECTION_RECORDED',
+          transitionKey: 'fractional-ordinal',
+        });
+      }),
+    ).rejects.toThrow('selection transition evidence is invalid');
+    await expect(selectionService.findSession(pooled.id)).resolves.toMatchObject({
+      status: 'pool-committed',
+      version: pooled.version,
+    });
+  });
+
+  test('rejects Money beyond the service u64 boundary in aggregate and ledger evidence', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'money-u64-boundary');
+    const { service, session } = await createDatabaseSessionAt(
+      databaseA,
+      fixture,
+      'awaiting-stake',
+    );
+    const evidence = {
+      amount: usdc('18446744073709551616'),
+      reference: 'fixture-stake:over-u64',
+      schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+      status: 'fixture-confirmed' as const,
+    };
+    const requestPayload = stableStringify({
+      action: {
+        evidence,
+        expectedVersion: session.version,
+        kind: 'confirm-stake',
+        transitionKey: 'stake-over-u64',
+      },
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.update({
+          data: {
+            stakeAmount: evidence.amount.amount,
+            stakeCurrency: evidence.amount.currency,
+            stakeDecimals: evidence.amount.decimals,
+            status: FlipSessionStatus.STAKE_CONFIRMED,
+            version: { increment: 1 },
+          },
+          where: { id: session.id },
+        });
+        await transaction.flipSessionTransition.create({
+          data: {
+            evidence: evidence as unknown as Prisma.InputJsonValue,
+            fromStatus: FlipSessionStatus.AWAITING_STAKE,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind: FlipSessionTransitionKind.STAKE_CONFIRMED,
+            poolCommitmentHash: null,
+            requestHash: hash(requestPayload),
+            requestPayload,
+            selectedAssetReference: null,
+            sequence: session.version + 1,
+            sessionId: session.id,
+            terminalReason: null,
+            toStatus: FlipSessionStatus.STAKE_CONFIRMED,
+            transitionKey: 'stake-over-u64',
+          },
+        });
+      }),
+    ).rejects.toThrow();
+    const moneyValidation = await databaseA.$queryRawUnsafe<Array<{ valid: boolean }>>(
+      `SELECT "flip_valid_money"(
+        '{"amount":"18446744073709551616","currency":"USDC","decimals":6}'::jsonb
+      ) AS valid`,
+    );
+    expect(moneyValidation).toEqual([{ valid: false }]);
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: session.version,
+    });
+  });
+
+  test('rejects initial and recovery writes that inject future lifecycle milestones', async () => {
+    const suffix = crypto.randomUUID().replaceAll('-', '');
+    const injectedSessionId = `injected-initial-${suffix}`;
+    const startPayload = stableStringify({
+      playerWalletReference: 'fixture-wallet:injected-initial',
+      sessionReference: injectedSessionId,
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+    await expect(
+      Promise.resolve(
+        databaseA.flipSession.create({
+          data: {
+            activationMode: 'fixture-only',
+            id: injectedSessionId,
+            playerWalletReference: 'fixture-wallet:injected-initial',
+            purchasedAt: new Date('2026-07-28T16:00:00.000Z'),
+            purchaseReference: 'fixture-purchase:injected-initial',
+            stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+            status: FlipSessionStatus.AWAITING_STAKE,
+            transitions: {
+              create: {
+                evidence: {
+                  playerWalletReference: 'fixture-wallet:injected-initial',
+                  stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+                },
+                fromStatus: null,
+                id: `fliptransition_${suffix}`,
+                kind: FlipSessionTransitionKind.SESSION_STARTED,
+                requestHash: hash(startPayload),
+                requestPayload: startPayload,
+                sequence: 1,
+                toStatus: FlipSessionStatus.AWAITING_STAKE,
+                transitionKey: 'session-started',
+              },
+            },
+            updatedAt: new Date('2026-07-28T16:00:00.000Z'),
+            version: 1,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+
+    const fixture = await prepareDatabaseFixture(databaseA, 'injected-recovery');
+    const { service, session } = await createDatabaseSessionAt(
+      databaseA,
+      fixture,
+      'awaiting-stake',
+    );
+    const recoveryEvidence = {
+      reasonCode: 'FIXTURE_RECOVERY',
+      reference: 'fixture-recovery:injected-stake',
+      schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+      status: 'fixture-recovery-required' as const,
+    };
+    const recoveryPayload = stableStringify({
+      action: {
+        evidence: recoveryEvidence,
+        expectedVersion: session.version,
+        kind: 'request-recovery',
+        transitionKey: 'injected-recovery',
+      },
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.update({
+          data: {
+            stakeAmount: '50000000',
+            stakeCurrency: 'USDC',
+            stakeDecimals: 6,
+            status: FlipSessionStatus.RECOVERY_REQUIRED,
+            version: { increment: 1 },
+          },
+          where: { id: session.id },
+        });
+        await transaction.flipSessionTransition.create({
+          data: {
+            evidence: recoveryEvidence,
+            fromStatus: FlipSessionStatus.AWAITING_STAKE,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind: FlipSessionTransitionKind.RECOVERY_REQUESTED,
+            poolCommitmentHash: null,
+            requestHash: hash(recoveryPayload),
+            requestPayload: recoveryPayload,
+            selectedAssetReference: null,
+            sequence: session.version + 1,
+            sessionId: session.id,
+            terminalReason: null,
+            toStatus: FlipSessionStatus.RECOVERY_REQUIRED,
+            transitionKey: 'injected-recovery',
+          },
+        });
+      }),
+    ).rejects.toThrow('exact lifecycle action');
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: session.version,
+    });
+  });
+
+  test.each([
+    {
+      label: 'session reference',
+      sessionId: 'not a session reference',
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+      transitionKey: 'session-started',
+    },
+    {
+      label: 'state machine version',
+      sessionId: `invalid-version-${crypto.randomUUID().replaceAll('-', '')}`,
+      stateMachineVersion: 'dailydraft.flip-session-state.v999',
+      transitionKey: 'session-started',
+    },
+    {
+      label: 'transition key',
+      sessionId: `invalid-transition-${crypto.randomUUID().replaceAll('-', '')}`,
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+      transitionKey: 'not a transition key',
+    },
+  ])('rejects an invalid initial $label at the database boundary', async (vector) => {
+    const requestPayload = stableStringify({
+      playerWalletReference: 'fixture-wallet:invalid-initial',
+      sessionReference: vector.sessionId,
+      stateMachineVersion: vector.stateMachineVersion,
+    });
+    await expect(
+      Promise.resolve(
+        databaseA.flipSession.create({
+          data: {
+            activationMode: 'fixture-only',
+            id: vector.sessionId,
+            playerWalletReference: 'fixture-wallet:invalid-initial',
+            stateMachineVersion: vector.stateMachineVersion,
+            status: FlipSessionStatus.AWAITING_STAKE,
+            transitions: {
+              create: {
+                evidence: {
+                  playerWalletReference: 'fixture-wallet:invalid-initial',
+                  stateMachineVersion: vector.stateMachineVersion,
+                },
+                fromStatus: null,
+                id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+                kind: FlipSessionTransitionKind.SESSION_STARTED,
+                requestHash: hash(requestPayload),
+                requestPayload,
+                sequence: 1,
+                toStatus: FlipSessionStatus.AWAITING_STAKE,
+                transitionKey: vector.transitionKey,
+              },
+            },
+            updatedAt: new Date('2026-07-28T16:00:00.000Z'),
+            version: 1,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  test('rejects an invalid general transition key at the database boundary', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'invalid-general-transition-key');
+    const { service, session } = await createDatabaseSessionAt(
+      databaseA,
+      fixture,
+      'awaiting-stake',
+    );
+    const transitionKey = 'not a transition key';
+    const evidence = {
+      amount: usdc('50000000'),
+      reference: 'fixture-stake:invalid-transition-key',
+      schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+      status: 'fixture-confirmed' as const,
+    };
+    const requestPayload = stableStringify({
+      action: {
+        evidence,
+        expectedVersion: session.version,
+        kind: 'confirm-stake',
+        transitionKey,
+      },
+      stateMachineVersion: FLIP_SESSION_STATE_MACHINE_VERSION,
+    });
+    await expect(
+      databaseA.$transaction(async (transaction) => {
+        await transaction.flipSession.update({
+          data: {
+            stakeAmount: evidence.amount.amount,
+            stakeCurrency: evidence.amount.currency,
+            stakeDecimals: evidence.amount.decimals,
+            status: FlipSessionStatus.STAKE_CONFIRMED,
+            version: { increment: 1 },
+          },
+          where: { id: session.id },
+        });
+        await transaction.flipSessionTransition.create({
+          data: {
+            evidence: evidence as unknown as Prisma.InputJsonValue,
+            fromStatus: FlipSessionStatus.AWAITING_STAKE,
+            id: `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+            kind: FlipSessionTransitionKind.STAKE_CONFIRMED,
+            poolCommitmentHash: null,
+            requestHash: hash(requestPayload),
+            requestPayload,
+            selectedAssetReference: null,
+            sequence: session.version + 1,
+            sessionId: session.id,
+            terminalReason: null,
+            toStatus: FlipSessionStatus.STAKE_CONFIRMED,
+            transitionKey,
+          },
+        });
+      }),
+    ).rejects.toThrow();
+    await expect(service.findSession(session.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: session.version,
     });
   });
 
@@ -785,6 +1256,27 @@ describeDatabase('Flip session state machine against two real Postgres connectio
       }),
     },
     {
+      actionKind: 'settle',
+      evidence: (fixture: Awaited<ReturnType<typeof prepareDatabaseFixture>>) => ({
+        payout: usdc('18446744073709551616'),
+        providerAssetReference: fixture.selected.providerAssetReference,
+        reference: 'fixture-settlement:over-u64',
+        resultHash: hash('invalid-settlement-payout'),
+        schemaVersion: FLIP_SETTLEMENT_FIXTURE_VERSION,
+        status: 'fixture-recorded',
+      }),
+      fromStatus: FlipSessionStatus.REVEAL_READY,
+      kind: FlipSessionTransitionKind.SETTLED,
+      label: 'settlement payout above u64',
+      target: 'reveal-ready' as const,
+      terminalReason: 'FIXTURE_SETTLED',
+      toStatus: FlipSessionStatus.SETTLED,
+      update: () => ({
+        terminalAt: new Date('2026-07-28T16:30:00.000Z'),
+        terminalReason: 'FIXTURE_SETTLED',
+      }),
+    },
+    {
       actionKind: 'request-recovery',
       evidence: () => ({
         reasonCode: 'FIXTURE_RECOVERY',
@@ -812,6 +1304,26 @@ describeDatabase('Flip session state machine against two real Postgres connectio
       fromStatus: FlipSessionStatus.RECOVERY_REQUIRED,
       kind: FlipSessionTransitionKind.RECOVERY_COMPLETED,
       label: 'recovery completion reference',
+      target: 'recovery-required' as const,
+      terminalReason: 'FIXTURE_RECOVERY_COMPLETED',
+      toStatus: FlipSessionStatus.RECOVERED,
+      update: () => ({
+        terminalAt: new Date('2026-07-28T16:30:00.000Z'),
+        terminalReason: 'FIXTURE_RECOVERY_COMPLETED',
+      }),
+    },
+    {
+      actionKind: 'complete-recovery',
+      evidence: () => ({
+        payout: usdc('18446744073709551616'),
+        reference: 'fixture-recovery:over-u64',
+        resultHash: hash('invalid-recovery-payout'),
+        schemaVersion: FLIP_RECOVERY_FIXTURE_VERSION,
+        status: 'fixture-recovered',
+      }),
+      fromStatus: FlipSessionStatus.RECOVERY_REQUIRED,
+      kind: FlipSessionTransitionKind.RECOVERY_COMPLETED,
+      label: 'recovery payout above u64',
       target: 'recovery-required' as const,
       terminalReason: 'FIXTURE_RECOVERY_COMPLETED',
       toStatus: FlipSessionStatus.RECOVERED,
@@ -1049,6 +1561,69 @@ async function createDatabaseSessionAt(
     if (session.status === target) return { service, session };
   }
   throw new Error(`unsupported database session target ${target}`);
+}
+
+async function insertRawTransition(
+  transaction: Prisma.TransactionClient,
+  input: {
+    evidence: string;
+    fromStatus: string;
+    kind: string;
+    poolCommitmentHash: string | null;
+    requestHash: string;
+    requestPayload: string;
+    selectedAssetReference: string | null;
+    sequence: number;
+    sessionId: string;
+    terminalReason: string | null;
+    toStatus: string;
+    transitionKey: string;
+  },
+): Promise<void> {
+  await transaction.$executeRawUnsafe(
+    `INSERT INTO "FlipSessionTransition" (
+      "id",
+      "sessionId",
+      "sequence",
+      "transitionKey",
+      "requestHash",
+      "requestPayload",
+      "kind",
+      "fromStatus",
+      "toStatus",
+      "evidence",
+      "poolCommitmentHash",
+      "selectedAssetReference",
+      "terminalReason"
+    ) VALUES (
+      $1,
+      $2,
+      $3,
+      $4,
+      $5,
+      $6,
+      $7::"FlipSessionTransitionKind",
+      $8::"FlipSessionStatus",
+      $9::"FlipSessionStatus",
+      $10::jsonb,
+      $11,
+      $12,
+      $13
+    )`,
+    `fliptransition_${crypto.randomUUID().replaceAll('-', '')}`,
+    input.sessionId,
+    input.sequence,
+    input.transitionKey,
+    input.requestHash,
+    input.requestPayload,
+    input.kind,
+    input.fromStatus,
+    input.toStatus,
+    input.evidence,
+    input.poolCommitmentHash,
+    input.selectedAssetReference,
+    input.terminalReason,
+  );
 }
 
 function policy(poolKey: string, policyVersion: string): FlipInventorySnapshotPolicy {

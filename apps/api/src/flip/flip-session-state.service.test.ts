@@ -371,9 +371,46 @@ describe('durable fixture-only Flip session state machine', () => {
         expectedVersion: created.version,
       }),
     ).rejects.toThrow('fixture has unsupported fields');
+    await expect(
+      fixture.service.transition(created.id, {
+        ...stakeAction(),
+        evidence: {
+          ...stakeAction().evidence,
+          amount: usdc('18446744073709551616'),
+        },
+        expectedVersion: created.version,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_EVIDENCE' });
 
     fixture.database.corruptSession(created.id, { version: 2 });
     await expect(fixture.service.findSession(created.id)).rejects.toMatchObject({
+      code: 'DISABLED',
+    });
+  });
+
+  test('rejects future milestones injected before their exact ledger actions', async () => {
+    const initialFixture = harness('flip-injected-initial-milestone');
+    const initial = await initialFixture.create();
+    initialFixture.database.corruptSession(initial.id, {
+      purchaseReference: 'fixture-purchase:forged',
+      purchasedAt: new Date('2026-07-28T16:00:00.000Z'),
+    });
+    await expect(initialFixture.service.findSession(initial.id)).rejects.toMatchObject({
+      code: 'DISABLED',
+    });
+
+    const recoveryFixture = harness('flip-injected-recovery-milestone');
+    const created = await recoveryFixture.create();
+    const recovery = await recoveryFixture.service.transition(
+      created.id,
+      recoveryAction(created.version),
+    );
+    recoveryFixture.database.corruptSession(recovery.id, {
+      stakeAmount: '50000000',
+      stakeCurrency: 'USDC',
+      stakeDecimals: 6,
+    });
+    await expect(recoveryFixture.service.findSession(recovery.id)).rejects.toMatchObject({
       code: 'DISABLED',
     });
   });
@@ -437,6 +474,10 @@ describe('durable fixture-only Flip session state machine', () => {
     {
       label: 'transition kind',
       patch: { kind: 'SETTLED' as FlipSessionTransitionKind },
+    },
+    {
+      label: 'transition key',
+      patch: { transitionKey: 'not a durable identifier' },
     },
     {
       label: 'milestone evidence',

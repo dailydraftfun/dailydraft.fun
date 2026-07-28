@@ -989,6 +989,7 @@ function toSnapshot(session: FlipSessionWithTransitions): FlipSessionSnapshot {
 function assertAggregateContract(session: FlipSessionRow): void {
   if (
     session.activationMode !== 'fixture-only' ||
+    !IDENTIFIER_PATTERN.test(session.id) ||
     session.stateMachineVersion !== FLIP_SESSION_STATE_MACHINE_VERSION ||
     !FIXTURE_WALLET_PATTERN.test(session.playerWalletReference)
   ) {
@@ -999,6 +1000,7 @@ function assertAggregateContract(session: FlipSessionRow): void {
 function assertSessionLedger(session: FlipSessionWithTransitions): void {
   assertAggregateContract(session);
   assertStoredCommitmentBinding(session);
+  assertMilestoneContract(session);
   const first = session.transitions[0];
   const last = session.transitions.at(-1);
   const terminal = TERMINAL_STATUSES.has(session.status);
@@ -1026,6 +1028,78 @@ function assertSessionLedger(session: FlipSessionWithTransitions): void {
   ) {
     throw stateError('DISABLED', 'Flip durable transition ledger is inconsistent');
   }
+}
+
+function assertMilestoneContract(session: FlipSessionWithTransitions): void {
+  let milestoneStatus = session.status;
+  if (
+    milestoneStatus === DatabaseFlipSessionStatus.RECOVERY_REQUIRED ||
+    milestoneStatus === DatabaseFlipSessionStatus.RECOVERED ||
+    milestoneStatus === DatabaseFlipSessionStatus.FAILED
+  ) {
+    const recovery = session.transitions.find(
+      (transition) => transition.kind === DatabaseFlipSessionTransitionKind.RECOVERY_REQUESTED,
+    );
+    if (
+      !recovery?.fromStatus ||
+      recovery.fromStatus === DatabaseFlipSessionStatus.RECOVERY_REQUIRED ||
+      TERMINAL_STATUSES.has(recovery.fromStatus)
+    ) {
+      throw stateError('DISABLED', 'Flip recovery milestone origin is invalid');
+    }
+    milestoneStatus = recovery.fromStatus;
+  }
+
+  const milestoneRank = new Map<DatabaseFlipSessionStatus, number>([
+    [DatabaseFlipSessionStatus.AWAITING_STAKE, 0],
+    [DatabaseFlipSessionStatus.STAKE_CONFIRMED, 1],
+    [DatabaseFlipSessionStatus.POOL_COMMITTED, 2],
+    [DatabaseFlipSessionStatus.SELECTION_RECORDED, 3],
+    [DatabaseFlipSessionStatus.PURCHASE_RECORDED, 4],
+    [DatabaseFlipSessionStatus.TRANSFER_RECORDED, 5],
+    [DatabaseFlipSessionStatus.REVEAL_READY, 6],
+    [DatabaseFlipSessionStatus.SETTLED, 6],
+  ]);
+  const rank = milestoneRank.get(milestoneStatus);
+  const milestonePresence = [
+    [milestonePresent([session.stakeAmount, session.stakeCurrency, session.stakeDecimals]), 1],
+    [
+      milestonePresent([
+        session.poolCommitmentId,
+        session.poolCommitmentHash,
+        session.rulesHash,
+        session.snapshotContentHash,
+      ]),
+      2,
+    ],
+    [
+      milestonePresent([
+        session.selectedOrdinal,
+        session.selectedBandLabel,
+        session.selectedAssetReference,
+        session.selectedListingReference,
+        session.selectedValueAmount,
+      ]),
+      3,
+    ],
+    [milestonePresent([session.purchaseReference, session.purchasedAt]), 4],
+    [milestonePresent([session.transferReference, session.transferredAt]), 5],
+    [milestonePresent([session.revealReadyReference, session.revealReadyAt]), 6],
+  ] as const;
+  if (
+    rank === undefined ||
+    milestonePresence.some(([present, minimumRank]) => present !== rank >= minimumRank)
+  ) {
+    throw stateError('DISABLED', 'Flip durable milestones do not match the transition ledger');
+  }
+}
+
+function milestonePresent(values: readonly unknown[]): boolean {
+  const present = values.filter((value) => value !== null).length;
+  if (present !== 0 && present !== values.length) {
+    throw stateError('DISABLED', 'Flip durable milestone is only partially recorded');
+  }
+  return present === values.length;
 }
 
 type FlipSessionTransitionRow = FlipSessionWithTransitions['transitions'][number];

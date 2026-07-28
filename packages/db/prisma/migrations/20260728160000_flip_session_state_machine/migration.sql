@@ -59,6 +59,8 @@ CREATE TABLE "FlipSession" (
   CONSTRAINT "FlipSession_fixture_only_check"
     CHECK (
       "activationMode" = 'fixture-only'
+      AND "id" ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$'
+      AND "stateMachineVersion" = 'dailydraft.flip-session-state.v1'
       AND "playerWalletReference" ~ '^fixture-wallet:[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
     ),
   CONSTRAINT "FlipSession_positive_version_check"
@@ -73,6 +75,7 @@ CREATE TABLE "FlipSession" (
       OR
       (
         "stakeAmount" ~ '^(0|[1-9][0-9]*)$'
+        AND "stakeAmount"::NUMERIC <= 18446744073709551615
         AND "stakeCurrency" = 'USDC'
         AND "stakeDecimals" = 6
       )
@@ -109,6 +112,7 @@ CREATE TABLE "FlipSession" (
         AND "selectedAssetReference" IS NOT NULL
         AND "selectedListingReference" IS NOT NULL
         AND "selectedValueAmount" ~ '^(0|[1-9][0-9]*)$'
+        AND "selectedValueAmount"::NUMERIC <= 18446744073709551615
       )
     ),
   CONSTRAINT "FlipSession_purchase_check"
@@ -152,45 +156,129 @@ CREATE TABLE "FlipSession" (
     ),
   CONSTRAINT "FlipSession_status_milestone_check"
     CHECK (
-      "status" IN ('RECOVERY_REQUIRED', 'RECOVERED', 'FAILED')
-      OR (
+      (
         "status" = 'AWAITING_STAKE'
         AND "stakeAmount" IS NULL
+        AND "poolCommitmentId" IS NULL
+        AND "selectedOrdinal" IS NULL
+        AND "purchaseReference" IS NULL
+        AND "transferReference" IS NULL
+        AND "revealReadyReference" IS NULL
       )
       OR (
         "status" = 'STAKE_CONFIRMED'
         AND "stakeAmount" IS NOT NULL
         AND "poolCommitmentId" IS NULL
+        AND "selectedOrdinal" IS NULL
+        AND "purchaseReference" IS NULL
+        AND "transferReference" IS NULL
+        AND "revealReadyReference" IS NULL
       )
       OR (
         "status" = 'POOL_COMMITTED'
         AND "stakeAmount" IS NOT NULL
         AND "poolCommitmentId" IS NOT NULL
         AND "selectedOrdinal" IS NULL
+        AND "purchaseReference" IS NULL
+        AND "transferReference" IS NULL
+        AND "revealReadyReference" IS NULL
       )
       OR (
         "status" = 'SELECTION_RECORDED'
+        AND "stakeAmount" IS NOT NULL
         AND "poolCommitmentId" IS NOT NULL
         AND "selectedOrdinal" IS NOT NULL
         AND "purchaseReference" IS NULL
+        AND "transferReference" IS NULL
+        AND "revealReadyReference" IS NULL
       )
       OR (
         "status" = 'PURCHASE_RECORDED'
+        AND "stakeAmount" IS NOT NULL
+        AND "poolCommitmentId" IS NOT NULL
         AND "selectedOrdinal" IS NOT NULL
         AND "purchaseReference" IS NOT NULL
         AND "transferReference" IS NULL
+        AND "revealReadyReference" IS NULL
       )
       OR (
         "status" = 'TRANSFER_RECORDED'
+        AND "stakeAmount" IS NOT NULL
+        AND "poolCommitmentId" IS NOT NULL
+        AND "selectedOrdinal" IS NOT NULL
         AND "purchaseReference" IS NOT NULL
         AND "transferReference" IS NOT NULL
         AND "revealReadyReference" IS NULL
       )
       OR (
         "status" IN ('REVEAL_READY', 'SETTLED')
+        AND "stakeAmount" IS NOT NULL
+        AND "poolCommitmentId" IS NOT NULL
+        AND "selectedOrdinal" IS NOT NULL
         AND "purchaseReference" IS NOT NULL
         AND "transferReference" IS NOT NULL
         AND "revealReadyReference" IS NOT NULL
+      )
+      OR (
+        "status" IN ('RECOVERY_REQUIRED', 'RECOVERED', 'FAILED')
+        AND (
+          (
+            "stakeAmount" IS NULL
+            AND "poolCommitmentId" IS NULL
+            AND "selectedOrdinal" IS NULL
+            AND "purchaseReference" IS NULL
+            AND "transferReference" IS NULL
+            AND "revealReadyReference" IS NULL
+          )
+          OR (
+            "stakeAmount" IS NOT NULL
+            AND "poolCommitmentId" IS NULL
+            AND "selectedOrdinal" IS NULL
+            AND "purchaseReference" IS NULL
+            AND "transferReference" IS NULL
+            AND "revealReadyReference" IS NULL
+          )
+          OR (
+            "stakeAmount" IS NOT NULL
+            AND "poolCommitmentId" IS NOT NULL
+            AND "selectedOrdinal" IS NULL
+            AND "purchaseReference" IS NULL
+            AND "transferReference" IS NULL
+            AND "revealReadyReference" IS NULL
+          )
+          OR (
+            "stakeAmount" IS NOT NULL
+            AND "poolCommitmentId" IS NOT NULL
+            AND "selectedOrdinal" IS NOT NULL
+            AND "purchaseReference" IS NULL
+            AND "transferReference" IS NULL
+            AND "revealReadyReference" IS NULL
+          )
+          OR (
+            "stakeAmount" IS NOT NULL
+            AND "poolCommitmentId" IS NOT NULL
+            AND "selectedOrdinal" IS NOT NULL
+            AND "purchaseReference" IS NOT NULL
+            AND "transferReference" IS NULL
+            AND "revealReadyReference" IS NULL
+          )
+          OR (
+            "stakeAmount" IS NOT NULL
+            AND "poolCommitmentId" IS NOT NULL
+            AND "selectedOrdinal" IS NOT NULL
+            AND "purchaseReference" IS NOT NULL
+            AND "transferReference" IS NOT NULL
+            AND "revealReadyReference" IS NULL
+          )
+          OR (
+            "stakeAmount" IS NOT NULL
+            AND "poolCommitmentId" IS NOT NULL
+            AND "selectedOrdinal" IS NOT NULL
+            AND "purchaseReference" IS NOT NULL
+            AND "transferReference" IS NOT NULL
+            AND "revealReadyReference" IS NOT NULL
+          )
+        )
       )
     )
 );
@@ -216,6 +304,7 @@ CREATE TABLE "FlipSessionTransition" (
   CONSTRAINT "FlipSessionTransition_hash_check"
     CHECK (
       "requestHash" ~ '^[a-f0-9]{64}$'
+      AND "transitionKey" ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$'
       AND length("requestPayload") > 0
       AND (
         "poolCommitmentHash" IS NULL
@@ -289,6 +378,61 @@ BEGIN
     RAISE EXCEPTION 'Flip session completed milestones are immutable';
   END IF;
 
+  IF (
+    (
+      NEW."stakeAmount" IS DISTINCT FROM OLD."stakeAmount"
+      OR NEW."stakeCurrency" IS DISTINCT FROM OLD."stakeCurrency"
+      OR NEW."stakeDecimals" IS DISTINCT FROM OLD."stakeDecimals"
+    )
+    AND NOT (OLD."status" = 'AWAITING_STAKE' AND NEW."status" = 'STAKE_CONFIRMED')
+  ) OR (
+    (
+      NEW."poolCommitmentId" IS DISTINCT FROM OLD."poolCommitmentId"
+      OR NEW."poolCommitmentHash" IS DISTINCT FROM OLD."poolCommitmentHash"
+      OR NEW."rulesHash" IS DISTINCT FROM OLD."rulesHash"
+      OR NEW."snapshotContentHash" IS DISTINCT FROM OLD."snapshotContentHash"
+    )
+    AND NOT (OLD."status" = 'STAKE_CONFIRMED' AND NEW."status" = 'POOL_COMMITTED')
+  ) OR (
+    (
+      NEW."selectedOrdinal" IS DISTINCT FROM OLD."selectedOrdinal"
+      OR NEW."selectedBandLabel" IS DISTINCT FROM OLD."selectedBandLabel"
+      OR NEW."selectedAssetReference" IS DISTINCT FROM OLD."selectedAssetReference"
+      OR NEW."selectedListingReference" IS DISTINCT FROM OLD."selectedListingReference"
+      OR NEW."selectedValueAmount" IS DISTINCT FROM OLD."selectedValueAmount"
+    )
+    AND NOT (OLD."status" = 'POOL_COMMITTED' AND NEW."status" = 'SELECTION_RECORDED')
+  ) OR (
+    (
+      NEW."purchaseReference" IS DISTINCT FROM OLD."purchaseReference"
+      OR NEW."purchasedAt" IS DISTINCT FROM OLD."purchasedAt"
+    )
+    AND NOT (OLD."status" = 'SELECTION_RECORDED' AND NEW."status" = 'PURCHASE_RECORDED')
+  ) OR (
+    (
+      NEW."transferReference" IS DISTINCT FROM OLD."transferReference"
+      OR NEW."transferredAt" IS DISTINCT FROM OLD."transferredAt"
+    )
+    AND NOT (OLD."status" = 'PURCHASE_RECORDED' AND NEW."status" = 'TRANSFER_RECORDED')
+  ) OR (
+    (
+      NEW."revealReadyReference" IS DISTINCT FROM OLD."revealReadyReference"
+      OR NEW."revealReadyAt" IS DISTINCT FROM OLD."revealReadyAt"
+    )
+    AND NOT (OLD."status" = 'TRANSFER_RECORDED' AND NEW."status" = 'REVEAL_READY')
+  ) OR (
+    (
+      NEW."terminalReason" IS DISTINCT FROM OLD."terminalReason"
+      OR NEW."terminalAt" IS DISTINCT FROM OLD."terminalAt"
+    )
+    AND NOT (
+      (OLD."status" = 'REVEAL_READY' AND NEW."status" = 'SETTLED')
+      OR (OLD."status" = 'RECOVERY_REQUIRED' AND NEW."status" IN ('RECOVERED', 'FAILED'))
+    )
+  ) THEN
+    RAISE EXCEPTION 'Flip session milestones may only advance with their exact lifecycle action';
+  END IF;
+
   IF NOT (
     (OLD."status" = 'AWAITING_STAKE' AND NEW."status" IN ('STAKE_CONFIRMED', 'RECOVERY_REQUIRED'))
     OR (OLD."status" = 'STAKE_CONFIRMED' AND NEW."status" IN ('POOL_COMMITTED', 'RECOVERY_REQUIRED'))
@@ -324,6 +468,7 @@ RETURNS BOOLEAN AS $$
   SELECT
     "flip_jsonb_has_exact_keys"(value, ARRAY['amount', 'currency', 'decimals'])
     AND value->>'amount' ~ '^(0|[1-9][0-9]*)$'
+    AND (value->>'amount')::NUMERIC <= 18446744073709551615
     AND value->>'currency' = 'USDC'
     AND value->>'decimals' = '6'
     AND jsonb_typeof(value->'amount') = 'string'
@@ -424,6 +569,7 @@ BEGIN
       OR action_json->>'kind' IS DISTINCT FROM expected_action_kind
       OR action_json->>'transitionKey' IS DISTINCT FROM NEW."transitionKey"
       OR jsonb_typeof(action_json->'expectedVersion') IS DISTINCT FROM 'number'
+      OR action_json->>'expectedVersion' !~ '^[1-9][0-9]*$'
       OR (action_json->>'expectedVersion')::NUMERIC <> NEW."sequence" - 1
       OR action_json->'evidence' IS DISTINCT FROM expected_request_evidence
     THEN
@@ -519,8 +665,11 @@ BEGIN
           ]
         )
         OR jsonb_typeof(NEW."evidence"->'eligibleOutcomeCount') <> 'number'
+        OR NEW."evidence"->>'eligibleOutcomeCount' !~ '^[1-9][0-9]*$'
         OR (NEW."evidence"->>'eligibleOutcomeCount')::NUMERIC
           <> stored_commitment."eligibleOutcomeCount"
+        OR stored_session."poolCommitmentId"
+          !~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$'
         OR NEW."evidence"->>'poolCommitmentId' <> stored_session."poolCommitmentId"
         OR NEW."evidence"->>'poolCommitmentHash' <> stored_session."poolCommitmentHash"
         OR NEW."evidence"->>'rulesHash' <> stored_session."rulesHash"
@@ -564,6 +713,7 @@ BEGIN
         OR NEW."evidence"->>'reference'
           !~ '^fixture-[a-z][a-z-]*:[A-Za-z0-9][A-Za-z0-9._:-]{0,200}$'
         OR jsonb_typeof(NEW."evidence"->'ordinal') <> 'number'
+        OR NEW."evidence"->>'ordinal' !~ '^(0|[1-9][0-9]*)$'
         OR (NEW."evidence"->>'ordinal')::NUMERIC <> stored_session."selectedOrdinal"
         OR NEW."evidence"->>'bandLabel' <> stored_session."selectedBandLabel"
         OR NEW."evidence"->>'providerAssetReference'
