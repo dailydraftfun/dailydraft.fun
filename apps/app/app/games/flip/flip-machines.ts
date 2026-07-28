@@ -26,9 +26,9 @@ const SPORTS: readonly { label: string; sport: FlipSport }[] = Object.freeze([
 ]);
 
 const TIERS: readonly { label: string; priceMinor: string }[] = Object.freeze([
-  { label: '$50', priceMinor: '50000000' },
-  { label: '$100', priceMinor: '100000000' },
-  { label: '$250', priceMinor: '250000000' },
+  { label: '$0.01', priceMinor: '10000' },
+  { label: '$0.10', priceMinor: '100000' },
+  { label: '$1.00', priceMinor: '1000000' },
 ]);
 
 export const FLIP_SPORTS: readonly { label: string; sport: FlipSport }[] = SPORTS;
