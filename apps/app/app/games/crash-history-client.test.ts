@@ -20,10 +20,12 @@ describe('Crash history client', () => {
     }) as typeof fetch;
 
     await getCrashHistory(TOKEN, null, undefined, 'https://api.example.test/v1', fetcher);
+    await getCrashHistory(TOKEN, 'v1.c2FmZQ', undefined, 'https://api.example.test/v1', fetcher);
     await getCrashReceipt(ROUND_ID, TOKEN, undefined, 'https://api.example.test/v1', fetcher);
 
     expect(requests.map(({ url }) => url)).toEqual([
       'https://api.example.test/v1/crash/rounds?limit=10',
+      'https://api.example.test/v1/crash/rounds?limit=10&cursor=v1.c2FmZQ',
       `https://api.example.test/v1/crash/rounds/${ROUND_ID}/receipt`,
     ]);
     expect(requests.every(({ init }) => init?.cache === 'no-store')).toBe(true);
@@ -95,6 +97,52 @@ describe('Crash history client', () => {
         (async () => new Response(null, { status: 503 })) as unknown as typeof fetch,
       ),
     ).rejects.toThrow('unavailable (503)');
+    await expect(getCrashReceipt(ROUND_ID, TOKEN, undefined, undefined)).rejects.toBeInstanceOf(
+      CrashHistoryUnavailableError,
+    );
+    await expect(
+      getCrashReceipt('duel_wrongkind00001', TOKEN, undefined, 'https://api.example.test/v1'),
+    ).rejects.toThrow('malformed private history');
+    await expect(
+      getCrashReceipt(
+        ROUND_ID,
+        TOKEN,
+        undefined,
+        'https://api.example.test/v1',
+        (async () => new Response(null, { status: 500 })) as unknown as typeof fetch,
+      ),
+    ).rejects.toThrow('unavailable (500)');
+  });
+
+  test('fails closed on every malformed envelope boundary', () => {
+    expect(() => parseCrashHistoryPage(null)).toThrow('malformed private history');
+    expect(() => parseCrashHistoryPage({ ...historyPage(), nextCursor: 'unsafe cursor' })).toThrow(
+      'malformed private history',
+    );
+    expect(() =>
+      parseCrashHistoryPage({
+        ...historyPage(),
+        data: [{ ...historyPage().data[0], receiptHref: '/v1/crash/rounds/wrong/receipt' }],
+      }),
+    ).toThrow('malformed private history');
+    expect(() =>
+      parseCrashReceipt({
+        ...receipt(),
+        events: [{ ...receipt().events[0], kind: 'wallet-secret-event' }],
+      }),
+    ).toThrow('malformed private history');
+    expect(() =>
+      parseCrashReceipt({
+        ...receipt(),
+        bindings: { ...receipt().bindings, architectureVersion: null },
+      }),
+    ).toThrow('malformed private history');
+    expect(() =>
+      parseCrashReceipt({
+        ...receipt(),
+        createdAt: 'not-a-date',
+      }),
+    ).toThrow('malformed private history');
   });
 });
 

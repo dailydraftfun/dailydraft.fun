@@ -116,6 +116,121 @@ describe('CrashHistoryService', () => {
     });
   });
 
+  test('fails closed when round metadata disappears after ledger validation', async () => {
+    const service = createService({ findUnique: async () => null });
+    await expect(service.getReceipt(ROUND_ID, WALLET)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  test('projects every safe next action and non-final custody state', async () => {
+    const active = snapshot();
+    active.status = 'active';
+    active.decisionDeadline = '2026-07-28T18:00:30.000Z';
+    active.settlementStatus = 'not-required';
+    active.terminalAt = null;
+    active.terminalReason = null;
+    const choose = await createService({}, { findRound: async () => active }, null).getReceipt(
+      ROUND_ID,
+      WALLET,
+    );
+    expect(choose.safeNextAction).toBe('choose-action');
+    expect(choose.custody.status).toBe('prepared');
+
+    active.decisionDeadline = null;
+    const reconnect = await createService({}, { findRound: async () => active }, null).getReceipt(
+      ROUND_ID,
+      WALLET,
+    );
+    expect(reconnect.safeNextAction).toBe('reconnect');
+
+    const terminal = snapshot();
+    terminal.settlementStatus = 'pending';
+    const pending = await createService(
+      {},
+      { findRound: async () => terminal },
+      settlement({ status: 'pending' }),
+    ).getReceipt(ROUND_ID, WALLET);
+    expect(pending.safeNextAction).toBe('wait-for-settlement');
+
+    terminal.settlementStatus = 'settled';
+    terminal.settlementReceiptHash = 'f'.repeat(64);
+    terminal.settledAt = '2026-07-28T18:00:05.000Z';
+    const settled = await createService(
+      {},
+      { findRound: async () => terminal },
+      settlement({
+        finalizedOperationCount: 1,
+        receiptHash: 'f'.repeat(64),
+        status: 'settled',
+      }),
+    ).getReceipt(ROUND_ID, WALLET);
+    expect(settled.safeNextAction).toBe('review-receipt');
+    expect(settled.finality.custody).toBe('settled');
+  });
+
+  test('sanitizes malformed recovery evidence and handles every operation projection branch', async () => {
+    const metadata = metadataFixture();
+    const intent = metadata.custodyIntents[0];
+    if (!intent) throw new Error('custody fixture required');
+    metadata.custodyIntents[0] = {
+      ...intent,
+      status: 'RECOVERY_REQUIRED',
+    };
+    if (!metadata.settlement) throw new Error('settlement fixture required');
+    const operation = metadata.settlement.operations[0];
+    if (!operation) throw new Error('operation fixture required');
+    metadata.settlement.operations = [
+      {
+        ...operation,
+        failureCode: 'unsafe recovery reason with spaces and wallet data',
+        status: 'FINALIZED',
+      },
+      {
+        ...operation,
+        amount: '01',
+        finalizedAt: null,
+        operationKey: 'operation:prepared',
+        sequence: 2,
+        stage: null,
+        status: 'PREPARED',
+      },
+    ];
+    const tamperedValue = snapshot();
+    const firstTransition = tamperedValue.transitions[0];
+    if (!firstTransition) throw new Error('transition fixture required');
+    tamperedValue.transitions = [
+      { ...firstTransition, valueChange: null },
+      ...tamperedValue.transitions.slice(1),
+    ];
+    const receipt = await createService(
+      { findUnique: async () => metadata },
+      { findRound: async () => tamperedValue },
+      settlement({ recoveryReason: 'unsafe reason with spaces' }),
+    ).getReceipt(ROUND_ID, WALLET);
+
+    expect(receipt.custody.status).toBe('recovery-required');
+    expect(receipt.finality.custody).toBe('recovery-required');
+    expect(receipt.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          amount: null,
+          kind: 'round-started',
+        }),
+        expect.objectContaining({
+          kind: 'settlement-finalized',
+          terminalReason: 'RECOVERY_REQUIRED',
+        }),
+        expect.objectContaining({
+          amount: null,
+          kind: 'settlement-prepared',
+          stage: 2,
+        }),
+      ]),
+    );
+    expect(receipt.settlement.recoveryReason).toBe('RECOVERY_REQUIRED');
+  });
+
   test.each([
     'not-a-cursor',
     `v1.${Buffer.from(JSON.stringify({ createdAt: 'yesterday', id: ROUND_ID })).toString(
@@ -138,78 +253,114 @@ describe('CrashHistoryService', () => {
 function createService(
   roundOverrides: {
     findMany?: (query: unknown) => Promise<Array<{ createdAt: Date; id: string }>>;
+    findUnique?: () => Promise<ReturnType<typeof metadataFixture> | null>;
   } = {},
   stateOverrides: { findRound?: (roundId: string) => Promise<CrashRoundSnapshot> } = {},
+  settlementOverride: ReturnType<typeof settlement> | null = settlement(),
 ) {
-  const metadata = {
-    createdAt: NOW,
-    custodyIntents: [
-      {
-        createdAt: new Date('2026-07-28T18:00:02.000Z'),
-        id: 'crashcustody_safe_reference',
-        stage: 1,
-        status: 'PREPARED' as const,
-      },
-    ],
-    id: ROUND_ID,
-    playerWalletReference: `fixture-wallet:${WALLET}`,
-    settlement: {
-      custodyPolicyHash: 'c'.repeat(64),
-      operations: [
-        {
-          amount: '2000000',
-          createdAt: new Date('2026-07-28T18:00:03.000Z'),
-          decimals: 6,
-          failureCode: 'PROVIDER_RESULT_AMBIGUOUS',
-          finalizedAt: null,
-          operationKey: 'operation:safe-reference',
-          sequence: 1,
-          stage: 2,
-          status: 'RECOVERY_REQUIRED' as const,
-          updatedAt: new Date('2026-07-28T18:00:04.000Z'),
-        },
-      ],
-      settlementPolicyHash: 'd'.repeat(64),
-    },
-    updatedAt: new Date('2026-07-28T18:00:04.000Z'),
-  };
+  const metadata = metadataFixture();
   const database = {
     crashRound: {
       findMany: roundOverrides.findMany ?? (async () => [{ createdAt: NOW, id: ROUND_ID }]),
-      findUnique: async () => metadata,
+      findUnique: roundOverrides.findUnique ?? (async () => metadata),
     },
   } as unknown as DatabaseClient;
   const state = {
     findRound: stateOverrides.findRound ?? (async () => snapshot()),
   } as unknown as CrashStageStateService;
   const settlements = {
-    findFixtureSettlement: async () => ({
-      expectedOperationCount: 1,
-      finalizedOperationCount: 0,
-      inventoryPolicyHash: 'f'.repeat(64),
-      inventoryPolicyVersion: 'inventory-v1',
-      kind: 'cash-out',
-      operations: [
-        {
-          failureCode: 'PROVIDER_RESULT_AMBIGUOUS',
-          kind: 'transfer',
-          operationKey: 'operation:safe-reference',
-          providerSignature: 'provider-signature-secret',
-          recoveryMode: 'reconcile-only',
-          sequence: 1,
-          status: 'recovery-required',
-        },
-      ],
-      receiptHash: null,
-      recoveryReason: 'PROVIDER_RESULT_AMBIGUOUS',
-      roundId: ROUND_ID,
-      settledAt: null,
-      settlementPolicyHash: 'd'.repeat(64),
-      settlementPolicyVersion: 'settlement-v1',
-      status: 'recovery-required',
-    }),
+    findFixtureSettlement: async () => settlementOverride,
   } as unknown as CrashSettlementService;
   return new CrashHistoryService(database, state, settlements);
+}
+
+function metadataFixture() {
+  const custodyIntents: Array<{
+    createdAt: Date;
+    id: string;
+    stage: number;
+    status: 'PREPARED' | 'RECOVERY_REQUIRED';
+  }> = [
+    {
+      createdAt: new Date('2026-07-28T18:00:02.000Z'),
+      id: 'crashcustody_safe_reference',
+      stage: 1,
+      status: 'PREPARED',
+    },
+  ];
+  const operations: Array<{
+    amount: string;
+    createdAt: Date;
+    decimals: number;
+    failureCode: string | null;
+    finalizedAt: Date | null;
+    operationKey: string;
+    sequence: number;
+    stage: number | null;
+    status: 'FINALIZED' | 'PREPARED' | 'RECOVERY_REQUIRED';
+    updatedAt: Date;
+  }> = [
+    {
+      amount: '2000000',
+      createdAt: new Date('2026-07-28T18:00:03.000Z'),
+      decimals: 6,
+      failureCode: 'PROVIDER_RESULT_AMBIGUOUS',
+      finalizedAt: null,
+      operationKey: 'operation:safe-reference',
+      sequence: 1,
+      stage: 2,
+      status: 'RECOVERY_REQUIRED',
+      updatedAt: new Date('2026-07-28T18:00:04.000Z'),
+    },
+  ];
+  return {
+    createdAt: NOW,
+    custodyIntents,
+    id: ROUND_ID,
+    playerWalletReference: `fixture-wallet:${WALLET}`,
+    settlement: {
+      custodyPolicyHash: 'c'.repeat(64),
+      operations,
+      settlementPolicyHash: 'd'.repeat(64),
+    },
+    updatedAt: new Date('2026-07-28T18:00:04.000Z'),
+  };
+}
+
+function settlement(
+  overrides: Partial<{
+    finalizedOperationCount: number;
+    receiptHash: string | null;
+    recoveryReason: string | null;
+    status: 'pending' | 'recovery-required' | 'settled';
+  }> = {},
+) {
+  return {
+    expectedOperationCount: 1,
+    finalizedOperationCount: 0,
+    inventoryPolicyHash: 'f'.repeat(64),
+    inventoryPolicyVersion: 'inventory-v1',
+    kind: 'cash-out' as const,
+    operations: [
+      {
+        failureCode: 'PROVIDER_RESULT_AMBIGUOUS',
+        kind: 'transfer' as const,
+        operationKey: 'operation:safe-reference',
+        providerSignature: 'provider-signature-secret',
+        recoveryMode: 'reconcile-only' as const,
+        sequence: 1,
+        status: 'recovery-required' as const,
+      },
+    ],
+    receiptHash: null,
+    recoveryReason: 'PROVIDER_RESULT_AMBIGUOUS',
+    roundId: ROUND_ID,
+    settledAt: null,
+    settlementPolicyHash: 'd'.repeat(64),
+    settlementPolicyVersion: 'settlement-v1',
+    status: 'recovery-required' as const,
+    ...overrides,
+  };
 }
 
 function snapshot(): CrashRoundSnapshot {

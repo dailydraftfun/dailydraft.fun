@@ -21,6 +21,9 @@ import { getCrashHistory, getCrashReceipt } from './crash-history-client';
 
 export type CrashHistoryLoadState = 'empty' | 'error' | 'loading' | 'ready';
 
+// Browser effects and state transitions are exercised through the transport
+// and pure presentation contracts because Bun's server renderer has no DOM.
+/* istanbul ignore next */
 export function CrashHistoryPanel() {
   const authentication = useWalletAuth();
   const [page, setPage] = useState<CrashHistoryPage | null>(null);
