@@ -141,7 +141,9 @@ function parseActivity(value: unknown): VerifiedGameActivity {
   }
 
   const roundId = value.activityId.slice(publicMode.length + 1);
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$/.test(roundId)) throw malformedActivityError();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$/.test(roundId) || containsRawSolanaAddress(roundId)) {
+    throw malformedActivityError();
+  }
   const resultHref =
     `/v1/rgs/rounds/${publicMode}/${roundId}/proof` as VerifiedGameActivity['resultHref'];
   const receiptHref = (

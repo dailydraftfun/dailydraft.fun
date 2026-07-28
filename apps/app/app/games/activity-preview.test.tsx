@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION,
+  type VerifiedGameActivity,
   type VerifiedGameActivityPage,
   verifiedGameActivityContractFixtures,
 } from '@dailydraft/contracts';
@@ -29,10 +30,28 @@ describe('verified activity surface', () => {
     expect(markup).toContain('Verified win');
     expect(markup).toContain('9xQe…9gJ1 · Gk8Z…MQyW');
     expect(markup).toContain('View verified receipt');
-    expect(markup).toContain('aria-label="View verified receipt for Sports Pack Duel settled"');
+    expect(markup).toContain(
+      'aria-label="View verified receipt for Sports Pack Duel settled · duel:duel_activity000001"',
+    );
     expect(markup).toContain('/v1/duels/duel_activity000001/receipt');
     expect(markup).toContain('<span class="sr-only">Settled </span>');
+    expect(markup).toContain('Jul 28 · 11:59 UTC');
     expect(markup).not.toContain('9xQeWvG816bUx9EPfEzF3F7PVhZVW5R1N9gJ1');
+  });
+
+  test('gives repeated same-title receipts unique names using canonical public activity ids', () => {
+    const first = verifiedGameActivityContractFixtures.duel;
+    const second = duelActivity('duel_activity000002', '2026-07-28T11:58:00.000Z');
+    const markup = renderToStaticMarkup(
+      <ActivityPreview initialPage={activityPage([first, second])} initialState="ready" />,
+    );
+    const receiptNames = markup.match(/aria-label="View verified receipt for [^"]+"/g) ?? [];
+
+    expect(receiptNames).toEqual([
+      'aria-label="View verified receipt for Sports Pack Duel settled · duel:duel_activity000001"',
+      'aria-label="View verified receipt for Sports Pack Duel settled · duel:duel_activity000002"',
+    ]);
+    expect(new Set(receiptNames).size).toBe(receiptNames.length);
   });
 
   test('distinguishes completed single-player modes and exact fractional tiers', () => {
@@ -62,7 +81,7 @@ describe('verified activity surface', () => {
 
     expect(empty).toContain('does not invent players, wins, or volume');
     expect(stale).toContain('Cached');
-    expect(stale).toContain('Jul 28 at 12:00 PM UTC');
+    expect(stale).toContain('Jul 28 · 12:00 UTC');
     expect(stale).toContain('could not be refreshed');
     expect(degraded).toContain('Proof service degraded');
     expect(degraded).toContain('without inferred participation');
@@ -87,4 +106,14 @@ function activityPage(
 
 function emptyPage(): VerifiedGameActivityPage {
   return { ...activityPage(), data: [] };
+}
+
+function duelActivity(id: string, occurredAt: string): VerifiedGameActivity {
+  return {
+    ...verifiedGameActivityContractFixtures.duel,
+    activityId: `duel:${id}`,
+    occurredAt,
+    receiptHref: `/v1/duels/${id}/receipt`,
+    resultHref: `/v1/rgs/rounds/duel/${id}/proof`,
+  };
 }

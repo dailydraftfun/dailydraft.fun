@@ -137,10 +137,19 @@ describe('verified activity client', () => {
 
   test('rejects mismatched identities, proof links, ordering, and money', () => {
     const duel = verifiedGameActivityContractFixtures.duel;
+    const walletShapedRoundId = '9xQeWvG816bUx9EPfEzF3F7PVhZVW5R1N9gJ1';
     const invalidPages = [
       activityPage([null as unknown as VerifiedGameActivity]),
       activityPage([{ ...duel, mode: 'gacha' } as unknown as VerifiedGameActivity]),
       activityPage([{ ...duel, activityId: 'duel:' }]),
+      activityPage([
+        {
+          ...duel,
+          activityId: `duel:${walletShapedRoundId}`,
+          receiptHref: `/v1/duels/${walletShapedRoundId}/receipt`,
+          resultHref: `/v1/rgs/rounds/duel/${walletShapedRoundId}/proof`,
+        },
+      ]),
       activityPage([{ ...duel, resultHref: '/v1/rgs/rounds/duel/another-round/proof' }]),
       activityPage([duel, duel]),
       activityPage([

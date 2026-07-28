@@ -167,7 +167,7 @@ function ActivityRow({ activity }: { activity: VerifiedGameActivity }) {
         <a
           className="proof-secondary-action mt-3 gap-2"
           href={resolveActivityApiHref(activity.receiptHref)}
-          aria-label={`View verified receipt for ${activity.title}`}
+          aria-label={`View verified receipt for ${activity.title} · ${activity.activityId}`}
           rel="noreferrer"
         >
           <ReceiptIcon aria-hidden="true" size={15} />
@@ -284,24 +284,31 @@ function formatTier(amount: string): string {
 }
 
 function formatOccurredAt(value: string): string {
-  const date = new Date(value);
-  return new Intl.DateTimeFormat('en-US', {
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    month: 'short',
-    timeZone: 'UTC',
-    timeZoneName: 'short',
-  }).format(date);
+  return formatUtcTimestamp(value);
 }
 
 function formatAsOf(value: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    month: 'short',
-    timeZone: 'UTC',
-    timeZoneName: 'short',
-  }).format(new Date(value));
+  return formatUtcTimestamp(value);
+}
+
+function formatUtcTimestamp(value: string): string {
+  const date = new Date(value);
+  const month = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ][date.getUTCMonth()];
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  return `${month} ${day} · ${hours}:${minutes} UTC`;
 }
