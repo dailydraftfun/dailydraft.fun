@@ -40,6 +40,13 @@ const describeDatabase =
   process.env.REQUIRE_DB_INTEGRATION === '1' && databaseUrl ? describe : describe.skip;
 const FIXTURE_ENVIRONMENT = {
   DAILYDRAFT_FLIP_FIXTURE_MODE: 'true',
+  DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE: JSON.stringify({
+    observedAt: '2026-08-03T12:02:30.000Z',
+    poolKey: 'fixture-pool-pending',
+    provider: 'fixture-marketplace',
+    schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+    status: 'healthy',
+  }),
   NODE_ENV: 'test',
 } satisfies NodeJS.ProcessEnv;
 
@@ -98,6 +105,25 @@ describeDatabase('Flip session state machine against two real Postgres connectio
     if (!staked) throw new Error('concurrent stake transition returned no session');
     session = staked;
     expect(session).toMatchObject({ status: 'stake-confirmed', version: 2 });
+    const admitted = await databaseA.flipSession.findUnique({
+      include: { admissionDecision: true },
+      where: { id: session.id },
+    });
+    expect(admitted?.admissionDecision).toMatchObject({
+      allowed: true,
+      poolCommitmentId: fixture.commitmentId,
+      reason: null,
+      sessionReference: session.id,
+      tierKey: 'USDC:6:50000000',
+    });
+    await expect(
+      Promise.resolve(
+        databaseA.flipTierAdmissionDecision.updateMany({
+          data: { policyHash: '0'.repeat(64) },
+          where: { sessionReference: session.id },
+        }),
+      ),
+    ).rejects.toThrow('Flip tier admission decisions are append-only');
 
     session = await serviceB.transition(session.id, {
       evidence: { poolCommitmentId: fixture.commitmentId },
@@ -195,6 +221,71 @@ describeDatabase('Flip session state machine against two real Postgres connectio
         }),
       ),
     ).rejects.toThrow('Flip session transitions are append-only');
+  });
+
+  test('persists a denied tier suspension and re-enables it on fresh provider recovery', async () => {
+    const fixture = await prepareDatabaseFixture(databaseA, 'tier-suspension');
+    const clock = new DatabaseTestClock();
+    setProviderHealthFixture(fixture.poolKey, 'outage');
+    const service = new FlipSessionStateService(databaseA, clock, FIXTURE_ENVIRONMENT);
+    const created = await service.createFixtureSession({
+      playerWalletReference: 'fixture-wallet:postgres-suspension',
+      sessionReference: fixture.sessionReference,
+    });
+    const stake = {
+      evidence: {
+        amount: usdc('50000000'),
+        reference: 'fixture-stake:suspension',
+        schemaVersion: FLIP_STAKE_FIXTURE_VERSION,
+        status: 'fixture-confirmed' as const,
+      },
+      expectedVersion: created.version,
+      kind: 'confirm-stake' as const,
+      transitionKey: 'stake-suspension',
+    };
+
+    await expect(service.transition(created.id, stake)).rejects.toMatchObject({
+      code: 'TIER_SUSPENDED',
+      decision: { reason: 'provider_outage' },
+    });
+    await expect(service.findSession(created.id)).resolves.toMatchObject({
+      status: 'awaiting-stake',
+      version: 1,
+    });
+    await expect(
+      databaseA.flipTierAdmissionState.findUnique({
+        where: { tierKey: 'USDC:6:50000000' },
+      }),
+    ).resolves.toMatchObject({
+      disabled: true,
+      reason: 'provider_outage',
+      reenableBoundary: 'fresh_provider_health',
+    });
+
+    setProviderHealthFixture(fixture.poolKey, 'healthy');
+    await expect(service.transition(created.id, stake)).resolves.toMatchObject({
+      status: 'stake-confirmed',
+      version: 2,
+    });
+    await expect(
+      databaseA.flipTierAdmissionState.findUnique({
+        where: { tierKey: 'USDC:6:50000000' },
+      }),
+    ).resolves.toMatchObject({
+      disabled: false,
+      reason: null,
+    });
+    await expect(
+      Promise.resolve(
+        databaseA.flipTierAdmissionState.updateMany({
+          data: {
+            evaluatedAt: new Date('2026-08-03T12:02:29.999Z'),
+            version: { increment: 1 },
+          },
+          where: { tierKey: 'USDC:6:50000000' },
+        }),
+      ),
+    ).rejects.toThrow('Flip tier admission state may only advance monotonically');
   });
 
   test('database and service both prevent reveal finality before acquisition and transfer', async () => {
@@ -1603,6 +1694,13 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
   const poolKey = `dbtest-flip-pool-${suffix}`;
   const policyVersion = `dbtest-flip-policy-${suffix}`;
   const rulesKey = `dbtest-flip-rules-${suffix}`;
+  FIXTURE_ENVIRONMENT.DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE = JSON.stringify({
+    observedAt: '2026-08-03T12:02:30.000Z',
+    poolKey,
+    provider: 'fixture-marketplace',
+    schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+    status: 'healthy',
+  });
   const inventory = new FlipInventorySnapshotService(database);
   const snapshot = await inventory.createFixtureSnapshot({
     candidates: [
@@ -1629,6 +1727,7 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
   });
   return {
     commitmentId: commitment.id,
+    poolKey,
     selected: {
       bandLabel: 'plus',
       listingValueAmount: '30000000',
@@ -1638,6 +1737,16 @@ async function prepareDatabaseFixture(database: DatabaseClient, label: string) {
     },
     sessionReference,
   };
+}
+
+function setProviderHealthFixture(poolKey: string, status: 'healthy' | 'outage'): void {
+  FIXTURE_ENVIRONMENT.DAILYDRAFT_FLIP_PROVIDER_HEALTH_FIXTURE = JSON.stringify({
+    observedAt: '2026-08-03T12:02:30.000Z',
+    poolKey,
+    provider: 'fixture-marketplace',
+    schemaVersion: 'dailydraft.flip-provider-health-fixture.v1',
+    status,
+  });
 }
 
 type DatabaseFixture = Awaited<ReturnType<typeof prepareDatabaseFixture>>;
@@ -1919,7 +2028,7 @@ function restoreEnvironment(key: string, value: string | undefined): void {
 }
 
 class DatabaseTestClock {
-  #current = new Date('2026-07-28T16:00:00.000Z');
+  #current = new Date('2026-08-03T12:02:30.000Z');
 
   advance(milliseconds: number): void {
     this.#current = new Date(this.#current.getTime() + milliseconds);

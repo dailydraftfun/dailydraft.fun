@@ -40,4 +40,7 @@ job executes `prisma/verify-house-treasury.sql` and
 reservation states, exposure indexes, distinct value tuples, unique provider
 listings, and sealed append-only treasury and Flip evidence against the migrated
 PostgreSQL schema. The same contract verifies that disabled house-tier admission
-state always records a reason and deterministic re-enable boundary.
+state always records a reason and deterministic re-enable boundary. Flip stake
+admission additionally persists append-only decisions and a current per-tier
+suspension state; the session foreign key can only bind an allowed decision at
+the awaiting-stake to stake-confirmed boundary.
