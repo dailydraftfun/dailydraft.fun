@@ -9,6 +9,7 @@ import {
   type CrashResolutionStatus,
   type CrashSafeNextAction,
   type CrashSettlementPublicStatus,
+  compareCrashReceiptEvents,
 } from '@dailydraft/contracts/crash-history';
 import type { DatabaseClient, Prisma } from '@dailydraft/db';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
@@ -168,7 +169,7 @@ export class CrashHistoryService {
       ...round.transitions.map(transitionEvent),
       ...metadata.custodyIntents.map(custodyEvent),
       ...(settlement?.operations.map(settlementEvent) ?? []),
-    ].sort(compareEvents);
+    ].sort(compareCrashReceiptEvents);
 
     return {
       bindings: {
@@ -540,12 +541,6 @@ function safeNextAction(
 function publicRecoveryCode(value: string | null | undefined): string | null {
   if (!value) return null;
   return /^[A-Z][A-Z0-9_]{0,119}$/.test(value) ? value : 'RECOVERY_REQUIRED';
-}
-
-function compareEvents(left: CrashReceiptEvent, right: CrashReceiptEvent): number {
-  return (
-    left.occurredAt.localeCompare(right.occurredAt) || left.eventId.localeCompare(right.eventId)
-  );
 }
 
 function publicReference(domain: string, value: string): string {

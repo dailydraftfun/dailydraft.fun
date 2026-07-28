@@ -73,6 +73,25 @@ describe('Crash history presentation', () => {
     expect(markup).toContain('Load older runs');
   });
 
+  test('preserves canonical numeric event order at the receipt UI boundary', () => {
+    const selected = receipt();
+    const event = selected.events[1];
+    if (!event) throw new Error('settlement event fixture required');
+    selected.events = [
+      { ...event, eventId: 'settlement:2', terminalReason: 'SEQUENCE_TWO' },
+      { ...event, eventId: 'settlement:10', terminalReason: 'SEQUENCE_TEN' },
+    ];
+
+    const markup = renderSurface({
+      loadState: 'ready',
+      page: page(),
+      receipt: selected,
+      receiptState: 'ready',
+    });
+
+    expect(markup.indexOf('SEQUENCE TWO')).toBeLessThan(markup.indexOf('SEQUENCE TEN'));
+  });
+
   test.each([
     ['active', 'Run in progress'],
     ['cash-out', 'Cash-out committed'],

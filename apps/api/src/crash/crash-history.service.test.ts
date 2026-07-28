@@ -107,6 +107,58 @@ describe('CrashHistoryService', () => {
     });
   });
 
+  test('orders equal-timestamp events by domain and numeric ledger sequence', async () => {
+    const occurredAt = '2026-07-28T18:00:04.000Z';
+    const round = snapshot();
+    round.transitions = round.transitions.map((transition, index) => ({
+      ...transition,
+      createdAt: occurredAt,
+      sequence: index === 0 ? 10 : 2,
+    }));
+    const metadata = metadataFixture();
+    const custodyIntent = metadata.custodyIntents[0];
+    if (!custodyIntent) throw new Error('custody fixture required');
+    metadata.custodyIntents[0] = { ...custodyIntent, createdAt: new Date(occurredAt) };
+
+    const receipt = await createService(
+      { findUnique: async () => metadata },
+      { findRound: async () => round },
+      settlement({
+        expectedOperationCount: 2,
+        operations: [
+          {
+            failureCode: 'PROVIDER_RESULT_AMBIGUOUS',
+            kind: 'transfer',
+            operationKey: 'operation:sequence-10',
+            providerSignature: null,
+            recoveryMode: 'reconcile-only',
+            sequence: 10,
+            status: 'recovery-required',
+            updatedAt: occurredAt,
+          },
+          {
+            failureCode: null,
+            kind: 'transfer',
+            operationKey: 'operation:sequence-2',
+            providerSignature: null,
+            recoveryMode: 'none',
+            sequence: 2,
+            status: 'prepared',
+            updatedAt: occurredAt,
+          },
+        ],
+      }),
+    ).getReceipt(ROUND_ID, WALLET);
+
+    expect(receipt.events.map(({ eventId }) => eventId)).toEqual([
+      'transition:2',
+      'transition:10',
+      expect.stringMatching(/^custody:crashref_[a-f0-9]{32}$/),
+      'settlement:2',
+      'settlement:10',
+    ]);
+  });
+
   test('hides whether another wallet round exists', async () => {
     await expect(createService().getReceipt(ROUND_ID, OTHER_WALLET)).rejects.toMatchObject({
       code: 'NOT_FOUND',

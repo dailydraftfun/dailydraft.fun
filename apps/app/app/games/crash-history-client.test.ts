@@ -106,6 +106,53 @@ describe('Crash history client', () => {
         events: [{ ...receipt().events[1], scheduledDeadline: '2026-07-28T18:00:31.000Z' }],
       }),
     ).toThrow('malformed private history');
+    expect(() =>
+      parseCrashReceipt({
+        ...receipt(),
+        events: [receipt().events[0], receipt().events[0]],
+      }),
+    ).toThrow('malformed private history');
+  });
+
+  test('validates equal-timestamp events by domain and numeric sequence', () => {
+    const occurredAt = '2026-07-28T18:00:04.000Z';
+    const transition = receipt().events[0];
+    const settlement = receipt().events[1];
+    if (!transition || !settlement) throw new Error('event fixtures required');
+    const ordered = [
+      { ...transition, eventId: 'transition:2', occurredAt },
+      { ...transition, eventId: 'transition:10', occurredAt },
+      {
+        ...settlement,
+        eventId: `custody:crashref_${'3'.repeat(32)}`,
+        kind: 'custody-prepared',
+        occurredAt,
+      },
+      { ...settlement, eventId: 'settlement:2', occurredAt },
+      { ...settlement, eventId: 'settlement:10', occurredAt },
+    ];
+
+    expect(
+      parseCrashReceipt({ ...receipt(), events: ordered }).events.map(({ eventId }) => eventId),
+    ).toEqual([
+      'transition:2',
+      'transition:10',
+      `custody:crashref_${'3'.repeat(32)}`,
+      'settlement:2',
+      'settlement:10',
+    ]);
+    expect(() =>
+      parseCrashReceipt({
+        ...receipt(),
+        events: [ordered[0], ordered[1], ordered[2], ordered[4], ordered[3]],
+      }),
+    ).toThrow('malformed private history');
+    expect(() =>
+      parseCrashReceipt({
+        ...receipt(),
+        events: [{ ...settlement, eventId: 'transition:2' }],
+      }),
+    ).toThrow('malformed private history');
   });
 
   test('surfaces configuration and HTTP failures without fabricating cached history', async () => {

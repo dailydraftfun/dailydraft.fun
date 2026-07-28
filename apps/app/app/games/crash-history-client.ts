@@ -6,6 +6,8 @@ import {
   type CrashReceipt,
   type CrashReceiptEvent,
   type CrashSafeNextAction,
+  compareCrashReceiptEvents,
+  isCrashReceiptEventId,
 } from '@dailydraft/contracts/crash-history';
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_DUEL_API_URL?.replace(/\/$/, '');
@@ -133,15 +135,13 @@ export function parseCrashReceipt(value: unknown): CrashReceipt {
     throw malformedCrashError();
   }
   const events = value.events.map(parseEvent);
+  if (new Set(events.map(({ eventId }) => eventId)).size !== events.length) {
+    throw malformedCrashError();
+  }
   for (let index = 1; index < events.length; index += 1) {
     const previous = events[index - 1];
     const current = events[index];
-    if (
-      !previous ||
-      !current ||
-      previous.occurredAt > current.occurredAt ||
-      (previous.occurredAt === current.occurredAt && previous.eventId > current.eventId)
-    ) {
+    if (!previous || !current || compareCrashReceiptEvents(previous, current) > 0) {
       throw malformedCrashError();
     }
   }
@@ -181,10 +181,9 @@ function parseHistoryItem(value: unknown): CrashHistoryItem {
 }
 
 function parseEvent(value: unknown): CrashReceiptEvent {
+  const kind = value && isObject(value) ? value.kind : null;
   if (
     !isObject(value) ||
-    typeof value.eventId !== 'string' ||
-    value.eventId.length > 180 ||
     ![
       'custody-prepared',
       'custody-recovery-required',
@@ -197,7 +196,8 @@ function parseEvent(value: unknown): CrashReceiptEvent {
       'settlement-prepared',
       'settlement-recovery-required',
       'stage-continued',
-    ].includes(String(value.kind)) ||
+    ].includes(String(kind)) ||
+    !isCrashReceiptEventId(value.eventId, kind as CrashReceiptEvent['kind']) ||
     !isIso(value.occurredAt) ||
     typeof value.reference !== 'string' ||
     !/^crashref_[a-f0-9]{32}$/.test(value.reference) ||

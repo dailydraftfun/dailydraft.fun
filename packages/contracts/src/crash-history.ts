@@ -87,6 +87,65 @@ export type CrashReceiptEvent = {
   terminalReason: string | null;
 };
 
+type CrashReceiptEventDomain = 'custody' | 'settlement' | 'transition';
+
+const CRASH_RECEIPT_EVENT_DOMAIN_ORDER: Record<CrashReceiptEventDomain, number> = {
+  transition: 0,
+  custody: 1,
+  settlement: 2,
+};
+
+export function compareCrashReceiptEvents(
+  left: CrashReceiptEvent,
+  right: CrashReceiptEvent,
+): number {
+  const occurredAt = left.occurredAt.localeCompare(right.occurredAt);
+  if (occurredAt !== 0) return occurredAt;
+
+  const leftId = parseCrashReceiptEventId(left.eventId);
+  const rightId = parseCrashReceiptEventId(right.eventId);
+  if (!leftId || !rightId) return left.eventId.localeCompare(right.eventId);
+
+  const domain =
+    CRASH_RECEIPT_EVENT_DOMAIN_ORDER[leftId.domain] -
+    CRASH_RECEIPT_EVENT_DOMAIN_ORDER[rightId.domain];
+  if (domain !== 0) return domain;
+  if (leftId.sequence !== null && rightId.sequence !== null) {
+    return leftId.sequence - rightId.sequence;
+  }
+  return left.eventId.localeCompare(right.eventId);
+}
+
+export function isCrashReceiptEventId(
+  eventId: unknown,
+  kind: CrashReceiptEvent['kind'],
+): eventId is string {
+  if (typeof eventId !== 'string') return false;
+  const parsed = parseCrashReceiptEventId(eventId);
+  return parsed?.domain === eventDomainForKind(kind);
+}
+
+function parseCrashReceiptEventId(
+  eventId: string,
+): { domain: CrashReceiptEventDomain; sequence: number | null } | null {
+  const sequenced = /^(settlement|transition):([1-9][0-9]{0,9})$/.exec(eventId);
+  if (sequenced) {
+    const sequence = Number(sequenced[2]);
+    if (!Number.isSafeInteger(sequence)) return null;
+    return { domain: sequenced[1] as 'settlement' | 'transition', sequence };
+  }
+  if (/^custody:crashref_[a-f0-9]{32}$/.test(eventId)) {
+    return { domain: 'custody', sequence: null };
+  }
+  return null;
+}
+
+function eventDomainForKind(kind: CrashReceiptEvent['kind']): CrashReceiptEventDomain {
+  if (kind.startsWith('settlement-')) return 'settlement';
+  if (kind.startsWith('custody-')) return 'custody';
+  return 'transition';
+}
+
 export type CrashReceipt = {
   bindings: {
     architectureVersion: string;
