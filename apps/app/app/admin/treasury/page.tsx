@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
-import { notFound } from 'next/navigation';
 import {
   getOperatorTreasurySummary,
   operatorDashboardAuthorized,
 } from './operator-treasury-client';
 import { TreasuryDashboard } from './treasury-dashboard';
+
+const navigation = require('next/navigation') as typeof import('next/navigation');
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,6 @@ export const metadata: Metadata = {
 
 export default async function OperatorTreasuryPage() {
   const requestHeaders = await headers();
-  if (!operatorDashboardAuthorized(requestHeaders.get('authorization'))) notFound();
+  if (!operatorDashboardAuthorized(requestHeaders.get('authorization'))) navigation.notFound();
   return <TreasuryDashboard summary={await getOperatorTreasurySummary()} />;
 }

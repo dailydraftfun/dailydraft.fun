@@ -182,6 +182,13 @@ describe('duel lobby capability controls', () => {
           house: { enabled: false, reason: 'Unavailable.' },
         },
       },
+      {
+        ...valid,
+        modes: {
+          ...valid.modes,
+          house: null,
+        },
+      },
       { ...valid, network: 'solana-mainnet' },
       { ...valid, provider: { mode: 'dailydraft-devnet' } },
       {

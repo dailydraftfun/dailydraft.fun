@@ -3,6 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { journeyTestIds } from './e2e/journey-test-ids';
 
 mock.module('next/navigation', () => ({
+  notFound: () => {
+    throw new Error('NEXT_HTTP_ERROR_FALLBACK;404');
+  },
   redirect: (target: string) => {
     throw new Error(`NEXT_REDIRECT:${target}`);
   },

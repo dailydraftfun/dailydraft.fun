@@ -35,5 +35,9 @@ describe('game discovery analytics', () => {
       schemaVersion: 'dailydraft.game-discovery.v1',
       stage: 'result-view',
     });
+    expect(buildGameDiscoveryEvent({ stage: 'hub-view' })).toEqual({
+      schemaVersion: 'dailydraft.game-discovery.v1',
+      stage: 'hub-view',
+    });
   });
 });
