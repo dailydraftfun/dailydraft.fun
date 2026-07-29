@@ -119,6 +119,7 @@ import {
   isRetryableDuelRequestError,
   joinDuel,
   type MatchmakingSession,
+  type ProductCapabilities,
   prepareDuelIntent,
   reconcileDuelTransactions,
   recordRejectedDuelIntent,
@@ -476,7 +477,15 @@ function duelSheenTarget(choreography: ChoreographyController) {
   return { opacity: 0, x: '-65%' };
 }
 
-export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
+export function DuelArena({
+  entry,
+  initialDuel,
+  loadCapabilities = getProductCapabilities,
+}: {
+  entry?: DuelLobbyEntry;
+  initialDuel?: DurableDuel;
+  loadCapabilities?: () => Promise<ProductCapabilities>;
+}) {
   const walletConnection = useSolanaWallet();
   const authentication = useWalletAuth();
   const [activeEntry, setActiveEntry] = useState(entry);
@@ -502,7 +511,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [confirmationPhase, setConfirmationPhase] = useState<ConfirmationPhase | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
-  const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
+  const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(initialDuel ?? null);
   const [practiceRound, setPracticeRound] = useState(1);
   const [duelRestorePending, setDuelRestorePending] = useState(true);
   const [resolvedRematchOpponent, setResolvedRematchOpponent] = useState<
@@ -949,7 +958,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     void capabilityReload;
     let active = true;
     setCapabilityState({ status: 'loading' });
-    getProductCapabilities()
+    loadCapabilities()
       .then((nextCapabilities) => {
         if (active) setCapabilityState({ status: 'ready', value: nextCapabilities });
       })
@@ -965,7 +974,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     return () => {
       active = false;
     };
-  }, [capabilityReload]);
+  }, [capabilityReload, loadCapabilities]);
 
   useEffect(() => {
     if (capabilityState.status !== 'ready') return;
@@ -1345,7 +1354,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           return;
         }
         if (nextMode === 'house') {
-          const refreshedCapabilities = await getProductCapabilities();
+          const refreshedCapabilities = await loadCapabilities();
           setCapabilityState({ status: 'ready', value: refreshedCapabilities });
           const refreshedHouse = refreshedCapabilities.modes.house;
           if (!refreshedHouse.enabled) {
@@ -2593,7 +2602,7 @@ function shortReference(value?: string | null): string | null {
   return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
 }
 
-function practiceRevealHeadline(
+export function practiceRevealHeadline(
   phase: RevealPresentationPhase | undefined,
   countdown: 1 | 2 | 3 | null | undefined,
 ): string {
@@ -2603,14 +2612,14 @@ function practiceRevealHeadline(
   return 'Preparing the practice reveal…';
 }
 
-function practiceResultHeadline(winner: 'opponent' | 'tie' | 'you' | null): string {
+export function practiceResultHeadline(winner: 'opponent' | 'tie' | 'you' | null): string {
   if (winner === 'you') return 'You beat the bot';
   if (winner === 'opponent') return 'The bot wins this round';
   if (winner === 'tie') return 'Draw';
   return 'Practice result';
 }
 
-function resultWinnerLabel(
+export function resultWinnerLabel(
   winner: 'opponent' | 'tie' | 'you' | null,
   practiceDuel = false,
 ): string {
