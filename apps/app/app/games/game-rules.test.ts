@@ -75,7 +75,8 @@ describe('canonical game rules', () => {
   test('matches Crash to the fixed four-stage UI state machine', () => {
     const copy = JSON.stringify(gameRules.crash);
 
-    expect(copy).toContain('four fixed card stages');
+    expect(copy).toContain('rotates the same four fixture cards into a deterministic order');
+    expect(copy).toContain('card order is determined by the run number');
     expect(copy).toContain('attempt past the final stage');
     expect(copy).toContain('Only an attempt past the final stage triggers the scripted bust state');
     expect(copy).not.toContain('next committed fixture stage');

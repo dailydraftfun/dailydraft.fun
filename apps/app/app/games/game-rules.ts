@@ -50,12 +50,12 @@ export const gameRules = {
       {
         label: 'Continue or cash out',
         detail:
-          'The local script contains four fixed card stages. Continue reveals the next fixed card through stage four; attempting to continue past stage four ends the script.',
+          'Each numbered run rotates the same four fixture cards into a deterministic order. Continue reveals the next card through stage four; attempting to continue past stage four ends the script.',
       },
       {
         label: 'Probability rule',
         detail:
-          'The preview follows a fixed demonstration sequence. It does not publish or imply commercial bust odds, expected value, or a live payout.',
+          'No run is randomized: its card order is determined by the run number. The preview does not publish or imply commercial bust odds, expected value, or a live payout.',
       },
     ],
     gates: [
@@ -67,7 +67,8 @@ export const gameRules = {
     loop: [
       {
         label: 'Read the stage',
-        detail: 'Inspect the current fixed card, displayed fixture pot, and scripted stage number.',
+        detail:
+          'Inspect the current deterministic card, displayed fixture pot, and scripted stage number.',
       },
       {
         label: 'Choose once',
@@ -76,7 +77,7 @@ export const gameRules = {
       {
         label: 'Resolve',
         detail:
-          'Stages two through four reveal their fixed cards. Only an attempt past the final stage triggers the scripted bust state.',
+          'Stages two through four reveal the current run’s deterministic cards. Only an attempt past the final stage triggers the scripted bust state.',
       },
       {
         label: 'Inspect',
@@ -97,7 +98,7 @@ export const gameRules = {
       {
         label: 'Committed',
         detail:
-          'No commitment or random draw is created. The four-card local sequence is fixed in the interface.',
+          'No commitment or random draw is created. Each numbered run rotates the same four-card fixture sequence deterministically.',
       },
       {
         label: 'Owned',

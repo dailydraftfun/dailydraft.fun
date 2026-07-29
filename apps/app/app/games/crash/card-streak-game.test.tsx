@@ -19,6 +19,9 @@ describe('Card Streak game surface', () => {
     expect(textOf(renderer.root)).toContain('End run');
     expect(textOf(renderer.root)).toContain('Demo score · no funds');
     expect(textOf(renderer.root)).toContain('No wallet. No funds. No custody.');
+    expect(textOf(renderer.root)).toContain(
+      'Each numbered run rotates the same four fixture cards through a deterministic path.',
+    );
     expect(
       renderer.root.findByProps({ 'aria-label': 'Card Streak game' }).props['data-status'],
     ).toBe('active');

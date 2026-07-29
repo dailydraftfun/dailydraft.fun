@@ -253,9 +253,9 @@ export function CardStreakView({
             How this run works <ArrowRightIcon aria-hidden="true" size={14} />
           </summary>
           <p>
-            Every run reveals the same four-card path. Continue builds the fixture pot; cash out
-            ends safely; continuing once more after stage four always busts. Nothing is randomized,
-            bought, transferred, or paid.
+            Each numbered run rotates the same four fixture cards through a deterministic path.
+            Continue builds the demo score; ending the run stops safely; continuing once more after
+            stage four always busts. Nothing is randomized, bought, transferred, or paid.
           </p>
         </details>
       </footer>
