@@ -77,6 +77,25 @@ describe('duel lobby capability controls', () => {
     expect(markup).not.toContain('tier-ev');
   });
 
+  test('offers an instant practice bot while treasury-backed House play is gated', () => {
+    const capabilities = capabilityFixture();
+    const markup = renderToStaticMarkup(
+      <DuelModeTabs
+        capabilities={capabilities}
+        disabled={false}
+        mode="house"
+        onSelect={() => undefined}
+        practiceBotEnabled
+      />,
+    );
+
+    const instantTab = markup.match(/<button[^>]*id="mode-tab-house"[^>]*>.*?<\/button>/)?.[0];
+    expect(instantTab).toContain('aria-selected="true"');
+    expect(instantTab).not.toContain('disabled=""');
+    expect(instantTab).toContain('Play the bot');
+    expect(instantTab).not.toContain('Coming soon');
+  });
+
   test('falls back from unsupported modes and shared tiers to the first playable combination', () => {
     const resolved = resolveLobbySelection(capabilityFixture(), { mode: 'house', tier: 25 });
 

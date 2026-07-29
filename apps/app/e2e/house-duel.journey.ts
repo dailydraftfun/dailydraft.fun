@@ -11,6 +11,39 @@ const entry = {
   stepper: 'duel-entry-stepper',
 } as const;
 
+test.describe('instant practice bot', () => {
+  test.use({
+    journeyHouseEnabled: false,
+    journeySeed: 'practice-bot',
+  });
+
+  test('plays a complete reveal without a wallet transaction or fake receipt', async ({
+    journey,
+    page,
+  }) => {
+    await page.clock.install({ time: new Date('2099-01-01T00:00:00.000Z') });
+    await Promise.all([
+      page.waitForResponse(`${journeyApiOrigin}/health/capabilities`),
+      page.waitForResponse(journeyRpcUrl),
+      page.goto('/overview'),
+    ]);
+
+    await page.getByTestId(journeyTestIds.mode.house).click();
+    await expect(page.getByTestId(journeyTestIds.primaryAction)).toHaveText(
+      'Play bot · $50 practice pool',
+    );
+    await page.getByTestId(journeyTestIds.primaryAction).click();
+
+    await expect(page.getByTestId(journeyTestIds.battle)).toBeVisible();
+    await expect(page.getByTestId(journeyTestIds.settlementReference)).toHaveText('No transaction');
+    await page.clock.fastForward(6_000);
+    await expect(page.getByTestId(journeyTestIds.duelHeadline)).toHaveText('You beat the bot');
+    await expect(page.getByRole('link', { name: 'Verified receipt' })).toHaveCount(0);
+    await expect(page.getByTestId(journeyTestIds.resultRematch)).toHaveText('Play the bot again');
+    expect(requestCount(journey.snapshot().requests, '/submissions')).toBe(0);
+  });
+});
+
 test.describe('player win against House', () => {
   test.use({
     journeyHouseEnabled: true,
