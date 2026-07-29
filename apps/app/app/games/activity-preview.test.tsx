@@ -12,9 +12,10 @@ describe('verified activity surface', () => {
   test('defaults to an honest projection loading state without fixture activity', () => {
     const markup = renderToStaticMarkup(<ActivityPreview />);
 
-    expect(markup).toContain('Recent play you can verify');
+    expect(markup).toContain('Recent play');
     expect(markup).toContain('Checking durable outcomes');
-    expect(markup).toContain('No fabricated live counts');
+    expect(markup).not.toContain('No fabricated live counts');
+    expect(markup).not.toContain('inferred jackpots');
     expect(markup).toContain('No verified activity shown');
     expect(markup).not.toContain('duel_activity000001');
     expect(markup).not.toContain('players online');

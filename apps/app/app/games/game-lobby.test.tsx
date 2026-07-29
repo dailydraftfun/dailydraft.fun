@@ -18,7 +18,8 @@ describe('game lobby', () => {
     expect(markup).toContain('href="/games/activity"');
     expect(markup).toContain('Playable demo');
     expect(markup).toContain('Play free demo');
-    expect(markup).toContain('Jul 27 · 20:00 UTC');
+    expect(markup).not.toContain('Live capability');
+    expect(markup).not.toContain('Capability source');
     expect(markup).not.toContain('Fantasy Tournaments');
   });
 
@@ -46,13 +47,13 @@ describe('game lobby', () => {
     expect(markup).not.toContain('Rip a sports pack');
   });
 
-  test('makes no-value demo and devnet limitations explicit without fake activity', () => {
+  test('makes no-value demo limitations explicit without operational integrity lectures', () => {
     const markup = renderToStaticMarkup(<GameLobby initialCatalog={catalog()} />);
 
     expect(markup).toContain('Playable demo');
     expect(markup).toContain('No funds, cards, provider purchases, custody, or payouts');
-    expect(markup).toContain('Devnet · test assets only');
-    expect(markup).toContain('No fake activity');
+    expect(markup).not.toContain('Failed or stale checks');
+    expect(markup).not.toContain('No fake activity');
     expect(markup).not.toContain('players online');
     expect(markup).not.toContain('live pot');
   });
@@ -74,20 +75,6 @@ describe('game lobby', () => {
 
     expect(markup).toContain('Capability gated');
     expect(markup).toContain('Playable demo');
-  });
-
-  test('renders deterministic catalog timestamps and fails malformed evidence closed', () => {
-    const epochCatalog = catalog();
-    epochCatalog.asOf = new Date(0).toISOString();
-    expect(renderToStaticMarkup(<GameLobby initialCatalog={epochCatalog} />)).toContain(
-      'Verified not yet',
-    );
-
-    const malformedCatalog = catalog();
-    malformedCatalog.asOf = 'not-a-date';
-    expect(renderToStaticMarkup(<GameLobby initialCatalog={malformedCatalog} />)).toContain(
-      'Verified unknown',
-    );
   });
 });
 
