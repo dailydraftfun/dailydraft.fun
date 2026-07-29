@@ -13,6 +13,7 @@ import {
 } from '@phosphor-icons/react';
 import Image from 'next/image';
 import { useEffect, useReducer, useRef } from 'react';
+import { activateRulesHashTarget } from '../game-rules-overview';
 import styles from './card-streak-game.module.css';
 import {
   CARD_STREAK_CARDS,
@@ -45,6 +46,7 @@ export function CardStreakView({
 }) {
   const primaryActionRef = useRef<HTMLButtonElement>(null);
   const previousTerminalKey = useRef(`${state.status}:${state.round}`);
+  const rulesRef = useRef<HTMLElement>(null);
   const cards = cardStreakCardsForRound(state.round);
   const currentCard = cards[state.stageIndex] ?? cards[0] ?? CARD_STREAK_CARDS[0];
   const nextCard = nextCardFor(state);
@@ -57,6 +59,20 @@ export function CardStreakView({
     previousTerminalKey.current = terminalKey;
     primaryActionRef.current?.focus();
   }, [state.round, state.status]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const focusRules = () => {
+      activateRulesHashTarget({
+        hash: window.location.hash,
+        requestFrame: (callback) => window.requestAnimationFrame(callback),
+        target: rulesRef.current,
+      });
+    };
+    focusRules();
+    window.addEventListener('hashchange', focusRules);
+    return () => window.removeEventListener('hashchange', focusRules);
+  }, []);
 
   return (
     <section
@@ -239,7 +255,7 @@ export function CardStreakView({
         )}
       </div>
 
-      <footer className={styles.safety} id="rules">
+      <footer className={styles.safety} id="rules" ref={rulesRef} tabIndex={-1}>
         <span>
           <ShieldCheckIcon size={18} weight="fill" />
           No wallet. No funds. No custody.

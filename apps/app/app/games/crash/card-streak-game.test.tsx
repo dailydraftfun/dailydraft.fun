@@ -25,6 +25,7 @@ describe('Card Streak game surface', () => {
     expect(
       renderer.root.findByProps({ 'aria-label': 'Card Streak game' }).props['data-status'],
     ).toBe('active');
+    expect(renderer.root.findByProps({ id: 'rules' }).props.tabIndex).toBe(-1);
 
     await unmount(renderer);
   });
