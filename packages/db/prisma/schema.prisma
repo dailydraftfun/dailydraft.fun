@@ -911,6 +911,7 @@ model HouseTreasurySnapshot {
   balanceDecimals Int
   delegate        String
   delegatedAmount String
+  observedSlot    String        @default("0")
   verifiedAt      DateTime
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -992,12 +993,17 @@ model HouseInventoryAsset {
   listingState               HouseInventoryListingState @default(UNLISTED)
   custodyWallet              String
   disposition                HouseInventoryDisposition  @default(MANUAL_REVIEW)
+  dispositionReason          String?
+  dispositionRequestedAt     DateTime?
   status                     HouseInventoryStatus       @default(HELD)
   realizedAmount             String?
   realizedCurrency           String?
   realizedDecimals           Int?
+  realizedFeeAmount          String?
+  realizedGainLossAmount     String?
   disposedAt                 DateTime?
   lastReconciledAt           DateTime?
+  lastReconciledSlot         String?
   reconciliationError        String?
   version                    Int                        @default(1)
   createdAt                  DateTime                   @default(now())
@@ -1015,6 +1021,27 @@ model HouseInventoryAsset {
   @@index([crashRoundId, createdAt])
   @@index([flipSessionId, createdAt])
   @@index([custodyWallet, status])
+}
+
+/// Immutable discrepancy evidence from one finalized Solana observation. A repeated worker run at
+/// the same slot reuses the same idempotency key instead of creating another incident.
+model HouseReconciliationDiscrepancy {
+  id                String   @id
+  idempotencyKey    String   @unique
+  kind              String
+  entityReference   String
+  expectedValue     String
+  observedValue     String
+  observedSlot      String
+  detail            String
+  firstObservedAt   DateTime @default(now())
+  lastObservedAt    DateTime
+  resolvedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([resolvedAt, kind, firstObservedAt])
+  @@index([entityReference, resolvedAt])
 }
 
 model HouseTreasuryLedgerEntry {

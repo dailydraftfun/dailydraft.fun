@@ -8,10 +8,32 @@ import {
   resolveDuelRulesReadiness,
 } from './game-rules-overview';
 
+const houseAdmission: ProductCapabilities['modes']['house']['admission'] = {
+  approvalStatus: 'devnet-preview-no-legal-or-live-provider-approval',
+  currency: 'USDC',
+  decimals: 6,
+  limits: {
+    dailyLossAmount: '100000000',
+    maxActivePerWallet: 1,
+    maxConcurrentPerTier: 2,
+    maxTotalExposureAmount: '200000000',
+    minimumLiquidityAmount: '50000000',
+  },
+  network: 'solana-devnet',
+  opponent: { label: 'DailyDraft House', wallet: null },
+  preFundingRecheck: 'immediately-before-duel-creation',
+  valuation: {
+    comparisonMetric: 'insured-value',
+    policyHash: 'policy-hash',
+    policyVersion: 'policy-v1',
+    tieRule: 'return-original-assets-and-refund-platform-fees',
+  },
+};
+
 const capabilities: ProductCapabilities = {
   modes: {
     direct: { enabled: true, reason: null },
-    house: { enabled: false, reason: 'House is unavailable.' },
+    house: { admission: houseAdmission, enabled: false, reason: 'House is unavailable.' },
     open: { enabled: true, reason: null },
   },
   network: 'solana-devnet',
@@ -130,7 +152,7 @@ describe('browse-first game rules overview', () => {
           ...capabilities,
           modes: {
             direct: { enabled: false, reason: 'Direct unavailable.' },
-            house: { enabled: false, reason: 'House unavailable.' },
+            house: { admission: houseAdmission, enabled: false, reason: 'House unavailable.' },
             open: { enabled: false, reason: 'Matchmaking unavailable.' },
           },
           packs: capabilities.packs.map((pack) => ({
@@ -154,7 +176,7 @@ describe('browse-first game rules overview', () => {
           ...capabilities,
           modes: {
             direct: { enabled: false, reason: null },
-            house: { enabled: false, reason: null },
+            house: { admission: houseAdmission, enabled: false, reason: null },
             open: { enabled: false, reason: null },
           },
           packs: capabilities.packs.map((pack) => ({

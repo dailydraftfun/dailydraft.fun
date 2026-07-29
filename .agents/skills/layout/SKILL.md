@@ -1,17 +1,23 @@
 ---
 name: layout
 description: Improve layout, spacing, and visual rhythm. Fixes monotonous grids, inconsistent spacing, and weak visual hierarchy. Use when the user mentions layout feeling off, spacing issues, visual hierarchy, crowded UI, alignment problems, or wanting better composition.
-user-invocable: true
-argument-hint: "[target]"
 metadata:
   version: "2.1.1"
 ---
 
 Assess and improve layout and spacing that feels monotonous, crowded, or structurally weak — turning generic arrangements into intentional, rhythmic compositions.
 
-## MANDATORY PREPARATION
+## Context Gathering
 
-Invoke /impeccable — it contains design principles, anti-patterns, and the **Context Gathering Protocol**. Follow the protocol before proceeding — if no design context exists yet, you MUST run /impeccable teach first.
+Before changing layout:
+
+1. Inspect the current UI or supplied screenshot.
+2. Read the relevant design tokens, shared components, and layout styles.
+3. Find at least three comparable patterns in the codebase and follow the dominant convention.
+4. Identify the target viewport range and the primary action or content hierarchy.
+
+If the product has no established pattern for the requested layout, state that a new pattern is
+being introduced before editing.
 
 ---
 
@@ -47,8 +53,6 @@ Analyze what's weak about the current spatial design:
 **CRITICAL**: Layout problems are often the root cause of interfaces feeling "off" even when colors and fonts are fine. Space is a design material — use it with intention.
 
 ## Plan Layout Improvements
-
-Consult the [spatial design reference](reference/spatial-design.md) from the impeccable skill for detailed guidance on grids, rhythm, and container queries.
 
 Create a systematic plan:
 

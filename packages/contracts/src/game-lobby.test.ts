@@ -11,7 +11,7 @@ import {
 
 describe('public game lobby contracts', () => {
   test('pins the stable public modes and versioned response schemas', () => {
-    expect(PUBLIC_GAME_MODE_IDS).toEqual(['duel', 'flip', 'crash']);
+    expect(PUBLIC_GAME_MODE_IDS).toEqual(['duel', 'gacha', 'flip', 'crash']);
     expect(GAME_AVAILABILITY_SCHEMA_VERSION).toBe('dailydraft.game-availability.v1');
     expect(VERIFIED_GAME_ACTIVITY_SCHEMA_VERSION).toBe('dailydraft.verified-game-activity.v1');
   });
@@ -50,6 +50,7 @@ describe('public game lobby contracts', () => {
     ).toEqual([
       { mode: 'crash', participants: 1, result: 'cashed-out' },
       { mode: 'duel', participants: 2, result: 'winner-verified' },
+      { mode: 'gacha', participants: 1, result: 'pack-opened' },
       { mode: 'flip', participants: 1, result: 'acquired' },
     ]);
 

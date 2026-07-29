@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { PUBLIC_GAME_TAXONOMY } from '@dailydraft/contracts/public-game-taxonomy';
 import { renderToStaticMarkup } from 'react-dom/server';
 import LandingPage from './page';
 
@@ -32,9 +33,11 @@ describe('landing page contract', () => {
 
   test('deep-links every game explanation to the canonical product rules', () => {
     expect(markup).toContain('Browse before the wallet');
-    expect(markup).toContain('href="https://app.dailydraft.fun/games/duel#rules"');
-    expect(markup).toContain('href="https://app.dailydraft.fun/games/marketplace-flip#rules"');
-    expect(markup).toContain('href="https://app.dailydraft.fun/games/crash#rules"');
+    for (const mode of PUBLIC_GAME_TAXONOMY) {
+      expect(markup).toContain(`href="https://app.dailydraft.fun${mode.rulesHref}"`);
+      expect(markup).toContain(mode.name);
+      expect(markup).toContain(mode.statusLabel);
+    }
   });
 
   test('states the devnet limit and drops the pack-duel framing', () => {

@@ -9,9 +9,9 @@ describe('game lobby', () => {
 
     expect(markup).toContain('Playable now');
     expect(markup).toContain('Card Duel');
-    expect(markup).toContain('Sports Pack Gacha');
     expect(markup).toContain('Marketplace Flip');
     expect(markup).toContain('Card Streak');
+    expect(markup).toContain('Sports Pack Gacha');
     expect(markup).toContain('Honest roadmap');
     expect(markup).toContain('Verified recent activity');
     expect(markup).toContain('Settled proof only');
@@ -57,7 +57,7 @@ describe('game lobby', () => {
   test('distinguishes a runtime-gated game from a fixture preview', () => {
     const input = catalog();
     input.modes = input.modes.map((mode) =>
-      mode.id === 'gacha'
+      mode.id === 'duel'
         ? {
             ...mode,
             availableActions: [],

@@ -9,15 +9,24 @@ import {
 
 type JourneyFixtures = {
   journey: DuelJourneyFixture;
+  journeyHouseEnabled: boolean;
+  journeyHouseWinner: 'house' | 'player';
   journeySeed: string;
   journeyWalletRejections: number;
 };
 
 export const test = base.extend<JourneyFixtures>({
   journeySeed: ['smoke', { option: true }],
+  journeyHouseEnabled: [false, { option: true }],
+  journeyHouseWinner: ['player', { option: true }],
   journeyWalletRejections: [0, { option: true }],
-  journey: async ({ journeySeed, journeyWalletRejections, page }, use) => {
+  journey: async (
+    { journeyHouseEnabled, journeyHouseWinner, journeySeed, journeyWalletRejections, page },
+    use,
+  ) => {
     const journey = new DuelJourneyFixture(journeySeed, {
+      houseEnabled: journeyHouseEnabled,
+      houseWinner: journeyHouseWinner,
       walletTransactionRejections: journeyWalletRejections,
     });
     await page.addInitScript((bootstrap) => {

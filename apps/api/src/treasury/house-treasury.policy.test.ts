@@ -191,6 +191,34 @@ describe('house treasury policy', () => {
     expect(created).toHaveLength(2);
   });
 
+  test('fails admission closed while any reconciliation discrepancy remains unresolved', async () => {
+    const transaction = fakeTransaction({
+      created: [],
+      existingExposure: [],
+      unresolvedDiscrepancies: 1,
+    });
+
+    await expect(
+      reserveHouseExposure(
+        transaction,
+        {
+          amount: '50000000',
+          currency: 'USDC',
+          decimals: 6,
+          duelId: 'duel_reconciliation_blocked',
+          playerWallet: WITHDRAWAL,
+          tier: 50,
+        },
+        configuredEnvironment(),
+        new Date('2026-07-15T12:00:00.000Z'),
+      ),
+    ).rejects.toMatchObject({
+      message: 'House tier is disabled: unresolved treasury reconciliation discrepancy',
+      reason: 'reconciliation_discrepancy',
+      reenableBoundary: 'successful_reconciliation',
+    });
+  });
+
   test('disables a tier before payment when verified liquidity would cross the floor', async () => {
     const admissionStates: TierAdmissionState[] = [];
     const transaction = fakeTransaction({
@@ -514,6 +542,7 @@ function fakeTransaction(input: {
   };
   paused?: boolean;
   tierActive?: number;
+  unresolvedDiscrepancies?: number;
   walletActive?: number;
 }): Prisma.TransactionClient {
   const admissionStates = input.admissionStates ?? [];
@@ -547,6 +576,9 @@ function fakeTransaction(input: {
       return Promise.resolve(1);
     },
     $queryRaw: () => Promise.resolve([{ paused: input.paused ?? false }]),
+    houseReconciliationDiscrepancy: {
+      count: () => Promise.resolve(input.unresolvedDiscrepancies ?? 0),
+    },
     houseTreasuryLedgerEntry: {
       create: ({ data }: { data: unknown }) => {
         input.created.push(data);

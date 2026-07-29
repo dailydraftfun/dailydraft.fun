@@ -2074,11 +2074,22 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [disposition, reason]
+              required: [disposition, operationKey, reason]
               properties:
                 disposition:
                   type: string
                   enum: [hold, buyback, list, promotion, manual_review]
+                operationKey:
+                  type: string
+                  pattern: '^[A-Za-z0-9:_-]{8,160}$'
+                provider:
+                  type: string
+                  pattern: '^[A-Za-z0-9._:-]{3,80}$'
+                  description: Required with providerListingReference when disposition is list.
+                providerListingReference:
+                  type: string
+                  pattern: '^[A-Za-z0-9._:-]{8,240}$'
+                  description: Durable provider evidence required when disposition is list.
                 reason:
                   type: string
                   minLength: 3
@@ -2089,11 +2100,15 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
-  /admin/treasury/inventory/{inventoryId}/disposition/complete:
+  /admin/treasury/inventory/{inventoryId}/disposition/delist:
     post:
-      operationId: completeHouseInventoryDisposition
+      operationId: delistHouseInventory
       tags: [Operations]
-      summary: Record verified realized USDC proceeds for a completed disposition
+      summary: Reconcile provider cancellation evidence and return listed inventory to held custody
+      description: >-
+        Accepts provider-scoped HMAC cancellation evidence through the authenticated integration
+        boundary. The evidence must identify the active provider listing exactly; this endpoint
+        does not invent or infer an external cancellation.
       x-dailydraft-availability: devnet-gated
       security:
         - integrationKey: []
@@ -2111,8 +2126,99 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [realizedAmount, realizedCurrency, realizedDecimals, reason]
+              required:
+                - cancelledAt
+                - operationKey
+                - provider
+                - providerCancellationEvidenceHash
+                - providerCancellationReference
+                - providerCancellationSignature
+                - providerListingReference
+                - reason
               properties:
+                cancelledAt:
+                  type: string
+                  format: date-time
+                operationKey:
+                  type: string
+                  pattern: '^[A-Za-z0-9:_-]{8,160}$'
+                provider:
+                  type: string
+                  pattern: '^[A-Za-z0-9._:-]{3,80}$'
+                providerCancellationEvidenceHash:
+                  type: string
+                  pattern: '^[a-f0-9]{64}$'
+                providerCancellationReference:
+                  type: string
+                  pattern: '^[A-Za-z0-9._:-]{8,240}$'
+                providerCancellationSignature:
+                  type: string
+                  pattern: '^[a-f0-9]{64}$'
+                providerListingReference:
+                  type: string
+                  pattern: '^[A-Za-z0-9._:-]{8,240}$'
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 160
+      responses:
+        '200':
+          description: Provider cancellation evidence appended and inventory returned to held state
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/treasury/inventory/{inventoryId}/disposition/complete:
+    post:
+      operationId: completeHouseInventoryDisposition
+      tags: [Operations]
+      summary: Record verified realized USDC proceeds for a completed disposition
+      description: >-
+        Listing sales require provider-scoped HMAC evidence bound to the exact active listing,
+        sale reference, timestamp, gross proceeds, and fee.
+      x-dailydraft-availability: devnet-gated
+      security:
+        - integrationKey: []
+      parameters:
+        - name: inventoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^hinv_[a-f0-9]{32}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [feeAmount, operationKey, realizedAmount, realizedCurrency, realizedDecimals, reason]
+              properties:
+                feeAmount: { type: string, pattern: '^\d+$' }
+                operationKey:
+                  type: string
+                  pattern: '^[A-Za-z0-9:_-]{8,160}$'
+                provider:
+                  type: string
+                  pattern: '^[A-Za-z0-9._:-]{3,80}$'
+                  description: Required for marketplace listing completion.
+                providerListingReference:
+                  type: string
+                  pattern: '^[A-Za-z0-9._:-]{8,240}$'
+                  description: Must match the exact active listing.
+                providerSaleAt:
+                  type: string
+                  format: date-time
+                providerSaleEvidenceHash:
+                  type: string
+                  pattern: '^[a-f0-9]{64}$'
+                providerSaleReference:
+                  type: string
+                  pattern: '^[A-Za-z0-9._:-]{8,240}$'
+                providerSaleSignature:
+                  type: string
+                  pattern: '^[a-f0-9]{64}$'
                 realizedAmount: { type: string, pattern: '^\d+$' }
                 realizedCurrency: { type: string, const: USDC }
                 realizedDecimals: { type: integer, const: 6 }
@@ -3301,7 +3407,7 @@ components:
           const: dailydraft.game-catalog.v1
     PublicGameModeId:
       type: string
-      enum: [duel, flip, crash]
+      enum: [duel, gacha, flip, crash]
     PublicGameAvailabilityMode:
       type: object
       additionalProperties: false
@@ -3334,8 +3440,8 @@ components:
           format: date-time
         modes:
           type: array
-          minItems: 3
-          maxItems: 3
+          minItems: 4
+          maxItems: 4
           items:
             $ref: '#/components/schemas/PublicGameAvailabilityMode'
         network:
@@ -3362,7 +3468,7 @@ components:
       properties:
         activityId:
           type: string
-          pattern: '^(duel|flip|crash):[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$'
+          pattern: '^(duel|gacha|flip|crash):[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$'
         mode:
           $ref: '#/components/schemas/PublicGameModeId'
         occurredAt:
@@ -3393,7 +3499,7 @@ components:
           pattern: '^[a-z][a-z0-9-]{1,63}$'
         resultHref:
           type: string
-          pattern: '^/v1/rgs/rounds/(duel|flip|crash)/[A-Za-z0-9][A-Za-z0-9._:-]{0,239}/proof$'
+          pattern: '^/v1/rgs/rounds/(duel|gacha|flip|crash)/[A-Za-z0-9][A-Za-z0-9._:-]{0,239}/proof$'
         resultSummary:
           type: string
           minLength: 1

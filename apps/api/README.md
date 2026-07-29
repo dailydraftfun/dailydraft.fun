@@ -444,6 +444,21 @@ The host loads encrypted application values from
 `GET /v1/health` reports database readiness. The 03:00 UTC Solana and 04:00 UTC
 treasury recovery passes are cron.d timers on the same host.
 
+The workflow ships the Caddy fragment under the same immutable Git SHA as the
+image and deploy script. The host installs it in Caddy's persistent `/config`
+volume, validates an exact-SHA managed import, and updates the shared Caddyfile
+only while holding the host deployment lock and after confirming no other tenant
+changed it. The prior Caddyfile is restored on any interrupted or failed reload. The API
+trusts the stable `shipshit-caddy` Docker DNS identity, refreshes its resolved
+addresses without restart, and rejects forwarding from any untrusted peer
+before rate limiting. Recreating Caddy can fail closed during DNS convergence,
+but cannot collapse all clients into one rate-limit bucket.
+
+Marketplace listing completion and delist writes also require provider-scoped
+HMAC evidence through `DAILYDRAFT_MARKETPLACE_PROVIDER_KEYS`. The signed payload
+binds the inventory, active listing, provider reference, timestamp, and outcome;
+without the matching provider key those transitions stay unavailable.
+
 Set `DAILYDRAFT_APP_URL` to the canonical HTTPS app origin and
 `DAILYDRAFT_AUTH_DOMAIN` to its matching host. Only localhost may use HTTP.
 The localhost URL fallback is available only when `NODE_ENV=development`; deployed

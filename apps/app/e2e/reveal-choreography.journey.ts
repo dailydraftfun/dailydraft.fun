@@ -60,7 +60,9 @@ test('keyboard completes Flip and Crash reveals, mute, skip, and every 390px bea
   await expectNoOverflowForBeats(flipReveal, fullBeatSequence);
   await expect(flipReveal.getByRole('img', { name: 'Charizard · Base Set' })).toHaveCount(1);
   await expect(page.getByRole('heading', { name: 'Charizard · Base Set' })).toBeVisible();
-  await expect(page.getByText('$72.50', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Flip preview' }).getByText('$72.50', { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Skip reveal animation' })).toHaveAttribute(
     'aria-disabled',
     'true',
@@ -148,7 +150,9 @@ test('reduced motion fast-forwards every mode with full terminal information', a
   await expectReducedMotionSettlement(flipReveal);
   await expect(flipReveal.getByRole('img', { name: 'Charizard · Base Set' })).toHaveCount(1);
   await expect(page.getByRole('heading', { name: 'Charizard · Base Set' })).toBeVisible();
-  await expect(page.getByText('$72.50', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Flip preview' }).getByText('$72.50', { exact: true }),
+  ).toBeVisible();
 
   await page.goto('/games/crash', { waitUntil: 'domcontentloaded' });
   await installBeatCapture(page);

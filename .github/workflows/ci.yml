@@ -27,6 +27,8 @@ jobs:
         with:
           bun-version: 1.3.13
       - run: bun install --frozen-lockfile
+      - name: Validate branch-protection readiness manifest
+        run: bun run ci:readiness
       - run: bun run lint --affected
       - run: bun run typecheck --affected
       - name: Verify changed-code coverage fixtures

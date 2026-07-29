@@ -36,7 +36,7 @@ const OPPONENT = 'Gk8Zk4hMS6z7USMLKSTP4pYVuqVFAU1zLczhBytBMQyW';
 const SETTLED_AT = new Date('2026-07-28T11:59:00.000Z');
 
 describe('public game availability', () => {
-  test('publishes stable Duel, Flip, and Crash identifiers with one shared asOf', async () => {
+  test('publishes every public game identifier with one shared asOf', async () => {
     const service = lobbyWith({ catalog: catalog() });
 
     const availability = await service.getAvailability(
@@ -60,6 +60,11 @@ describe('public game availability', () => {
             status: 'verified',
           },
           id: 'duel',
+          state: 'playable',
+        }),
+        expect.objectContaining({
+          asOf: '2026-07-28T12:00:00.000Z',
+          id: 'gacha',
           state: 'playable',
         }),
         expect.objectContaining({
@@ -115,7 +120,11 @@ describe('public game availability', () => {
       reason: 'Duel play is unavailable under the current real-value policy.',
       state: 'unavailable',
     });
-    expect(availability.modes.slice(1).map((mode) => mode.state)).toEqual(['preview', 'preview']);
+    expect(availability.modes.slice(1).map((mode) => mode.state)).toEqual([
+      'playable',
+      'preview',
+      'preview',
+    ]);
   });
 
   test('requires create, funding, opening, join, matchmaking, and escrow prerequisites', () => {

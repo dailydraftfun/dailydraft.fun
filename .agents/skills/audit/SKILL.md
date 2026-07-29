@@ -1,15 +1,22 @@
 ---
 name: audit
 description: Run technical quality checks across accessibility, performance, theming, responsive design, and anti-patterns. Generates a scored report with P0-P3 severity ratings and actionable plan. Use when the user wants an accessibility check, performance audit, or technical quality review.
-user-invocable: true
-argument-hint: "[area (feature, page, component...)]"
 metadata:
   version: "2.1.1"
 ---
 
-## MANDATORY PREPARATION
+## Context Gathering
 
-Invoke /impeccable — it contains design principles, anti-patterns, and the **Context Gathering Protocol**. Follow the protocol before proceeding — if no design context exists yet, you MUST run /impeccable teach first.
+Before auditing:
+
+1. Inspect the current UI and the implementation in scope.
+2. Read the product's design tokens, shared components, accessibility conventions, and responsive
+   breakpoints.
+3. Find comparable production surfaces and use them as the local quality baseline.
+4. Record the target devices, themes, and quality bar when they are available.
+
+If required context is missing, identify the gap in the report instead of depending on another
+skill.
 
 ---
 
@@ -71,7 +78,10 @@ Run comprehensive checks across 5 dimensions. Score each dimension 0-4 using the
 
 ### 5. Anti-Patterns (CRITICAL)
 
-Check against ALL the **DON'T** guidelines in the impeccable skill. Look for AI slop tells (AI color palette, gradient text, glassmorphism, hero metrics, card grids, generic fonts) and general design anti-patterns (gray on color, nested cards, bounce easing, redundant copy).
+Look for AI slop tells (AI color palette, decorative gradient text, gratuitous glassmorphism,
+generic hero metrics, repetitive card grids, generic fonts) and general design anti-patterns
+(gray text on colored backgrounds, nested cards, bounce easing, redundant copy, inconsistent
+spacing, and decorative complexity without product purpose).
 
 **Score 0-4**: 0=AI slop gallery (5+ tells), 1=Heavy AI aesthetic (3-4 tells), 2=Some tells (1-2 noticeable), 3=Mostly clean (subtle issues only), 4=No AI tells (distinctive, intentional design)
 

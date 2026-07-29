@@ -30,6 +30,10 @@ describe('verified activity surface', () => {
     expect(markup).toContain('Verified win');
     expect(markup).toContain('9xQe…9gJ1 · Gk8Z…MQyW');
     expect(markup).toContain('View verified receipt');
+    expect(markup).toContain('Result proof');
+    expect(markup).toContain('Find player profiles');
+    expect(markup).toContain('Run a rematch');
+    expect(markup).toContain('Share result');
     expect(markup).toContain(
       'aria-label="View verified receipt for Sports Pack Duel settled · duel:duel_activity000001"',
     );
@@ -65,6 +69,8 @@ describe('verified activity surface', () => {
     expect(markup).toContain('Completed');
     expect(markup).toContain('50.001234 USDC tier');
     expect(markup).toContain('Player P4Q9');
+    expect(markup).toContain('Explore Marketplace Flip');
+    expect(markup).not.toContain('Run a rematch');
   });
 
   test('renders honest empty, stale, degraded, and unavailable states', () => {

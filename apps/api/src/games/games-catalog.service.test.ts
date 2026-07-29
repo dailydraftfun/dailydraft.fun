@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { AdminService } from '../admin/admin.service.js';
 import type { GachaRipService } from '../gacha/gacha-rip.service.js';
-import type { publicProductCapabilities } from '../health/health.controller.js';
+import { publicProductCapabilities } from '../health/public-product-capabilities.js';
 import {
   GamesCatalogService,
   resolveDuelCatalogMode,
@@ -11,6 +11,12 @@ import {
 } from './games-catalog.service.js';
 
 type TestDuelCapabilities = ReturnType<typeof publicProductCapabilities>;
+type TestModeAvailability = Pick<TestDuelCapabilities['modes']['direct'], 'enabled' | 'reason'>;
+type TestModes = {
+  direct: TestModeAvailability;
+  house: TestModeAvailability;
+  open: TestModeAvailability;
+};
 
 describe('games catalog', () => {
   test('derives Duel actions from runtime readiness and keeps House inside Duel', () => {
@@ -189,10 +195,15 @@ function serviceWith(input: {
   );
 }
 
-function capabilities(modes: TestDuelCapabilities['modes']): TestDuelCapabilities {
+function capabilities(modes: TestModes): TestDuelCapabilities {
+  const baseline = publicProductCapabilities(readiness());
   return {
-    modes,
-    network: 'solana-devnet',
+    ...baseline,
+    modes: {
+      direct: modes.direct,
+      house: { ...baseline.modes.house, ...modes.house },
+      open: modes.open,
+    },
     packs: [
       {
         enabled: true,
@@ -202,7 +213,6 @@ function capabilities(modes: TestDuelCapabilities['modes']): TestDuelCapabilitie
         tier: 50,
       },
     ],
-    provider: { mode: 'dailydraft-devnet', ready: true },
   };
 }
 
@@ -248,6 +258,7 @@ function readiness({
       houseWalletConfigured: true,
       separationOfDuties: true,
       usdcTokenAccountConfigured: true,
+      unresolvedReconciliationDiscrepancies: 0,
       verified: true,
       withdrawalAuthorityConfigured: true,
     },

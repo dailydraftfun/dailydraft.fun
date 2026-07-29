@@ -1,16 +1,19 @@
 import { describe, expect, test } from 'bun:test';
+import { PUBLIC_GAME_TAXONOMY } from '@dailydraft/contracts/public-game-taxonomy';
 import { canonicalRulesHref, type GameRulesMode, gameRules } from './game-rules';
 
-const modes: GameRulesMode[] = ['duel', 'flip', 'crash'];
+const modes: GameRulesMode[] = PUBLIC_GAME_TAXONOMY.flatMap((mode) =>
+  mode.id === 'gacha' ? [] : [mode.id],
+);
+const rulesModes = PUBLIC_GAME_TAXONOMY.filter((mode) => mode.id !== 'gacha');
 
 describe('canonical game rules', () => {
   test('gives every established mode one canonical rules anchor', () => {
-    expect(modes.map((mode) => canonicalRulesHref(mode))).toEqual([
-      '/games/duel#rules',
-      '/games/marketplace-flip#rules',
-      '/games/crash#rules',
-    ]);
+    expect(modes.map((mode) => canonicalRulesHref(mode))).toEqual(
+      rulesModes.map((mode) => mode.rulesHref),
+    );
     expect(new Set(modes.map((mode) => canonicalRulesHref(mode))).size).toBe(3);
+    expect(modes.map((mode) => gameRules[mode].name)).toEqual(rulesModes.map((mode) => mode.name));
   });
 
   test('publishes the complete player-language contract for every mode', () => {

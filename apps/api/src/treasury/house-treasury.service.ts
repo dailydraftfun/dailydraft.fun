@@ -20,18 +20,25 @@ import {
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { PublicKey } from '@solana/web3.js';
 
-import { acquireNamespacedAdvisoryTransactionLock } from '../database/advisory-lock.js';
+import {
+  acquireAdvisoryTransactionLock,
+  acquireNamespacedAdvisoryTransactionLock,
+} from '../database/advisory-lock.js';
 import { DATABASE_CLIENT } from '../database/database.constants.js';
 // biome-ignore lint/style/useImportType: Nest uses the abstract class as a runtime injection token.
 import { SolanaRpcGateway, SolanaRpcUnavailableError } from '../transactions/solana-rpc.client.js';
+import { assertHouseProviderEvidence, providerReferenceKey } from './house-provider-evidence.js';
 import type {
   CompleteHouseDispositionRequest,
+  DelistHouseInventoryRequest,
   HouseDispositionRequest,
   HouseInventoryQuery,
 } from './house-treasury.dto.js';
 import {
   ACTIVE_HOUSE_RESERVATION_STATUSES,
+  HOUSE_TREASURY_EXPOSURE_LOCK_KEY,
   HOUSE_TREASURY_SNAPSHOT_ID,
+  type HouseTreasuryConfig,
   houseTreasuryConfigurationErrors,
   houseTreasurySnapshotIsUsable,
   readHouseTreasuryConfig,
@@ -39,6 +46,8 @@ import {
 
 const LIFECYCLE_BATCH_LIMIT = 100;
 const HOUSE_INVENTORY_LOCK_NAMESPACE = 1_324_771_909;
+const HOUSE_TREASURY_RECONCILIATION_LOCK_NAMESPACE = 1_324_771_910;
+const HOUSE_INVENTORY_DISPOSITION_LOCK_NAMESPACE = 1_324_771_911;
 
 @Injectable()
 export class HouseTreasuryService {
@@ -215,6 +224,7 @@ export class HouseTreasuryService {
     await this.rpc.assertDevnet();
     const mint = await this.rpc.getLegacyMint(config.usdcMint ?? '');
     const account = await this.rpc.getLegacyTokenAccount(config.tokenAccount ?? '');
+    const observedSlot = await this.rpc.getFinalizedSlot();
     if (
       mint.decimals !== 6 ||
       account.mint !== config.usdcMint ||
@@ -229,34 +239,105 @@ export class HouseTreasuryService {
         'Finalized house USDC account owner or bounded delegate does not match policy',
       );
     }
+    const delegate = account.delegate;
     const verifiedAt = new Date();
-    await this.database.houseTreasurySnapshot.upsert({
-      create: {
-        balanceAmount: account.amount.toString(),
-        balanceDecimals: mint.decimals,
-        delegate: account.delegate,
-        delegatedAmount: account.delegatedAmount.toString(),
-        id: HOUSE_TREASURY_SNAPSHOT_ID,
-        mint: account.mint,
-        tokenAccount: config.tokenAccount ?? '',
-        verifiedAt,
-        wallet: account.owner,
-      },
-      update: {
-        balanceAmount: account.amount.toString(),
-        balanceDecimals: mint.decimals,
-        delegate: account.delegate,
-        delegatedAmount: account.delegatedAmount.toString(),
-        mint: account.mint,
-        tokenAccount: config.tokenAccount ?? '',
-        verifiedAt,
-        wallet: account.owner,
-      },
-      where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
+    const treasuryDiscrepancies = await this.database.$transaction(async (transaction) => {
+      await acquireAdvisoryTransactionLock(transaction, HOUSE_TREASURY_EXPOSURE_LOCK_KEY);
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        HOUSE_TREASURY_SNAPSHOT_ID,
+        HOUSE_TREASURY_RECONCILIATION_LOCK_NAMESPACE,
+      );
+      const previousSnapshot = await transaction.houseTreasurySnapshot.findUnique({
+        where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
+      });
+      if (previousSnapshot && storedAmount(previousSnapshot.observedSlot) >= observedSlot) {
+        throw new ServiceUnavailableException(
+          'Finalized treasury observation did not advance beyond recorded state',
+        );
+      }
+
+      let discrepancyCount = 0;
+      if (previousSnapshot) {
+        const unresolvedDiscrepancy = await transaction.houseReconciliationDiscrepancy.findFirst({
+          orderBy: [{ lastObservedAt: 'desc' }, { id: 'desc' }],
+          select: { expectedValue: true, lastObservedAt: true },
+          where: {
+            entityReference: HOUSE_TREASURY_SNAPSHOT_ID,
+            kind: 'treasury_balance',
+            resolvedAt: null,
+          },
+        });
+        const ledgerSinceSnapshot = await transaction.houseTreasuryLedgerEntry.findMany({
+          select: { amount: true, type: true },
+          where: {
+            createdAt: {
+              gt: unresolvedDiscrepancy?.lastObservedAt ?? previousSnapshot.verifiedAt,
+            },
+          },
+        });
+        const expectedBalance = ledgerSinceSnapshot.reduce(
+          (balance, entry) =>
+            entry.type === HouseTreasuryLedgerType.INVENTORY_DISPOSED
+              ? balance + storedAmount(entry.amount)
+              : entry.type === HouseTreasuryLedgerType.PLAYER_WIN_LOSS ||
+                  entry.type === HouseTreasuryLedgerType.HOUSE_PACK_COST
+                ? balance - storedAmount(entry.amount)
+                : balance,
+          storedAmount(unresolvedDiscrepancy?.expectedValue ?? previousSnapshot.balanceAmount),
+        );
+        if (expectedBalance !== account.amount) {
+          discrepancyCount = 1;
+          await recordReconciliationDiscrepancy(transaction, {
+            detail: 'Finalized treasury balance differs from append-only ledger movement',
+            entityReference: HOUSE_TREASURY_SNAPSHOT_ID,
+            expectedValue: expectedBalance.toString(),
+            kind: 'treasury_balance',
+            observedSlot: observedSlot.toString(),
+            observedValue: account.amount.toString(),
+            verifiedAt,
+          });
+        } else {
+          await resolveReconciliationDiscrepancies(
+            transaction,
+            'treasury_balance',
+            HOUSE_TREASURY_SNAPSHOT_ID,
+            verifiedAt,
+          );
+        }
+      }
+
+      await transaction.houseTreasurySnapshot.upsert({
+        create: {
+          balanceAmount: account.amount.toString(),
+          balanceDecimals: mint.decimals,
+          delegate,
+          delegatedAmount: account.delegatedAmount.toString(),
+          id: HOUSE_TREASURY_SNAPSHOT_ID,
+          mint: account.mint,
+          observedSlot: observedSlot.toString(),
+          tokenAccount: config.tokenAccount ?? '',
+          verifiedAt,
+          wallet: account.owner,
+        },
+        update: {
+          balanceAmount: account.amount.toString(),
+          balanceDecimals: mint.decimals,
+          delegate,
+          delegatedAmount: account.delegatedAmount.toString(),
+          mint: account.mint,
+          observedSlot: observedSlot.toString(),
+          tokenAccount: config.tokenAccount ?? '',
+          verifiedAt,
+          wallet: account.owner,
+        },
+        where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
+      });
+      return discrepancyCount;
     });
 
     const inventory = await this.database.houseInventoryAsset.findMany({
-      orderBy: { updatedAt: 'asc' },
+      orderBy: [{ lastReconciledAt: { nulls: 'first', sort: 'asc' } }, { id: 'asc' }],
       take: Math.max(1, Math.min(limit, LIFECYCLE_BATCH_LIMIT)),
       where: {
         status: {
@@ -281,9 +362,16 @@ export class HouseTreasuryService {
           : HouseInventoryStatus.HELD
         : HouseInventoryStatus.RECONCILIATION_REQUIRED;
       const changed = await this.database.$transaction(async (transaction) => {
+        await acquireAdvisoryTransactionLock(transaction, HOUSE_TREASURY_EXPOSURE_LOCK_KEY);
+        await acquireNamespacedAdvisoryTransactionLock(
+          transaction,
+          asset.assetReference,
+          HOUSE_INVENTORY_LOCK_NAMESPACE,
+        );
         const update = await transaction.houseInventoryAsset.updateMany({
           data: {
             lastReconciledAt: verifiedAt,
+            lastReconciledSlot: observedSlot.toString(),
             reconciliationError: verification.error,
             status,
             version: { increment: 1 },
@@ -292,17 +380,33 @@ export class HouseTreasuryService {
         });
         if (update.count !== 1) return false;
         if (!verification.ok) {
+          await recordReconciliationDiscrepancy(transaction, {
+            detail: verification.error ?? 'Inventory custody could not be verified',
+            entityReference: asset.id,
+            expectedValue: '1',
+            kind: 'inventory_custody',
+            observedSlot: observedSlot.toString(),
+            observedValue: '0',
+            verifiedAt,
+          });
           await appendLedger(transaction, {
             amount: asset.acquisitionValueAmount,
             ...(asset.crashRoundId ? { crashRoundId: asset.crashRoundId } : {}),
             currency: asset.acquisitionValueCurrency,
             decimals: asset.acquisitionValueDecimals,
             ...(asset.duelId ? { duelId: asset.duelId } : {}),
-            idempotencyKey: `reconciliation-alert:${asset.id}:${asset.version + 1}`,
+            idempotencyKey: `reconciliation-alert:${asset.id}:${observedSlot}`,
             inventoryId: asset.id,
             metadata: { code: verification.error ?? 'custody_unverified' },
             type: HouseTreasuryLedgerType.RECONCILIATION_ALERT,
           });
+        } else {
+          await resolveReconciliationDiscrepancies(
+            transaction,
+            'inventory_custody',
+            asset.id,
+            verifiedAt,
+          );
         }
         return true;
       });
@@ -316,34 +420,42 @@ export class HouseTreasuryService {
       inventoryChecked: inventory.length,
       inventoryMismatched: mismatched,
       inventoryVerified: verified,
+      observedSlot: observedSlot.toString(),
+      treasuryDiscrepancies,
       verifiedAt: verifiedAt.toISOString(),
     };
   }
 
   async getSummary() {
     const config = readHouseTreasuryConfig();
-    const [snapshot, reservations, inventory, ledger, tierAdmissionStates] = await Promise.all([
-      this.database.houseTreasurySnapshot.findUnique({
-        where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
-      }),
-      this.database.houseTreasuryReservation.findMany({
-        select: { amount: true, source: true, status: true, tier: true },
-      }),
-      this.database.houseInventoryAsset.findMany({
-        select: {
-          acquisitionValueAmount: true,
-          acquisitionValueDecimals: true,
-          assetReference: true,
-          realizedAmount: true,
-          realizedDecimals: true,
-          status: true,
-        },
-      }),
-      this.database.houseTreasuryLedgerEntry.findMany({
-        select: { amount: true, createdAt: true, type: true },
-      }),
-      this.database.houseTierAdmissionState.findMany({ orderBy: { tier: 'asc' } }),
-    ]);
+    const [snapshot, reservations, inventory, ledger, tierAdmissionStates, discrepancies] =
+      await Promise.all([
+        this.database.houseTreasurySnapshot.findUnique({
+          where: { id: HOUSE_TREASURY_SNAPSHOT_ID },
+        }),
+        this.database.houseTreasuryReservation.findMany({
+          select: { amount: true, source: true, status: true, tier: true },
+        }),
+        this.database.houseInventoryAsset.findMany({
+          select: {
+            acquisitionValueAmount: true,
+            acquisitionValueDecimals: true,
+            assetReference: true,
+            realizedAmount: true,
+            realizedDecimals: true,
+            status: true,
+          },
+        }),
+        this.database.houseTreasuryLedgerEntry.findMany({
+          select: { amount: true, createdAt: true, type: true },
+        }),
+        this.database.houseTierAdmissionState.findMany({ orderBy: { tier: 'asc' } }),
+        this.database.houseReconciliationDiscrepancy.findMany({
+          orderBy: [{ firstObservedAt: 'asc' }, { id: 'asc' }],
+          take: 100,
+          where: { resolvedAt: null },
+        }),
+      ]);
     const active = reservations.filter((row) =>
       ACTIVE_HOUSE_RESERVATION_STATUSES.includes(row.status),
     );
@@ -423,11 +535,26 @@ export class HouseTreasuryService {
           active.filter((reservation) => reservation.status === status).length,
         ]),
       ),
+      reconciliation: {
+        discrepancies: discrepancies.map((row) => ({
+          detail: row.detail,
+          entityReference: row.entityReference,
+          expectedValue: row.expectedValue,
+          firstObservedAt: row.firstObservedAt.toISOString(),
+          kind: row.kind,
+          lastObservedAt: row.lastObservedAt.toISOString(),
+          observedSlot: row.observedSlot,
+          observedValue: row.observedValue,
+        })),
+        observedSlot: snapshot?.observedSlot ?? null,
+        verifiedAt: snapshot?.verifiedAt.toISOString() ?? null,
+      },
       risk: {
         dailyLossAmount: dailyLoss.toString(),
         dailyLossLimitAmount: config.dailyLossLimit.toString(),
         disableReasons: [
           ...configurationErrors,
+          ...(discrepancies.length > 0 ? ['reconciliation_discrepancy'] : []),
           ...(!snapshotFresh ? ['treasury_snapshot_stale'] : []),
           ...(dailyLoss >= config.dailyLossLimit ? ['daily_loss_limit'] : []),
           ...(totalExposure >= config.maxTotalExposure ? ['total_exposure_limit'] : []),
@@ -445,7 +572,7 @@ export class HouseTreasuryService {
         totalExposureAmount: totalExposure.toString(),
         tiers: [...tierCounts.entries()].map(([tier, pendingGames]) => ({ pendingGames, tier })),
       },
-      ready: configurationErrors.length === 0 && snapshotFresh,
+      ready: configurationErrors.length === 0 && discrepancies.length === 0 && snapshotFresh,
     };
   }
 
@@ -477,6 +604,8 @@ export class HouseTreasuryService {
         ),
         custodyWallet: row.custodyWallet,
         disposition: row.disposition.toLowerCase(),
+        dispositionReason: row.dispositionReason,
+        dispositionRequestedAt: row.dispositionRequestedAt?.toISOString() ?? null,
         displayName: row.displayName,
         displayedValue: optionalStoredMoney(
           row.displayedValueAmount,
@@ -497,6 +626,8 @@ export class HouseTreasuryService {
           row.listingValueDecimals,
         ),
         listingState: row.listingState.toLowerCase(),
+        realizedFeeAmount: row.realizedFeeAmount,
+        realizedGainLossAmount: row.realizedGainLossAmount,
         reconciliationError: row.reconciliationError,
         status: row.status.toLowerCase(),
       })),
@@ -505,18 +636,44 @@ export class HouseTreasuryService {
 
   async setDisposition(inventoryId: string, input: HouseDispositionRequest) {
     const config = readHouseTreasuryConfig();
-    if (!config.allowedDispositions.includes(input.disposition)) {
-      throw new ConflictException('Inventory disposition is disabled by treasury policy');
-    }
     return this.database.$transaction(async (transaction) => {
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        inventoryId,
+        HOUSE_INVENTORY_DISPOSITION_LOCK_NAMESPACE,
+      );
       const row = await transaction.houseInventoryAsset.findUnique({ where: { id: inventoryId } });
       if (!row) throw new NotFoundException(`Inventory asset ${inventoryId} was not found`);
+      const idempotencyKey = `inventory-disposition:${input.operationKey}`;
+      const replay = await transaction.houseTreasuryLedgerEntry.findUnique({
+        where: { idempotencyKey },
+      });
+      if (replay) {
+        assertDispositionReplay(replay, row.id, input);
+        return row;
+      }
       if (row.status === HouseInventoryStatus.DISPOSED) {
         throw new ConflictException('Disposed inventory cannot be reassigned');
       }
+      if (row.listingState === HouseInventoryListingState.LISTED) {
+        throw new ConflictException('Listed inventory must be delisted before reassignment');
+      }
+      if (input.disposition === 'list' && (!input.provider || !input.providerListingReference)) {
+        throw new ConflictException('Listing requires durable provider listing evidence');
+      }
+      const decision = dispositionDecision(row, input.disposition, config.allowedDispositions);
+      const now = new Date();
       const changed = await transaction.houseInventoryAsset.updateMany({
         data: {
-          disposition: toDisposition(input.disposition),
+          disposition: decision.disposition,
+          dispositionReason: decision.reason ?? input.reason,
+          dispositionRequestedAt: now,
+          ...(decision.disposition === HouseInventoryDisposition.LIST
+            ? {
+                listingState: HouseInventoryListingState.LISTED,
+                status: HouseInventoryStatus.LISTED,
+              }
+            : {}),
           version: { increment: 1 },
         },
         where: { id: row.id, version: row.version },
@@ -528,9 +685,130 @@ export class HouseTreasuryService {
         currency: row.acquisitionValueCurrency,
         decimals: row.acquisitionValueDecimals,
         ...(row.duelId ? { duelId: row.duelId } : {}),
-        idempotencyKey: `inventory-disposition:${row.id}:${row.version + 1}`,
+        idempotencyKey,
         inventoryId: row.id,
-        metadata: { disposition: input.disposition, reason: input.reason },
+        metadata: {
+          disposition: decision.disposition.toLowerCase(),
+          operationKey: input.operationKey,
+          ...(input.provider ? { provider: input.provider } : {}),
+          ...(input.providerListingReference
+            ? { providerListingReference: input.providerListingReference }
+            : {}),
+          reason: decision.reason ?? input.reason,
+          requestedDisposition: input.disposition,
+        },
+        type: HouseTreasuryLedgerType.INVENTORY_DISPOSITION_SET,
+      });
+      return transaction.houseInventoryAsset.findUniqueOrThrow({ where: { id: row.id } });
+    });
+  }
+
+  async delistInventory(inventoryId: string, input: DelistHouseInventoryRequest) {
+    const cancelledAt = new Date(input.cancelledAt);
+    if (!Number.isFinite(cancelledAt.getTime())) {
+      throw new ConflictException('Provider cancellation time is invalid');
+    }
+    assertHouseProviderEvidence(
+      input.provider,
+      {
+        cancelledAt: cancelledAt.toISOString(),
+        inventoryId,
+        provider: input.provider,
+        providerCancellationReference: input.providerCancellationReference,
+        providerListingReference: input.providerListingReference,
+        status: 'cancelled',
+      },
+      {
+        hash: input.providerCancellationEvidenceHash,
+        signature: input.providerCancellationSignature,
+      },
+    );
+    return this.database.$transaction(async (transaction) => {
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        inventoryId,
+        HOUSE_INVENTORY_DISPOSITION_LOCK_NAMESPACE,
+      );
+      const row = await transaction.houseInventoryAsset.findUnique({ where: { id: inventoryId } });
+      if (!row) throw new NotFoundException(`Inventory asset ${inventoryId} was not found`);
+      const idempotencyKey = `inventory-delisted:${providerReferenceKey(
+        input.provider,
+        input.providerCancellationReference,
+      )}`;
+      const replay = await transaction.houseTreasuryLedgerEntry.findUnique({
+        where: { idempotencyKey },
+      });
+      if (replay) {
+        assertDelistReplay(replay, row.id, input);
+        return row;
+      }
+      if (
+        row.status !== HouseInventoryStatus.LISTED ||
+        row.listingState !== HouseInventoryListingState.LISTED ||
+        row.disposition !== HouseInventoryDisposition.LIST
+      ) {
+        throw new ConflictException('Only actively listed inventory can be delisted');
+      }
+      const listed = await transaction.houseTreasuryLedgerEntry.findFirst({
+        orderBy: { createdAt: 'desc' },
+        where: {
+          inventoryId: row.id,
+          type: HouseTreasuryLedgerType.INVENTORY_DISPOSITION_SET,
+        },
+      });
+      const listingMetadata = jsonRecord(listed?.metadata ?? null);
+      if (
+        listingMetadata?.disposition !== 'list' ||
+        listingMetadata.provider !== input.provider ||
+        listingMetadata.providerListingReference !== input.providerListingReference
+      ) {
+        throw new ConflictException(
+          'Provider cancellation evidence does not match the active listing',
+        );
+      }
+      if (
+        !listed ||
+        cancelledAt < listed.createdAt ||
+        cancelledAt.getTime() > Date.now() + 5 * 60 * 1_000
+      ) {
+        throw new ConflictException(
+          'Provider cancellation time must follow the active listing and not be in the future',
+        );
+      }
+      const changed = await transaction.houseInventoryAsset.updateMany({
+        data: {
+          listingState: HouseInventoryListingState.UNLISTED,
+          status: HouseInventoryStatus.HELD,
+          version: { increment: 1 },
+        },
+        where: {
+          disposition: HouseInventoryDisposition.LIST,
+          id: row.id,
+          listingState: HouseInventoryListingState.LISTED,
+          status: HouseInventoryStatus.LISTED,
+          version: row.version,
+        },
+      });
+      if (changed.count !== 1) throw new ConflictException('Inventory state changed');
+      await appendLedger(transaction, {
+        amount: row.acquisitionValueAmount,
+        ...(row.crashRoundId ? { crashRoundId: row.crashRoundId } : {}),
+        currency: row.acquisitionValueCurrency,
+        decimals: row.acquisitionValueDecimals,
+        ...(row.duelId ? { duelId: row.duelId } : {}),
+        idempotencyKey,
+        inventoryId: row.id,
+        metadata: {
+          cancelledAt: cancelledAt.toISOString(),
+          operationKey: input.operationKey,
+          provider: input.provider,
+          providerCancellationEvidenceHash: input.providerCancellationEvidenceHash,
+          providerCancellationReference: input.providerCancellationReference,
+          providerCancellationSignature: input.providerCancellationSignature,
+          providerListingReference: input.providerListingReference,
+          reason: input.reason,
+          transition: 'delist',
+        },
         type: HouseTreasuryLedgerType.INVENTORY_DISPOSITION_SET,
       });
       return transaction.houseInventoryAsset.findUniqueOrThrow({ where: { id: row.id } });
@@ -539,22 +817,81 @@ export class HouseTreasuryService {
 
   async completeDisposition(inventoryId: string, input: CompleteHouseDispositionRequest) {
     return this.database.$transaction(async (transaction) => {
+      await acquireNamespacedAdvisoryTransactionLock(
+        transaction,
+        inventoryId,
+        HOUSE_INVENTORY_DISPOSITION_LOCK_NAMESPACE,
+      );
       const row = await transaction.houseInventoryAsset.findUnique({ where: { id: inventoryId } });
       if (!row) throw new NotFoundException(`Inventory asset ${inventoryId} was not found`);
-      if (row.status === HouseInventoryStatus.DISPOSED) return row;
+      const idempotencyKey =
+        input.provider && input.providerSaleReference
+          ? `inventory-disposed:${providerReferenceKey(
+              input.provider,
+              input.providerSaleReference,
+            )}`
+          : `inventory-disposed:${input.operationKey}`;
+      const replay = await transaction.houseTreasuryLedgerEntry.findUnique({
+        where: { idempotencyKey },
+      });
+      if (replay) {
+        assertDispositionCompletionReplay(replay, row.id, input);
+        return row;
+      }
+      if (row.status === HouseInventoryStatus.DISPOSED) {
+        throw new ConflictException('Disposed inventory completion key does not match');
+      }
       if (row.status === HouseInventoryStatus.RECONCILIATION_REQUIRED) {
         throw new ConflictException('Inventory custody must reconcile before disposition');
       }
+      if (
+        row.disposition !== HouseInventoryDisposition.BUYBACK &&
+        row.disposition !== HouseInventoryDisposition.LIST
+      ) {
+        throw new ConflictException(
+          'Inventory disposition is not eligible for realized completion',
+        );
+      }
+      if (
+        row.disposition === HouseInventoryDisposition.BUYBACK &&
+        row.listingState === HouseInventoryListingState.LISTED
+      ) {
+        throw new ConflictException('Listed inventory cannot complete a buyback before delisting');
+      }
+      if (
+        row.disposition === HouseInventoryDisposition.LIST &&
+        row.listingState !== HouseInventoryListingState.LISTED
+      ) {
+        throw new ConflictException('Unlisted inventory cannot complete a listing sale');
+      }
+      const listingCompletion =
+        row.disposition === HouseInventoryDisposition.LIST
+          ? await assertActiveListingCompletion(transaction, row, input)
+          : null;
+      if (
+        row.disposition !== HouseInventoryDisposition.LIST &&
+        dispositionCompletionCarriesProviderEvidence(input)
+      ) {
+        throw new ConflictException('Buyback completion cannot carry marketplace sale evidence');
+      }
+      const gross = storedAmount(input.realizedAmount);
+      const fee = storedAmount(input.feeAmount);
+      if (fee > gross)
+        throw new ConflictException('Disposition fee cannot exceed realized proceeds');
+      const net = gross - fee;
+      const gainLoss = net - storedAmount(row.acquisitionValueAmount);
       const changed = await transaction.houseInventoryAsset.updateMany({
         data: {
           disposedAt: new Date(),
           listingState:
             row.disposition === HouseInventoryDisposition.LIST
               ? HouseInventoryListingState.SOLD
-              : row.listingState,
-          realizedAmount: input.realizedAmount,
+              : HouseInventoryListingState.UNLISTED,
+          realizedAmount: net.toString(),
           realizedCurrency: input.realizedCurrency,
           realizedDecimals: input.realizedDecimals,
+          realizedFeeAmount: input.feeAmount,
+          realizedGainLossAmount: gainLoss.toString(),
           status: HouseInventoryStatus.DISPOSED,
           version: { increment: 1 },
         },
@@ -562,14 +899,22 @@ export class HouseTreasuryService {
       });
       if (changed.count !== 1) throw new ConflictException('Inventory state changed');
       await appendLedger(transaction, {
-        amount: input.realizedAmount,
+        amount: net.toString(),
         ...(row.crashRoundId ? { crashRoundId: row.crashRoundId } : {}),
         currency: input.realizedCurrency,
         decimals: input.realizedDecimals,
         ...(row.duelId ? { duelId: row.duelId } : {}),
-        idempotencyKey: `inventory-disposed:${row.id}`,
+        idempotencyKey,
         inventoryId: row.id,
-        metadata: { disposition: row.disposition.toLowerCase(), reason: input.reason },
+        metadata: {
+          disposition: row.disposition.toLowerCase(),
+          feeAmount: input.feeAmount,
+          gainLossAmount: gainLoss.toString(),
+          grossAmount: input.realizedAmount,
+          operationKey: input.operationKey,
+          ...(listingCompletion ?? {}),
+          reason: input.reason,
+        },
         type: HouseTreasuryLedgerType.INVENTORY_DISPOSED,
       });
       return transaction.houseInventoryAsset.findUniqueOrThrow({ where: { id: row.id } });
@@ -874,6 +1219,215 @@ function toDisposition(value: HouseDispositionRequest['disposition']): HouseInve
   return HouseInventoryDisposition[value.toUpperCase() as keyof typeof HouseInventoryDisposition];
 }
 
+function dispositionDecision(
+  row: {
+    buybackEligible: boolean;
+    buybackExpiresAt: Date | null;
+    buybackValueAmount: string | null;
+    listingState: HouseInventoryListingState;
+    listingValueAmount: string | null;
+  },
+  requested: HouseDispositionRequest['disposition'],
+  allowed: HouseTreasuryConfig['allowedDispositions'],
+): { disposition: HouseInventoryDisposition; reason: string | null } {
+  if (!allowed.includes(requested)) {
+    return {
+      disposition: HouseInventoryDisposition.MANUAL_REVIEW,
+      reason: `Manual review required: ${requested} capability is not configured`,
+    };
+  }
+  if (requested === 'promotion') {
+    return {
+      disposition: HouseInventoryDisposition.MANUAL_REVIEW,
+      reason: 'Manual review required: promotion needs human approval',
+    };
+  }
+  if (
+    requested === 'buyback' &&
+    (!row.buybackEligible ||
+      !row.buybackValueAmount ||
+      !row.buybackExpiresAt ||
+      row.buybackExpiresAt.getTime() <= Date.now())
+  ) {
+    return {
+      disposition: HouseInventoryDisposition.MANUAL_REVIEW,
+      reason: 'Manual review required: buyback eligibility or quote is unavailable',
+    };
+  }
+  if (
+    requested === 'list' &&
+    (!row.listingValueAmount || row.listingState === HouseInventoryListingState.SOLD)
+  ) {
+    return {
+      disposition: HouseInventoryDisposition.MANUAL_REVIEW,
+      reason: 'Manual review required: listing eligibility or quote is unavailable',
+    };
+  }
+  return { disposition: toDisposition(requested), reason: null };
+}
+
+function assertDispositionReplay(
+  ledger: { inventoryId: string | null; metadata: Prisma.JsonValue | null },
+  inventoryId: string,
+  input: HouseDispositionRequest,
+): void {
+  const metadata = jsonRecord(ledger.metadata);
+  if (
+    ledger.inventoryId !== inventoryId ||
+    metadata?.operationKey !== input.operationKey ||
+    metadata?.requestedDisposition !== input.disposition ||
+    (input.disposition === 'list' &&
+      (metadata.provider !== input.provider ||
+        metadata.providerListingReference !== input.providerListingReference))
+  ) {
+    throw new ConflictException('Disposition operation key was already used for another request');
+  }
+}
+
+async function assertActiveListingCompletion(
+  transaction: Prisma.TransactionClient,
+  row: {
+    id: string;
+  },
+  input: CompleteHouseDispositionRequest,
+): Promise<{
+  provider: string;
+  providerListingReference: string;
+  providerSaleAt: string;
+  providerSaleEvidenceHash: string;
+  providerSaleReference: string;
+  providerSaleSignature: string;
+}> {
+  if (
+    !input.provider ||
+    !input.providerListingReference ||
+    !input.providerSaleAt ||
+    !input.providerSaleEvidenceHash ||
+    !input.providerSaleReference ||
+    !input.providerSaleSignature
+  ) {
+    throw new ConflictException('Listing sale completion requires exact provider sale evidence');
+  }
+  const listed = await transaction.houseTreasuryLedgerEntry.findFirst({
+    orderBy: { createdAt: 'desc' },
+    where: {
+      inventoryId: row.id,
+      type: HouseTreasuryLedgerType.INVENTORY_DISPOSITION_SET,
+    },
+  });
+  const listingMetadata = jsonRecord(listed?.metadata ?? null);
+  if (
+    listingMetadata?.disposition !== 'list' ||
+    listingMetadata.provider !== input.provider ||
+    listingMetadata.providerListingReference !== input.providerListingReference
+  ) {
+    throw new ConflictException('Provider sale evidence does not match the active listing');
+  }
+  const providerSaleAt = new Date(input.providerSaleAt);
+  if (
+    !Number.isFinite(providerSaleAt.getTime()) ||
+    !listed ||
+    providerSaleAt < listed.createdAt ||
+    providerSaleAt.getTime() > Date.now() + 5 * 60 * 1_000
+  ) {
+    throw new ConflictException(
+      'Provider sale time must follow the active listing and not be in the future',
+    );
+  }
+  const canonicalSaleAt = providerSaleAt.toISOString();
+  assertHouseProviderEvidence(
+    input.provider,
+    {
+      feeAmount: input.feeAmount,
+      inventoryId: row.id,
+      provider: input.provider,
+      providerListingReference: input.providerListingReference,
+      providerSaleAt: canonicalSaleAt,
+      providerSaleReference: input.providerSaleReference,
+      realizedAmount: input.realizedAmount,
+      realizedCurrency: input.realizedCurrency,
+      realizedDecimals: input.realizedDecimals,
+      status: 'sold',
+    },
+    {
+      hash: input.providerSaleEvidenceHash,
+      signature: input.providerSaleSignature,
+    },
+  );
+  return {
+    provider: input.provider,
+    providerListingReference: input.providerListingReference,
+    providerSaleAt: canonicalSaleAt,
+    providerSaleEvidenceHash: input.providerSaleEvidenceHash,
+    providerSaleReference: input.providerSaleReference,
+    providerSaleSignature: input.providerSaleSignature,
+  };
+}
+
+function dispositionCompletionCarriesProviderEvidence(
+  input: CompleteHouseDispositionRequest,
+): boolean {
+  return Boolean(
+    input.provider ||
+      input.providerListingReference ||
+      input.providerSaleAt ||
+      input.providerSaleEvidenceHash ||
+      input.providerSaleReference ||
+      input.providerSaleSignature,
+  );
+}
+
+function assertDelistReplay(
+  ledger: { inventoryId: string | null; metadata: Prisma.JsonValue | null },
+  inventoryId: string,
+  input: DelistHouseInventoryRequest,
+): void {
+  const metadata = jsonRecord(ledger.metadata);
+  if (
+    ledger.inventoryId !== inventoryId ||
+    metadata?.operationKey !== input.operationKey ||
+    metadata.provider !== input.provider ||
+    metadata.providerListingReference !== input.providerListingReference ||
+    metadata.providerCancellationReference !== input.providerCancellationReference ||
+    metadata.providerCancellationEvidenceHash !== input.providerCancellationEvidenceHash ||
+    metadata.providerCancellationSignature !== input.providerCancellationSignature ||
+    metadata.cancelledAt !== new Date(input.cancelledAt).toISOString() ||
+    metadata.reason !== input.reason
+  ) {
+    throw new ConflictException('Delist operation key was already used for another result');
+  }
+}
+
+function assertDispositionCompletionReplay(
+  ledger: { inventoryId: string | null; metadata: Prisma.JsonValue | null },
+  inventoryId: string,
+  input: CompleteHouseDispositionRequest,
+): void {
+  const metadata = jsonRecord(ledger.metadata);
+  if (
+    ledger.inventoryId !== inventoryId ||
+    metadata?.operationKey !== input.operationKey ||
+    metadata?.grossAmount !== input.realizedAmount ||
+    metadata?.feeAmount !== input.feeAmount ||
+    metadata?.reason !== input.reason ||
+    metadata?.provider !== input.provider ||
+    metadata?.providerListingReference !== input.providerListingReference ||
+    metadata?.providerSaleAt !==
+      (input.providerSaleAt ? new Date(input.providerSaleAt).toISOString() : undefined) ||
+    metadata?.providerSaleEvidenceHash !== input.providerSaleEvidenceHash ||
+    metadata?.providerSaleReference !== input.providerSaleReference ||
+    metadata?.providerSaleSignature !== input.providerSaleSignature
+  ) {
+    throw new ConflictException('Disposition completion key was already used for another result');
+  }
+}
+
+function jsonRecord(value: Prisma.JsonValue | null): Record<string, Prisma.JsonValue> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, Prisma.JsonValue>)
+    : null;
+}
+
 function storedAmount(value: string): bigint {
   if (!/^\d+$/.test(value)) throw new ServiceUnavailableException('Invalid treasury amount');
   return BigInt(value);
@@ -923,6 +1477,60 @@ function concentration(
     largestAssetBasisPoints: total === 0n ? 0 : Number((largest * 10_000n) / total),
     uniqueAssets: byAsset.size,
   };
+}
+
+async function recordReconciliationDiscrepancy(
+  database: Pick<Prisma.TransactionClient, 'houseReconciliationDiscrepancy'>,
+  input: {
+    detail: string;
+    entityReference: string;
+    expectedValue: string;
+    kind: string;
+    observedSlot: string;
+    observedValue: string;
+    verifiedAt: Date;
+  },
+): Promise<void> {
+  const idempotencyKey = [
+    'house-reconciliation',
+    input.kind,
+    input.entityReference,
+    input.observedSlot,
+  ].join(':');
+  await database.houseReconciliationDiscrepancy.upsert({
+    create: {
+      detail: input.detail,
+      entityReference: input.entityReference,
+      expectedValue: input.expectedValue,
+      firstObservedAt: input.verifiedAt,
+      id: createId('hdisc'),
+      idempotencyKey,
+      kind: input.kind,
+      lastObservedAt: input.verifiedAt,
+      observedSlot: input.observedSlot,
+      observedValue: input.observedValue,
+    },
+    update: {
+      detail: input.detail,
+      expectedValue: input.expectedValue,
+      lastObservedAt: input.verifiedAt,
+      observedValue: input.observedValue,
+      resolvedAt: null,
+    },
+    where: { idempotencyKey },
+  });
+}
+
+async function resolveReconciliationDiscrepancies(
+  database: Pick<Prisma.TransactionClient, 'houseReconciliationDiscrepancy'>,
+  kind: string,
+  entityReference: string,
+  resolvedAt: Date,
+): Promise<void> {
+  await database.houseReconciliationDiscrepancy.updateMany({
+    data: { resolvedAt },
+    where: { entityReference, kind, resolvedAt: null },
+  });
 }
 
 function createId(prefix: string): string {

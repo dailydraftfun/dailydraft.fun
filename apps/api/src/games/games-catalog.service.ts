@@ -10,11 +10,12 @@ import { Injectable } from '@nestjs/common';
 import { AdminService, readRiskLimits } from '../admin/admin.service.js';
 // biome-ignore lint/style/useImportType: Nest uses the service class as a runtime injection token.
 import { GachaRipService } from '../gacha/gacha-rip.service.js';
-import { publicProductCapabilities } from '../health/health.controller.js';
+import { publicProductCapabilities } from '../health/public-product-capabilities.js';
 
 type Readiness = Awaited<ReturnType<AdminService['getReadiness']>>;
 type GachaCapability = ReturnType<GachaRipService['capability']>;
 type DuelCapabilities = ReturnType<typeof publicProductCapabilities>;
+type DuelPackCapability = DuelCapabilities['packs'][number];
 type DuelAdmission = Readonly<{
   allowedTiers: readonly number[];
   paused: boolean;
@@ -90,7 +91,7 @@ export function resolveDuelCatalogModeFromCapabilities(
   admission: DuelAdmission,
 ): GameCatalogMode {
   const packReady = capabilities.packs.some(
-    (pack) => pack.enabled && admission.allowedTiers.includes(pack.tier),
+    (pack: DuelPackCapability) => pack.enabled && admission.allowedTiers.includes(pack.tier),
   );
   const availableActions: GameCatalogAction[] = [];
 

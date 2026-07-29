@@ -3,6 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { journeyTestIds } from './e2e/journey-test-ids';
 
 mock.module('next/navigation', () => ({
+  notFound: () => {
+    throw new Error('NEXT_HTTP_ERROR_FALLBACK;404');
+  },
   redirect: (target: string) => {
     throw new Error(`NEXT_REDIRECT:${target}`);
   },
@@ -38,6 +41,8 @@ describe('workspace shell', () => {
     expect(markup).toContain('grid-cols-2');
     expect(markup).not.toContain('Card Duels');
     expect(markup).toContain('Games content');
+    expect(markup).toContain('Devnet preview uses test SOL and test assets only');
+    expect(markup).not.toContain('devnet-disclosure');
     expect(markup).toContain(`data-testid="${journeyTestIds.walletMenu}"`);
   });
 

@@ -1,3 +1,4 @@
+import { PUBLIC_GAME_TAXONOMY } from '@dailydraft/contracts/public-game-taxonomy';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import * as z from 'zod/v4';
@@ -9,6 +10,8 @@ import {
   duelProofSchema,
   duelSchema,
   duelStatusSchema,
+  gameAvailabilitySchema,
+  gameCatalogSchema,
   packListSchema,
   packSchema,
   preparedWalletTransactionSchema,
@@ -49,9 +52,10 @@ export const integrationSafetyGuidance = [
   '',
   '## Canonical player rules',
   '',
-  '- Card Duel: https://app.dailydraft.fun/games/duel#rules',
-  '- Marketplace Flip: https://app.dailydraft.fun/games/marketplace-flip#rules (fixture only)',
-  '- Card Streak: https://app.dailydraft.fun/games/crash#rules (fixture only)',
+  ...PUBLIC_GAME_TAXONOMY.map(
+    (mode) =>
+      `- ${mode.name}: https://app.dailydraft.fun${mode.rulesHref}${mode.runtime ? '' : ' (fixture only)'}`,
+  ),
   '- Never present a fixture-only mode or unresolved tier as playable.',
 ].join('\n');
 
@@ -63,6 +67,32 @@ export function createDailyDraftServer(
     name: 'dailydraft',
     version: '0.1.0',
   });
+
+  server.registerTool(
+    'get_game_catalog',
+    {
+      title: 'Get the DailyDraft game catalog',
+      description:
+        'Read the server-owned catalog. Catalog entries describe integrations; use game availability before presenting a public mode as playable.',
+      inputSchema: {},
+      outputSchema: gameCatalogSchema.shape,
+      annotations: readOnlyAnnotations,
+    },
+    async () => asToolResult(() => client.getGameCatalog()),
+  );
+
+  server.registerTool(
+    'get_game_availability',
+    {
+      title: 'Get DailyDraft public game availability',
+      description:
+        'Read the fail-closed Card Duel, Marketplace Flip, and Card Streak readiness projection.',
+      inputSchema: {},
+      outputSchema: gameAvailabilitySchema.shape,
+      annotations: readOnlyAnnotations,
+    },
+    async () => asToolResult(() => client.getGameAvailability()),
+  );
 
   server.registerTool(
     'list_packs',

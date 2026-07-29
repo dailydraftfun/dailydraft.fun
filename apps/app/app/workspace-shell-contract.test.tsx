@@ -2,6 +2,9 @@ import { describe, expect, mock, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 mock.module('next/navigation', () => ({
+  notFound: () => {
+    throw new Error('NEXT_HTTP_ERROR_FALLBACK;404');
+  },
   redirect: (target: string) => {
     throw new Error(`NEXT_REDIRECT:${target}`);
   },
@@ -32,6 +35,10 @@ describe('workspace shell contract', () => {
     expect(markup).toContain('DailyDraft');
     expect(markup).not.toContain('Pack Duel');
     expect(markup).not.toContain('Card Duels');
-    expect(markup).toContain('Devnet');
+    expect(markup).toContain('hidden sm:inline');
+    expect(markup).toContain(
+      'Devnet preview uses test SOL and test assets only; no mainnet funds.',
+    );
+    expect(markup).not.toContain('devnet-disclosure');
   });
 });

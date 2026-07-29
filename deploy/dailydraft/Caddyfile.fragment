@@ -8,5 +8,11 @@
 # the Docker network shipshit-caddy shares with it.
 api.dailydraft.fun {
 	encode zstd gzip
-	reverse_proxy api-dailydraft-fun:3000
+	reverse_proxy api-dailydraft-fun:3000 {
+		# Overwrite client-supplied forwarding at the trusted edge. The API trusts
+		# only the live addresses behind this Caddy container's Docker DNS identity.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Proto {scheme}
+	}
 }

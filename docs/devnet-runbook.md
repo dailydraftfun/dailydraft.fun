@@ -44,6 +44,16 @@ passes the manual devnet smoke workflow.
 | `NEXT_PUBLIC_ESCROW_PROGRAM_ID` | Published devnet escrow program address. |
 | `NEXT_PUBLIC_PROVIDER_MODE` | Must be `dailydraft-devnet` for the on-chain demo. |
 
+The read-only `/admin/treasury` operator view is server-rendered and fails
+closed unless all three server-only values below are configured. None may use a
+`NEXT_PUBLIC_` prefix.
+
+| Variable | Purpose |
+| --- | --- |
+| `DAILYDRAFT_API_URL` | Server-side API base URL, including `/v1`. |
+| `DAILYDRAFT_OPERATOR_DASHBOARD_TOKEN` | Separate bearer presented to the product server by the operator access proxy. It authorizes only the dashboard route. |
+| `DAILYDRAFT_OPERATOR_API_KEY` | Integration key used by the product server to read `/admin/treasury`; never returned to or entered in the browser. |
+
 ### API
 
 | Variable | Purpose |
@@ -85,6 +95,165 @@ passes the manual devnet smoke workflow.
 | `DAILYDRAFT_HOUSE_MAX_CONCURRENT_PER_TIER` | House reservation limit per tier; defaults to 1. |
 | `DAILYDRAFT_HOUSE_ALLOWED_DISPOSITIONS` | Operator inventory workflow allowlist; defaults to `hold,manual_review`. |
 | `CORS_ORIGINS` | Explicit allowed browser origins. |
+| `DAILYDRAFT_TRUSTED_PROXIES` | Optional literal reverse-proxy peers for local/preview use. Production does not snapshot Caddy's ephemeral IP. |
+| `DAILYDRAFT_TRUSTED_PROXY_HOSTS` | Stable reverse-proxy DNS identities refreshed at runtime. Production deploys set this to `shipshit-caddy`; do not maintain an SSM override. |
+| `DAILYDRAFT_TRUSTED_PROXY_REFRESH_MS` | Optional DNS refresh interval, bounded from one to sixty seconds and defaulting to five seconds. |
+| `DAILYDRAFT_MARKETPLACE_PROVIDER_KEYS` | Optional JSON map of provider IDs to 32+ character HMAC keys. Listing sale/delist transitions fail closed until the relevant provider key is configured. |
+
+## House treasury authority and operating procedure
+
+House operation uses distinct authorities. A public address may appear in
+configuration and evidence; its private key or recovery material must never
+appear in application configuration, browser storage, logs, issues, chat, the
+operator dashboard, or an API response.
+
+| Role | Ownership and permitted use |
+| --- | --- |
+| House hot wallet / funding signer | `DAILYDRAFT_HOUSE_DEVNET_WALLET` and `DAILYDRAFT_HOUSE_DEVNET_FUNDING_SIGNER` must identify the same isolated devnet signing key. It may fund admitted House sessions only. |
+| Treasury token-account delegate | The hot funding signer must be the finalized SPL delegate of `DAILYDRAFT_HOUSE_DEVNET_USDC_TOKEN_ACCOUNT`. Its remaining delegated allowance must not exceed `DAILYDRAFT_HOUSE_MAX_TOTAL_EXPOSURE_USDC_MICRO`. |
+| Cold withdrawal authority | `DAILYDRAFT_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY` must own the finalized treasury token account. Keep its signing key offline or in separately controlled custody; the application and reconciliation worker do not receive it. |
+| Provider signer | `ESCROW_PROVIDER_SIGNER` and `DAILYDRAFT_DEVNET_PROVIDER_KEYPAIR_JSON` attest and submit devnet asset lifecycle transactions. Do not reuse the treasury hot key or cold withdrawal key. |
+| Operator integration key | May read guarded evidence, pause new exposure, and record approved inventory dispositions. It is not a Solana signing authority and cannot withdraw funds. |
+| Reconciliation worker key | Invokes internal recovery and reconciliation routes only. It is not an operator key or Solana signing authority. |
+
+The following combinations are forbidden:
+
+- The cold withdrawal authority must not equal the house wallet, funding
+  signer, treasury delegate, provider signer, fee recipient, deployment
+  authority, or operator integration key.
+- The hot funding signer must not own the treasury token account or hold the
+  cold authority's recovery material.
+- The operator dashboard credential, integration key, and reconciliation
+  worker key must remain separate credentials with separate rotation records.
+- A single secret store entry, local keypair file, hardware-wallet seed, or
+  recovery envelope must not back multiple roles.
+
+The API checks the on-chain owner, delegate, delegated allowance, mint, network,
+and finalized balance. A configuration value alone is not evidence that an
+authority is correctly assigned.
+
+### Approval record
+
+Any authority change, limit change, withdrawal, or House re-enable requires a
+reviewed change record before execution. Record:
+
+1. purpose, incident or change identifier, environment, and UTC execution
+   window;
+2. current and proposed public addresses, limits, and affected SSM parameter
+   names;
+3. current pending reservations, funded sessions, available liquidity,
+   unresolved discrepancies, and last finalized observation slot;
+4. the approving operator and a separate custody approver for any action that
+   uses the cold authority;
+5. expected on-chain instructions and the rollback or fail-closed condition;
+6. after execution, finalized transaction signatures, observed slot,
+   reconciliation result, and the decision to remain paused or resume.
+
+Never include seed phrases, private-key bytes, bearer values, decrypted SSM
+values, or full keypair paths in the record. If an independent custody approver
+is unavailable, do not perform a withdrawal or cold-authority rotation.
+
+### Hot funding signer rotation
+
+1. Pause new exposure through the guarded emergency-pause endpoint. Do not
+   cancel or rewrite already-funded sessions.
+2. Record `/admin/treasury`, `/admin/readiness`, and
+   `/admin/duels?attention=all`. Wait for reservations that have not funded to
+   release or cancel them through their normal player-safe path.
+3. Create a new isolated devnet hot key in the approved secret store. Record
+   only its public address.
+4. Using the cold authority, replace the treasury token account's SPL delegate
+   with the new hot address and an allowance no greater than the configured
+   total-exposure ceiling. Wait for finalization.
+5. Update both `DAILYDRAFT_HOUSE_DEVNET_WALLET` and
+   `DAILYDRAFT_HOUSE_DEVNET_FUNDING_SIGNER` atomically to the new public address,
+   then deploy through the normal candidate/health-check process.
+6. Run treasury reconciliation. Confirm the finalized owner, mint, delegate,
+   delegated allowance, balance, and observation slot match the approved
+   record. Confirm there are no unresolved reconciliation discrepancies.
+7. Revoke and archive the previous hot secret according to the secret-store
+   retention policy. Resume only after readiness and every enabled tier are
+   healthy.
+
+A mismatched delegate, stale snapshot, unresolved discrepancy, or partially
+updated configuration leaves House admission disabled. Never temporarily raise
+an allowance or exposure limit to make a rotation pass.
+
+### Cold withdrawal-authority rotation
+
+1. Pause new exposure and keep it paused throughout the change.
+2. Confirm there are no active reservations, funded House sessions, pending
+   settlements or refunds, or unresolved custody discrepancies. Cold rotation
+   does not override those lifecycle obligations.
+3. Create the replacement authority in separately controlled cold custody and
+   obtain the custody approval record.
+4. Use the current cold authority to transfer the treasury token-account owner
+   authority to the replacement public address. Do not change mint, token
+   account, delegate, or allowance in the same change unless separately
+   approved and itemized.
+5. Wait for finalization, update
+   `DAILYDRAFT_HOUSE_DEVNET_WITHDRAWAL_AUTHORITY`, deploy, and reconcile.
+6. Verify the new owner and existing bounded delegate from finalized RPC
+   evidence. Archive the old authority only after the new custody recovery
+   procedure has been tested.
+7. Resume only when the dashboard reports a fresh snapshot, zero
+   discrepancies, separation of duties, and no configuration errors.
+
+### Withdrawal procedure
+
+There is no application, admin-API, dashboard, worker, or automated withdrawal
+path. A withdrawal is an exceptional cold-custody operation:
+
+1. Open and approve a withdrawal record containing destination public address,
+   exact integer micro-USDC amount, purpose, expected post-withdrawal balance,
+   and custody approver.
+2. Pause new exposure. Confirm no active reservation, funded session,
+   settlement, or refund depends on the amount.
+3. Confirm the expected post-withdrawal balance remains at or above
+   `DAILYDRAFT_HOUSE_MIN_LIQUIDITY_USDC_MICRO` and covers all unresolved
+   worst-case exposure. Do not treat delegated allowance as available balance.
+4. From cold custody, submit one exact SPL-token transfer to the approved
+   destination. Do not use the hot signer, provider signer, API host, or
+   operator browser.
+5. Record the finalized signature and run treasury reconciliation immediately.
+   The append-only ledger and prior snapshot must not be edited to conceal the
+   balance movement; an expected discrepancy remains visible until reviewed
+   and resolved through the normal accounting process.
+6. Keep House paused if the observation is stale, the amount or destination
+   differs, liquidity is below its floor, or any discrepancy remains open.
+
+### Reconciliation and resume gate
+
+The scheduled reconciliation worker is the normal recovery path.
+`GET|POST /v1/internal/reconciliation/treasury` requires the worker key and
+verifies a finalized slot before updating the latest observation. A manual run
+uses the same endpoint and the same worker credential; the operator dashboard
+deliberately offers no "reconcile now" or corrective action.
+
+Reconciliation is append-only and slot-bound:
+
+- an older finalized observation cannot replace a newer recorded slot;
+- expected ledger movement and observed Solana balance remain distinct values;
+- custody or balance mismatches create durable discrepancies rather than
+  rewriting inventory, snapshots, or ledger entries;
+- already-funded sessions continue toward settlement, refund, or recovery while
+  new exposure is paused.
+
+After an emergency pause, signer rotation, authority rotation, or withdrawal,
+resume House admission only when all of the following are true:
+
+- the API and database are healthy and the network is verified as
+  `solana-devnet`;
+- the finalized treasury snapshot is fresh and its slot is not older than the
+  recorded slot;
+- owner, mint, delegate, delegated allowance, wallet, and configured public
+  addresses match the approved record;
+- separation of duties is true and configuration errors are empty;
+- unresolved treasury and inventory discrepancies are zero;
+- available liquidity exceeds the configured floor after all reservations,
+  daily-loss exposure, and total exposure are included;
+- each intended tier reports enabled, or its disabled reason and deterministic
+  re-enable boundary are accepted in the incident record.
 
 Every submitted transaction receives an opportunistic finality check. Either
 authenticated participant can continue the duel-scoped check at
@@ -151,8 +320,10 @@ Confirm the returned `paused` state, then inspect `/admin/audit`, `/admin/risk`,
 blocks new matches and funding preparation but deliberately lets already-funded
 house sessions continue through opening, reconciliation, refunds, and settlement.
 The treasury summary reports each affected tier's stable disable reason and
-re-enable boundary. Resume with the same endpoint and `paused:false` after the
-incident owner confirms recovery.
+re-enable boundary. Do not rotate authorities, withdraw, edit policy, delete
+ledger evidence, or submit a second payment as an incident shortcut. Use the
+role-specific procedure above, run reconciliation, and satisfy every resume
+gate before the incident owner sends the same endpoint with `paused:false`.
 
 ## Release order
 

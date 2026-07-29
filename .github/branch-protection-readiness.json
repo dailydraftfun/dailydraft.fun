@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "dailydraft.branch-protection-readiness.v1",
+  "defaultBranch": "main",
+  "enforcement": {
+    "mode": "advisory",
+    "reason": "Repository rulesets and branch protection are configured by a repository administrator outside this manifest."
+  },
+  "pullRequestsMustBeUpToDate": true,
+  "emergencyBypass": {
+    "allowed": true,
+    "auditRequired": true,
+    "requirements": [
+      "record the actor, reason, incident or change reference, and exact commit",
+      "retain the required-check evidence available at bypass time",
+      "run every skipped applicable gate after the emergency"
+    ]
+  },
+  "gates": [
+    {
+      "id": "affected",
+      "checkName": "CI / affected",
+      "workflow": ".github/workflows/ci.yml",
+      "workflowName": "CI",
+      "job": "affected",
+      "applicability": "every pull request",
+      "requiredEvidence": [
+        "bun run lint --affected",
+        "bun run typecheck --affected",
+        "bun run test --affected",
+        "bun run build --affected"
+      ]
+    },
+    {
+      "id": "coverage",
+      "checkName": "CI / affected",
+      "workflow": ".github/workflows/ci.yml",
+      "workflowName": "CI",
+      "job": "affected",
+      "applicability": "every pull request with executable workspace changes",
+      "requiredEvidence": ["bun run test:coverage-gate", "bun run coverage:changed"]
+    },
+    {
+      "id": "migration",
+      "checkName": "Database migrations / migrations",
+      "workflow": ".github/workflows/database.yml",
+      "workflowName": "Database migrations",
+      "job": "migrations",
+      "applicability": "changes to API, database, or the migration workflow",
+      "requiredEvidence": [
+        "bun --filter @dailydraft/db db:deploy",
+        "bun --filter @dailydraft/db db:drift-check"
+      ]
+    },
+    {
+      "id": "contract",
+      "checkName": "Contract compatibility / compatibility",
+      "workflow": ".github/workflows/contract.yml",
+      "workflowName": "Contract compatibility",
+      "job": "compatibility",
+      "applicability": "changes to API, app clients, public OpenAPI, MCP, or shared contracts",
+      "requiredEvidence": [
+        "bun --filter @dailydraft/api test:contract",
+        "bun --filter @dailydraft/app test:contract",
+        "bun --filter @dailydraft/mcp test:contract"
+      ]
+    },
+    {
+      "id": "journey",
+      "checkName": "Journey smoke / smoke",
+      "workflow": ".github/workflows/journey.yml",
+      "workflowName": "Journey smoke",
+      "job": "smoke",
+      "applicability": "changes to browser surfaces, docs, MCP public assets, or the journey workflow",
+      "requiredEvidence": ["bun --filter @dailydraft/app test:e2e"]
+    },
+    {
+      "id": "soak",
+      "checkName": "Money-path soak / deterministic-fixtures",
+      "workflow": ".github/workflows/money-path-soak.yml",
+      "workflowName": "Money-path soak",
+      "job": "deterministic-fixtures",
+      "applicability": "changes to money-path services or the scheduled soak workflow",
+      "requiredEvidence": ["bun scripts/money-path-soak.ts"]
+    }
+  ]
+}

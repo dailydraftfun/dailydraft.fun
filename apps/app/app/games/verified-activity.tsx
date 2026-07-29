@@ -9,8 +9,10 @@ import {
   CheckCircleIcon,
   ClockCounterClockwiseIcon,
   ReceiptIcon,
+  ShareNetworkIcon,
   ShieldCheckIcon,
   SpinnerGapIcon,
+  UserCircleIcon,
   WarningCircleIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
@@ -22,6 +24,8 @@ import {
   resolveActivityApiHref,
   writeCachedVerifiedGameActivity,
 } from './activity-client';
+import { activityShareText, buildActivityGrowthLinks } from './activity-growth';
+import { trackGameDiscovery } from './game-discovery-analytics';
 
 type ActivityHealth = 'degraded' | 'empty' | 'loading' | 'ready' | 'stale' | 'unavailable';
 type ActivityLoader = () => Promise<VerifiedGameActivityPage>;
@@ -137,6 +141,29 @@ export function VerifiedActivity({
 }
 
 function ActivityRow({ activity }: { activity: VerifiedGameActivity }) {
+  const links = buildActivityGrowthLinks(activity);
+  const [shareStatus, setShareStatus] = useState('');
+
+  async function shareActivity() {
+    const url = new URL(links.sharePath, window.location.origin).toString();
+    const shareData = { text: activityShareText(activity), title: activity.title, url };
+    const nativeShare = Reflect.get(navigator, 'share');
+    const canNativeShare = typeof nativeShare === 'function';
+    try {
+      if (canNativeShare) await nativeShare.call(navigator, shareData);
+      else await navigator.clipboard.writeText(url);
+      trackGameDiscovery({
+        actionId: 'share-result',
+        activityId: activity.activityId,
+        mode: activity.mode,
+        stage: 'referral-share',
+      });
+      setShareStatus(canNativeShare ? 'Share opened' : 'Referral link copied');
+    } catch {
+      setShareStatus('Share cancelled');
+    }
+  }
+
   return (
     <li className="grid gap-4 rounded-xl border border-border bg-secondary p-5 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
       <span
@@ -162,17 +189,99 @@ function ActivityRow({ activity }: { activity: VerifiedGameActivity }) {
           {activity.participants.map((participant) => participant.label).join(' · ')}
         </p>
       </div>
-      <div className="sm:min-w-40 sm:text-right">
+      <div className="sm:min-w-52 sm:text-right">
         <p className="text-sm font-semibold text-primary">{formatTier(activity.tier.amount)}</p>
-        <a
-          className="proof-secondary-action mt-3 gap-2"
-          href={resolveActivityApiHref(activity.receiptHref)}
-          aria-label={`View verified receipt for ${activity.title} · ${activity.activityId}`}
-          rel="noreferrer"
-        >
-          <ReceiptIcon aria-hidden="true" size={15} />
-          View verified receipt
-        </a>
+        <div className="mt-3 flex flex-wrap gap-2 sm:justify-end">
+          <a
+            aria-label={`View verified receipt for ${activity.title} · ${activity.activityId}`}
+            className="proof-secondary-action gap-2"
+            href={resolveActivityApiHref(links.receiptHref)}
+            onClick={() =>
+              trackGameDiscovery({
+                actionId: 'view-receipt',
+                activityId: activity.activityId,
+                mode: activity.mode,
+                stage: 'result-view',
+              })
+            }
+            rel="noreferrer"
+          >
+            <ReceiptIcon aria-hidden="true" size={15} />
+            View verified receipt
+          </a>
+          {links.resultHref ? (
+            <a
+              className="proof-secondary-action gap-2"
+              href={resolveActivityApiHref(links.resultHref)}
+              onClick={() =>
+                trackGameDiscovery({
+                  actionId: 'view-result',
+                  activityId: activity.activityId,
+                  mode: activity.mode,
+                  stage: 'result-view',
+                })
+              }
+              rel="noreferrer"
+            >
+              Result proof
+            </a>
+          ) : null}
+          <Link
+            className="proof-secondary-action gap-2"
+            href={links.profileHref}
+            onClick={() =>
+              trackGameDiscovery({
+                actionId: 'find-profiles',
+                activityId: activity.activityId,
+                mode: activity.mode,
+                stage: 'profile-view',
+              })
+            }
+          >
+            <UserCircleIcon aria-hidden="true" size={15} />
+            Find player profiles
+          </Link>
+          {links.rematchHref ? (
+            <Link
+              className="proof-primary-action gap-2"
+              href={links.rematchHref}
+              onClick={() =>
+                trackGameDiscovery({
+                  actionId: 'rematch',
+                  activityId: activity.activityId,
+                  mode: activity.mode,
+                  stage: 'rematch',
+                })
+              }
+            >
+              Run a rematch
+              <ArrowRightIcon aria-hidden="true" size={15} weight="bold" />
+            </Link>
+          ) : (
+            <Link
+              className="proof-primary-action gap-2"
+              href={links.discoverHref}
+              onClick={() =>
+                trackGameDiscovery({
+                  actionId: 'discover-mode',
+                  activityId: activity.activityId,
+                  mode: activity.mode,
+                  stage: 'mode-discovery',
+                })
+              }
+            >
+              {links.discoverLabel}
+              <ArrowRightIcon aria-hidden="true" size={15} weight="bold" />
+            </Link>
+          )}
+          <button className="proof-secondary-action gap-2" onClick={shareActivity} type="button">
+            <ShareNetworkIcon aria-hidden="true" size={15} />
+            Share result
+          </button>
+        </div>
+        <p aria-live="polite" className="mt-2 min-h-4 text-xs text-secondary">
+          {shareStatus}
+        </p>
       </div>
     </li>
   );
@@ -272,6 +381,7 @@ function modeLabel(mode: VerifiedGameActivity['mode']): string {
     crash: 'Card Streak',
     duel: 'Duel',
     flip: 'Marketplace Flip',
+    gacha: 'Sports Pack Gacha',
   }[mode];
 }
 

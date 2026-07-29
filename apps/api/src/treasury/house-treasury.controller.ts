@@ -16,6 +16,7 @@ import { WorkerKeyGuard } from '../transactions/worker-key.guard.js';
 // biome-ignore lint/style/useImportType: Nest needs DTO constructors for runtime validation metadata.
 import {
   CompleteHouseDispositionRequest,
+  DelistHouseInventoryRequest,
   HouseDispositionRequest,
   HouseInventoryParams,
   HouseInventoryQuery,
@@ -54,6 +55,16 @@ export class HouseTreasuryAdminController {
     @Body() input: CompleteHouseDispositionRequest,
   ) {
     return this.treasury.completeDisposition(params.inventoryId, input);
+  }
+
+  @Post('inventory/:inventoryId/disposition/delist')
+  @HttpCode(200)
+  @Header('cache-control', 'no-store')
+  delistInventory(
+    @Param() params: HouseInventoryParams,
+    @Body() input: DelistHouseInventoryRequest,
+  ) {
+    return this.treasury.delistInventory(params.inventoryId, input);
   }
 }
 

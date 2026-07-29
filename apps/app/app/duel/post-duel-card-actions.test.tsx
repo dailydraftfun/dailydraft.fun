@@ -39,6 +39,8 @@ describe('post-duel card actions', () => {
     expect(markup).toContain('aria-label="List card for Charizard"');
     expect(markup).toContain('aria-label="Sell back for Charizard"');
     expect(markup).toContain('Redeem physical card unavailable for Charizard');
+    expect(markup).toContain('aria-label="View source receipt for Charizard"');
+    expect(markup).toContain('href="/v1/duels/duel/receipt"');
     expect(markup).not.toContain('href="javascript:');
   });
 
@@ -94,6 +96,25 @@ describe('post-duel card actions', () => {
     expect(markup).toContain(`role="${role}"`);
     expect(markup).toContain(copy);
     expect(markup).not.toContain('<button');
+  });
+
+  test('keeps the canonical receipt reachable from a hidden ownership mismatch', () => {
+    const markup = renderToStaticMarkup(
+      <CardActionGate reason="ownership-mismatch" receiptHref="/v1/duels/duel_mismatch/receipt" />,
+    );
+
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain('href="/v1/duels/duel_mismatch/receipt"');
+    expect(markup).toContain('View source receipt');
+  });
+
+  test('fails a malformed source receipt link closed', () => {
+    const markup = renderToStaticMarkup(
+      <CardActionState state={cardState({ receiptHref: 'javascript:alert(1)' })} />,
+    );
+
+    expect(markup).not.toContain('View source receipt');
+    expect(markup).not.toContain('javascript:');
   });
 
   test('renders expired buyback evidence with a stable disabled reason and alternative', () => {

@@ -111,6 +111,7 @@ describe('API response schema gate', () => {
       'VerifiedGameActivity',
       'VerifiedGameActivity',
       'VerifiedGameActivity',
+      'VerifiedGameActivity',
       'VerifiedGameActivityPage',
     ]);
   });
@@ -506,6 +507,17 @@ function gameAvailabilityPayload(): PublicGameAvailability {
     asOf: '2026-07-28T12:00:00.000Z',
     modes: [
       playable,
+      {
+        ...playable,
+        availableActions: [{ href: '/games/gacha', id: 'rip-pack', label: 'Rip a sports pack' }],
+        capabilitySource: {
+          kind: 'runtime',
+          name: 'gacha-capability',
+          status: 'verified',
+        },
+        id: 'gacha',
+        reason: 'Sports Pack Gacha is ready on Solana devnet.',
+      },
       preview,
       {
         ...unavailable,

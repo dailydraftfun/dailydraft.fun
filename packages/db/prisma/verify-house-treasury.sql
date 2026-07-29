@@ -2,6 +2,7 @@ BEGIN;
 
 DO $verification$
 DECLARE
+  observed_slot_default text;
   reservation_default text;
   reservation_statuses text[];
 BEGIN
@@ -31,6 +32,17 @@ BEGIN
 
   IF reservation_default IS NULL OR position('RESERVED' IN reservation_default) = 0 THEN
     RAISE EXCEPTION 'house treasury reservations do not default to RESERVED';
+  END IF;
+
+  SELECT column_default
+  INTO observed_slot_default
+  FROM information_schema.columns
+  WHERE table_schema = 'public'
+    AND table_name = 'HouseTreasurySnapshot'
+    AND column_name = 'observedSlot';
+
+  IF observed_slot_default IS NULL OR position('0' IN observed_slot_default) = 0 THEN
+    RAISE EXCEPTION 'house treasury observed slot is not backward-compatible';
   END IF;
 
   IF to_regclass('"HouseTreasuryReservation_duelId_key"') IS NULL THEN
@@ -66,6 +78,42 @@ BEGIN
       AND tgenabled = 'O'
   ) THEN
     RAISE EXCEPTION 'append-only treasury ledger trigger is missing or disabled';
+  END IF;
+END
+$verification$;
+
+INSERT INTO "HouseTreasurySnapshot" (
+  "id",
+  "wallet",
+  "tokenAccount",
+  "mint",
+  "balanceAmount",
+  "balanceDecimals",
+  "delegate",
+  "delegatedAmount",
+  "verifiedAt",
+  "updatedAt"
+) VALUES (
+  'treasury_migration_legacy_writer',
+  'wallet_treasury_contract',
+  'token_account_treasury_contract',
+  'mint_treasury_contract',
+  '1000000',
+  6,
+  'delegate_treasury_contract',
+  '1000000',
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+);
+
+DO $verification$
+BEGIN
+  IF (
+    SELECT "observedSlot"
+    FROM "HouseTreasurySnapshot"
+    WHERE "id" = 'treasury_migration_legacy_writer'
+  ) <> '0' THEN
+    RAISE EXCEPTION 'legacy treasury snapshot write did not receive an observed slot';
   END IF;
 END
 $verification$;
@@ -310,6 +358,33 @@ BEGIN
   EXCEPTION
     WHEN check_violation THEN NULL;
   END;
+END
+$verification$;
+
+-- The previous release remains the rollback target during this deployment and
+-- completes dispositions without the expanded fee and gain/loss columns.
+UPDATE "HouseInventoryAsset"
+SET
+  "disposedAt" = CURRENT_TIMESTAMP,
+  "realizedAmount" = '43000000',
+  "realizedCurrency" = 'USDC',
+  "realizedDecimals" = 6,
+  "status" = 'DISPOSED',
+  "version" = "version" + 1
+WHERE "id" = 'hinv_valid_contract';
+
+DO $verification$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM "HouseInventoryAsset"
+    WHERE "id" = 'hinv_valid_contract'
+      AND "realizedAmount" = '43000000'
+      AND "realizedFeeAmount" IS NULL
+      AND "realizedGainLossAmount" IS NULL
+  ) THEN
+    RAISE EXCEPTION 'legacy disposition write is incompatible with expanded accounting';
+  END IF;
 END
 $verification$;
 

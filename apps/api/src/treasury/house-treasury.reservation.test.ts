@@ -224,6 +224,7 @@ class ReservationDatabase {
   readonly tierAdmissionStates: TierAdmissionState[] = [];
   dailyLossWindow: { gte: Date; lt: Date } | null = null;
   lockAcquisitions = 0;
+  unresolvedDiscrepancies = 0;
   #lockTail = Promise.resolve();
   #seed = 0;
 
@@ -282,6 +283,9 @@ class ReservationDatabase {
         return 1;
       },
       $queryRaw: async () => [{ paused: false }],
+      houseReconciliationDiscrepancy: {
+        count: async () => this.unresolvedDiscrepancies,
+      },
       houseTreasuryLedgerEntry: {
         create: async ({ data }: { data: LedgerRow }) => {
           this.ledger.push(data);

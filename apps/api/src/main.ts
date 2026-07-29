@@ -1,11 +1,18 @@
 import 'reflect-metadata';
 
+import type { IncomingMessage } from 'node:http';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 
 import { AppModule } from './app.module.js';
 import { ProblemDetailsFilter } from './common/problem-details.filter.js';
+import {
+  createTrustedProxyPolicy,
+  registerRequestBoundary,
+  resolveRequestBoundaryConfig,
+  resolveRequestId,
+} from './common/request-boundary.js';
 import { validateDeploymentEnvironment } from './config/deployment-environment.js';
 import { GachaRipService } from './gacha/gacha-rip.service.js';
 
@@ -15,10 +22,27 @@ export interface CreateAppOptions {
 
 export async function createApp(options: CreateAppOptions = {}): Promise<NestFastifyApplication> {
   validateDeploymentEnvironment();
-  const adapter = new FastifyAdapter({ trustProxy: true });
-  adapter.getInstance().addHook('onRequest', (request, response, done) => {
-    response.header('x-request-id', request.id);
+  const requestBoundary = resolveRequestBoundaryConfig();
+  const trustedProxyPolicy = await createTrustedProxyPolicy(requestBoundary, {
+    onRefreshError: (error) => {
+      console.error(
+        JSON.stringify({
+          error: error instanceof Error ? error.message : 'Unknown proxy DNS refresh error',
+          event: 'trusted_proxy_dns_refresh_failed',
+        }),
+      );
+    },
+  });
+  const adapter = new FastifyAdapter({
+    genReqId: (request: IncomingMessage) => resolveRequestId(request.headers['x-request-id']),
+    trustProxy: (address) => trustedProxyPolicy.isTrusted(address),
+  });
+  adapter.getInstance().addHook('onClose', (_instance, done) => {
+    trustedProxyPolicy.close();
     done();
+  });
+  registerRequestBoundary(adapter.getInstance(), requestBoundary, {
+    isTrustedProxy: (address) => trustedProxyPolicy.isTrusted(address),
   });
 
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter);
@@ -32,12 +56,6 @@ export async function createApp(options: CreateAppOptions = {}): Promise<NestFas
       whitelist: true,
     }),
   );
-
-  const origins = (process.env.CORS_ORIGINS ?? '')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-  if (origins.length > 0) app.enableCors({ origin: origins });
 
   if (options.enableShutdownHooks ?? true) app.enableShutdownHooks();
   return app;
