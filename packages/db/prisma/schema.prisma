@@ -911,7 +911,7 @@ model HouseTreasurySnapshot {
   balanceDecimals Int
   delegate        String
   delegatedAmount String
-  observedSlot    String
+  observedSlot    String        @default("0")
   verifiedAt      DateTime
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
