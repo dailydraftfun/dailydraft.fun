@@ -17,7 +17,9 @@ test('publishes the four-mode capability matrix without mobile or desktop overfl
   await page.setViewportSize({ height: 844, width: 390 });
   await Promise.all([page.waitForResponse(catalogUrl), page.goto('/games')]);
 
-  await expect(page.getByRole('heading', { level: 1, name: /One arena/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { level: 1, name: /Pick a game.*Make your move/ }),
+  ).toBeVisible();
   await expect(page.getByText('Card Duel', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Sports Pack Gacha', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Marketplace Flip', { exact: true }).first()).toBeVisible();
