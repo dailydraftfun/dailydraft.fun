@@ -54,23 +54,23 @@ export class GamesCatalogService {
         gachaCapability.status === 'fulfilled'
           ? resolveGachaCatalogMode(gachaCapability.value)
           : degradedGachaCatalogMode(),
-        previewMode({
+        noValueDemoMode({
           description:
-            'Walk through a scripted local marketplace UI with a fixed result while inventory, selection, custody, pricing, and settlement remain disabled.',
+            'Choose a marketplace lane, reveal a card, and complete a fast local flip run with no wallet or assets at risk.',
           href: '/games/marketplace-flip',
           id: 'flip',
           name: 'Marketplace Flip',
           reason:
-            'Fixture preview only. Marketplace inventory, custody, pricing, and settlement are not live.',
+            'Playable no-value devnet demo. Provider purchase, custody, transfer, and settlement remain disabled.',
         }),
-        previewMode({
+        noValueDemoMode({
           description:
-            'Walk through a fixed four-stage card script; only an attempt past the final stage triggers its local bust state.',
+            'Build a four-card streak, bank the score, or push for the next reveal in a fast local run.',
           href: '/games/crash',
           id: 'crash',
           name: 'Card Streak',
           reason:
-            'Fixture preview only. Live card-stage economics, custody, and settlement are not enabled.',
+            'Playable no-value devnet demo. No wallet, funds, custody, transfer, or payout is involved.',
         }),
       ],
       network: 'solana-devnet',
@@ -197,7 +197,7 @@ function degradedGachaCatalogMode(): GameCatalogMode {
   };
 }
 
-function previewMode(input: {
+function noValueDemoMode(input: {
   description: string;
   href: '/games/crash' | '/games/marketplace-flip';
   id: 'crash' | 'flip';
@@ -205,12 +205,12 @@ function previewMode(input: {
   reason: string;
 }): GameCatalogMode {
   return {
-    availableActions: [{ href: input.href, id: 'view-preview', label: 'View fixture preview' }],
+    availableActions: [{ href: input.href, id: 'play-demo', label: 'Play free demo' }],
     capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
     description: input.description,
     id: input.id,
     name: input.name,
     reason: input.reason,
-    state: 'preview',
+    state: 'playable',
   };
 }

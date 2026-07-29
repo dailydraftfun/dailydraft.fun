@@ -17,7 +17,7 @@ describe('game catalog client', () => {
   test('fails runtime-backed modes closed before a capability response arrives', () => {
     const catalog = fallbackGameCatalog();
 
-    expect(playableGameModes(catalog)).toEqual([]);
+    expect(playableGameModes(catalog).map((mode) => mode.id)).toEqual(['flip', 'crash']);
     expect(catalog.modes.map((mode) => mode.id)).toEqual(['duel', 'gacha', 'flip', 'crash']);
     expect(catalog.modes.slice(0, 2).every((mode) => mode.availableActions.length === 0)).toBe(
       true,
@@ -26,12 +26,7 @@ describe('game catalog client', () => {
     expect(catalog.modes[0]?.description).toContain('pool value is not charged or purchased');
     expect(catalog.modes[0]?.description).toContain('displayed test-SOL platform fee');
     expect(catalog.modes[0]?.description).not.toContain('sports pack tier');
-    expect(roadmapGameModes(catalog).map((mode) => mode.id)).toEqual([
-      'duel',
-      'gacha',
-      'flip',
-      'crash',
-    ]);
+    expect(roadmapGameModes(catalog).map((mode) => mode.id)).toEqual(['duel', 'gacha']);
   });
 
   test('accepts only one complete canonical mode set', () => {
@@ -44,6 +39,29 @@ describe('game catalog client', () => {
     expect(() =>
       parseGameCatalog({ ...catalog, modes: catalog.modes.map(() => catalog.modes[0]) }),
     ).toThrow('malformed catalog');
+  });
+
+  test('rejects cross-wired fixture sources and actions before stale caching can preserve them', () => {
+    const catalog = responseCatalog();
+    const crossWired = {
+      ...catalog,
+      modes: catalog.modes.map((mode) =>
+        mode.id === 'flip'
+          ? {
+              ...mode,
+              availableActions: [
+                {
+                  href: '/games/duel' as const,
+                  id: 'direct-challenge',
+                  label: 'Challenge a wallet',
+                },
+              ],
+            }
+          : mode,
+      ),
+    };
+
+    expect(() => parseGameCatalog(crossWired)).toThrow('malformed catalog');
   });
 
   test('reads the catalog from the public no-store endpoint', async () => {
@@ -82,7 +100,7 @@ describe('game catalog client', () => {
     const catalog = responseCatalog();
     const stale = gateRuntimeActions(catalog, 'stale');
 
-    expect(playableGameModes(stale)).toEqual([]);
+    expect(playableGameModes(stale).map((mode) => mode.id)).toEqual(['flip', 'crash']);
     expect(stale.modes.find((mode) => mode.id === 'duel')).toMatchObject({
       availableActions: [],
       capabilitySource: { kind: 'runtime', status: 'degraded' },
@@ -131,8 +149,8 @@ function responseCatalog() {
         availableActions: [
           {
             href: '/games/marketplace-flip' as const,
-            id: 'view-preview',
-            label: 'View fixture preview',
+            id: 'play-demo',
+            label: 'Play free demo',
           },
         ],
         capabilitySource: {
@@ -143,12 +161,12 @@ function responseCatalog() {
         description: 'Flip description',
         id: 'flip' as const,
         name: 'Marketplace Flip',
-        reason: 'Fixture only.',
-        state: 'preview' as const,
+        reason: 'Playable no-value devnet demo.',
+        state: 'playable' as const,
       },
       {
         availableActions: [
-          { href: '/games/crash' as const, id: 'view-preview', label: 'View fixture preview' },
+          { href: '/games/crash' as const, id: 'play-demo', label: 'Play free demo' },
         ],
         capabilitySource: {
           kind: 'fixture' as const,
@@ -158,8 +176,8 @@ function responseCatalog() {
         description: 'Crash description',
         id: 'crash' as const,
         name: 'Card Streak',
-        reason: 'Fixture only.',
-        state: 'preview' as const,
+        reason: 'Playable no-value devnet demo.',
+        state: 'playable' as const,
       },
     ],
     network: 'solana-devnet' as const,

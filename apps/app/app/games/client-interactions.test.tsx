@@ -6,7 +6,6 @@ import {
   verifiedGameActivityContractFixtures,
 } from '@dailydraft/contracts';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
-import { FlipReceiptHistory } from './flip-receipt-history';
 import type { GameCatalog } from './game-catalog';
 import { GameLobby } from './game-lobby';
 import { PolicyStatusBadge } from './policy-status';
@@ -135,28 +134,6 @@ describe('games client interactions', () => {
       },
     );
   });
-
-  test('keeps a fixture card, loads older receipts, and resets pagination on filter change', async () => {
-    const renderer = await render(<FlipReceiptHistory />);
-    const keepButton = findButton(renderer.root, 'Keep fixture card');
-
-    await act(async () => keepButton.props.onClick());
-    expect(textOf(renderer.root)).toContain('Kept in fixture collection');
-    expect(textOf(renderer.root)).toContain('No custody action occurred');
-
-    await act(async () => findButton(renderer.root, 'Load older receipts').props.onClick());
-    expect(
-      findByProp(renderer.root, 'data-flip-history-count').props['data-flip-history-count'],
-    ).toBe(6);
-
-    const select = renderer.root.findByType('select');
-    await act(async () => select.props.onChange({ target: { value: 'acquired' } }));
-    expect(
-      findByProp(renderer.root, 'data-flip-history-count').props['data-flip-history-count'],
-    ).toBe(1);
-    expect(renderer.root.findAllByType('article')).toHaveLength(1);
-    await unmount(renderer);
-  });
 });
 
 async function render(element: React.ReactElement): Promise<ReactTestRenderer> {
@@ -186,10 +163,6 @@ async function runLinkCallbacks(root: ReactTestInstance): Promise<void> {
 
 function findByProp(root: ReactTestInstance, prop: string): ReactTestInstance {
   return root.find((node) => Object.hasOwn(node.props, prop));
-}
-
-function findButton(root: ReactTestInstance, label: string): ReactTestInstance {
-  return root.find((node) => node.type === 'button' && textOf(node).includes(label));
 }
 
 function textOf(node: ReactTestInstance): string {

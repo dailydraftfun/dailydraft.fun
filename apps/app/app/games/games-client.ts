@@ -67,7 +67,7 @@ export function writeCachedGameCatalog(
 
 function isGameCatalogMode(value: unknown): value is GameCatalogMode {
   if (!isObject(value)) return false;
-  return (
+  const structurallyValid =
     GAME_MODE_IDS.includes(value.id as GameCatalogMode['id']) &&
     typeof value.name === 'string' &&
     value.name.length > 0 &&
@@ -78,7 +78,51 @@ function isGameCatalogMode(value: unknown): value is GameCatalogMode {
     ['degraded', 'playable', 'preview', 'unavailable'].includes(String(value.state)) &&
     Array.isArray(value.availableActions) &&
     value.availableActions.every(isGameCatalogAction) &&
-    isCapabilitySource(value.capabilitySource)
+    isCapabilitySource(value.capabilitySource);
+
+  return structurallyValid && hasCanonicalModeBindings(value as unknown as GameCatalogMode);
+}
+
+function hasCanonicalModeBindings(mode: GameCatalogMode): boolean {
+  switch (mode.id) {
+    case 'duel':
+      return (
+        mode.capabilitySource.kind === 'runtime' &&
+        mode.capabilitySource.name === 'duel-readiness' &&
+        mode.availableActions.every(
+          (action) =>
+            action.href === '/games/duel' &&
+            ['direct-challenge', 'house-opponent', 'open-matchmaking'].includes(action.id),
+        )
+      );
+    case 'gacha':
+      return (
+        mode.capabilitySource.kind === 'runtime' &&
+        mode.capabilitySource.name === 'gacha-capability' &&
+        mode.availableActions.every(
+          (action) => action.href === '/games/gacha' && action.id === 'rip-pack',
+        )
+      );
+    case 'flip':
+      return isCanonicalNoValueDemo(mode, '/games/marketplace-flip');
+    case 'crash':
+      return isCanonicalNoValueDemo(mode, '/games/crash');
+  }
+}
+
+function isCanonicalNoValueDemo(
+  mode: GameCatalogMode,
+  href: '/games/crash' | '/games/marketplace-flip',
+): boolean {
+  const action = mode.availableActions[0];
+  return (
+    mode.state === 'playable' &&
+    mode.capabilitySource.kind === 'fixture' &&
+    mode.capabilitySource.name === 'rgs-fixture' &&
+    mode.capabilitySource.status === 'gated' &&
+    mode.availableActions.length === 1 &&
+    action?.href === href &&
+    action.id === 'play-demo'
   );
 }
 

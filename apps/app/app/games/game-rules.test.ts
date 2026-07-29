@@ -60,11 +60,13 @@ describe('canonical game rules', () => {
     expect(copy).not.toContain('Two wallets fund the same enabled tier');
   });
 
-  test('describes Flip as a fixed local script without selection proof', () => {
+  test('describes Flip as a fixed no-value game without selection proof', () => {
     const copy = JSON.stringify(gameRules.flip);
 
     expect(copy).toContain('fixed result');
-    expect(copy).toContain('No pool snapshot, seed, commitment, or selection proof is created');
+    expect(copy).toContain(
+      'No pool snapshot, seed, cryptographic commitment, or selection proof is created',
+    );
     expect(copy).toContain('no sealed pool, random draw, reproducible selection proof');
     expect(copy).not.toContain('sealed demonstration pool');
     expect(copy).not.toContain('reproducibly selected');

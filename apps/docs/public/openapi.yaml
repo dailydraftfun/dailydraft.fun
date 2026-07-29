@@ -28,7 +28,7 @@ tags:
   - name: Gacha
     description: Inspectable Sports Pack Gacha capabilities, inventory, odds, deposit intents, and rips.
   - name: Games
-    description: Capability-derived player catalog for live and fixture-only game modes.
+    description: Capability-derived player catalog for runtime games and playable no-value demos.
   - name: Crash
     description: Authenticated, resumable fixture-preview Crash decisions; never production playable.
   - name: RGS
@@ -58,8 +58,8 @@ paths:
       summary: List the versioned RGS math configurations and readiness gates
       description: |
         Declares Gacha, Duels, Flip, and Crash through one versioned configuration
-        surface. Fixture-only modes remain non-playable, and every real-value mode
-        stays behind the existing human-approval policy gate.
+        surface. Fixture-only engines remain non-value-bearing, and every real-value
+        mode stays behind the existing human-approval policy gate.
       x-dailydraft-availability: devnet-preview
       responses:
         '200':
@@ -173,10 +173,10 @@ paths:
       tags: [Games]
       summary: Resolve the canonical player-facing game catalog
       description: |
-        Publishes the stable Duel, Gacha, Marketplace Flip, and Crash taxonomy.
+        Publishes the stable Duel, Gacha, Marketplace Flip, and Card Streak taxonomy.
         Duel and Gacha actions derive from their live runtime capability checks.
-        Flip and Crash remain explicitly fixture-only and cannot expose a
-        value-bearing action through this response.
+        Flip and Card Streak expose playable fixture-backed demos while remaining
+        explicitly unable to expose a value-bearing action through this response.
       x-dailydraft-availability: devnet-preview
       responses:
         '200':
@@ -196,12 +196,12 @@ paths:
     get:
       operationId: getGameAvailability
       tags: [Games]
-      summary: Resolve public Duel, Flip, and Crash availability
+      summary: Resolve public Duel, Gacha, Flip, and Card Streak availability
       description: |
         Publishes stable player-facing mode identifiers, actions, reasons, and
-        capability sources. Duel is derived from runtime readiness, operator
-        controls, risk admission, and the existing real-value policy. Flip and
-        Crash remain explicit previews. This projection cannot make a mode playable.
+        capability sources. Duel and Gacha derive from runtime capability checks.
+        Flip and Card Streak are playable no-value demos backed by local fixtures.
+        This projection cannot enable payment, provider, custody, transfer, or payout.
       x-dailydraft-availability: devnet-preview
       responses:
         '200':

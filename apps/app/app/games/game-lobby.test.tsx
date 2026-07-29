@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { GameLobby } from './game-lobby';
 
 describe('game lobby', () => {
-  test('presents one dominant live arena and an honest gated roadmap', () => {
+  test('presents one dominant live arena and two playable no-value games', () => {
     const markup = renderToStaticMarkup(<GameLobby initialCatalog={catalog()} />);
 
     expect(markup).toContain('Playable now');
@@ -12,11 +12,12 @@ describe('game lobby', () => {
     expect(markup).toContain('Marketplace Flip');
     expect(markup).toContain('Card Streak');
     expect(markup).toContain('Sports Pack Gacha');
-    expect(markup).toContain('Honest roadmap');
+    expect(markup).toContain('Play without opening your wallet');
     expect(markup).toContain('Verified recent activity');
     expect(markup).toContain('Settled proof only');
     expect(markup).toContain('href="/games/activity"');
-    expect(markup).toContain('Fixture preview');
+    expect(markup).toContain('Playable demo');
+    expect(markup).toContain('Play free demo');
     expect(markup).toContain('Jul 27 · 20:00 UTC');
     expect(markup).not.toContain('Fantasy Tournaments');
   });
@@ -26,6 +27,7 @@ describe('game lobby', () => {
 
     expect(markup).toContain('href="/games/duel"');
     expect(markup).toContain('href="/games/gacha"');
+    expect(markup).toContain('href="/games/marketplace-flip"');
     expect(markup).toContain('href="/games/marketplace-flip#rules"');
     expect(markup).not.toContain('href="/games/flip"');
     expect(markup).toContain('href="/games/crash#rules"');
@@ -44,10 +46,11 @@ describe('game lobby', () => {
     expect(markup).not.toContain('Rip a sports pack');
   });
 
-  test('makes fixture and devnet limitations explicit without fake activity', () => {
+  test('makes no-value demo and devnet limitations explicit without fake activity', () => {
     const markup = renderToStaticMarkup(<GameLobby initialCatalog={catalog()} />);
 
-    expect(markup).toContain('Fixture preview');
+    expect(markup).toContain('Playable demo');
+    expect(markup).toContain('No funds, cards, provider purchases, custody, or payouts');
     expect(markup).toContain('Devnet · test assets only');
     expect(markup).toContain('No fake activity');
     expect(markup).not.toContain('players online');
@@ -70,7 +73,7 @@ describe('game lobby', () => {
     const markup = renderToStaticMarkup(<GameLobby initialCatalog={input} />);
 
     expect(markup).toContain('Capability gated');
-    expect(markup).toContain('Fixture preview');
+    expect(markup).toContain('Playable demo');
   });
 
   test('renders deterministic catalog timestamps and fails malformed evidence closed', () => {
@@ -126,27 +129,25 @@ function catalog(): GameCatalog {
         availableActions: [
           {
             href: '/games/marketplace-flip',
-            id: 'view-preview',
-            label: 'View fixture preview',
+            id: 'play-demo',
+            label: 'Play free demo',
           },
         ],
         capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
         description: 'Trade a committed quote.',
         id: 'flip',
         name: 'Marketplace Flip',
-        reason: 'Fixture preview only.',
-        state: 'preview',
+        reason: 'Playable no-value devnet demo.',
+        state: 'playable',
       },
       {
-        availableActions: [
-          { href: '/games/crash', id: 'view-preview', label: 'View fixture preview' },
-        ],
+        availableActions: [{ href: '/games/crash', id: 'play-demo', label: 'Play free demo' }],
         capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
         description: 'Build a card streak.',
         id: 'crash',
         name: 'Card Streak',
-        reason: 'Fixture preview only.',
-        state: 'preview',
+        reason: 'Playable no-value devnet demo.',
+        state: 'playable',
       },
     ],
     network: 'solana-devnet',

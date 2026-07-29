@@ -1,13 +1,13 @@
 import type { Metadata } from 'next';
-import { GameModePreview } from '../game-mode-preview';
+import { MarketplaceFlipGame } from './marketplace-flip-game';
 
 export const metadata: Metadata = {
-  title: 'Marketplace Flip preview — DailyDraft Devnet',
+  title: 'Marketplace Flip — DailyDraft Devnet',
   description:
-    'Fixture-only Marketplace Flip journey. Live inventory, custody, pricing, and settlement are not enabled.',
+    'Play the no-value Marketplace Flip prediction loop. Live inventory, custody, pricing, and settlement remain disabled.',
   robots: { follow: false, index: false, nocache: true },
 };
 
 export default function MarketplaceFlipPage() {
-  return <GameModePreview mode="flip" />;
+  return <MarketplaceFlipGame />;
 }

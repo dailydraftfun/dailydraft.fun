@@ -70,12 +70,12 @@ describe('public game availability', () => {
         expect.objectContaining({
           asOf: '2026-07-28T12:00:00.000Z',
           id: 'flip',
-          state: 'preview',
+          state: 'playable',
         }),
         expect.objectContaining({
           asOf: '2026-07-28T12:00:00.000Z',
           id: 'crash',
-          state: 'preview',
+          state: 'playable',
         }),
       ],
       network: 'solana-devnet',
@@ -108,7 +108,7 @@ describe('public game availability', () => {
     });
   });
 
-  test('fails policy-gated Duel actions closed while fixtures remain previews', async () => {
+  test('fails policy-gated Duel actions closed while no-value demos remain playable', async () => {
     const availability = await lobbyWith({ catalog: catalog() }).getAvailability(
       new Date('2026-07-28T12:00:00.000Z'),
       {},
@@ -122,8 +122,8 @@ describe('public game availability', () => {
     });
     expect(availability.modes.slice(1).map((mode) => mode.state)).toEqual([
       'playable',
-      'preview',
-      'preview',
+      'playable',
+      'playable',
     ]);
   });
 
@@ -513,27 +513,25 @@ function catalog(): GameCatalog {
         availableActions: [
           {
             href: '/games/marketplace-flip',
-            id: 'view-preview',
-            label: 'View fixture preview',
+            id: 'play-demo',
+            label: 'Play free demo',
           },
         ],
         capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
-        description: 'Preview marketplace pricing.',
+        description: 'Play a marketplace run.',
         id: 'flip',
         name: 'Marketplace Flip',
-        reason: 'Fixture preview only.',
-        state: 'preview',
+        reason: 'Playable no-value devnet demo.',
+        state: 'playable',
       },
       {
-        availableActions: [
-          { href: '/games/crash', id: 'view-preview', label: 'View fixture preview' },
-        ],
+        availableActions: [{ href: '/games/crash', id: 'play-demo', label: 'Play free demo' }],
         capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
-        description: 'Preview a card streak.',
+        description: 'Play a card streak.',
         id: 'crash',
         name: 'Card Streak',
-        reason: 'Fixture preview only.',
-        state: 'preview',
+        reason: 'Playable no-value devnet demo.',
+        state: 'playable',
       },
     ],
     network: 'solana-devnet',

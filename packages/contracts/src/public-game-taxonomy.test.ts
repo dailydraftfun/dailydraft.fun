@@ -39,11 +39,13 @@ describe('public game taxonomy', () => {
       canonicalHref: '/games/marketplace-flip',
       rulesHref: '/games/marketplace-flip#rules',
       runtime: false,
+      statusLabel: 'Playable demo · no value',
     });
     expect(PUBLIC_GAME_TAXONOMY_BY_ID.crash).toMatchObject({
       canonicalHref: '/games/crash',
       rulesHref: '/games/crash#rules',
       runtime: false,
+      statusLabel: 'Playable demo · no value',
     });
   });
 

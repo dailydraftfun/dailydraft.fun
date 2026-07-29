@@ -12,7 +12,7 @@ export type GameCatalogFreshness = 'error' | 'live' | 'loading' | 'stale';
  * Safe first paint and total-failure fallback.
  *
  * Runtime-backed modes expose no action until the API proves them ready.
- * Fixture previews remain navigable because they cannot move funds or assets.
+ * Fixture-backed games remain playable because they cannot move funds or assets.
  */
 export function fallbackGameCatalog(
   reason = 'Live capability checks are still loading. No value-bearing action is available.',
@@ -40,31 +40,29 @@ export function fallbackGameCatalog(
         availableActions: [
           {
             href: '/games/marketplace-flip',
-            id: 'view-preview',
-            label: 'View fixture preview',
+            id: 'play-demo',
+            label: 'Play free demo',
           },
         ],
         capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
         description:
-          'Walk through a scripted local marketplace UI with a fixed result while inventory, selection, custody, pricing, and settlement remain disabled.',
+          'Choose a marketplace lane, reveal a card, and complete a fast local flip run with no wallet or assets at risk.',
         id: 'flip',
         name: 'Marketplace Flip',
         reason:
-          'Fixture preview only. Marketplace inventory, custody, pricing, and settlement are not live.',
-        state: 'preview',
+          'Playable no-value devnet demo. Provider purchase, custody, transfer, and settlement remain disabled.',
+        state: 'playable',
       },
       {
-        availableActions: [
-          { href: '/games/crash', id: 'view-preview', label: 'View fixture preview' },
-        ],
+        availableActions: [{ href: '/games/crash', id: 'play-demo', label: 'Play free demo' }],
         capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
         description:
-          'Walk through a fixed four-stage card script; only an attempt past the final stage triggers its local bust state.',
+          'Build a four-card streak, bank the score, or push for the next reveal in a fast local run.',
         id: 'crash',
         name: 'Card Streak',
         reason:
-          'Fixture preview only. Live card-stage economics, custody, and settlement are not enabled.',
-        state: 'preview',
+          'Playable no-value devnet demo. No wallet, funds, custody, transfer, or payout is involved.',
+        state: 'playable',
       },
     ],
     network: 'solana-devnet',

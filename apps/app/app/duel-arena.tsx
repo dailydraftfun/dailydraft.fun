@@ -213,8 +213,8 @@ function Avatar({ color, label }: { color: string; label: string }) {
 
 // Exported for contract tests only. Driving the sealed/opening/revealed stages
 // through <DuelArena /> would mean standing up the whole live duel state machine
-// and its API polling; the card is a pure function of its props, so it is tested
-// the same way GameModePreview is — rendered directly with each state.
+// and its API polling; the card is a pure function of its props, so contract
+// tests render it directly with each state.
 export function DuelCard({
   choreography,
   pull,

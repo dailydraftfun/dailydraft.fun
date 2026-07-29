@@ -26,7 +26,7 @@ type BeatCapture = {
 
 test.use({ journeySeed: 'reveal-choreography' });
 
-test('keyboard completes Flip and Crash reveals, mute, skip, and every 390px beat', async ({
+test('keyboard completes Flip reveal and Card Streak decisions at 390px', async ({
   journey,
   page,
 }) => {
@@ -52,8 +52,8 @@ test('keyboard completes Flip and Crash reveals, mute, skip, and every 390px bea
   await page.keyboard.press('Alt+M');
   await expect(muteControl).toHaveAttribute('aria-pressed', 'false');
 
-  await keyboardActivate(page, page.getByRole('button', { name: 'Advance local script' }));
-  await keyboardActivate(page, page.getByRole('button', { name: 'Show scripted card' }));
+  await keyboardActivate(page, page.getByRole('button', { name: 'Lock Core call' }));
+  await keyboardActivate(page, page.getByRole('button', { name: 'Flip the card' }));
 
   const flipReveal = page.locator('figure[data-choreography-active="true"]');
   await expectFullBeatJourney(flipReveal);
@@ -61,42 +61,26 @@ test('keyboard completes Flip and Crash reveals, mute, skip, and every 390px bea
   await expect(flipReveal.getByRole('img', { name: 'Charizard · Base Set' })).toHaveCount(1);
   await expect(page.getByRole('heading', { name: 'Charizard · Base Set' })).toBeVisible();
   await expect(
-    page.getByRole('region', { name: 'Flip preview' }).getByText('$72.50', { exact: true }),
+    page
+      .getByRole('region', { name: 'Marketplace Flip game' })
+      .getByText('$72.50', { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Skip reveal animation' })).toHaveAttribute(
     'aria-disabled',
     'true',
   );
 
-  const crashLink = page.getByRole('link', { name: /Card Streak/ });
-  await keyboardActivate(page, crashLink);
-  await page.waitForURL('/games/crash');
-  await installBeatCapture(page);
+  await page.goto('/games/crash', { waitUntil: 'domcontentloaded' });
 
-  const crashPreview = page.getByRole('region', { name: 'Crash preview' });
-  const secondStage = crashPreview.locator('article').nth(1);
-  const continueCrash = page.getByRole('button', { name: 'Reveal next scripted stage' });
+  const cardStreak = page.getByRole('region', { name: 'Card Streak game' });
+  const continueCrash = page.getByRole('button', { name: 'Continue streak' });
   await waitForReactClickHandler(continueCrash);
   await keyboardActivate(page, continueCrash);
-  await expectFullBeatJourney(secondStage);
-  await expectNoOverflowForBeats(secondStage, fullBeatSequence);
-  await expect(secondStage.getByRole('img', { name: 'Mewtwo · Base Set' })).toHaveCount(1);
-  await expect(secondStage).toContainText('Mewtwo');
-  await expect(secondStage).toContainText('$42.00');
-
-  const thirdStage = crashPreview.locator('article').nth(2);
-  await keyboardActivate(page, page.getByRole('button', { name: 'Reveal next scripted stage' }));
-  await expectCapturedBeats(thirdStage, ['anticipation']);
-
-  const thirdStageSkip = thirdStage.getByRole('button', { name: 'Skip animation' });
-  await keyboardActivate(page, thirdStageSkip);
-  await expectCapturedBeats(thirdStage, ['anticipation', 'settled']);
-  await expectNoOverflowForBeats(thirdStage, ['anticipation', 'settled']);
-  await expect(thirdStage.getByRole('img', { name: 'Blastoise · Base Set' })).toHaveCount(1);
-  await expect(thirdStage).toContainText('Blastoise');
-  await expect(thirdStage).toContainText('$54.00');
-  await expect(thirdStageSkip).toHaveAttribute('aria-disabled', 'true');
-  await expectNoRunningAnimations(thirdStage);
+  await expect(cardStreak).toContainText('Mewtwo');
+  await expect(cardStreak).toContainText('$85.50');
+  await keyboardActivate(page, page.getByRole('button', { name: 'Continue streak' }));
+  await expect(cardStreak).toContainText('Blastoise');
+  await expectNoHorizontalOverflow(page);
 });
 
 test('keyboard completes both Duel reveals through every beat at 390px', async ({
@@ -141,29 +125,28 @@ test('reduced motion fast-forwards every mode with full terminal information', a
     'false',
   );
   await installBeatCapture(page);
-  const commitFlip = page.getByRole('button', { name: 'Advance local script' });
+  const commitFlip = page.getByRole('button', { name: 'Lock Core call' });
   await waitForReactClickHandler(commitFlip);
   await commitFlip.click();
-  await page.getByRole('button', { name: 'Show scripted card' }).click();
+  await page.getByRole('button', { name: 'Flip the card' }).click();
 
   const flipReveal = page.locator('figure[data-choreography-active="true"]');
   await expectReducedMotionSettlement(flipReveal);
   await expect(flipReveal.getByRole('img', { name: 'Charizard · Base Set' })).toHaveCount(1);
   await expect(page.getByRole('heading', { name: 'Charizard · Base Set' })).toBeVisible();
   await expect(
-    page.getByRole('region', { name: 'Flip preview' }).getByText('$72.50', { exact: true }),
+    page
+      .getByRole('region', { name: 'Marketplace Flip game' })
+      .getByText('$72.50', { exact: true }),
   ).toBeVisible();
 
   await page.goto('/games/crash', { waitUntil: 'domcontentloaded' });
-  await installBeatCapture(page);
-  const secondStage = page.getByRole('region', { name: 'Crash preview' }).locator('article').nth(1);
-  const continueCrash = page.getByRole('button', { name: 'Reveal next scripted stage' });
+  const cardStreak = page.getByRole('region', { name: 'Card Streak game' });
+  const continueCrash = page.getByRole('button', { name: 'Continue streak' });
   await waitForReactClickHandler(continueCrash);
   await continueCrash.click();
-  await expectReducedMotionSettlement(secondStage);
-  await expect(secondStage.getByRole('img', { name: 'Mewtwo · Base Set' })).toHaveCount(1);
-  await expect(secondStage).toContainText('Mewtwo');
-  await expect(secondStage).toContainText('$42.00');
+  await expect(cardStreak).toContainText('Mewtwo');
+  await expect(cardStreak).toContainText('$85.50');
 
   await openDuelLobby(page);
   await installBeatCapture(page);

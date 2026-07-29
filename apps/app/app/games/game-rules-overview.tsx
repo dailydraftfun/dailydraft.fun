@@ -254,7 +254,7 @@ export function GameRulesOverview(props: GameRulesOverviewProps) {
             Exact promotion gates
           </p>
           <h2 id={`${mode}-gates-title`}>
-            {preview ? 'Why this is not playable' : 'What the server and policy must allow'}
+            {preview ? 'What blocks value-bearing play' : 'What the server and policy must allow'}
           </h2>
           <ul className={styles.gateList}>
             {rules.gates.map((gate) => (
