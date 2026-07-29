@@ -1,5 +1,5 @@
 ALTER TABLE "HouseTreasurySnapshot"
-ADD COLUMN "observedSlot" TEXT;
+ADD COLUMN "observedSlot" TEXT DEFAULT '0';
 
 UPDATE "HouseTreasurySnapshot"
 SET "observedSlot" = '0'
@@ -61,6 +61,9 @@ ADD CONSTRAINT "HouseInventoryAsset_disposition_request_check" CHECK (
   ("dispositionRequestedAt" IS NULL AND "dispositionReason" IS NULL)
   OR ("dispositionRequestedAt" IS NOT NULL AND length("dispositionReason") BETWEEN 3 AND 160)
 ),
+-- Keep the legacy realizedAmount-only write shape valid while the previous API
+-- remains the rollback target. A later contract migration can require fee and
+-- gain/loss after this release is fully promoted.
 ADD CONSTRAINT "HouseInventoryAsset_realized_accounting_check" CHECK (
   (
     "realizedAmount" IS NULL
@@ -69,8 +72,16 @@ ADD CONSTRAINT "HouseInventoryAsset_realized_accounting_check" CHECK (
   )
   OR (
     "realizedAmount" ~ '^[0-9]+$'
-    AND "realizedFeeAmount" ~ '^[0-9]+$'
-    AND "realizedGainLossAmount" ~ '^-?[0-9]+$'
+    AND (
+      (
+        "realizedFeeAmount" IS NULL
+        AND "realizedGainLossAmount" IS NULL
+      )
+      OR (
+        "realizedFeeAmount" ~ '^[0-9]+$'
+        AND "realizedGainLossAmount" ~ '^-?[0-9]+$'
+      )
+    )
   )
 ) NOT VALID,
 ADD CONSTRAINT "HouseInventoryAsset_reconciled_slot_check"

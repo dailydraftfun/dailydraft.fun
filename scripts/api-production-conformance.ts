@@ -87,6 +87,10 @@ async function probeBuiltHealthEndpoint(artifactDirectory: string): Promise<Conf
 
   const environment = productionEnvironmentFixture({
     DATABASE_URL: databaseUrl,
+    // The production Docker hostname is intentionally unavailable in CI.
+    // A documentation-range literal exercises the same DNS-backed trust path
+    // without making the compiled health probe depend on external DNS.
+    DAILYDRAFT_TRUSTED_PROXY_HOSTS: '192.0.2.1',
     PORT: '33159',
   });
   const child = Bun.spawn(['bun', resolve(artifactDirectory, 'src/main.js')], {
