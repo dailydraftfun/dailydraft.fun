@@ -68,7 +68,7 @@ jobs:
             --only-show-errors
           aws s3 cp \
             deploy/dailydraft/Caddyfile.fragment \
-            "s3://${ARTIFACT_BUCKET}/fragments/dailydraft-${GITHUB_SHA}.caddy" \
+            "s3://${ARTIFACT_BUCKET}/scripts/dailydraft-${GITHUB_SHA}.caddy" \
             --only-show-errors
 
       - name: Deploy through Systems Manager
@@ -76,7 +76,7 @@ jobs:
           set -euo pipefail
           image_key="images/dailydraft-${GITHUB_SHA}.tar.gz"
           script_key="scripts/deploy-dailydraft-${GITHUB_SHA}.sh"
-          caddy_fragment_key="fragments/dailydraft-${GITHUB_SHA}.caddy"
+          caddy_fragment_key="scripts/dailydraft-${GITHUB_SHA}.caddy"
           # AWS-RunShellScript concatenates these into one bash script, so the
           # leading set and the temporary file carry across the whole sequence.
           parameters="$(
