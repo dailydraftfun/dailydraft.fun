@@ -106,6 +106,19 @@ describe('duel arena contract', () => {
     expect(markup).toContain('Solana devnet MVP');
   });
 
+  test('keeps cancelled duel feedback inside the matchmaking card', () => {
+    const source = readFileSync(new URL('./duel-arena.tsx', import.meta.url), 'utf8');
+    const matchCard = source.indexOf('<Card className="match-card');
+    const inlineAlert = source.indexOf('className="duel-inline-alert"', matchCard);
+    const matchCardEnd = source.indexOf('</Card>', inlineAlert);
+
+    expect(matchCard).toBeGreaterThanOrEqual(0);
+    expect(inlineAlert).toBeGreaterThan(matchCard);
+    expect(matchCardEnd).toBeGreaterThan(inlineAlert);
+    expect(source).toContain('{persistedDuel && playerStatus && !cancelledPlayerStatus ? (');
+    expect(source).toContain('{actionNotice && !cancelledPlayerStatus ? (');
+  });
+
   test('prioritizes the active duel with one battle h1 and a state-valid rules return anchor', () => {
     const source = readFileSync(new URL('./duel-arena.tsx', import.meta.url), 'utf8');
     const activeStart = source.indexOf("if (phase !== 'lobby' && liveDuel && persistedDuel)");

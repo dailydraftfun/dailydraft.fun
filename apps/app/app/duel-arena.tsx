@@ -572,6 +572,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const playerStatus = persistedDuel
     ? getDuelPlayerStatus(persistedDuel.status, matchmakingSession?.state === 'searching')
     : null;
+  const cancelledPlayerStatus = persistedDuel?.status === 'cancelled' ? playerStatus : null;
   const matchmakingSearchCopy = matchmakingSession
     ? getMatchmakingSearchCopy(matchmakingSession)
     : null;
@@ -2208,6 +2209,31 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                     </span>
                   </div>
 
+                  {cancelledPlayerStatus ? (
+                    <div
+                      className="duel-inline-alert"
+                      data-testid={journeyTestIds.persistedDuel}
+                      role="alert"
+                    >
+                      <WarningCircleIcon size={17} weight="fill" />
+                      <span>
+                        <strong>{cancelledPlayerStatus.headline}</strong>
+                        <small>{cancelledPlayerStatus.detail}</small>
+                      </span>
+                      <button
+                        data-testid={journeyTestIds.persistedDuelRestart}
+                        onClick={() => {
+                          clearActiveDuel();
+                          setActionError(null);
+                          setActionNotice(null);
+                        }}
+                        type="button"
+                      >
+                        Start another duel
+                      </button>
+                    </div>
+                  ) : null}
+
                   <Button
                     type="button"
                     className="duel-cta"
@@ -2256,7 +2282,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                       <WarningCircleIcon size={14} weight="fill" /> {actionError}
                     </p>
                   ) : null}
-                  {actionNotice ? <p className="signing-note">{actionNotice}</p> : null}
+                  {actionNotice && !cancelledPlayerStatus ? (
+                    <p className="signing-note">{actionNotice}</p>
+                  ) : null}
                 </div>
               </>
             ) : (
@@ -2274,7 +2302,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         </Card>
       </section>
 
-      {persistedDuel && playerStatus ? (
+      {persistedDuel && playerStatus && !cancelledPlayerStatus ? (
         <section
           className="persisted-duel-panel"
           role="status"
