@@ -17,7 +17,9 @@ test('publishes the four-mode capability matrix without mobile or desktop overfl
   await page.setViewportSize({ height: 844, width: 390 });
   await Promise.all([page.waitForResponse(catalogUrl), page.goto('/games')]);
 
-  await expect(page.getByRole('heading', { level: 1, name: /One arena/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { level: 1, name: /Pick a game.*Make your move/ }),
+  ).toBeVisible();
   await expect(page.getByText('Card Duel', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Sports Pack Gacha', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Marketplace Flip', { exact: true }).first()).toBeVisible();
@@ -98,12 +100,10 @@ test('withholds runtime actions while loading, then recovers to live capability'
   });
 
   await page.goto('/games');
-  await expect(page.getByText('Refreshing', { exact: true })).toBeVisible();
   await expect(page.getByText('Live actions withheld', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Challenge a wallet' })).toHaveCount(0);
 
   releaseCatalog?.();
-  await expect(page.getByText('Live capability', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Challenge a wallet' }).first()).toBeVisible();
 });
 
@@ -127,7 +127,7 @@ test('keeps cached demos playable and fails runtime actions closed before recove
   );
 
   await page.goto('/games');
-  await expect(page.getByText('Stale capability', { exact: true })).toBeVisible();
+  await expect(page.getByText(/last capability response is stale/i).first()).toBeVisible();
   await expect(page.getByRole('link', { name: 'Challenge a wallet' })).toHaveCount(0);
   await expect(page.locator('a[href="/games/marketplace-flip"]').first()).toContainText(
     'Play free demo',
@@ -149,11 +149,10 @@ test('keeps cached demos playable and fails runtime actions closed before recove
   await page.unroute(catalogUrl);
   await page.route(catalogUrl, (route) => route.abort('timedout'));
   await page.reload();
-  await expect(page.getByText('Server catalog unavailable · live actions withheld')).toBeVisible();
+  await expect(page.getByText(/live capability checks are unavailable/i).first()).toBeVisible();
 
   await page.unroute(catalogUrl);
   await page.reload();
-  await expect(page.getByText('Live capability', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Rip a sports pack' })).toBeVisible();
 });
 

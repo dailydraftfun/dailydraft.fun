@@ -1,20 +1,15 @@
 'use client';
 
-import {
-  isPublicGameTaxonomyId,
-  PUBLIC_GAME_TAXONOMY,
-} from '@dailydraft/contracts/public-game-taxonomy';
+import { isPublicGameTaxonomyId } from '@dailydraft/contracts/public-game-taxonomy';
 import {
   ArrowRightIcon,
   CardsThreeIcon,
   ChartLineUpIcon,
-  ClockCounterClockwiseIcon,
   LightningIcon,
   LockKeyIcon,
   ReceiptIcon,
   ShieldCheckIcon,
   SwordIcon,
-  WarningCircleIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -116,23 +111,20 @@ export function GameLobby({
 
   return (
     <main className="mx-auto flex min-h-[calc(100svh-7rem)] max-w-[1400px] flex-col gap-7 px-4 py-8 sm:px-6 sm:py-12">
-      <header className="grid gap-6 border-b border-border pb-7 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
+      <header className="border-b border-border pb-7">
         <div className="max-w-4xl">
           <p className="proof-label flex items-center gap-2">
             <span className="inline-block size-2 rounded-full bg-lime" aria-hidden="true" />
-            DailyDraft game network
+            DailyDraft Arena
           </p>
           <h1 className="mt-4 max-w-4xl text-4xl font-semibold tracking-[-0.055em] text-primary sm:text-6xl">
-            One arena.
-            <span className="block text-lime">Every game tells the truth.</span>
+            Pick a game.
+            <span className="block text-lime">Make your move.</span>
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-secondary">
-            Runtime checks protect every value-bearing action. Free fixture-backed games stay
-            playable without a wallet, funds, or assets.
+            Challenge a rival, rip a pack, or jump into a free instant game.
           </p>
         </div>
-
-        <CatalogStatus catalog={catalog} freshness={freshness} />
       </header>
 
       <section
@@ -239,15 +231,6 @@ export function GameLobby({
                   <RuntimeLane mode={mode} key={mode.id} />
                 ))}
             </div>
-            <div className="mt-6 border-t border-border pt-5">
-              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-secondary">
-                <ReceiptIcon size={15} />
-                Capability source
-              </p>
-              <p className="mt-2 text-xs leading-5 text-secondary">
-                Server observed {formatAsOf(catalog.asOf)} · Solana devnet test assets only.
-              </p>
-            </div>
           </aside>
         </div>
       </section>
@@ -302,83 +285,7 @@ export function GameLobby({
       ) : null}
 
       <VerifiedActivity compact />
-
-      <section
-        className="grid overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3"
-        aria-labelledby="trust-title"
-      >
-        <h2 id="trust-title" className="sr-only">
-          Shared game contract
-        </h2>
-        <TrustCard
-          icon={<LockKeyIcon size={22} weight="fill" />}
-          label="Server decides"
-          copy="The browser cannot promote a game from preview to playable."
-        />
-        <TrustCard
-          icon={<ShieldCheckIcon size={22} weight="fill" />}
-          label="Routes stay canonical"
-          copy={`${PUBLIC_GAME_TAXONOMY.map((mode) => mode.name).join(', ')} share one stable public identity.`}
-        />
-        <TrustCard
-          icon={<ReceiptIcon size={22} weight="fill" />}
-          label="No fake activity"
-          copy="The lobby publishes capability evidence, not invented players, pots, or live counts."
-        />
-      </section>
     </main>
-  );
-}
-
-function CatalogStatus({
-  catalog,
-  freshness,
-}: {
-  catalog: GameCatalog;
-  freshness: GameCatalogFreshness;
-}) {
-  const state = {
-    error: {
-      copy: 'Server catalog unavailable · live actions withheld',
-      icon: <WarningCircleIcon size={21} weight="fill" />,
-      label: 'Unavailable',
-    },
-    live: {
-      copy: `Verified ${formatAsOf(catalog.asOf)}`,
-      icon: <ShieldCheckIcon size={21} weight="fill" />,
-      label: 'Live capability',
-    },
-    loading: {
-      copy: 'Checking the server-owned game catalog',
-      icon: <ClockCounterClockwiseIcon size={21} />,
-      label: 'Refreshing',
-    },
-    stale: {
-      copy: `Last verified ${formatAsOf(catalog.asOf)} · refresh failed`,
-      icon: <ClockCounterClockwiseIcon size={21} />,
-      label: 'Stale capability',
-    },
-  }[freshness];
-
-  return (
-    <aside
-      className="rounded-xl border border-lime/20 bg-lime/5 p-5"
-      aria-label="Game catalog status"
-      aria-live="polite"
-    >
-      <div className="flex items-center gap-3">
-        <span className="grid size-10 place-items-center rounded-lg bg-lime/15 text-lime">
-          {state.icon}
-        </span>
-        <div>
-          <p className="proof-label">{state.label}</p>
-          <p className="mt-1 text-sm font-semibold text-primary">{state.copy}</p>
-        </div>
-      </div>
-      <p className="mt-4 text-sm leading-6 text-secondary">
-        Devnet · test assets only. Failed or stale checks never create a playable action.
-      </p>
-    </aside>
   );
 }
 
@@ -545,42 +452,6 @@ function StateBadge({ mode }: { mode: GameCatalogMode }) {
       {label}
     </span>
   );
-}
-
-function TrustCard({ copy, icon, label }: { copy: string; icon: ReactNode; label: string }) {
-  return (
-    <article className="bg-secondary p-5 sm:p-6">
-      <span className="text-lime" aria-hidden="true">
-        {icon}
-      </span>
-      <h3 className="mt-4 text-base font-semibold text-primary">{label}</h3>
-      <p className="mt-2 text-sm leading-6 text-secondary">{copy}</p>
-    </article>
-  );
-}
-
-function formatAsOf(asOf: string): string {
-  if (asOf === new Date(0).toISOString()) return 'not yet';
-  const date = new Date(asOf);
-  if (Number.isNaN(date.getTime())) return 'unknown';
-  const month = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ][date.getUTCMonth()];
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const hours = String(date.getUTCHours()).padStart(2, '0');
-  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-  return `${month} ${day} · ${hours}:${minutes} UTC`;
 }
 
 function hasCanonicalRules(mode: GameCatalogMode['id']): mode is GameRulesMode {

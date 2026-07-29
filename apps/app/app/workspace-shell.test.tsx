@@ -21,7 +21,7 @@ const { SolanaWalletProvider } = await import('./solana/wallet-provider');
 const { WalletAuthProvider } = await import('./solana/wallet-auth-provider');
 const { default: GamesLayout } = await import('./games/layout');
 const { default: Home } = await import('./page');
-const { isGamesNavigationActive, WorkspaceShell } = await import('./workspace-shell');
+const { WorkspaceShell } = await import('./workspace-shell');
 
 function renderShell(children: React.ReactNode) {
   return renderToStaticMarkup(
@@ -34,11 +34,13 @@ function renderShell(children: React.ReactNode) {
 }
 
 describe('workspace shell', () => {
-  test('activates Games in both navigation layouts on the games route', () => {
+  test('uses the brand as the gallery destination without a redundant Games link', () => {
     const markup = renderShell(<main>Games content</main>);
 
-    expect(markup.match(/aria-current="page"/g)).toHaveLength(2);
-    expect(markup).toContain('grid-cols-2');
+    expect(markup).not.toContain('aria-current="page"');
+    expect(markup.match(/href="\/games"/g)).toHaveLength(1);
+    expect(markup).not.toContain('grid-cols-2');
+    expect(markup).toContain('justify-center');
     expect(markup).not.toContain('Card Duels');
     expect(markup).toContain('Games content');
     expect(markup).toContain('Devnet preview uses test SOL and test assets only');
@@ -53,15 +55,6 @@ describe('workspace shell', () => {
 
     expect(markup).toContain('Connect wallet');
     expect(markup).not.toContain(`data-testid="${journeyTestIds.walletBalance}"`);
-  });
-
-  test('keeps Games active throughout the preview routes', () => {
-    expect(isGamesNavigationActive('/games')).toBe(true);
-    expect(isGamesNavigationActive('/games/flip')).toBe(true);
-    expect(isGamesNavigationActive('/games/duel')).toBe(true);
-    expect(isGamesNavigationActive('/games/duel?challenge=duel_123')).toBe(true);
-    expect(isGamesNavigationActive('/games/activity')).toBe(true);
-    expect(isGamesNavigationActive('/overview')).toBe(false);
   });
 
   test('renders the Games layout and executes the canonical home redirect', () => {

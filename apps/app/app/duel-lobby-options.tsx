@@ -68,6 +68,7 @@ export function DuelModeTabs({
   mode,
   onKeyDown,
   onSelect,
+  practiceBotEnabled = false,
   registerTab,
 }: {
   capabilities: ProductCapabilities;
@@ -75,14 +76,19 @@ export function DuelModeTabs({
   mode: Mode;
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>, mode: Mode) => void;
   onSelect: (mode: Mode) => void;
+  practiceBotEnabled?: boolean;
   registerTab?: (mode: Mode, element: HTMLButtonElement | null) => void;
 }) {
-  const selectedModeEnabled = isModeEnabled(capabilities, mode);
+  const houseCapability = practiceBotEnabled
+    ? { enabled: true, reason: null }
+    : capabilities.modes.house;
+  const selectedModeEnabled =
+    mode === 'house' ? houseCapability.enabled : isModeEnabled(capabilities, mode);
   const firstPlayableMode: Mode | undefined = capabilities.modes.direct.enabled
     ? 'direct'
     : capabilities.modes.open.enabled
       ? 'matchmaking'
-      : capabilities.modes.house.enabled
+      : houseCapability.enabled
         ? 'house'
         : undefined;
 
@@ -122,8 +128,8 @@ export function DuelModeTabs({
         registerTab={registerTab}
       />
       <ModeTab
-        caption="Play the house"
-        capability={capabilities.modes.house}
+        caption={practiceBotEnabled ? 'Play the bot' : 'Play the house'}
+        capability={houseCapability}
         disabled={disabled}
         icon={<LightningIcon size={17} weight="fill" />}
         label="Instant"

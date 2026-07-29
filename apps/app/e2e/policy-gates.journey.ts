@@ -45,7 +45,15 @@ test('a stale client claim is withheld until a fresh server response', async ({
   await page.reload();
 
   await expect(page.getByRole('link', { name: 'Challenge a wallet' })).toHaveCount(0);
-  await expect(page.getByText('Stale capability')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No unverified play.' })).toBeVisible();
+  await expect(
+    page
+      .getByText(
+        'The last capability response is stale. A current server check is required before play.',
+      )
+      .first(),
+  ).toBeVisible();
+  await expect(page.getByText('Stale capability')).toHaveCount(0);
 });
 
 test('malformed policy evidence fails closed while fixture routes remain testable', async ({

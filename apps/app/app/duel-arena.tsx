@@ -74,9 +74,11 @@ import {
   getPlayerActionError,
 } from './duel/duel-player-copy';
 import { type LiveDuelPhase, type LivePull, toLiveDuelState } from './duel/live-duel-state';
+import { createPracticeDuel } from './duel/practice-duel';
 import { shareNativeResult } from './duel/result-sharing';
 import {
   parseStoredRevealTimeline,
+  type RevealPresentationPhase,
   type RevealSideResolution,
   recoverRevealStartedAt,
   revealCommitmentCopy,
@@ -117,6 +119,7 @@ import {
   isRetryableDuelRequestError,
   joinDuel,
   type MatchmakingSession,
+  type ProductCapabilities,
   prepareDuelIntent,
   reconcileDuelTransactions,
   recordRejectedDuelIntent,
@@ -146,6 +149,7 @@ export function duelPrimaryActionLabel(input: {
   action?: DuelLobbyEntry['action'];
   intentPending: boolean;
   mode: Mode;
+  practiceBot?: boolean;
   tier: number;
 }): string {
   if (input.intentPending) return 'Preparing payment review';
@@ -155,6 +159,7 @@ export function duelPrimaryActionLabel(input: {
     return `Create challenge · $${input.tier} demo pool`;
   }
   if (input.mode === 'house') {
+    if (input.practiceBot) return `Play bot · $${input.tier} practice pool`;
     return input.action === 'rematch'
       ? `Review house rematch · $${input.tier} demo pool`
       : `Play house · $${input.tier} demo pool`;
@@ -472,7 +477,15 @@ function duelSheenTarget(choreography: ChoreographyController) {
   return { opacity: 0, x: '-65%' };
 }
 
-export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
+export function DuelArena({
+  entry,
+  initialDuel,
+  loadCapabilities = getProductCapabilities,
+}: {
+  entry?: DuelLobbyEntry;
+  initialDuel?: DurableDuel;
+  loadCapabilities?: () => Promise<ProductCapabilities>;
+}) {
   const walletConnection = useSolanaWallet();
   const authentication = useWalletAuth();
   const [activeEntry, setActiveEntry] = useState(entry);
@@ -498,7 +511,8 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const [confirmationPhase, setConfirmationPhase] = useState<ConfirmationPhase | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
-  const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(null);
+  const [persistedDuel, setPersistedDuel] = useState<DurableDuel | null>(initialDuel ?? null);
+  const [practiceRound, setPracticeRound] = useState(1);
   const [duelRestorePending, setDuelRestorePending] = useState(true);
   const [resolvedRematchOpponent, setResolvedRematchOpponent] = useState<
     | (DuelGrowthParticipant & {
@@ -528,6 +542,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const confirmationScope = useRef(createAbortScope());
   const modeTabRefs = useRef<Partial<Record<Mode, HTMLButtonElement>>>({});
   const liveDuel = persistedDuel ? toLiveDuelState(persistedDuel, walletConnection.address) : null;
+  const practiceDuel = persistedDuel?.pack.provider === 'local-practice';
   const phase: Phase = liveDuel?.phase ?? 'lobby';
   const capabilities = capabilityState.status === 'ready' ? capabilityState.value : null;
   const linkedOpponent =
@@ -572,20 +587,32 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   const playerStatus = persistedDuel
     ? getDuelPlayerStatus(persistedDuel.status, matchmakingSession?.state === 'searching')
     : null;
+  const cancelledPlayerStatus = persistedDuel?.status === 'cancelled' ? playerStatus : null;
   const matchmakingSearchCopy = matchmakingSession
     ? getMatchmakingSearchCopy(matchmakingSession)
     : null;
   const houseFallbackEnabled = capabilities?.modes.house.enabled === true;
-  const capabilityFormReady = capabilities ? isProductPlayable(capabilities) : false;
+  const practiceBotAvailable = Boolean(
+    capabilities &&
+      !capabilities.modes.house.enabled &&
+      capabilities.packs.some((pack) => pack.enabled),
+  );
+  const capabilityFormReady = Boolean(
+    capabilities && (practiceBotAvailable || isProductPlayable(capabilities)),
+  );
   const selectedPack = capabilities ? enabledPackForTier(capabilities, tier) : undefined;
-  const selectedModeEnabled = capabilities ? isModeEnabled(capabilities, mode) : false;
+  const selectedModeEnabled = capabilities
+    ? mode === 'house' && practiceBotAvailable
+      ? true
+      : isModeEnabled(capabilities, mode)
+    : false;
   const houseFallbackAction = matchmakingSession?.availableActions.find(
     (action) => action.action === 'house_fallback',
   );
   const availableModes: Mode[] = [];
   if (capabilities?.modes.direct.enabled) availableModes.push('direct');
   if (capabilities?.modes.open.enabled) availableModes.push('matchmaking');
-  if (capabilities?.modes.house.enabled) availableModes.push('house');
+  if (capabilities?.modes.house.enabled || practiceBotAvailable) availableModes.push('house');
 
   function chooseMode(nextMode: Mode): boolean {
     if (nextMode === mode) return true;
@@ -594,7 +621,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       return false;
     }
     const nextCapability = capabilityForMode(capabilityState.value, nextMode);
-    if (!nextCapability.enabled) {
+    if (!nextCapability.enabled && !(nextMode === 'house' && practiceBotAvailable)) {
       setActionError(nextCapability.reason ?? 'That duel mode is not currently playable.');
       return false;
     }
@@ -884,7 +911,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   ]);
 
   useEffect(() => {
-    if (persistedDuel) {
+    if (persistedDuel && persistedDuel.pack.provider !== 'local-practice') {
       storeActiveDuel(window.sessionStorage, persistedDuel.id);
     }
   }, [persistedDuel]);
@@ -931,7 +958,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     void capabilityReload;
     let active = true;
     setCapabilityState({ status: 'loading' });
-    getProductCapabilities()
+    loadCapabilities()
       .then((nextCapabilities) => {
         if (active) setCapabilityState({ status: 'ready', value: nextCapabilities });
       })
@@ -947,14 +974,18 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     return () => {
       active = false;
     };
-  }, [capabilityReload]);
+  }, [capabilityReload, loadCapabilities]);
 
   useEffect(() => {
     if (capabilityState.status !== 'ready') return;
     const nextCapabilities = capabilityState.value;
     const resolved = resolveLobbySelection(nextCapabilities, { mode, tier });
+    const practiceModeSelected =
+      mode === 'house' &&
+      !nextCapabilities.modes.house.enabled &&
+      nextCapabilities.packs.some((pack) => pack.enabled);
 
-    if (resolved.mode !== mode) {
+    if (resolved.mode !== mode && !practiceModeSelected) {
       setMode(resolved.mode);
       if (mode === 'house') setActiveEntry(undefined);
       setActionNotice(resolved.modeReason ?? 'The requested duel mode is not currently playable.');
@@ -1207,6 +1238,29 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     };
   }, [authentication.sessionToken, matchmakingSession, rejectedIntentId, walletConnection.address]);
 
+  function startPracticeDuel(nextTier = tier): void {
+    const practiceTier = toDraftTier(nextTier);
+    const duel = createPracticeDuel({
+      round: practiceRound,
+      tier: practiceTier,
+    });
+
+    clearStoredActiveDuel(window.sessionStorage);
+    window.localStorage.removeItem(DUEL_ENTRY_DRAFT_STORAGE_KEY);
+    setActiveEntry(undefined);
+    setActionError(null);
+    setActionNotice(null);
+    setEntryFlowOpen(false);
+    setIntent(null);
+    setMatchmakingSession(null);
+    setMode('house');
+    setPersistedDuel(duel);
+    setPracticeRound((current) => current + 1);
+    setRecoveryDuelId(null);
+    setRejectedIntentId(null);
+    setTier(practiceTier);
+  }
+
   async function reviewDuel(nextTier = tier, nextMode = mode) {
     setActionError(null);
     setActionNotice(null);
@@ -1219,7 +1273,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
       return;
     }
     const nextModeCapability = capabilityForMode(capabilityState.value, nextMode);
-    if (!nextModeCapability.enabled) {
+    const practiceBotRequested =
+      nextMode === 'house' && !nextModeCapability.enabled && practiceBotAvailable;
+    if (!nextModeCapability.enabled && !practiceBotRequested) {
       setActionError(nextModeCapability.reason ?? 'That duel mode is not currently playable.');
       return;
     }
@@ -1230,6 +1286,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
     }
     setTier(nextTier);
     setMode(nextMode);
+    if (practiceBotRequested) {
+      startPracticeDuel(nextPack.tier);
+      return;
+    }
     const expectedRestoreKey =
       walletConnection.address && authentication.sessionToken
         ? `${walletConnection.address}:${authentication.sessionToken}`
@@ -1294,7 +1354,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           return;
         }
         if (nextMode === 'house') {
-          const refreshedCapabilities = await getProductCapabilities();
+          const refreshedCapabilities = await loadCapabilities();
           setCapabilityState({ status: 'ready', value: refreshedCapabilities });
           const refreshedHouse = refreshedCapabilities.modes.house;
           if (!refreshedHouse.enabled) {
@@ -1710,6 +1770,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
   }
 
   function resetDuel(rematch = false) {
+    if (rematch && practiceDuel) {
+      startPracticeDuel();
+      return;
+    }
     if (rematch) {
       const trackedTier = toTrackedTier(tier);
       trackProductEvent({
@@ -1841,11 +1905,17 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           : 'sealed';
     const presentationHeadline =
       phase === 'result' && !showResolution
-        ? (revealPresentation?.headline ?? 'Outcome committed. Preparing reveal…')
-        : liveDuel.headline;
+        ? practiceDuel
+          ? practiceRevealHeadline(revealPresentation?.phase, revealPresentation?.countdown)
+          : (revealPresentation?.headline ?? 'Outcome committed. Preparing reveal…')
+        : practiceDuel
+          ? practiceResultHeadline(liveDuel.winner)
+          : liveDuel.headline;
     const presentationIndicator =
       phase === 'result' && !showResolution
-        ? (revealPresentation?.indicator ?? 'Outcome committed')
+        ? practiceDuel
+          ? 'Practice reveal'
+          : (revealPresentation?.indicator ?? 'Outcome committed')
         : liveDuel.indicator;
 
     return (
@@ -1861,9 +1931,11 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           </button>
           <div className="duel-proof">
             <ShieldCheckIcon size={15} weight="fill" />
-            <span>Devnet settlement</span>
+            <span>{practiceDuel ? 'No-value practice' : 'Devnet settlement'}</span>
             <code data-testid={journeyTestIds.settlementReference}>
-              {shortReference(liveDuel.settlementReference) ?? 'Awaiting escrow'}
+              {practiceDuel
+                ? 'No transaction'
+                : (shortReference(liveDuel.settlementReference) ?? 'Awaiting escrow')}
             </code>
           </div>
         </div>
@@ -1872,7 +1944,10 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
           <div className="battle-heading">
             <div>
               <span className="eyebrow">
-                <SwordIcon size={14} weight="fill" /> {battleEyebrowLabel(liveDuel.tier)}
+                <SwordIcon size={14} weight="fill" />{' '}
+                {practiceDuel
+                  ? `${liveDuel.tier} Practice duel`
+                  : battleEyebrowLabel(liveDuel.tier)}
               </span>
               <h1 data-testid={journeyTestIds.duelHeadline}>{presentationHeadline}</h1>
             </div>
@@ -1896,7 +1971,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
             </p>
           ) : null}
 
-          {committedResultReady ? (
+          {committedResultReady && !practiceDuel ? (
             <div className="commitment-banner">
               <ShieldCheckIcon size={17} weight="fill" />
               <span>
@@ -1908,9 +1983,11 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
 
           {revealPresentation?.countdown ? (
             <div className="reveal-countdown" role="status" aria-atomic="true">
-              <small>Committed reveal</small>
+              <small>{practiceDuel ? 'Practice reveal' : 'Committed reveal'}</small>
               <strong>{revealPresentation.countdown}</strong>
-              <span>Both outcomes are locked</span>
+              <span>
+                {practiceDuel ? 'The bot has picked its card' : 'Both outcomes are locked'}
+              </span>
             </div>
           ) : null}
 
@@ -1924,7 +2001,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
               stage={leftStage}
               resolution={showResolution ? revealSideResolution(liveDuel.winner, 'you') : null}
               tier={liveDuel.tier}
-              walletLabel={walletConnection.shortAddress ?? 'Your wallet'}
+              walletLabel={
+                practiceDuel ? 'Practice player' : (walletConnection.shortAddress ?? 'Your wallet')
+              }
             />
             <div className="versus-mark" aria-hidden="true">
               <span>VS</span>
@@ -1954,7 +2033,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 <TrophyIcon size={24} weight="fill" />
                 <div>
                   <small>Winner</small>
-                  <strong>{resultWinnerLabel(liveDuel.winner)}</strong>
+                  <strong>{resultWinnerLabel(liveDuel.winner, practiceDuel)}</strong>
                 </div>
                 <Separator orientation="vertical" className="h-9 bg-border" />
                 <div>
@@ -1965,41 +2044,54 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                 </div>
                 <Separator orientation="vertical" className="h-9 bg-border" />
                 <div>
-                  <small>Total haul</small>
+                  <small>{practiceDuel ? 'Total value' : 'Total haul'}</small>
                   <strong data-testid={journeyTestIds.resultTotalValue}>
                     {liveDuel.totalValue ?? '—'}
                   </strong>
                 </div>
               </div>
               <div className="result-actions">
-                <Button
-                  type="button"
-                  className="share-button"
-                  onClick={() => shareResult('native')}
-                  data-testid={journeyTestIds.resultShare}
-                >
-                  <ShareNetworkIcon size={16} weight="fill" /> Share result
-                </Button>
-                {persistedDuel.status === 'settled' ? (
+                {practiceDuel ? (
                   <Button
                     type="button"
-                    variant="ghost"
+                    className="share-button"
                     onClick={() => resetDuel(true)}
                     data-testid={journeyTestIds.resultRematch}
                   >
-                    <ArrowsLeftRightIcon size={16} />{' '}
-                    {currentViewerResult ? rematchLabel(currentViewerResult) : 'Run a rematch'}
+                    <ArrowsLeftRightIcon size={16} /> Play the bot again
                   </Button>
-                ) : null}
-                <Link
-                  className="result-receipt-action"
-                  href={`/duel/${encodeURIComponent(persistedDuel.id)}`}
-                >
-                  <ShieldCheckIcon size={16} /> Verified receipt
-                </Link>
-                <Button type="button" variant="ghost" onClick={() => shareResult('x')}>
-                  <XLogoIcon size={16} weight="fill" /> X
-                </Button>
+                ) : (
+                  <>
+                    <Button
+                      type="button"
+                      className="share-button"
+                      onClick={() => shareResult('native')}
+                      data-testid={journeyTestIds.resultShare}
+                    >
+                      <ShareNetworkIcon size={16} weight="fill" /> Share result
+                    </Button>
+                    {persistedDuel.status === 'settled' ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => resetDuel(true)}
+                        data-testid={journeyTestIds.resultRematch}
+                      >
+                        <ArrowsLeftRightIcon size={16} />{' '}
+                        {currentViewerResult ? rematchLabel(currentViewerResult) : 'Run a rematch'}
+                      </Button>
+                    ) : null}
+                    <Link
+                      className="result-receipt-action"
+                      href={`/duel/${encodeURIComponent(persistedDuel.id)}`}
+                    >
+                      <ShieldCheckIcon size={16} /> Verified receipt
+                    </Link>
+                    <Button type="button" variant="ghost" onClick={() => shareResult('x')}>
+                      <XLogoIcon size={16} weight="fill" /> X
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           ) : revealPresentation ? (
@@ -2113,6 +2205,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                   mode={mode}
                   onSelect={chooseMode}
                   onKeyDown={handleModeTabKeyDown}
+                  practiceBotEnabled={practiceBotAvailable}
                   registerTab={(tabMode, element) => {
                     modeTabRefs.current[tabMode] = element ?? undefined;
                   }}
@@ -2181,13 +2274,17 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                       <ShieldCheckIcon size={18} weight="fill" />
                       <span>
                         <strong>
-                          {activeEntry?.action === 'rematch'
-                            ? 'House rematch ready'
-                            : 'Instant house opponent'}
+                          {practiceBotAvailable
+                            ? 'Instant practice bot'
+                            : activeEntry?.action === 'rematch'
+                              ? 'House rematch ready'
+                              : 'Instant house opponent'}
                         </strong>
-                        {activeEntry?.action === 'rematch'
-                          ? `The original $${activeEntry.tier} house tier is preselected for a fresh commitment.`
-                          : 'The disclosed house joins the same demo pool and must precommit before either reveal.'}
+                        {practiceBotAvailable
+                          ? 'Reveal against the DailyDraft bot immediately. No wallet, transaction, settlement, or leaderboard result.'
+                          : activeEntry?.action === 'rematch'
+                            ? `The original $${activeEntry.tier} house tier is preselected for a fresh commitment.`
+                            : 'The disclosed house joins the same demo pool and must precommit before either reveal.'}
                       </span>
                     </div>
                   </div>
@@ -2208,11 +2305,40 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                     </span>
                   </div>
 
+                  {cancelledPlayerStatus ? (
+                    <div
+                      className="duel-inline-alert"
+                      data-testid={journeyTestIds.persistedDuel}
+                      role="alert"
+                    >
+                      <WarningCircleIcon size={17} weight="fill" />
+                      <span>
+                        <strong>{cancelledPlayerStatus.headline}</strong>
+                        <small>{cancelledPlayerStatus.detail}</small>
+                      </span>
+                      <button
+                        data-testid={journeyTestIds.persistedDuelRestart}
+                        onClick={() => {
+                          clearActiveDuel();
+                          setActionError(null);
+                          setActionNotice(null);
+                        }}
+                        type="button"
+                      >
+                        Start another duel
+                      </button>
+                    </div>
+                  ) : null}
+
                   <Button
                     type="button"
                     className="duel-cta"
                     onClick={() => {
                       setActionError(null);
+                      if (mode === 'house' && practiceBotAvailable) {
+                        startPracticeDuel();
+                        return;
+                      }
                       setEntryFlowOpen(true);
                     }}
                     disabled={
@@ -2240,6 +2366,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                       action: activeEntry?.action,
                       intentPending,
                       mode,
+                      practiceBot: mode === 'house' && practiceBotAvailable,
                       tier,
                     })}
                   </Button>
@@ -2256,7 +2383,9 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
                       <WarningCircleIcon size={14} weight="fill" /> {actionError}
                     </p>
                   ) : null}
-                  {actionNotice ? <p className="signing-note">{actionNotice}</p> : null}
+                  {actionNotice && !cancelledPlayerStatus ? (
+                    <p className="signing-note">{actionNotice}</p>
+                  ) : null}
                 </div>
               </>
             ) : (
@@ -2274,7 +2403,7 @@ export function DuelArena({ entry }: { entry?: DuelLobbyEntry }) {
         </Card>
       </section>
 
-      {persistedDuel && playerStatus ? (
+      {persistedDuel && playerStatus && !cancelledPlayerStatus ? (
         <section
           className="persisted-duel-panel"
           role="status"
@@ -2473,9 +2602,29 @@ function shortReference(value?: string | null): string | null {
   return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
 }
 
-function resultWinnerLabel(winner: 'opponent' | 'tie' | 'you' | null): string {
+export function practiceRevealHeadline(
+  phase: RevealPresentationPhase | undefined,
+  countdown: 1 | 2 | 3 | null | undefined,
+): string {
+  if (phase === 'countdown') return `Bot picked. Reveal in ${countdown ?? 3}…`;
+  if (phase === 'first_reveal') return 'Your practice card is revealed';
+  if (phase === 'second_reveal') return 'The bot reveals its card';
+  return 'Preparing the practice reveal…';
+}
+
+export function practiceResultHeadline(winner: 'opponent' | 'tie' | 'you' | null): string {
+  if (winner === 'you') return 'You beat the bot';
+  if (winner === 'opponent') return 'The bot wins this round';
+  if (winner === 'tie') return 'Draw';
+  return 'Practice result';
+}
+
+export function resultWinnerLabel(
+  winner: 'opponent' | 'tie' | 'you' | null,
+  practiceDuel = false,
+): string {
   if (winner === 'you') return 'You';
-  if (winner === 'opponent') return 'Opponent';
+  if (winner === 'opponent') return practiceDuel ? 'DailyDraft Bot' : 'Opponent';
   if (winner === 'tie') return 'Tie';
   return 'Pending';
 }

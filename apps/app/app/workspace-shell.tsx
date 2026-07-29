@@ -16,7 +16,6 @@ function BrandMark() {
 
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const gamesNavigationActive = isGamesNavigationActive(pathname);
   const leaderboardNavigationActive = pathname === '/leaderboard';
 
   return (
@@ -46,7 +45,6 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
 
             <PrimaryNavigation
               className="ml-4 hidden items-center gap-1 lg:flex"
-              gamesActive={gamesNavigationActive}
               leaderboardActive={leaderboardNavigationActive}
             />
 
@@ -56,8 +54,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <PrimaryNavigation
-            className="grid grid-cols-2 border-t border-border px-4 py-1 lg:hidden"
-            gamesActive={gamesNavigationActive}
+            className="flex justify-center border-t border-border px-4 py-1 lg:hidden"
             leaderboardActive={leaderboardNavigationActive}
             mobile
           />
@@ -66,8 +63,4 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
       </div>
     </AudioHapticsProvider>
   );
-}
-
-export function isGamesNavigationActive(pathname: string) {
-  return pathname === '/games' || pathname.startsWith('/games/');
 }

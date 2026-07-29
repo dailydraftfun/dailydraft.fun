@@ -1,9 +1,18 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 import type { ChoreographyBeat, ChoreographyController } from './components/choreography';
 import type { LivePull } from './duel/live-duel-state';
+import { createPracticeDuel } from './duel/practice-duel';
 import { journeyTestIds } from './e2e/journey-test-ids';
+import type { DurableDuel, ProductCapabilities } from './solana/duel-client';
+
+declare global {
+  var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
+}
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 // Bun's module registry is process-wide, so this override reaches every later test file.
 // Loading the real provider up front and spreading it keeps the rest of its surface
@@ -61,6 +70,9 @@ const {
   duelPrimaryActionLabel,
   duelResolutionReady,
   duelWinnerCelebrationIntensity,
+  practiceResultHeadline,
+  practiceRevealHeadline,
+  resultWinnerLabel,
 } = await import('./duel-arena');
 
 const charizard: LivePull = {
@@ -93,6 +105,14 @@ describe('duel arena contract', () => {
     expect(label('direct')).toBe('Create challenge · $50 demo pool');
     expect(label('house', 'rematch')).toBe('Review house rematch · $50 demo pool');
     expect(label('house')).toBe('Play house · $50 demo pool');
+    expect(
+      duelPrimaryActionLabel({
+        intentPending: false,
+        mode: 'house',
+        practiceBot: true,
+        tier: 50,
+      }),
+    ).toBe('Play bot · $50 practice pool');
     expect(label('matchmaking')).toBe('Find rival · $50 demo pool');
   });
 
@@ -104,6 +124,89 @@ describe('duel arena contract', () => {
     expect(markup).toContain('Receipt tells the truth.');
     expect(markup).toContain('Checking current capability');
     expect(markup).toContain('Solana devnet MVP');
+  });
+
+  test('plays instant practice rounds through win, loss, and draw without transaction claims', async () => {
+    await withBrowser(async () => {
+      const renderer = await renderClient(
+        <DuelArena loadCapabilities={async () => practiceCapabilities()} />,
+      );
+
+      await clickTestId(renderer.root, journeyTestIds.mode.house);
+      expect(textOf(renderer.root)).toContain('Play bot · $50 practice pool');
+      expect(textOf(renderer.root)).toContain('Instant practice bot');
+
+      await clickTestId(renderer.root, journeyTestIds.primaryAction);
+      expect(textOf(renderer.root)).toContain('You beat the bot');
+      expect(textOf(renderer.root)).toContain('No transaction');
+      expect(textOf(renderer.root)).toContain('No-value practice');
+      expect(textOf(renderer.root)).not.toContain('Verified receipt');
+
+      await clickTestId(renderer.root, journeyTestIds.resultRematch);
+      expect(textOf(renderer.root)).toContain('The bot wins this round');
+      expect(textOf(renderer.root)).toContain('DailyDraft Bot');
+
+      await clickTestId(renderer.root, journeyTestIds.resultRematch);
+      expect(textOf(renderer.root)).toContain('Draw');
+
+      await unmountClient(renderer);
+    });
+  });
+
+  test('keeps settled devnet duels on the verified receipt and rematch path', async () => {
+    await withBrowser(async () => {
+      const renderer = await renderClient(
+        <DuelArena
+          initialDuel={settledDevnetDuel()}
+          loadCapabilities={async () => liveHouseCapabilities()}
+        />,
+      );
+
+      expect(textOf(renderer.root)).toContain('Devnet settlement');
+      expect(textOf(renderer.root)).toContain('signatur…456789');
+      expect(textOf(renderer.root)).toContain('Verified receipt');
+      expect(textOf(renderer.root)).toContain('Share result');
+      expect(textOf(renderer.root)).toContain('Run a rematch');
+      expect(textOf(renderer.root)).not.toContain('No-value practice');
+
+      await clickTestId(renderer.root, journeyTestIds.resultRematch);
+      expect(textOf(renderer.root)).toContain('Rematch ready');
+      expect(textOf(renderer.root)).toContain('Reveal together.');
+
+      await unmountClient(renderer);
+    });
+  });
+
+  test('names every practice reveal and result state without borrowing settlement language', () => {
+    expect(practiceRevealHeadline('countdown', 2)).toBe('Bot picked. Reveal in 2…');
+    expect(practiceRevealHeadline('countdown', null)).toBe('Bot picked. Reveal in 3…');
+    expect(practiceRevealHeadline('first_reveal', null)).toBe('Your practice card is revealed');
+    expect(practiceRevealHeadline('second_reveal', null)).toBe('The bot reveals its card');
+    expect(practiceRevealHeadline('resolution', null)).toBe('Preparing the practice reveal…');
+
+    expect(practiceResultHeadline('you')).toBe('You beat the bot');
+    expect(practiceResultHeadline('opponent')).toBe('The bot wins this round');
+    expect(practiceResultHeadline('tie')).toBe('Draw');
+    expect(practiceResultHeadline(null)).toBe('Practice result');
+
+    expect(resultWinnerLabel('you')).toBe('You');
+    expect(resultWinnerLabel('opponent', true)).toBe('DailyDraft Bot');
+    expect(resultWinnerLabel('opponent', false)).toBe('Opponent');
+    expect(resultWinnerLabel('tie')).toBe('Tie');
+    expect(resultWinnerLabel(null)).toBe('Pending');
+  });
+
+  test('keeps cancelled duel feedback inside the matchmaking card', () => {
+    const source = readFileSync(new URL('./duel-arena.tsx', import.meta.url), 'utf8');
+    const matchCard = source.indexOf('<Card className="match-card');
+    const inlineAlert = source.indexOf('className="duel-inline-alert"', matchCard);
+    const matchCardEnd = source.indexOf('</Card>', inlineAlert);
+
+    expect(matchCard).toBeGreaterThanOrEqual(0);
+    expect(inlineAlert).toBeGreaterThan(matchCard);
+    expect(matchCardEnd).toBeGreaterThan(inlineAlert);
+    expect(source).toContain('{persistedDuel && playerStatus && !cancelledPlayerStatus ? (');
+    expect(source).toContain('{actionNotice && !cancelledPlayerStatus ? (');
   });
 
   test('prioritizes the active duel with one battle h1 and a state-valid rules return anchor', () => {
@@ -155,7 +258,7 @@ describe('duel arena contract', () => {
     const reviewEnd = source.indexOf('async function reviewPersistedFunding', reviewStart);
     const reviewDuel = source.slice(reviewStart, reviewEnd);
     const houseCheck = reviewDuel.indexOf("if (nextMode === 'house')");
-    const refresh = reviewDuel.indexOf('await getProductCapabilities()', houseCheck);
+    const refresh = reviewDuel.indexOf('await loadCapabilities()', houseCheck);
     const create = reviewDuel.indexOf('await createDuel(', houseCheck);
     const recoveryStart = source.indexOf('async function reviewPersistedFunding');
     const recoveryEnd = source.indexOf('async function cancelPersistedDuel', recoveryStart);
@@ -164,7 +267,7 @@ describe('duel arena contract', () => {
     expect(refresh).toBeGreaterThan(houseCheck);
     expect(create).toBeGreaterThan(refresh);
     expect(reviewDuel).toContain('No duel was created or funded.');
-    expect(source.slice(recoveryStart, recoveryEnd)).not.toContain('getProductCapabilities');
+    expect(source.slice(recoveryStart, recoveryEnd)).not.toContain('loadCapabilities');
   });
 });
 
@@ -334,5 +437,190 @@ function controllerFor(
     revealed,
     settled: beat === 'settled',
     transition: { duration: 0.48, ease: [0.22, 1, 0.36, 1] },
+  };
+}
+
+async function renderClient(element: React.ReactElement): Promise<ReactTestRenderer> {
+  let renderer: ReactTestRenderer | undefined;
+  await act(async () => {
+    renderer = create(element);
+  });
+  if (!renderer) throw new Error('React renderer did not initialize.');
+  return renderer;
+}
+
+async function unmountClient(renderer: ReactTestRenderer): Promise<void> {
+  await act(async () => renderer.unmount());
+}
+
+async function clickTestId(root: ReactTestInstance, testId: string): Promise<void> {
+  const target = root.find((node) => node.props['data-testid'] === testId);
+  await act(async () => target.props.onClick());
+}
+
+function textOf(node: ReactTestInstance): string {
+  return node.children.map((child) => (typeof child === 'string' ? child : textOf(child))).join('');
+}
+
+async function withBrowser(run: () => Promise<void>): Promise<void> {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const previousDateNow = Date.now;
+  const localStorage = storage();
+  const sessionStorage = storage();
+  let now = previousDateNow();
+
+  Date.now = () => now;
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      addEventListener: () => undefined,
+      atob: globalThis.atob,
+      clearInterval: globalThis.clearInterval.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      dispatchEvent: () => true,
+      localStorage,
+      location: {
+        href: 'https://app.dailydraft.fun/games/duel',
+        origin: 'https://app.dailydraft.fun',
+      },
+      matchMedia: () => ({
+        addEventListener: () => undefined,
+        matches: true,
+        removeEventListener: () => undefined,
+      }),
+      open: () => null,
+      removeEventListener: () => undefined,
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        callback(0);
+        return 1;
+      },
+      sessionStorage,
+      setInterval: (callback: TimerHandler) => {
+        now += 2_000;
+        if (typeof callback === 'function') queueMicrotask(() => callback());
+        return 1;
+      },
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+    },
+  });
+
+  try {
+    await run();
+  } finally {
+    Date.now = previousDateNow;
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
+    else Reflect.deleteProperty(globalThis, 'window');
+  }
+}
+
+function storage(): Storage {
+  const values = new Map<string, string>();
+  return {
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    get length() {
+      return values.size;
+    },
+    removeItem: (key) => values.delete(key),
+    setItem: (key, value) => values.set(key, value),
+  };
+}
+
+function practiceCapabilities(): ProductCapabilities {
+  const unavailable = 'Treasury-backed House play is not ready on Solana devnet.';
+  return {
+    modes: {
+      direct: { enabled: true, reason: null },
+      house: {
+        admission: {
+          approvalStatus: 'devnet-preview-no-legal-or-live-provider-approval',
+          currency: 'USDC',
+          decimals: 6,
+          limits: {
+            dailyLossAmount: '0',
+            maxActivePerWallet: 0,
+            maxConcurrentPerTier: 0,
+            maxTotalExposureAmount: '0',
+            minimumLiquidityAmount: '0',
+          },
+          network: 'solana-devnet',
+          opponent: { label: 'DailyDraft House', wallet: null },
+          preFundingRecheck: 'immediately-before-duel-creation',
+          valuation: {
+            comparisonMetric: 'insured-value',
+            policyHash: 'practice-policy',
+            policyVersion: 'practice-v1',
+            tieRule: 'no-value-practice-draw',
+          },
+        },
+        enabled: false,
+        reason: unavailable,
+      },
+      open: { enabled: true, reason: null },
+    },
+    network: 'solana-devnet',
+    packs: [
+      {
+        enabled: false,
+        id: 'pokemon_25',
+        name: 'Pokémon $25 Pack',
+        reason: 'Coming soon.',
+        tier: 25,
+      },
+      {
+        enabled: true,
+        id: 'pokemon_50',
+        name: 'Pokémon $50 Pack',
+        reason: null,
+        tier: 50,
+      },
+      {
+        enabled: false,
+        id: 'pokemon_100',
+        name: 'Pokémon $100 Pack',
+        reason: 'Coming soon.',
+        tier: 100,
+      },
+    ],
+    provider: { mode: 'dailydraft-devnet', ready: true },
+  };
+}
+
+function liveHouseCapabilities(): ProductCapabilities {
+  const capabilities = practiceCapabilities();
+  return {
+    ...capabilities,
+    modes: {
+      ...capabilities.modes,
+      house: {
+        ...capabilities.modes.house,
+        enabled: true,
+        reason: null,
+      },
+    },
+  };
+}
+
+function settledDevnetDuel(): DurableDuel {
+  const practice = createPracticeDuel({ round: 1, tier: 50 });
+  return {
+    ...practice,
+    escrowAddress: 'escrow_fixture',
+    id: 'duel_settled_fixture',
+    pack: {
+      ...practice.pack,
+      provider: 'DailyDraft devnet',
+    },
+    providerMode: 'dailydraft-devnet',
+    result: practice.result
+      ? {
+          ...practice.result,
+          outcomes: practice.result.outcomes.map((outcome) => ({ ...outcome, isMock: false })),
+          settlementReady: true,
+        }
+      : null,
+    transactionSignature: 'signature_fixture_123456789',
   };
 }
