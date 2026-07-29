@@ -1,5 +1,5 @@
-import type { VerifiedGameActivityPage } from '@dailydraft/contracts/game-lobby';
 import { GAME_CATALOG_SCHEMA_VERSION, type GameCatalog } from '@dailydraft/contracts/game-catalog';
+import type { VerifiedGameActivityPage } from '@dailydraft/contracts/game-lobby';
 import type { JourneyFixtureBootstrap } from '../../app/e2e/journey-wallet';
 import type {
   DuelReconciliationResult,
@@ -700,27 +700,25 @@ export function journeyGameCatalog(): GameCatalog {
         availableActions: [
           {
             href: '/games/marketplace-flip',
-            id: 'view-preview',
-            label: 'View fixture preview',
+            id: 'play-demo',
+            label: 'Play free demo',
           },
         ],
         capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
-        description: 'Inspect the fixed no-value marketplace walkthrough.',
+        description: 'Play the fixed no-value marketplace game.',
         id: 'flip',
         name: 'Marketplace Flip',
-        reason: 'Fixture preview only.',
-        state: 'preview',
+        reason: 'Playable no-value devnet demo.',
+        state: 'playable',
       },
       {
-        availableActions: [
-          { href: '/games/crash', id: 'view-preview', label: 'View fixture preview' },
-        ],
+        availableActions: [{ href: '/games/crash', id: 'play-demo', label: 'Play free demo' }],
         capabilitySource: { kind: 'fixture', name: 'rgs-fixture', status: 'gated' },
-        description: 'Inspect the fixed four-stage no-value card sequence.',
+        description: 'Play the fixed four-stage no-value card sequence.',
         id: 'crash',
         name: 'Card Streak',
-        reason: 'Fixture preview only.',
-        state: 'preview',
+        reason: 'Playable no-value devnet demo.',
+        state: 'playable',
       },
     ],
     network: 'solana-devnet',

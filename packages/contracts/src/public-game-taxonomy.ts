@@ -31,22 +31,22 @@ export const PUBLIC_GAME_TAXONOMY = [
   {
     canonicalHref: '/games/marketplace-flip',
     description:
-      'Inspect a scripted marketplace walkthrough without inventory reservation, purchase, custody, or settlement.',
+      'Play a no-value marketplace run without inventory reservation, purchase, custody, or settlement.',
     id: 'flip',
     name: 'Marketplace Flip',
     rulesHref: '/games/marketplace-flip#rules',
     runtime: false,
-    statusLabel: 'Fixture preview',
+    statusLabel: 'Playable demo · no value',
   },
   {
     canonicalHref: '/games/crash',
     description:
-      'Run a fixed continue-or-stop card sequence without live odds, custody, or payout claims.',
+      'Play a no-value continue-or-stop card streak without live odds, custody, or payout claims.',
     id: 'crash',
     name: 'Card Streak',
     rulesHref: '/games/crash#rules',
     runtime: false,
-    statusLabel: 'Fixture preview',
+    statusLabel: 'Playable demo · no value',
   },
 ] as const;
 

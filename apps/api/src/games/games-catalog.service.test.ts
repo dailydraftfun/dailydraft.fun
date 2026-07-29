@@ -128,7 +128,7 @@ describe('games catalog', () => {
     });
   });
 
-  test('publishes exactly four canonical modes and leaves fixtures preview-only', async () => {
+  test('publishes exactly four canonical modes and exposes no-value fixtures as playable demos', async () => {
     const service = serviceWith({
       gachaCapability: {
         availability: 'preview',
@@ -150,16 +150,19 @@ describe('games catalog', () => {
     for (const id of ['flip', 'crash']) {
       expect(catalog.modes.find((mode) => mode.id === id)).toMatchObject({
         capabilitySource: { kind: 'fixture', status: 'gated' },
-        state: 'preview',
+        state: 'playable',
       });
     }
     expect(catalog.modes.find((mode) => mode.id === 'flip')?.availableActions).toEqual([
       {
         href: '/games/marketplace-flip',
-        id: 'view-preview',
-        label: 'View fixture preview',
+        id: 'play-demo',
+        label: 'Play free demo',
       },
     ]);
+    expect(catalog.modes.find((mode) => mode.id === 'flip')?.reason).toContain(
+      'Playable no-value devnet demo',
+    );
   });
 
   test('degrades individual runtime modes instead of advertising through a failed probe', async () => {

@@ -99,11 +99,17 @@ export function GameLobby({
   const { catalog, freshness } = catalogState;
   const visibleCatalog = gateRuntimeActions(catalog, freshness);
   const publicModes = visibleCatalog.modes.filter((mode) => isPublicGameTaxonomyId(mode.id));
-  const actionableModes = publicModes.filter(
+  const runtimeModes = publicModes.filter(
     (mode) => mode.capabilitySource.kind === 'runtime' && mode.availableActions.length > 0,
   );
   const primaryMode =
-    actionableModes.find((mode) => mode.state === 'playable') ?? actionableModes[0] ?? null;
+    runtimeModes.find((mode) => mode.state === 'playable') ?? runtimeModes[0] ?? null;
+  const demoModes = publicModes.filter(
+    (mode) =>
+      mode.capabilitySource.kind === 'fixture' &&
+      mode.state === 'playable' &&
+      mode.availableActions.length > 0,
+  );
   const roadmap = roadmapGameModes({ ...visibleCatalog, modes: publicModes }).filter(
     (mode) => mode.id !== primaryMode?.id,
   );
@@ -121,8 +127,8 @@ export function GameLobby({
             <span className="block text-lime">Every game tells the truth.</span>
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-secondary">
-            Runtime checks decide what can be played. Fixture-only modes stay clearly labeled and
-            never inherit a value-bearing action.
+            Runtime checks protect every value-bearing action. Free fixture-backed games stay
+            playable without a wallet, funds, or assets.
           </p>
         </div>
 
@@ -169,8 +175,8 @@ export function GameLobby({
                     No unverified play.
                   </h2>
                   <p className="mt-4 max-w-2xl text-base leading-7 text-secondary">
-                    The arena is waiting for a current server capability response. Preview routes
-                    remain available below, but they cannot move funds or cards.
+                    The arena is waiting for a current server capability response. Value-bearing
+                    play is withheld, but free games remain playable below without funds or cards.
                   </p>
                 </>
               )}
@@ -246,25 +252,54 @@ export function GameLobby({
         </div>
       </section>
 
-      <section aria-labelledby="roadmap-title">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-          <div>
-            <p className="proof-label">Honest roadmap</p>
-            <h2 id="roadmap-title" className="mt-2 text-2xl font-semibold text-primary">
-              Preview what is gated
-            </h2>
+      {demoModes.length > 0 ? (
+        <section aria-labelledby="demo-games-title">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+            <div>
+              <p className="proof-label flex items-center gap-2 text-lime">
+                <LightningIcon size={15} weight="fill" />
+                Instant play
+              </p>
+              <h2 id="demo-games-title" className="mt-2 text-2xl font-semibold text-primary">
+                Play without opening your wallet
+              </h2>
+            </div>
+            <p className="max-w-xl text-sm leading-6 text-secondary">
+              Full game loops on devnet fixtures. No funds, cards, provider purchases, custody, or
+              payouts.
+            </p>
           </div>
-          <p className="max-w-xl text-sm leading-6 text-secondary">
-            Preview means fixture-only. Unavailable means the live dependency check did not pass.
-          </p>
-        </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          {roadmap.map((mode) => (
-            <RoadmapMode mode={mode} key={mode.id} />
-          ))}
-        </div>
-      </section>
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            {demoModes.map((mode) => (
+              <GameModeCard mode={mode} key={mode.id} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {roadmap.length > 0 ? (
+        <section aria-labelledby="roadmap-title">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+            <div>
+              <p className="proof-label">Honest availability</p>
+              <h2 id="roadmap-title" className="mt-2 text-2xl font-semibold text-primary">
+                See what is gated
+              </h2>
+            </div>
+            <p className="max-w-xl text-sm leading-6 text-secondary">
+              Preview means a runtime action is gated. Unavailable means its dependency check
+              failed.
+            </p>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            {roadmap.map((mode) => (
+              <GameModeCard mode={mode} key={mode.id} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <VerifiedActivity compact />
 
@@ -412,11 +447,22 @@ function RuntimeLane({ mode }: { mode: GameCatalogMode }) {
   );
 }
 
-function RoadmapMode({ mode }: { mode: GameCatalogMode }) {
-  const previewAction = mode.availableActions.find((action) => action.id === 'view-preview');
+function GameModeCard({ mode }: { mode: GameCatalogMode }) {
+  const primaryAction = mode.availableActions[0];
+  const playableDemo = mode.capabilitySource.kind === 'fixture' && mode.state === 'playable';
   return (
-    <article className="flex gap-4 rounded-xl border border-border bg-secondary p-5">
-      <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-elevated text-secondary">
+    <article
+      className={[
+        'flex gap-4 rounded-xl border bg-secondary p-5',
+        playableDemo ? 'border-lime/25' : 'border-border',
+      ].join(' ')}
+    >
+      <span
+        className={[
+          'grid size-11 shrink-0 place-items-center rounded-lg bg-elevated',
+          playableDemo ? 'text-lime' : 'text-secondary',
+        ].join(' ')}
+      >
         {gameIcons[mode.id]}
       </span>
       <div className="min-w-0 flex-1">
@@ -426,34 +472,51 @@ function RoadmapMode({ mode }: { mode: GameCatalogMode }) {
         </div>
         <p className="mt-2 text-sm leading-6 text-secondary">{mode.description}</p>
         <p className="mt-3 text-xs leading-5 text-secondary">{mode.reason}</p>
-        {hasCanonicalRules(mode.id) ? (
+        {primaryAction ? (
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
+            <Link
+              className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-lime"
+              href={primaryAction.href}
+              onClick={() =>
+                trackGameDiscovery({
+                  actionId: primaryAction.id,
+                  mode: mode.id,
+                  stage: 'play-or-preview',
+                })
+              }
+            >
+              {primaryAction.label}
+              <ArrowRightIcon size={14} weight="bold" />
+            </Link>
+            {hasCanonicalRules(mode.id) ? (
+              <Link
+                className="inline-flex min-h-10 items-center text-sm font-semibold text-primary"
+                href={canonicalRulesHref(mode.id)}
+                onClick={() =>
+                  trackGameDiscovery({
+                    actionId: 'read-rules',
+                    mode: mode.id,
+                    stage: 'mode-detail',
+                  })
+                }
+              >
+                Rules
+              </Link>
+            ) : null}
+          </div>
+        ) : hasCanonicalRules(mode.id) ? (
           <Link
             className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-lime"
             href={canonicalRulesHref(mode.id)}
             onClick={() =>
               trackGameDiscovery({
-                actionId: previewAction ? 'view-preview' : 'read-rules',
+                actionId: 'read-rules',
                 mode: mode.id,
-                stage: previewAction ? 'play-or-preview' : 'mode-detail',
+                stage: 'mode-detail',
               })
             }
           >
-            {previewAction ? 'Read rules & open fixture' : 'Read rules'}
-            <ArrowRightIcon size={14} weight="bold" />
-          </Link>
-        ) : previewAction ? (
-          <Link
-            className="mt-4 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-lime"
-            href={previewAction.href}
-            onClick={() =>
-              trackGameDiscovery({
-                actionId: previewAction.id,
-                mode: mode.id,
-                stage: 'play-or-preview',
-              })
-            }
-          >
-            {previewAction.label}
+            Read rules
             <ArrowRightIcon size={14} weight="bold" />
           </Link>
         ) : null}
@@ -466,7 +529,7 @@ function StateBadge({ mode }: { mode: GameCatalogMode }) {
   const { state } = mode;
   const label = {
     degraded: 'Degraded',
-    playable: 'Playable',
+    playable: mode.capabilitySource.kind === 'fixture' ? 'Playable demo' : 'Playable',
     preview: mode.capabilitySource.kind === 'fixture' ? 'Fixture preview' : 'Capability gated',
     unavailable: 'Unavailable',
   }[state];

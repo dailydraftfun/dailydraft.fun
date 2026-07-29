@@ -30,8 +30,12 @@ test('publishes the four-mode capability matrix without mobile or desktop overfl
   );
   await expect(page.locator('a[href="/games/marketplace-flip#rules"]')).toBeVisible();
   await expect(page.locator('a[href="/games/crash#rules"]')).toBeVisible();
+  await expect(page.locator('a[href="/games/marketplace-flip"]').first()).toContainText(
+    'Play free demo',
+  );
+  await expect(page.locator('a[href="/games/crash"]').first()).toContainText('Play free demo');
   await expect(page.getByText('Playable', { exact: true })).toHaveCount(2);
-  await expect(page.getByText('Fixture preview', { exact: true })).toHaveCount(2);
+  await expect(page.getByText('Playable demo', { exact: true })).toHaveCount(2);
   await expectNoOverflow(page);
   await expectKeyboardReachable(page, primaryDuelAction);
   await expectNoSeriousOrCriticalViolations(page);
@@ -74,7 +78,7 @@ test('labels playable, preview, degraded, and unavailable states from server evi
   await expect(page.getByRole('heading', { name: 'No unverified play.' })).toBeVisible();
   await expect(page.getByText('Degraded', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Unavailable', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Fixture preview', { exact: true })).toHaveCount(2);
+  await expect(page.getByText('Playable demo', { exact: true })).toHaveCount(2);
   await expect(page.getByRole('link', { name: 'Challenge a wallet' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Rip a sports pack' })).toHaveCount(0);
 });
@@ -103,7 +107,7 @@ test('withholds runtime actions while loading, then recovers to live capability'
   await expect(page.getByRole('link', { name: 'Challenge a wallet' }).first()).toBeVisible();
 });
 
-test('keeps cached previews stale and fails malformed or timed-out catalogs closed before recovery', async ({
+test('keeps cached demos playable and fails runtime actions closed before recovery', async ({
   journey,
   page,
 }) => {
@@ -125,7 +129,9 @@ test('keeps cached previews stale and fails malformed or timed-out catalogs clos
   await page.goto('/games');
   await expect(page.getByText('Stale capability', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Challenge a wallet' })).toHaveCount(0);
-  await expect(page.locator('a[href="/games/marketplace-flip#rules"]')).toBeVisible();
+  await expect(page.locator('a[href="/games/marketplace-flip"]').first()).toContainText(
+    'Play free demo',
+  );
 
   await page.unroute(catalogUrl);
   await page.evaluate(() => window.sessionStorage.clear());

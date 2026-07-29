@@ -54,9 +54,10 @@ export const integrationSafetyGuidance = [
   '',
   ...PUBLIC_GAME_TAXONOMY.map(
     (mode) =>
-      `- ${mode.name}: https://app.dailydraft.fun${mode.rulesHref}${mode.runtime ? '' : ' (fixture only)'}`,
+      `- ${mode.name}: https://app.dailydraft.fun${mode.rulesHref}${mode.runtime ? '' : ' (playable no-value demo; fixture engine only)'}`,
   ),
-  '- Never present a fixture-only mode or unresolved tier as playable.',
+  '- Fixture-backed demos may be presented as playable only when they are clearly labeled no-value and expose no wallet, payment, provider purchase, custody, transfer, or payout action.',
+  '- Never present a fixture-backed demo or unresolved tier as live or value-bearing play.',
 ].join('\n');
 
 export function createDailyDraftServer(
@@ -73,7 +74,7 @@ export function createDailyDraftServer(
     {
       title: 'Get the DailyDraft game catalog',
       description:
-        'Read the server-owned catalog. Catalog entries describe integrations; use game availability before presenting a public mode as playable.',
+        'Read the server-owned catalog. Runtime entries require current availability; fixture entries may expose clearly labeled no-value demo play only.',
       inputSchema: {},
       outputSchema: gameCatalogSchema.shape,
       annotations: readOnlyAnnotations,

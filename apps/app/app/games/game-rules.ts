@@ -50,12 +50,12 @@ export const gameRules = {
       {
         label: 'Continue or cash out',
         detail:
-          'The local script contains four fixed card stages. Continue reveals the next fixed card through stage four; attempting to continue past stage four ends the script.',
+          'Each numbered run rotates the same four fixture cards into a deterministic order. Continue reveals the next card through stage four; attempting to continue past stage four ends the script.',
       },
       {
         label: 'Probability rule',
         detail:
-          'The preview follows a fixed demonstration sequence. It does not publish or imply commercial bust odds, expected value, or a live payout.',
+          'No run is randomized: its card order is determined by the run number. The preview does not publish or imply commercial bust odds, expected value, or a live payout.',
       },
     ],
     gates: [
@@ -67,7 +67,8 @@ export const gameRules = {
     loop: [
       {
         label: 'Read the stage',
-        detail: 'Inspect the current fixed card, displayed fixture pot, and scripted stage number.',
+        detail:
+          'Inspect the current deterministic card, displayed fixture pot, and scripted stage number.',
       },
       {
         label: 'Choose once',
@@ -76,7 +77,7 @@ export const gameRules = {
       {
         label: 'Resolve',
         detail:
-          'Stages two through four reveal their fixed cards. Only an attempt past the final stage triggers the scripted bust state.',
+          'Stages two through four reveal the current run’s deterministic cards. Only an attempt past the final stage triggers the scripted bust state.',
       },
       {
         label: 'Inspect',
@@ -97,7 +98,7 @@ export const gameRules = {
       {
         label: 'Committed',
         detail:
-          'No commitment or random draw is created. The four-card local sequence is fixed in the interface.',
+          'No commitment or random draw is created. Each numbered run rotates the same four-card fixture sequence deterministically.',
       },
       {
         label: 'Owned',
@@ -209,7 +210,7 @@ export const gameRules = {
       {
         label: 'Probability rule',
         detail:
-          'Floor, Core, and Chase are display controls only. They do not change the fixed card result and are not odds, probability bands, or a draw.',
+          'Floor, Core, and Chase are score predictions. They do not change the fixed card result and are not commercial odds or a random draw.',
       },
       {
         label: 'Acquisition rule',
@@ -227,28 +228,28 @@ export const gameRules = {
       {
         label: 'Choose',
         detail:
-          'Choose a display band for the walkthrough. The control does not affect the fixed result.',
+          'Predict the fixed result band. Your choice affects the local score, never the card.',
       },
       {
-        label: 'Advance',
+        label: 'Lock',
         detail:
-          'Advance a scripted local state. No pool snapshot, seed, commitment, or selection proof is created.',
+          'Lock the call for this round. No pool snapshot, seed, cryptographic commitment, or selection proof is created.',
       },
       {
         label: 'Reveal',
         detail:
-          'Show the same fixed example card every time. No marketplace selection or acquisition occurs.',
+          'Flip the fixed example card and compare it with the locked call. No marketplace selection or acquisition occurs.',
       },
       {
-        label: 'Inspect',
-        detail: 'Review selection, purchase, ownership, and finality as separate receipt facts.',
+        label: 'Score',
+        detail: 'Bank local points, inspect the no-value summary, and start the next round.',
       },
     ],
     name: PUBLIC_GAME_TAXONOMY_BY_ID.flip.name,
     previewHref: '#preview-lab',
     previewLabel: 'Run no-value fixture',
     receipt:
-      'The local summary records only which scripted screen was shown. It provides no selection proof; purchase, transfer, ownership, and settlement remain “not submitted.”',
+      'The local summary records the prediction, fixture result, and points. It provides no selection proof; purchase, transfer, ownership, and settlement remain “not submitted.”',
     refund:
       'Nothing is charged, so there is nothing to refund. Live reselection, substitute, or refund behavior awaits explicit commercial approval.',
     settlement:
@@ -258,7 +259,7 @@ export const gameRules = {
       {
         label: 'Committed',
         detail:
-          'Nothing is committed or sealed. A click only advances the local scripted interface.',
+          'The player’s prediction is locked in local state only; nothing is cryptographically committed or sealed.',
       },
       {
         label: 'Owned',
@@ -267,12 +268,12 @@ export const gameRules = {
       {
         label: 'Final',
         detail:
-          'Only the local script ends. No selection, marketplace, payment, or chain finality is claimed.',
+          'Only the local score round ends. No selection, marketplace, payment, or chain finality is claimed.',
       },
     ],
     statusLabel: 'Commercial + provider gated',
     summary:
-      'Walk through a scripted local marketplace UI with a fixed result. There is no sealed pool, random draw, reproducible selection proof, purchase, or ownership change.',
+      'Play a no-value prediction round against a fixed card result. There is no sealed pool, random draw, reproducible selection proof, purchase, or ownership change.',
     wallet:
       'No wallet is needed for the fixture. A future live flow will require an approved Solana wallet and explicit transaction review, but no funding CTA is exposed before the commercial contract exists.',
   },
