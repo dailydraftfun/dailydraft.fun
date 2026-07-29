@@ -64,11 +64,17 @@ describe('production reverse-proxy identity contract', () => {
     );
 
     const candidateValidation = deployScript.indexOf(
-      `caddy validate --config "/config/$${'{'}caddy_candidate_name}"`,
+      `caddy validate \\
+  --config "/config/$${'{'}caddy_candidate_name}" \\
+  --adapter caddyfile`,
     );
-    const liveValidation = deployScript.indexOf('caddy validate --config /etc/caddy/Caddyfile');
+    const liveValidation = deployScript.indexOf(`caddy validate \\
+  --config /etc/caddy/Caddyfile \\
+  --adapter caddyfile`);
     const reload = deployScript.indexOf(
-      'caddy reload --config /etc/caddy/Caddyfile',
+      `caddy reload \\
+    --config /etc/caddy/Caddyfile \\
+    --adapter caddyfile`,
       liveValidation,
     );
     expect(candidateValidation).toBeGreaterThan(-1);

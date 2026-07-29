@@ -63,7 +63,9 @@ cleanup() {
   fi
   if [[ "$caddy_main_installed" == "true" && "$release_committed" != "true" ]]; then
     dd if="$caddy_main_backup" of="$caddy_main_source" conv=fsync status=none || true
-    docker exec shipshit-caddy caddy reload --config /etc/caddy/Caddyfile || true
+    docker exec shipshit-caddy caddy reload \
+      --config /etc/caddy/Caddyfile \
+      --adapter caddyfile || true
   fi
   rm -f \
     "$temporary_environment" \
@@ -303,7 +305,10 @@ if ! awk -v fragment="/config/${caddy_fragment_name}" '
 fi
 
 install -m 600 "$caddy_main_candidate" "$caddy_candidate_target"
-if ! docker exec shipshit-caddy caddy validate --config "/config/${caddy_candidate_name}"; then
+if ! docker exec shipshit-caddy caddy validate \
+  --config "/config/${caddy_candidate_name}" \
+  --adapter caddyfile
+then
   echo "Candidate Caddy configuration failed validation" >&2
   exit 1
 fi
@@ -326,12 +331,18 @@ if ! dd if="$caddy_main_candidate" of="$caddy_main_source" conv=fsync status=non
   echo "Could not install the managed Caddy import" >&2
   exit 1
 fi
-if ! docker exec shipshit-caddy caddy validate --config /etc/caddy/Caddyfile ||
-  ! docker exec shipshit-caddy caddy reload --config /etc/caddy/Caddyfile
+if ! docker exec shipshit-caddy caddy validate \
+  --config /etc/caddy/Caddyfile \
+  --adapter caddyfile ||
+  ! docker exec shipshit-caddy caddy reload \
+    --config /etc/caddy/Caddyfile \
+    --adapter caddyfile
 then
   dd if="$caddy_main_backup" of="$caddy_main_source" conv=fsync status=none
   caddy_main_installed=false
-  docker exec shipshit-caddy caddy reload --config /etc/caddy/Caddyfile || true
+  docker exec shipshit-caddy caddy reload \
+    --config /etc/caddy/Caddyfile \
+    --adapter caddyfile || true
   echo "Caddy validation or reload failed; restored the previous config" >&2
   exit 1
 fi
