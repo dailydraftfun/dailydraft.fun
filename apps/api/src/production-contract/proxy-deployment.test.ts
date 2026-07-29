@@ -32,14 +32,14 @@ describe('production reverse-proxy identity contract', () => {
 
   test('ships and installs the exact-head Caddy fragment before validated reload', () => {
     expect(deployWorkflow).toContain(
-      `"s3://$${'{'}ARTIFACT_BUCKET}/fragments/dailydraft-$${'{'}GITHUB_SHA}.caddy"`,
+      `"s3://$${'{'}ARTIFACT_BUCKET}/scripts/dailydraft-$${'{'}GITHUB_SHA}.caddy"`,
     );
     expect(deployWorkflow).toContain('--arg caddy_fragment_key "$caddy_fragment_key"');
     expect(deployWorkflow).toContain(
       '/usr/local/bin/deploy-dailydraft \\($image_key|@sh) \\($sha|@sh) \\($caddy_fragment_key|@sh)',
     );
     expect(deployScript).toContain(
-      `if [[ "$caddy_fragment_key" != "fragments/dailydraft-$${'{'}sha}.caddy" ]]`,
+      `if [[ "$caddy_fragment_key" != "scripts/dailydraft-$${'{'}sha}.caddy" ]]`,
     );
     expect(deployScript).toContain(`readonly caddy_fragment_name="dailydraft-$${'{'}sha}.caddy"`);
     expect(deployScript).toContain('print "import " fragment');

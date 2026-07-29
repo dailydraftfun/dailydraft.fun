@@ -18,7 +18,7 @@ if [[ "$image_key" != "images/dailydraft-${sha}.tar.gz" ]]; then
   exit 2
 fi
 
-if [[ "$caddy_fragment_key" != "fragments/dailydraft-${sha}.caddy" ]]; then
+if [[ "$caddy_fragment_key" != "scripts/dailydraft-${sha}.caddy" ]]; then
   echo "Caddy fragment key does not match the requested Git SHA" >&2
   exit 2
 fi
